@@ -810,21 +810,45 @@ def _parse_claude_response(raw: str, verbose: bool,
         return []
 
 
+def _sanitize_text(text: str) -> str:
+    """Remove characters that the Anthropic API rejects.
+
+    Old scanned PDFs often produce null bytes, private-use Unicode codepoints,
+    and other control characters via Tesseract that cause 400 errors.
+    """
+    # Strip null bytes and C0/C1 control chars except tab, newline, carriage return
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", text)
+    # Strip Unicode surrogates and private-use area characters
+    text = re.sub(r"[\ud800-\udfff\ue000-\uf8ff]", " ", text)
+    # Collapse runs of blank lines to at most two
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text
+
+
 def call_claude(client: anthropic.Anthropic, chunk_text: str,
                 model: str, verbose: bool,
                 debug_dir: Path | None = None,
                 chunk_id: str = "chunk-0000") -> list[Any]:
+    chunk_text = _sanitize_text(chunk_text)
+
     if verbose:
         print(f"    → Sending {len(chunk_text):,} chars to Claude...", flush=True)
     if debug_dir:
         debug_dir.mkdir(parents=True, exist_ok=True)
         (debug_dir / f"{chunk_id}-input.txt").write_text(chunk_text, encoding="utf-8")
 
-    msg = client.messages.create(
-        model=model, max_tokens=8192,
-        system=SYSTEM_PROMPT_1E,
-        messages=[{"role": "user", "content": chunk_text}],
-    )
+    try:
+        msg = client.messages.create(
+            model=model, max_tokens=8192,
+            system=SYSTEM_PROMPT_1E,
+            messages=[{"role": "user", "content": chunk_text}],
+        )
+    except anthropic.BadRequestError as e:
+        print(f"    [WARN] API rejected {chunk_id} ({e}); skipping chunk.", flush=True)
+        if debug_dir:
+            (debug_dir / f"{chunk_id}-api-error.txt").write_text(str(e), encoding="utf-8")
+        return []
+
     return _parse_claude_response(msg.content[0].text, verbose,
                                   debug_dir=debug_dir, chunk_id=chunk_id)
 
@@ -834,14 +858,20 @@ def call_claude_for_monsters(client: anthropic.Anthropic, chunk_text: str,
                               no_cr_adjustment: bool = False,
                               debug_dir: Path | None = None,
                               chunk_id: str = "chunk-0000") -> list[Any]:
+    chunk_text = _sanitize_text(chunk_text)
+
     if verbose:
         print(f"    [monsters] Scanning {len(chunk_text):,} chars...", flush=True)
 
-    msg = client.messages.create(
-        model=model, max_tokens=8192,
-        system=MONSTER_SYSTEM_PROMPT_1E,
-        messages=[{"role": "user", "content": chunk_text}],
-    )
+    try:
+        msg = client.messages.create(
+            model=model, max_tokens=8192,
+            system=MONSTER_SYSTEM_PROMPT_1E,
+            messages=[{"role": "user", "content": chunk_text}],
+        )
+    except anthropic.BadRequestError as e:
+        print(f"    [WARN] API rejected {chunk_id}-monsters ({e}); skipping.", flush=True)
+        return []
     raw_monsters = _parse_claude_response(
         msg.content[0].text, verbose,
         debug_dir=debug_dir, chunk_id=f"{chunk_id}-monsters",
