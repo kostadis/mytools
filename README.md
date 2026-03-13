@@ -276,6 +276,8 @@ a `_1e_original` field with the verbatim 1e stat line for manual review.
 
 All standard options (`--type`, `--author`, `--model`, `--extract-monsters`, etc.) also apply.
 
+> **Model note:** Classic AD&D modules often contain mature fantasy themes (violence, enslavement, demonic content, period-typical language) that can trigger content filters in smaller/stricter models.  Use `--model claude-sonnet-4-6` for the most reliable conversion of modules like T1-4 or GDQ.
+
 **Examples**
 
 ```bash
