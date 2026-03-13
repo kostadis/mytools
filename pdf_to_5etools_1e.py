@@ -841,7 +841,8 @@ def _sanitize_text(text: str) -> str:
 def call_claude(client: anthropic.Anthropic, chunk_text: str,
                 model: str, verbose: bool,
                 debug_dir: Path | None = None,
-                chunk_id: str = "chunk-0000") -> list[Any]:
+                chunk_id: str = "chunk-0000") -> list[Any] | None:
+    """Return parsed entries, or None if the API rejected the chunk."""
     chunk_text = _CHUNK_PREFIX + _sanitize_text(chunk_text)
 
     if verbose:
@@ -857,10 +858,10 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
             messages=[{"role": "user", "content": chunk_text}],
         )
     except anthropic.BadRequestError as e:
-        print(f"    [WARN] API rejected {chunk_id} ({e}); skipping chunk.", flush=True)
+        print(f"    [WARN] API rejected {chunk_id} ({e}); will retry page-by-page.", flush=True)
         if debug_dir:
             (debug_dir / f"{chunk_id}-api-error.txt").write_text(str(e), encoding="utf-8")
-        return []
+        return None
 
     return _parse_claude_response(msg.content[0].text, verbose,
                                   debug_dir=debug_dir, chunk_id=chunk_id)
@@ -870,7 +871,7 @@ def call_claude_for_monsters(client: anthropic.Anthropic, chunk_text: str,
                               model: str, source_id: str, verbose: bool,
                               no_cr_adjustment: bool = False,
                               debug_dir: Path | None = None,
-                              chunk_id: str = "chunk-0000") -> list[Any]:
+                              chunk_id: str = "chunk-0000") -> list[Any] | None:
     chunk_text = _CHUNK_PREFIX + _sanitize_text(chunk_text)
 
     if verbose:
@@ -884,7 +885,7 @@ def call_claude_for_monsters(client: anthropic.Anthropic, chunk_text: str,
         )
     except anthropic.BadRequestError as e:
         print(f"    [WARN] API rejected {chunk_id}-monsters ({e}); skipping.", flush=True)
-        return []
+        return None
     raw_monsters = _parse_claude_response(
         msg.content[0].text, verbose,
         debug_dir=debug_dir, chunk_id=f"{chunk_id}-monsters",
@@ -1144,6 +1145,21 @@ def convert(
                 continue
             entries = call_claude(client, chunk_text, model, verbose,
                                   debug_dir=debug_dir, chunk_id=f"chunk-{i:04d}")
+            if entries is None:
+                # Content filter hit — retry each page individually
+                print(f"    [RETRY] Retrying chunk {i+1} page-by-page ...", flush=True)
+                entries = []
+                for page_num, page_text in chunk:
+                    if not page_text.strip():
+                        continue
+                    single = f"\n--- Page {page_num} ---\n{page_text}\n"
+                    result = call_claude(client, single, model, verbose,
+                                        debug_dir=debug_dir,
+                                        chunk_id=f"chunk-{i:04d}-p{page_num}")
+                    if result is None:
+                        print(f"    [SKIP] Page {page_num} rejected by content filter.", flush=True)
+                    else:
+                        entries.extend(result)
             print(f"    → {len(entries)} entries parsed"
                   + ("  ← EMPTY — check debug files" if debug_dir and not entries else ""),
                   flush=True)
@@ -1163,7 +1179,8 @@ def convert(
                 no_cr_adjustment=no_cr_adjustment,
                 debug_dir=debug_dir, chunk_id=f"chunk-{i:04d}",
             )
-            all_monsters.extend(monsters)
+            if monsters is not None:
+                all_monsters.extend(monsters)
         print(f"      Total monsters found: {len(all_monsters)}", flush=True)
 
     # ── 5. Assemble output ────────────────────────────────────────────────────
