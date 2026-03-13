@@ -70,6 +70,9 @@ _KNOWN_TRIGGERS = [
     r'\byoung\s+girl\b',
     r'\bteen[- ]?aged?\s+(?:girl|daughter)s?\b',
     r'\bcarousing\b',
+    r'\blusts?\b|\blusted\b|\blusting\b',
+    r'\blustful\b',
+    r'\bBeloved\b',
 ]
 
 # Suggested replacements for common patterns (pattern fragment → replacement)

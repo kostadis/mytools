@@ -877,6 +877,21 @@ class TestNeutralizeTriggers(unittest.TestCase):
         out = MOD1E._neutralize_triggers("While in town 'carousing', he is unarmored.")
         self.assertNotIn("carousing", out.lower())
 
+    def test_noise_lines_stripped(self):
+        text = "Introduction\nwey i\nyY\n, Gd\nyd ae ne Ta\nThe village is nearby."
+        out = MOD1E._neutralize_triggers(text)
+        self.assertNotIn("wey", out)
+        self.assertNotIn("yY", out)
+        self.assertIn("Introduction", out)
+        self.assertIn("The village is nearby.", out)
+
+    def test_marker_lines_preserved(self):
+        # Structural markers must survive even when their content is short
+        text = "[INSET-START]\n[H3] 7. Rm\n[INSET-END]"
+        out = MOD1E._neutralize_triggers(text)
+        self.assertIn("[INSET-START]", out)
+        self.assertIn("[INSET-END]", out)
+
     def test_beloved_replaced(self):
         out = MOD1E._neutralize_triggers("Zuggtmoy's Beloved serve the demon queen.")
         self.assertNotIn("beloved", out.lower())

@@ -891,9 +891,36 @@ def load_trigger_config(path: Path) -> None:
         )
 
 
+def _strip_noise_lines(text: str) -> str:
+    """Remove lines that are pure OCR noise from scanned illustrations or
+    decorative title art.
+
+    A line is noise when it contains no alphabetic word of 3+ characters
+    AND does not start with a structural marker (which could legitimately
+    have very short content such as a room number).
+    """
+    _MARKER_RE = re.compile(
+        r'^\s*(?:\[H[123]\]|\[INSET-(?:START|END)\]|\[OCR\]'
+        r'|\[STAT-BLOCK-(?:START|END)\]|\[1E-STAT\]'
+        r'|\[WANDERING-TABLE\]|\[TABLE-(?:START|END)\]'
+        r'|\[ROOM-KEY-\d+\]|---\s*Page\s*\d+\s*---)'
+    )
+    clean: list[str] = []
+    for line in text.split("\n"):
+        if _MARKER_RE.match(line):
+            clean.append(line)
+            continue
+        words = re.findall(r"[A-Za-z]+", line)
+        if words and max(len(w) for w in words) >= 4:
+            clean.append(line)
+        # else: drop the line — it's noise
+    return "\n".join(clean)
+
+
 def _neutralize_triggers(text: str) -> str:
-    """Replace TSR-era phrases that trip the API output content filter,
-    and strip common OCR garbage patterns."""
+    """Strip OCR noise and replace TSR-era phrases that trip the API output
+    content filter."""
+    text = _strip_noise_lines(text)
     text = _OCR_GARBAGE_RE.sub("", text)
     for pattern, replacement in _TRIGGER_SUBS:
         text = pattern.sub(replacement, text)
