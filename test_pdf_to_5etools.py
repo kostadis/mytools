@@ -834,5 +834,37 @@ class TestPostProcessMonster1e(unittest.TestCase):
         self.assertEqual(result["name"], "Skeleton")
 
 
+class TestNeutralizeTriggers(unittest.TestCase):
+    def test_enslaved_replaced(self):
+        out = MOD1E._neutralize_triggers("Good folk were robbed, pillaged, enslaved, and worse.")
+        self.assertNotIn("enslaved", out.lower())
+        self.assertNotIn("and worse", out.lower())
+
+    def test_enslavement_replaced(self):
+        out = MOD1E._neutralize_triggers("Enslavement was common in those dark days.")
+        self.assertNotIn("enslavement", out.lower())
+
+    def test_wench_replaced(self):
+        out = MOD1E._neutralize_triggers("A serving wench brought the drinks.")
+        self.assertNotIn("wench", out.lower())
+
+    def test_buxom_replaced(self):
+        out = MOD1E._neutralize_triggers("A buxom girl smiled at the door.")
+        self.assertNotIn("buxom", out.lower())
+
+    def test_harlot_replaced(self):
+        out = MOD1E._neutralize_triggers("The harlot sat in the corner.")
+        self.assertNotIn("harlot", out.lower())
+
+    def test_clean_text_unchanged(self):
+        text = "The fighter entered the dungeon and fought the goblins."
+        self.assertEqual(MOD1E._neutralize_triggers(text), text)
+
+    def test_case_insensitive(self):
+        out = MOD1E._neutralize_triggers("ENSLAVED prisoners and WENCHES served the cult.")
+        self.assertNotIn("enslaved", out.lower())
+        self.assertNotIn("wenche", out.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
