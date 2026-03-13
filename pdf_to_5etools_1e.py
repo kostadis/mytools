@@ -904,25 +904,37 @@ def _strip_noise_lines(text: str) -> str:
     """Remove lines that are pure OCR noise from scanned illustrations or
     decorative title art.
 
-    A line is noise when it contains no alphabetic word of 3+ characters
-    AND does not start with a structural marker (which could legitimately
-    have very short content such as a room number).
+    Rules:
+    - Non-marker lines with no word >= 4 chars are dropped.
+    - Heading marker lines ([H1]/[H2]/[H3]) are also checked: if the content
+      after the marker has no word >= 3 chars it is dropped (catches garbage
+      like "[H1] ne", "[H1] on i", "[H3] ds Se" from illustrated title pages).
+    - Other structural markers (INSET, STAT-BLOCK, page separators, etc.) are
+      always kept — they carry structural meaning independent of their content.
     """
-    _MARKER_RE = re.compile(
-        r'^\s*(?:\[H[123]\]|\[INSET-(?:START|END)\]|\[OCR\]'
+    _HEADING_RE = re.compile(r'^\s*\[H[123]\]\s*')
+    _OTHER_MARKER_RE = re.compile(
+        r'^\s*(?:\[INSET-(?:START|END)\]|\[OCR\]'
         r'|\[STAT-BLOCK-(?:START|END)\]|\[1E-STAT\]'
         r'|\[WANDERING-TABLE\]|\[TABLE-(?:START|END)\]'
-        r'|\[ROOM-KEY-\d+\]|---\s*Page\s*\d+\s*---)'
+        r'|\[ROOM-KEY-\d+\]|---\s*(?:Page\s*\d+|\(second column\))\s*---)'
     )
     clean: list[str] = []
     for line in text.split("\n"):
-        if _MARKER_RE.match(line):
+        if _OTHER_MARKER_RE.match(line):
             clean.append(line)
+            continue
+        if _HEADING_RE.match(line):
+            content = _HEADING_RE.sub("", line).strip()
+            content_words = re.findall(r"[A-Za-z]+", content)
+            # Keep if: no alpha content (e.g. "[H3] 17."), or has a word >= 3 chars
+            if not content_words or max(len(w) for w in content_words) >= 3:
+                clean.append(line)
             continue
         words = re.findall(r"[A-Za-z]+", line)
         if words and max(len(w) for w in words) >= 4:
             clean.append(line)
-        # else: drop the line — it's noise
+        # else: drop — noise line
     return "\n".join(clean)
 
 
@@ -1488,6 +1500,8 @@ def main() -> None:
     parser.add_argument("--pages", default=None, metavar="RANGE",
                         help='Only process these pages, e.g. "10-20" or "5,10-15". '
                              'Useful for testing before running the full conversion.')
+    parser.add_argument("--page", type=int, default=None, metavar="N",
+                        help="Only process this single page number.")
     parser.add_argument("--skip-pages", action="append", default=[],
                         dest="skip_pages_args", metavar="RANGE",
                         help='Page(s) to skip, e.g. "1-3" or "127" (repeatable)')
@@ -1537,6 +1551,8 @@ def main() -> None:
     out_path = args.out or out_dir / f"{prefix}-{short_id.lower()}-1e.json"
 
     pages: set[int] = _parse_skip_pages(args.pages) if args.pages else set()
+    if args.page:
+        pages.add(args.page)
 
     # Collect skip-page sets from all --skip-pages arguments
     skip_pages: set[int] = set()

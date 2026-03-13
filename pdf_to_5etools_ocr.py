@@ -728,6 +728,7 @@ def convert(
     monsters_only: bool,    # True = skip adventure extraction, monsters only
     debug_dir: Path | None,  # directory to dump raw chunk I/O for debugging
     verbose: bool,
+    page_filter: set[int],  # if non-empty, only process these page numbers
 ) -> None:
     print(f"\n{'='*62}")
     print(f"  PDF → 5etools OCR Converter")
@@ -740,6 +741,8 @@ def convert(
     if debug_dir:
         debug_dir.mkdir(parents=True, exist_ok=True)
         print(f"  Debug :  {debug_dir}")
+    if page_filter:
+        print(f"  Pages :  {sorted(page_filter)}")
     print(f"{'='*62}\n")
 
     # ── Open PDF ──────────────────────────────────────────────────────────────
@@ -764,6 +767,9 @@ def convert(
     digital_results: dict[int, str | None] = {}
 
     for page_idx in range(total_pages):
+        if page_filter and page_idx + 1 not in page_filter:
+            digital_results[page_idx] = ""   # skip this page
+            continue
         if force_ocr:
             needs_ocr.append(page_idx)
             digital_results[page_idx] = None
@@ -1039,6 +1045,23 @@ def convert(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Helpers
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _parse_page_range(value: str) -> set[int]:
+    """Parse a page range like "5", "10-20", or "5,10-15" into a set of page numbers."""
+    result: set[int] = set()
+    for part in value.split(","):
+        part = part.strip()
+        m = re.match(r'^(\d+)-(\d+)$', part)
+        if m:
+            result.update(range(int(m.group(1)), int(m.group(2)) + 1))
+        elif re.match(r'^\d+$', part):
+            result.add(int(part))
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # CLI
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1141,6 +1164,14 @@ def main() -> None:
         ),
     )
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--pages", default=None, metavar="RANGE",
+        help='Only process these pages, e.g. "10-20" or "5,10-15".',
+    )
+    parser.add_argument(
+        "--page", type=int, default=None, metavar="N",
+        help="Only process this single page number.",
+    )
 
     args = parser.parse_args()
 
@@ -1166,6 +1197,10 @@ def main() -> None:
         normalise_path(str(args.debug_dir)) if args.debug_dir else None
     )
 
+    page_filter: set[int] = _parse_page_range(args.pages) if args.pages else set()
+    if args.page:
+        page_filter.add(args.page)
+
     convert(
         pdf_path=pdf_path,
         output_type=args.output_type,
@@ -1184,6 +1219,7 @@ def main() -> None:
         monsters_only=args.monsters_only,
         debug_dir=debug_dir,
         verbose=args.verbose,
+        page_filter=page_filter,
     )
 
 

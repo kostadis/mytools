@@ -328,6 +328,25 @@ HTML = r"""<!doctype html>
                    id="chunkInput" name="pages_per_chunk"
                    value="6" min="1" max="30">
           </div>
+          <div class="col-sm-2">
+            <label class="form-label" for="singlePage">Single page</label>
+            <input type="number" class="form-control form-control-sm"
+                   id="singlePage" name="single_page"
+                   min="1" placeholder="e.g. 7">
+            <div class="form-text">Leave blank for all.</div>
+          </div>
+        </div>
+        <div class="row g-2 mt-1">
+          <div class="col-sm-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox"
+                     id="onePageAtATime" name="one_page_at_a_time">
+              <label class="form-check-label" for="onePageAtATime">
+                One page at a time
+                <span class="text-muted">(sets pages/chunk to 1)</span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -475,6 +494,17 @@ document.querySelectorAll('input[name="mode"]').forEach(r =>
   })
 );
 
+// ── One page at a time ───────────────────────────────────────────────────────
+document.getElementById('onePageAtATime').addEventListener('change', function() {
+  const chunkEl = document.getElementById('chunkInput');
+  if (this.checked) {
+    chunkEl._savedValue = chunkEl.value;
+    chunkEl.value = '1';
+  } else {
+    chunkEl.value = chunkEl._savedValue || '6';
+  }
+});
+
 // ── API key show/hide ────────────────────────────────────────────────────────
 document.getElementById('toggleKey').addEventListener('click', () => {
   const inp = document.getElementById('apiKey');
@@ -614,11 +644,16 @@ def convert():
     output_mode     = request.form.get("output_mode", "homebrew")
     out_name        = request.form.get("out_name", "").strip()
 
-    extract_monsters = "extract_monsters" in request.form
-    monsters_only    = "monsters_only"    in request.form
-    use_batch        = "use_batch"        in request.form
-    dry_run          = "dry_run"          in request.form
-    verbose          = "verbose"          in request.form
+    extract_monsters    = "extract_monsters"    in request.form
+    monsters_only       = "monsters_only"       in request.form
+    use_batch           = "use_batch"           in request.form
+    dry_run             = "dry_run"             in request.form
+    verbose             = "verbose"             in request.form
+    one_page_at_a_time  = "one_page_at_a_time"  in request.form
+    single_page         = request.form.get("single_page", "").strip()
+
+    if one_page_at_a_time:
+        pages_per_chunk = "1"
 
     # OCR-specific
     dpi       = request.form.get("dpi", "300")
@@ -669,6 +704,9 @@ def convert():
         cmd.append("--dry-run")
     if verbose:
         cmd.append("--verbose")
+
+    if single_page:
+        cmd += ["--page", single_page]
 
     if mode == "standard" and use_batch:
         cmd.append("--batch")
