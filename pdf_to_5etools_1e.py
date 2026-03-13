@@ -962,6 +962,7 @@ def convert(
     out_path: Path,
     api_key: str | None,
     chunk_size: int,
+    pages: set[int],
     skip_pages: set[int],
     dpi: int,
     force_ocr: bool,
@@ -982,6 +983,7 @@ def convert(
     print(f"  Output:  {out_path}")
     print(f"  Type  :  {output_type}   ID: {short_id}   Mode: {output_mode}")
     if mc_label: print(mc_label)
+    if pages:     print(f"  Pages :  {sorted(pages)}")
     if skip_pages: print(f"  Skip  :  pages {sorted(skip_pages)}")
     print(f"  DPI   :  {dpi}   Force-OCR: {force_ocr}   Lang: {lang}")
     if debug_dir:
@@ -1000,10 +1002,15 @@ def convert(
     # ── 2. Extract pages ─────────────────────────────────────────────────────
     print("[2/5] Extracting pages ...", flush=True)
     needs_ocr:     list[int] = []
+    # Build effective skip set: explicitly skipped + pages outside the requested range
+    effective_skip = set(skip_pages)
+    if pages:
+        effective_skip |= {i for i in range(1, total_pages + 1) if i not in pages}
+
     digital_results: dict[int, str | None] = {}
 
     for page_idx in range(total_pages):
-        if page_idx + 1 in skip_pages:
+        if page_idx + 1 in effective_skip:
             digital_results[page_idx] = ""
             continue
         if force_ocr:
@@ -1267,6 +1274,9 @@ def main() -> None:
     parser.add_argument("--force-ocr", action="store_true")
     parser.add_argument("--lang", default="eng")
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--pages", default=None, metavar="RANGE",
+                        help='Only process these pages, e.g. "10-20" or "5,10-15". '
+                             'Useful for testing before running the full conversion.')
     parser.add_argument("--skip-pages", action="append", default=[],
                         dest="skip_pages_args", metavar="RANGE",
                         help='Page(s) to skip, e.g. "1-3" or "127" (repeatable)')
@@ -1304,6 +1314,8 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = args.out or out_dir / f"{prefix}-{short_id.lower()}-1e.json"
 
+    pages: set[int] = _parse_skip_pages(args.pages) if args.pages else set()
+
     # Collect skip-page sets from all --skip-pages arguments
     skip_pages: set[int] = set()
     for arg in args.skip_pages_args:
@@ -1320,6 +1332,7 @@ def main() -> None:
         out_path=out_path,
         api_key=args.api_key,
         chunk_size=args.chunk_size,
+        pages=pages,
         skip_pages=skip_pages,
         dpi=args.dpi,
         force_ocr=args.force_ocr,

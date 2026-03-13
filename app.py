@@ -218,7 +218,14 @@ HTML = r"""<!doctype html>
               <input type="number" class="form-control form-control-sm"
                      id="dpi1e" name="dpi_1e" value="400" min="72" max="600">
             </div>
-            <div class="col-sm-4">
+            <div class="col-sm-2">
+              <label class="form-label" for="pageRange">Page range</label>
+              <input type="text" class="form-control form-control-sm"
+                     id="pageRange" name="page_range"
+                     placeholder="e.g. 10-20">
+              <div class="form-text">Leave blank for all pages.</div>
+            </div>
+            <div class="col-sm-3">
               <label class="form-label" for="skipPages">Skip Pages</label>
               <input type="text" class="form-control form-control-sm"
                      id="skipPages" name="skip_pages"
@@ -679,6 +686,8 @@ def convert():
         dpi_1e         = request.form.get("dpi_1e", "400")
         force_ocr_1e   = "force_ocr_1e" in request.form
 
+        page_range   = request.form.get("page_range", "").strip()
+
         if module_code:
             cmd += ["--module-code", module_code]
         cmd += ["--system", system, "--dpi", dpi_1e]
@@ -686,6 +695,8 @@ def convert():
             cmd.append("--force-ocr")
         if no_cr_adj:
             cmd.append("--no-cr-adjustment")
+        if page_range:
+            cmd += ["--pages", page_range]
         if skip_pages:
             cmd += ["--skip-pages", skip_pages]
 
