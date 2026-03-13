@@ -877,6 +877,10 @@ class TestNeutralizeTriggers(unittest.TestCase):
         out = MOD1E._neutralize_triggers("While in town 'carousing', he is unarmored.")
         self.assertNotIn("carousing", out.lower())
 
+    def test_beloved_replaced(self):
+        out = MOD1E._neutralize_triggers("Zuggtmoy's Beloved serve the demon queen.")
+        self.assertNotIn("beloved", out.lower())
+
     def test_lust_replaced(self):
         out = MOD1E._neutralize_triggers("The demon lusted for power and lust drove it onward.")
         self.assertNotIn("lust", out.lower())
@@ -885,6 +889,13 @@ class TestNeutralizeTriggers(unittest.TestCase):
         out = MOD1E._neutralize_triggers("$15112W Co16Ch11\nFarmer: AC 7")
         self.assertNotIn("$15112W", out)
         self.assertIn("Farmer: AC 7", out)
+
+    def test_dotted_leader_stripped(self):
+        out = MOD1E._neutralize_triggers("Tower Exterior cece cece 36\nRoom Key ........ 45")
+        self.assertNotIn("cece", out)
+        self.assertNotIn("....", out)
+        self.assertIn("Tower Exterior", out)
+        self.assertIn("Room Key", out)
 
 
 if __name__ == "__main__":

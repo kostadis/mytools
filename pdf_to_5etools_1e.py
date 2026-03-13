@@ -862,14 +862,17 @@ _TRIGGER_SUBS: list[tuple[re.Pattern[str], str]] = [
     # "lust" / "lusted" / "lusting" appear in evil-cult and demon descriptions
     (re.compile(r'\blusts?\b|\blusted\b|\blusting\b', re.IGNORECASE), "greed"),
     (re.compile(r'\blustful\b',                 re.IGNORECASE), "greedy"),
+    # "Beloved" as a title for demon-queen servants (e.g. "Zuggtmoy's Beloved")
+    (re.compile(r'\bBeloved\b',                 re.IGNORECASE), "Servants"),
 ]
 
 
-# OCR stat-block garbage patterns to strip before sending to Claude.
-# These are common artefacts from scanned 1e modules (fused ability-score lines).
+# OCR garbage patterns to strip before sending to Claude.
 _OCR_GARBAGE_RE = re.compile(
-    r'^\$[0-9A-Za-z]{3,}',   # e.g. "$15112W Co16Ch11"
-    re.MULTILINE,
+    r'^\$[0-9A-Za-z]{3,}'       # fused ability-score lines, e.g. "$15112W Co16Ch11"
+    r'|(?:\b(?:ce)+\b\s*)+'     # dotted leader lines OCR'd as "cece cece 36"
+    r'|(?:\.{4,})',             # runs of dots from leader lines
+    re.MULTILINE | re.IGNORECASE,
 )
 
 
