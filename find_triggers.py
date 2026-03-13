@@ -99,6 +99,7 @@ _SUGGESTIONS: list[tuple[str, str]] = [
     ("fornication",  "vice"),
     ("adultery",     "betrayal"),
     ("lust",         "greed"),
+    ("lustful",      "greedy"),
     ("carnal",       "worldly"),
     ("copulate",     "consort"),
     ("brothel",      "tavern"),

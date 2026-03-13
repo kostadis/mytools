@@ -877,6 +877,10 @@ class TestNeutralizeTriggers(unittest.TestCase):
         out = MOD1E._neutralize_triggers("While in town 'carousing', he is unarmored.")
         self.assertNotIn("carousing", out.lower())
 
+    def test_lust_replaced(self):
+        out = MOD1E._neutralize_triggers("The demon lusted for power and lust drove it onward.")
+        self.assertNotIn("lust", out.lower())
+
     def test_ocr_garbage_stripped(self):
         out = MOD1E._neutralize_triggers("$15112W Co16Ch11\nFarmer: AC 7")
         self.assertNotIn("$15112W", out)

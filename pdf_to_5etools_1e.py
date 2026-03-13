@@ -859,6 +859,9 @@ _TRIGGER_SUBS: list[tuple[re.Pattern[str], str]] = [
                                                 re.IGNORECASE), "young adult"),
     # "carousing" in context with age references
     (re.compile(r'\bcarousing\b',               re.IGNORECASE), "drinking"),
+    # "lust" / "lusted" / "lusting" appear in evil-cult and demon descriptions
+    (re.compile(r'\blusts?\b|\blusted\b|\blusting\b', re.IGNORECASE), "greed"),
+    (re.compile(r'\blustful\b',                 re.IGNORECASE), "greedy"),
 ]
 
 
