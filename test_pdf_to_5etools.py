@@ -44,6 +44,38 @@ def _import_base():
     return mod
 
 
+def _import_1e():
+    """Import pdf_to_5etools_1e with all hard deps stubbed out."""
+    stub_fitz = _make_stub("fitz")
+    stub_fitz.open = MagicMock()
+    stub_fitz.TEXT_PRESERVE_WHITESPACE = 0
+
+    stub_anthropic = _make_stub("anthropic")
+    stub_anthropic.Anthropic = MagicMock()
+
+    stub_pyt = _make_stub("pytesseract")
+    stub_pyt.image_to_data = MagicMock()
+    stub_pyt.Output = MagicMock()
+    stub_pyt.Output.DICT = "dict"
+
+    stub_pil = _make_stub("PIL")
+    stub_pil.Image = MagicMock()
+    stub_pil.ImageFilter = MagicMock()
+    stub_pil.ImageEnhance = MagicMock()
+    _make_stub("PIL.Image").Image = MagicMock()
+    _make_stub("PIL.ImageFilter").SHARPEN = MagicMock()
+    _make_stub("PIL.ImageEnhance").Contrast = MagicMock()
+
+    stub_pdf2image = _make_stub("pdf2image")
+    stub_pdf2image.convert_from_path = MagicMock()
+
+    if "pdf_to_5etools_1e" in sys.modules:
+        del sys.modules["pdf_to_5etools_1e"]
+
+    import pdf_to_5etools_1e as mod
+    return mod
+
+
 def _import_ocr():
     """Import pdf_to_5etools_ocr with all hard deps stubbed out."""
     stub_fitz = _make_stub("fitz")
@@ -82,6 +114,7 @@ def _import_ocr():
 # Module-level import (done once to avoid repeated patching overhead)
 # ---------------------------------------------------------------------------
 BASE = _import_base()
+MOD1E = _import_1e()
 OCR  = _import_ocr()
 
 
@@ -553,6 +586,252 @@ class TestOcrBuildToc(unittest.TestCase):
         toc = OCR.build_toc(data)
         self.assertEqual(toc[0]["name"], "Ch1")
         self.assertEqual(toc[0]["headers"], ["Sec A"])
+
+
+# ===========================================================================
+# Tests for pdf_to_5etools_1e.py (MOD1E)
+# ===========================================================================
+
+class TestAc1eTo5e(unittest.TestCase):
+    """ac_1e_to_5e converts descending 1e AC to 5e ascending AC."""
+
+    def test_unarmoured(self):
+        # AC 10 (unarmoured) → 9 (floor of 9 in 5e is still base unarmoured)
+        self.assertEqual(MOD1E.ac_1e_to_5e(10), 9)
+
+    def test_chain_mail(self):
+        self.assertEqual(MOD1E.ac_1e_to_5e(5), 14)
+
+    def test_plate_and_shield(self):
+        self.assertEqual(MOD1E.ac_1e_to_5e(0), 19)
+
+    def test_negative_ac(self):
+        # AC -2 → 21, but capped at 9 minimum — no, max(9, 19-(-2)) = max(9,21) = 21
+        self.assertEqual(MOD1E.ac_1e_to_5e(-2), 21)
+
+    def test_floor_enforced(self):
+        # Very high AC (e.g. 12) should not go below 9
+        self.assertEqual(MOD1E.ac_1e_to_5e(12), max(9, 19 - 12))
+
+    def test_formula_spot_checks(self):
+        for ac_1e, expected in [(7, 12), (4, 15), (2, 17), (1, 18)]:
+            with self.subTest(ac_1e=ac_1e):
+                self.assertEqual(MOD1E.ac_1e_to_5e(ac_1e), expected)
+
+
+class TestThac0ToAttackBonus(unittest.TestCase):
+    """thac0_to_attack_bonus converts THAC0 to a 5e attack bonus."""
+
+    def test_thac0_20(self):
+        self.assertEqual(MOD1E.thac0_to_attack_bonus(20), 0)
+
+    def test_thac0_17(self):
+        self.assertEqual(MOD1E.thac0_to_attack_bonus(17), 3)
+
+    def test_thac0_13(self):
+        self.assertEqual(MOD1E.thac0_to_attack_bonus(13), 7)
+
+    def test_thac0_10(self):
+        self.assertEqual(MOD1E.thac0_to_attack_bonus(10), 10)
+
+    def test_thac0_7(self):
+        self.assertEqual(MOD1E.thac0_to_attack_bonus(7), 13)
+
+    def test_formula(self):
+        for thac0 in range(5, 21):
+            self.assertEqual(MOD1E.thac0_to_attack_bonus(thac0), 20 - thac0)
+
+
+class TestMvTo5eSpeed(unittest.TestCase):
+    """mv_to_5e_speed converts 1e movement inches to 5e feet."""
+
+    def test_mv_6(self):
+        self.assertEqual(MOD1E.mv_to_5e_speed(6), 30)
+
+    def test_mv_9(self):
+        self.assertEqual(MOD1E.mv_to_5e_speed(9), 45)
+
+    def test_mv_12(self):
+        self.assertEqual(MOD1E.mv_to_5e_speed(12), 60)
+
+    def test_mv_15(self):
+        self.assertEqual(MOD1E.mv_to_5e_speed(15), 75)
+
+    def test_mv_3(self):
+        self.assertEqual(MOD1E.mv_to_5e_speed(3), 15)
+
+    def test_minimum_speed(self):
+        self.assertGreaterEqual(MOD1E.mv_to_5e_speed(1), 5)
+
+    def test_rounded_to_5(self):
+        # Result must always be a multiple of 5
+        for mv in [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 13]:
+            with self.subTest(mv=mv):
+                self.assertEqual(MOD1E.mv_to_5e_speed(mv) % 5, 0)
+
+
+class TestHdToCr(unittest.TestCase):
+    """hd_to_cr looks up approximate 5e CR from 1e HD."""
+
+    def test_half_hd(self):
+        self.assertEqual(MOD1E.hd_to_cr(0.25), "0")
+
+    def test_one_hd(self):
+        self.assertEqual(MOD1E.hd_to_cr(1.0), "1/4")
+
+    def test_two_hd(self):
+        self.assertEqual(MOD1E.hd_to_cr(2.0), "1/2")
+
+    def test_three_hd(self):
+        self.assertEqual(MOD1E.hd_to_cr(3.0), "1")
+
+    def test_four_hd(self):
+        self.assertEqual(MOD1E.hd_to_cr(4.0), "2")
+
+    def test_eight_hd(self):
+        self.assertEqual(MOD1E.hd_to_cr(8.0), "6")
+
+    def test_ten_hd(self):
+        self.assertEqual(MOD1E.hd_to_cr(10.0), "8")
+
+    def test_fifteen_hd(self):
+        self.assertEqual(MOD1E.hd_to_cr(15.0), "13")
+
+    def test_twenty_plus_hd(self):
+        self.assertEqual(MOD1E.hd_to_cr(25.0), "21")
+
+    def test_returns_string(self):
+        # CR is always a string, never a number
+        self.assertIsInstance(MOD1E.hd_to_cr(5.0), str)
+
+
+class TestParseSkipPages(unittest.TestCase):
+    """_parse_skip_pages parses range strings into sets of page numbers."""
+
+    def _call(self, s):
+        return MOD1E._parse_skip_pages(s)
+
+    def test_single_page(self):
+        self.assertEqual(self._call("5"), {5})
+
+    def test_range(self):
+        self.assertEqual(self._call("1-3"), {1, 2, 3})
+
+    def test_comma_separated(self):
+        self.assertEqual(self._call("1-3,10"), {1, 2, 3, 10})
+
+    def test_multiple_ranges(self):
+        self.assertEqual(self._call("1-2,5-6"), {1, 2, 5, 6})
+
+    def test_empty_string(self):
+        self.assertEqual(self._call(""), set())
+
+    def test_whitespace_ignored(self):
+        self.assertEqual(self._call("1 - 3"), {1, 2, 3})
+
+
+class TestAnnotate1ePatterns(unittest.TestCase):
+    """annotate_1e_patterns adds 1e structural markers to page text."""
+
+    def _call(self, text):
+        return MOD1E.annotate_1e_patterns(text)
+
+    def test_room_key_detected(self):
+        text = "17. THE GREAT HALL\nSome description here."
+        result = self._call(text)
+        self.assertIn("[ROOM-KEY-17]", result)
+
+    def test_room_key_with_period(self):
+        text = "3. ENTRY CHAMBER"
+        result = self._call(text)
+        self.assertIn("[ROOM-KEY-3]", result)
+
+    def test_stat_block_wrapped(self):
+        text = "Gnolls (6): AC 5; MV 9\"; HD 2; hp 9 each; #AT 1; D 2-8"
+        result = self._call(text)
+        self.assertIn("[STAT-BLOCK-START]", result)
+        self.assertIn("[STAT-BLOCK-END]", result)
+        self.assertIn("[1E-STAT]", result)
+
+    def test_single_stat_token_not_wrapped(self):
+        # Only one stat token → not treated as a stat block
+        text = "The room has AC painted on the wall."
+        result = self._call(text)
+        self.assertNotIn("[STAT-BLOCK-START]", result)
+
+    def test_npc_block_detected(self):
+        text = (
+            "LARETH: AC 2; MV 9\"; HD 6; THAC0 15; hp 40\n"
+            "S: 16  I: 14  W: 12  D: 13  Co: 15  Ch: 17"
+        )
+        result = self._call(text)
+        self.assertIn("[NPC-BLOCK]", result)
+
+    def test_wandering_monster_table_tagged(self):
+        text = "WANDERING MONSTERS\nd6  Monster\n1   Goblin\n2   Orc"
+        result = self._call(text)
+        self.assertIn("[WANDERING-TABLE]", result)
+
+    def test_random_encounter_also_tagged(self):
+        text = "RANDOM ENCOUNTERS (LEVEL 1)"
+        result = self._call(text)
+        self.assertIn("[WANDERING-TABLE]", result)
+
+    def test_plain_text_unchanged(self):
+        text = "The corridor extends north for 30 feet."
+        result = self._call(text)
+        self.assertEqual(result.strip(), text.strip())
+
+    def test_existing_markers_preserved(self):
+        text = "[H1] Chapter One\n[INSET-START]\nSome boxed text.\n[INSET-END]"
+        result = self._call(text)
+        self.assertIn("[H1] Chapter One", result)
+        self.assertIn("[INSET-START]", result)
+        self.assertIn("[INSET-END]", result)
+
+
+class TestPostProcessMonster1e(unittest.TestCase):
+    """post_process_monster_1e applies numeric conversions and removes hint fields."""
+
+    def test_ac_converted_from_hint(self):
+        m = {"name": "Goblin", "_1e_ac": 6, "_thac0": None,
+             "_mv_inches": None, "_hd": None, "_has_special": False}
+        result = MOD1E.post_process_monster_1e(m)
+        self.assertEqual(result["ac"], [13])   # 19 - 6 = 13
+
+    def test_speed_converted_from_hint(self):
+        m = {"name": "Goblin", "_1e_ac": None, "_thac0": None,
+             "_mv_inches": 9, "_hd": None, "_has_special": False}
+        result = MOD1E.post_process_monster_1e(m)
+        self.assertEqual(result["speed"], {"walk": 45})
+
+    def test_cr_derived_from_hd(self):
+        m = {"name": "Troll", "_1e_ac": None, "_thac0": None,
+             "_mv_inches": None, "_hd": 6.0, "_has_special": False}
+        result = MOD1E.post_process_monster_1e(m)
+        self.assertEqual(result["cr"], "4")
+
+    def test_hint_fields_removed(self):
+        m = {"name": "Orc", "_1e_ac": 6, "_thac0": 17,
+             "_mv_inches": 9, "_hd": 1.0, "_has_special": False}
+        result = MOD1E.post_process_monster_1e(m)
+        for hint in ("_1e_ac", "_thac0", "_mv_inches", "_hd", "_has_special"):
+            self.assertNotIn(hint, result)
+
+    def test_no_cr_adjustment_skips_derivation(self):
+        # With no_cr_adjustment=True the entire HD→CR derivation is bypassed,
+        # so any CR Claude already set on the dict should be preserved as-is.
+        m = {"name": "Wraith", "cr": "5",
+             "_1e_ac": None, "_thac0": None,
+             "_mv_inches": None, "_hd": 5.0, "_has_special": True}
+        result = MOD1E.post_process_monster_1e(m, no_cr_adjustment=True)
+        self.assertEqual(result["cr"], "5")   # Claude's value untouched
+
+    def test_missing_hints_no_error(self):
+        # No hint fields at all — should not crash
+        m = {"name": "Skeleton", "cr": "1/4"}
+        result = MOD1E.post_process_monster_1e(m)
+        self.assertEqual(result["name"], "Skeleton")
 
 
 if __name__ == "__main__":

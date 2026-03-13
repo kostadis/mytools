@@ -2,14 +2,15 @@
 
 Convert RPG sourcebook and adventure PDFs into [5etools](https://5e.tools) homebrew JSON, ready to load via **Manage Homebrew → Load from File** or install permanently on a self-hosted server.
 
-Two converters are provided:
+Three converters are provided:
 
 | Script | Best for |
 |---|---|
 | `pdf_to_5etools.py` | Digitally-typeset PDFs with selectable text |
 | `pdf_to_5etools_ocr.py` | Scanned or image-based PDFs; also handles mixed PDFs |
+| `pdf_to_5etools_1e.py` | Classic 1st/2nd Edition AD&D modules (T1-4, B2, S1, etc.) |
 
-A browser-based UI (`app.py`) wraps both scripts so you never have to touch the command line.
+A browser-based UI (`app.py`) wraps all three scripts so you never have to touch the command line.
 
 ---
 
@@ -20,6 +21,7 @@ pdf-translators/
 ├── app.py                  Web UI (Flask)
 ├── pdf_to_5etools.py       Standard converter
 ├── pdf_to_5etools_ocr.py   OCR-enhanced converter
+├── pdf_to_5etools_1e.py    1st/2nd Edition AD&D converter
 ├── test_pdf_to_5etools.py  Unit tests (pytest)
 └── README.md               This file
 ```
@@ -228,6 +230,70 @@ For monster-only output, the creatures appear in **Bestiary** (`bestiary.html`).
 
 ---
 
+---
+
+## 1e Module converter
+
+```bash
+python3 pdf_to_5etools_1e.py <input.pdf> [options]
+```
+
+Specifically tuned for classic TSR modules (T1-4 Temple of Elemental Evil,
+B2 Keep on the Borderlands, S1 Tomb of Horrors, A-series, GDQ series, etc.).
+
+### What it does differently
+
+**Structural recognition**
+- Detects numbered room/area keys (`17.`, `17)`, `17:`) and wraps them as 5etools
+  `{"type":"entries","name":"17. Room Name"}` blocks.
+- Identifies inline stat blocks (`AC 5; MV 9"; HD 2; THAC0 17; #AT 1; D 2-8`)
+  and named NPC blocks (with ability scores).
+- Tags wandering monster / random encounter tables.
+
+**Automatic stat conversion (1e → 5e)**
+
+| 1e value | Formula | Example |
+|---|---|---|
+| Descending AC | `5e AC = 19 − 1e AC` | AC 5 → 15; AC 0 → 19; AC −2 → 21 |
+| THAC0 | `attack bonus = 20 − THAC0` | THAC0 17 → +3; THAC0 13 → +7 |
+| Movement (inches) | `feet = MV × 5` | MV 9" → 45 ft; MV 12" → 60 ft |
+| Hit Dice | table lookup | 2 HD → CR ½; 6 HD → CR 4; 10 HD → CR 8 |
+| Ability scores | estimated from HD + description | if not listed in stat block |
+
+Claude receives detailed conversion instructions in the system prompt and embeds
+a `_1e_original` field with the verbatim 1e stat line for manual review.
+
+### Additional options
+
+| Option | Default | Description |
+|---|---|---|
+| `--module-code CODE` | From filename | TSR code, e.g. `T1-4`, `B2`, `S1` |
+| `--system 1e\|2e` | `1e` | AD&D edition |
+| `--skip-pages RANGE` | — | Skip pages, e.g. `1-3` or `127-128` (repeatable) |
+| `--no-cr-adjustment` | off | Disable CR bump for special abilities |
+| `--dpi N` | `400` | Higher default than OCR script (aged ink) |
+| `--force-ocr` | off | Recommended for scanned modules |
+
+All standard options (`--type`, `--author`, `--model`, `--extract-monsters`, etc.) also apply.
+
+**Examples**
+
+```bash
+# Full T1-4 conversion including monsters (skip cover pages and maps)
+python3 pdf_to_5etools_1e.py "T1-4.pdf" \
+    --module-code T1-4 --author "Gary Gygax & Frank Mentzer" \
+    --skip-pages 1-3,127-128 --extract-monsters --force-ocr
+
+# Monsters-only bestiary from B2
+python3 pdf_to_5etools_1e.py "B2.pdf" \
+    --module-code B2 --monsters-only --force-ocr
+
+# Estimate API cost first
+python3 pdf_to_5etools_1e.py "T1-4.pdf" --module-code T1-4 --dry-run
+```
+
+---
+
 ## Running the tests
 
 ```bash
@@ -235,4 +301,8 @@ cd pdf-translators
 pytest test_pdf_to_5etools.py -v
 ```
 
-The tests cover all pure-logic functions in both scripts (`normalise_path`, heading detection, chunk splitting, Claude response parsing, ID assignment, TOC building, table marker injection, etc.) and mock out the external dependencies (PyMuPDF, Anthropic SDK, Tesseract) so no API key or system packages are needed.
+The tests cover all pure-logic functions across all three scripts — including
+the 1e conversion helpers (`ac_1e_to_5e`, `thac0_to_attack_bonus`,
+`mv_to_5e_speed`, `hd_to_cr`, `annotate_1e_patterns`, `post_process_monster_1e`,
+`_parse_skip_pages`) — and mock out all external dependencies so no API key or
+system packages are needed.

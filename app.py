@@ -2,7 +2,8 @@
 """
 app.py
 ======
-Standalone web interface for pdf_to_5etools.py and pdf_to_5etools_ocr.py.
+Standalone web interface for pdf_to_5etools.py, pdf_to_5etools_ocr.py,
+and pdf_to_5etools_1e.py.
 
 Requirements:
     pip install flask
@@ -106,7 +107,7 @@ HTML = r"""<!doctype html>
   <div class="mb-4">
     <h4 class="fw-bold mb-0">PDF → 5etools Converter</h4>
     <p class="text-muted mb-0" style="font-size:.9rem">
-      Convert RPG sourcebook PDFs into 5etools homebrew JSON
+      Supports 5e sourcebooks, scanned PDFs, and 1st Edition AD&amp;D modules
     </p>
   </div>
 
@@ -140,7 +141,7 @@ HTML = r"""<!doctype html>
     <div class="card mb-3">
       <div class="card-body">
         <div class="card-title fw-semibold mb-3">Extraction Mode</div>
-        <div class="d-flex gap-4 mb-2">
+        <div class="d-flex flex-wrap gap-4 mb-2">
           <div class="form-check">
             <input class="form-check-input" type="radio" name="mode"
                    id="modeStd" value="standard" checked>
@@ -155,10 +156,18 @@ HTML = r"""<!doctype html>
               OCR-enhanced &nbsp;<span class="badge badge-ocr text-white fw-normal">Tesseract</span>
             </label>
           </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="mode"
+                   id="mode1e" value="1e">
+            <label class="form-check-label" for="mode1e">
+              1e Module &nbsp;<span class="badge fw-normal text-white" style="background:#b45309">AD&amp;D 1e</span>
+            </label>
+          </div>
         </div>
         <div class="text-muted" style="font-size:.82rem">
-          Use <strong>OCR-enhanced</strong> for scanned or image-based PDFs where
-          standard extraction produces garbled text.
+          Use <strong>OCR-enhanced</strong> for scanned/image PDFs.
+          Use <strong>1e Module</strong> for classic TSR adventures
+          (T1-4, B2, S1, etc.) — converts descending AC, THAC0, and HD to 5e.
         </div>
 
         <!-- OCR extras (hidden until OCR mode selected) -->
@@ -182,6 +191,57 @@ HTML = r"""<!doctype html>
                 <label class="form-check-label" for="forceOcr">
                   Force OCR every page
                   <span class="text-muted">(skip digital extraction)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 1e extras (hidden until 1e mode selected) -->
+        <div id="oneExtras" class="mt-3 pt-3 border-top d-none">
+          <div class="row g-2">
+            <div class="col-sm-3">
+              <label class="form-label" for="moduleCode">Module Code</label>
+              <input type="text" class="form-control form-control-sm"
+                     id="moduleCode" name="module_code"
+                     placeholder="T1-4 / B2 / S1">
+            </div>
+            <div class="col-sm-2">
+              <label class="form-label" for="systemSelect">Edition</label>
+              <select class="form-select form-select-sm" id="systemSelect" name="system">
+                <option value="1e" selected>AD&amp;D 1e</option>
+                <option value="2e">AD&amp;D 2e</option>
+              </select>
+            </div>
+            <div class="col-sm-3">
+              <label class="form-label" for="dpi1e">Render DPI</label>
+              <input type="number" class="form-control form-control-sm"
+                     id="dpi1e" name="dpi_1e" value="400" min="72" max="600">
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label" for="skipPages">Skip Pages</label>
+              <input type="text" class="form-control form-control-sm"
+                     id="skipPages" name="skip_pages"
+                     placeholder="e.g. 1-3,127-128">
+            </div>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-sm-4 d-flex align-items-end pb-1">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox"
+                       id="forceOcr1e" name="force_ocr_1e" checked>
+                <label class="form-check-label" for="forceOcr1e">
+                  Force OCR every page
+                </label>
+              </div>
+            </div>
+            <div class="col-sm-5 d-flex align-items-end pb-1">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox"
+                       id="noCrAdj" name="no_cr_adjustment">
+                <label class="form-check-label" for="noCrAdj">
+                  No CR adjustment
+                  <span class="text-muted">(keep HD-only CR)</span>
                 </label>
               </div>
             </div>
@@ -396,8 +456,15 @@ function esc(s) {
 document.querySelectorAll('input[name="mode"]').forEach(r =>
   r.addEventListener('change', () => {
     const ocr = document.getElementById('modeOcr').checked;
+    const e1  = document.getElementById('mode1e').checked;
     document.getElementById('ocrExtras').classList.toggle('d-none', !ocr);
-    document.getElementById('batchRow').classList.toggle('d-none', ocr);
+    document.getElementById('oneExtras').classList.toggle('d-none', !e1);
+    document.getElementById('batchRow').classList.toggle('d-none', ocr || e1);
+    // Adjust default pages/chunk for content density
+    const chunkEl = document.getElementById('chunkInput');
+    if (e1)       chunkEl.value = '3';
+    else if (ocr) chunkEl.value = '4';
+    else          chunkEl.value = '6';
   })
 );
 
@@ -566,7 +633,12 @@ def convert():
     out_path = tmpdir / out_name
 
     # Pick script
-    script = "pdf_to_5etools_ocr.py" if mode == "ocr" else "pdf_to_5etools.py"
+    if mode == "1e":
+        script = "pdf_to_5etools_1e.py"
+    elif mode == "ocr":
+        script = "pdf_to_5etools_ocr.py"
+    else:
+        script = "pdf_to_5etools.py"
 
     cmd = [
         sys.executable, str(SCRIPT_DIR / script),
@@ -598,6 +670,24 @@ def convert():
         cmd += ["--dpi", dpi, "--lang", lang]
         if force_ocr:
             cmd.append("--force-ocr")
+
+    if mode == "1e":
+        module_code    = request.form.get("module_code", "").strip()
+        system         = request.form.get("system", "1e")
+        skip_pages     = request.form.get("skip_pages", "").strip()
+        no_cr_adj      = "no_cr_adjustment" in request.form
+        dpi_1e         = request.form.get("dpi_1e", "400")
+        force_ocr_1e   = "force_ocr_1e" in request.form
+
+        if module_code:
+            cmd += ["--module-code", module_code]
+        cmd += ["--system", system, "--dpi", dpi_1e]
+        if force_ocr_1e:
+            cmd.append("--force-ocr")
+        if no_cr_adj:
+            cmd.append("--no-cr-adjustment")
+        if skip_pages:
+            cmd += ["--skip-pages", skip_pages]
 
     # Create job and launch background thread
     job_id = str(uuid.uuid4())
