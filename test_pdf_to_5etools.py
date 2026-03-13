@@ -865,6 +865,23 @@ class TestNeutralizeTriggers(unittest.TestCase):
         self.assertNotIn("enslaved", out.lower())
         self.assertNotIn("wenche", out.lower())
 
+    def test_young_girl_replaced(self):
+        out = MOD1E._neutralize_triggers("Inside, a young girl and her old granny do chores.")
+        self.assertNotIn("young girl", out.lower())
+
+    def test_teenage_daughter_replaced(self):
+        out = MOD1E._neutralize_triggers("The two eldest being teen-aged daughters.")
+        self.assertNotIn("teen-aged daughter", out.lower())
+
+    def test_carousing_replaced(self):
+        out = MOD1E._neutralize_triggers("While in town 'carousing', he is unarmored.")
+        self.assertNotIn("carousing", out.lower())
+
+    def test_ocr_garbage_stripped(self):
+        out = MOD1E._neutralize_triggers("$15112W Co16Ch11\nFarmer: AC 7")
+        self.assertNotIn("$15112W", out)
+        self.assertIn("Farmer: AC 7", out)
+
 
 if __name__ == "__main__":
     unittest.main()

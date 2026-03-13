@@ -853,11 +853,27 @@ _TRIGGER_SUBS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r'\bharlots?\b',                re.IGNORECASE), "commoner"),
     (re.compile(r'\bstrumpets?\b',              re.IGNORECASE), "commoner"),
     (re.compile(r'\bconcubines?\b',             re.IGNORECASE), "companion"),
+    # Age + gender phrases that trip filters when combined with other content
+    (re.compile(r'\byoung\s+girl\b',            re.IGNORECASE), "young person"),
+    (re.compile(r'\bteen[- ]?aged?\s+(?:girl|daughter)s?\b',
+                                                re.IGNORECASE), "young adult"),
+    # "carousing" in context with age references
+    (re.compile(r'\bcarousing\b',               re.IGNORECASE), "drinking"),
 ]
 
 
+# OCR stat-block garbage patterns to strip before sending to Claude.
+# These are common artefacts from scanned 1e modules (fused ability-score lines).
+_OCR_GARBAGE_RE = re.compile(
+    r'^\$[0-9A-Za-z]{3,}',   # e.g. "$15112W Co16Ch11"
+    re.MULTILINE,
+)
+
+
 def _neutralize_triggers(text: str) -> str:
-    """Replace TSR-era phrases that trip the API output content filter."""
+    """Replace TSR-era phrases that trip the API output content filter,
+    and strip common OCR garbage patterns."""
+    text = _OCR_GARBAGE_RE.sub("", text)
     for pattern, replacement in _TRIGGER_SUBS:
         text = pattern.sub(replacement, text)
     return text
