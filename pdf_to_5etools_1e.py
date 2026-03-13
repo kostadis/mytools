@@ -855,7 +855,10 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
         msg = client.messages.create(
             model=model, max_tokens=8192,
             system=SYSTEM_PROMPT_1E,
-            messages=[{"role": "user", "content": chunk_text}],
+            messages=[
+                {"role": "user",      "content": chunk_text},
+                {"role": "assistant", "content": "["},
+            ],
         )
     except anthropic.BadRequestError as e:
         print(f"    [WARN] API rejected {chunk_id} ({e}); will retry page-by-page.", flush=True)
@@ -863,7 +866,7 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
             (debug_dir / f"{chunk_id}-api-error.txt").write_text(str(e), encoding="utf-8")
         return None
 
-    return _parse_claude_response(msg.content[0].text, verbose,
+    return _parse_claude_response("[" + msg.content[0].text, verbose,
                                   debug_dir=debug_dir, chunk_id=chunk_id)
 
 
@@ -881,13 +884,16 @@ def call_claude_for_monsters(client: anthropic.Anthropic, chunk_text: str,
         msg = client.messages.create(
             model=model, max_tokens=8192,
             system=MONSTER_SYSTEM_PROMPT_1E,
-            messages=[{"role": "user", "content": chunk_text}],
+            messages=[
+                {"role": "user",      "content": chunk_text},
+                {"role": "assistant", "content": "["},
+            ],
         )
     except anthropic.BadRequestError as e:
         print(f"    [WARN] API rejected {chunk_id}-monsters ({e}); skipping.", flush=True)
         return None
     raw_monsters = _parse_claude_response(
-        msg.content[0].text, verbose,
+        "[" + msg.content[0].text, verbose,
         debug_dir=debug_dir, chunk_id=f"{chunk_id}-monsters",
     )
 
