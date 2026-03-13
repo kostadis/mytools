@@ -870,6 +870,21 @@ _OCR_GARBAGE_RE = re.compile(
 )
 
 
+def load_trigger_config(path: Path) -> None:
+    """Load extra substitution rules from a JSON config file produced by
+    find_triggers.py and append them to _TRIGGER_SUBS."""
+    import json as _json
+    entries = _json.loads(path.read_text(encoding="utf-8"))
+    flag_map = {"i": re.IGNORECASE, "m": re.MULTILINE, "s": re.DOTALL}
+    for entry in entries:
+        flags = 0
+        for ch in entry.get("flags", ""):
+            flags |= flag_map.get(ch, 0)
+        _TRIGGER_SUBS.append(
+            (re.compile(entry["pattern"], flags), entry.get("replacement", ""))
+        )
+
+
 def _neutralize_triggers(text: str) -> str:
     """Replace TSR-era phrases that trip the API output content filter,
     and strip common OCR garbage patterns."""
@@ -1388,11 +1403,22 @@ def main() -> None:
                         dest="extract_monsters")
     parser.add_argument("--monsters-only", action="store_true",
                         dest="monsters_only")
+    parser.add_argument("--trigger-config", type=Path, default=None,
+                        dest="trigger_config",
+                        help="JSON config of extra trigger substitutions produced "
+                             "by find_triggers.py")
     parser.add_argument("--debug-dir", type=Path, default=None, dest="debug_dir")
     parser.add_argument("--dry-run", action="store_true", dest="dry_run_only")
     parser.add_argument("--verbose", action="store_true")
 
     args = parser.parse_args()
+
+    if args.trigger_config:
+        tc = normalise_path(str(args.trigger_config))
+        if not tc.exists():
+            sys.exit(f"Trigger config not found: {tc}")
+        load_trigger_config(tc)
+        print(f"Loaded trigger config: {tc}")
 
     pdf_path = normalise_path(str(args.pdf))
     if not pdf_path.exists():
