@@ -873,6 +873,11 @@ _TRIGGER_SUBS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r'\bwickedness\b',              re.IGNORECASE), "evil"),
     (re.compile(r'\btyranny\b',                 re.IGNORECASE), "domination"),
     (re.compile(r'\bhubris\b',                  re.IGNORECASE), "pride"),
+    # "demiurge" is a Gnostic term that trips output filters even in fantasy context
+    (re.compile(r'\bdemiurge\b',                re.IGNORECASE), "dark power"),
+    # "demon" in combination with other temple/cult language triggers output filters
+    (re.compile(r'\bdemons?\b',                 re.IGNORECASE), "fiend"),
+    (re.compile(r'\bdemonic\b',                 re.IGNORECASE), "fiendish"),
 ]
 
 
