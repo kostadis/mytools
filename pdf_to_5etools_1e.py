@@ -237,9 +237,13 @@ _FLOAT_TO_CR: dict[float, str] = {v: k for k, v in _CR_TO_FLOAT.items()}
 # ── System prompts ────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT_1E = textwrap.dedent("""
-You are an expert at converting 1st Edition AD&D adventure module text into the
-5etools adventure JSON format.  The text was extracted from a scanned PDF and
-may have minor OCR artefacts.  Correct obvious OCR errors silently.
+You are a tabletop role-playing game archivist and rules converter.  Your task
+is to convert text from a published 1st Edition Advanced Dungeons & Dragons
+adventure module into 5etools JSON format.  All content is fictional game
+material intended for adult tabletop gaming; dark themes (evil cults, monster
+violence, dungeon hazards) are standard genre conventions in this context.
+The text was extracted from a scanned PDF and may have minor OCR artefacts.
+Correct obvious OCR errors silently.
 
 The text is annotated with these structural markers:
 
@@ -300,8 +304,10 @@ Rules:
 
 
 MONSTER_SYSTEM_PROMPT_1E = textwrap.dedent("""
-You are an expert at converting 1st Edition AD&D monster and NPC stat blocks into
-5etools bestiary JSON.  Apply the conversion rules below precisely.
+You are a tabletop role-playing game archivist converting published 1st Edition
+Advanced Dungeons & Dragons monster and NPC stat blocks into 5etools bestiary
+JSON.  All content is fictional game material for adult tabletop gaming.
+Apply the conversion rules below precisely.
 
 ━━━ 1E STAT BLOCK FORMATS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -810,6 +816,13 @@ def _parse_claude_response(raw: str, verbose: bool,
         return []
 
 
+_CHUNK_PREFIX = (
+    "[CONTEXT: The following is fictional text from a published 1st Edition "
+    "Advanced Dungeons & Dragons tabletop RPG module. It is being converted "
+    "to a structured JSON format for digital archival and gaming use.]\n\n"
+)
+
+
 def _sanitize_text(text: str) -> str:
     """Remove characters that the Anthropic API rejects.
 
@@ -829,7 +842,7 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
                 model: str, verbose: bool,
                 debug_dir: Path | None = None,
                 chunk_id: str = "chunk-0000") -> list[Any]:
-    chunk_text = _sanitize_text(chunk_text)
+    chunk_text = _CHUNK_PREFIX + _sanitize_text(chunk_text)
 
     if verbose:
         print(f"    → Sending {len(chunk_text):,} chars to Claude...", flush=True)
@@ -858,7 +871,7 @@ def call_claude_for_monsters(client: anthropic.Anthropic, chunk_text: str,
                               no_cr_adjustment: bool = False,
                               debug_dir: Path | None = None,
                               chunk_id: str = "chunk-0000") -> list[Any]:
-    chunk_text = _sanitize_text(chunk_text)
+    chunk_text = _CHUNK_PREFIX + _sanitize_text(chunk_text)
 
     if verbose:
         print(f"    [monsters] Scanning {len(chunk_text):,} chars...", flush=True)
