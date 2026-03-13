@@ -917,9 +917,62 @@ def _strip_noise_lines(text: str) -> str:
     return "\n".join(clean)
 
 
+def _deinterleave_columns(text: str) -> str:
+    """Fix pages where OCR read two columns simultaneously, producing text
+    where every other paragraph is wrapped in a single-line [INSET-START/END].
+
+    When more than 20 % of lines are INSET boundary markers the page is
+    treated as a column-interleave artefact: all non-INSET lines are
+    collected first, then all INSET-interior lines, and the two streams are
+    rejoined with a separator.  Real multi-line insets (boxed text, sidebars)
+    are left untouched because they contain more than two interior lines.
+    """
+    lines = text.split("\n")
+    total = len(lines)
+    inset_marker_count = sum(
+        1 for l in lines
+        if l.strip() in ("[INSET-START]", "[INSET-END]")
+    )
+    # Not a column-interleave page — leave as-is
+    if total == 0 or inset_marker_count / total < 0.20:
+        return text
+
+    outside: list[str] = []
+    inside:  list[str] = []
+    in_block = False
+    block_lines: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "[INSET-START]":
+            in_block = True
+            block_lines = []
+        elif stripped == "[INSET-END]":
+            in_block = False
+            if len(block_lines) <= 2:
+                # Single/double line → column artefact, route to inside stream
+                inside.extend(block_lines)
+            else:
+                # Multi-line real inset — keep in place
+                outside.append("[INSET-START]")
+                outside.extend(block_lines)
+                outside.append("[INSET-END]")
+            block_lines = []
+        elif in_block:
+            block_lines.append(line)
+        else:
+            outside.append(line)
+
+    result = "\n".join(outside)
+    if inside:
+        result += "\n\n--- (second column) ---\n" + "\n".join(inside)
+    return result
+
+
 def _neutralize_triggers(text: str) -> str:
     """Strip OCR noise and replace TSR-era phrases that trip the API output
     content filter."""
+    text = _deinterleave_columns(text)
     text = _strip_noise_lines(text)
     text = _OCR_GARBAGE_RE.sub("", text)
     for pattern, replacement in _TRIGGER_SUBS:

@@ -877,6 +877,46 @@ class TestNeutralizeTriggers(unittest.TestCase):
         out = MOD1E._neutralize_triggers("While in town 'carousing', he is unarmored.")
         self.assertNotIn("carousing", out.lower())
 
+    def test_deinterleave_dense_insets(self):
+        # Page where every other line is a single-line inset → de-interleave
+        page = "\n".join([
+            "Left col line 1",
+            "[INSET-START]", "Right col line 1", "[INSET-END]",
+            "Left col line 2",
+            "[INSET-START]", "Right col line 2", "[INSET-END]",
+            "Left col line 3",
+            "[INSET-START]", "Right col line 3", "[INSET-END]",
+        ])
+        out = MOD1E._neutralize_triggers(page)
+        left_pos  = out.index("Left col line 1")
+        right_pos = out.index("Right col line 1")
+        self.assertLess(left_pos, right_pos)  # left column comes first
+
+    def test_deinterleave_preserves_real_insets(self):
+        # Multi-line insets should stay in place
+        page = "\n".join([
+            "Normal text before",
+            "[INSET-START]",
+            "Sidebar line one",
+            "Sidebar line two",
+            "Sidebar line three",
+            "[INSET-END]",
+            "Normal text after",
+        ])
+        out = MOD1E._neutralize_triggers(page)
+        self.assertIn("[INSET-START]", out)
+        self.assertIn("[INSET-END]", out)
+        # Sidebar content stays between the markers
+        si = out.index("[INSET-START]")
+        se = out.index("[INSET-END]")
+        self.assertIn("Sidebar line one", out[si:se])
+
+    def test_sparse_insets_not_deinterleaved(self):
+        # Only 2 insets in a long page → not a column page, leave untouched
+        page = "A\n" * 30 + "[INSET-START]\nBox text\n[INSET-END]\n" + "B\n" * 10
+        out = MOD1E._neutralize_triggers(page)
+        self.assertIn("[INSET-START]", out)
+
     def test_noise_lines_stripped(self):
         text = "Introduction\nwey i\nyY\n, Gd\nyd ae ne Ta\nThe village is nearby."
         out = MOD1E._neutralize_triggers(text)
@@ -886,8 +926,10 @@ class TestNeutralizeTriggers(unittest.TestCase):
         self.assertIn("The village is nearby.", out)
 
     def test_marker_lines_preserved(self):
-        # Structural markers must survive even when their content is short
-        text = "[INSET-START]\n[H3] 7. Rm\n[INSET-END]"
+        # A single real inset surrounded by lots of normal text should survive.
+        # The marker density must stay below 20% to avoid triggering de-interleave.
+        body = ("Normal paragraph text here.\n" * 20)
+        text = body + "[INSET-START]\n[H3] 7. Rm\n[INSET-END]\n" + body
         out = MOD1E._neutralize_triggers(text)
         self.assertIn("[INSET-START]", out)
         self.assertIn("[INSET-END]", out)
