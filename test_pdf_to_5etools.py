@@ -938,6 +938,14 @@ class TestNeutralizeTriggers(unittest.TestCase):
         out = MOD1E._neutralize_triggers("Zuggtmoy's Beloved serve the demon queen.")
         self.assertNotIn("beloved", out.lower())
 
+    def test_dark_vocabulary_replaced(self):
+        text = ("murderous oppressors were defeated in great slaughter; "
+                "abominations, pestilence, wickedness, and tyranny ended.")
+        out = MOD1E._neutralize_triggers(text)
+        for word in ("murderous", "oppressor", "slaughter",
+                     "abomination", "pestilence", "wickedness", "tyranny"):
+            self.assertNotIn(word, out.lower())
+
     def test_lust_replaced(self):
         out = MOD1E._neutralize_triggers("The demon lusted for power and lust drove it onward.")
         self.assertNotIn("lust", out.lower())

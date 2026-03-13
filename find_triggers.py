@@ -73,6 +73,14 @@ _KNOWN_TRIGGERS = [
     r'\blusts?\b|\blusted\b|\blusting\b',
     r'\blustful\b',
     r'\bBeloved\b',
+    r'\bmurderous\b',
+    r'\boppressors?\b',
+    r'\bslaughter\b',
+    r'\babominations?\b',
+    r'\bpestilence\b',
+    r'\bwickedness\b',
+    r'\btyranny\b',
+    r'\bhubris\b',
 ]
 
 # Suggested replacements for common patterns (pattern fragment → replacement)

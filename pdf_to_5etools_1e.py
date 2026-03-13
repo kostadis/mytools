@@ -864,6 +864,15 @@ _TRIGGER_SUBS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r'\blustful\b',                 re.IGNORECASE), "greedy"),
     # "Beloved" as a title for demon-queen servants (e.g. "Zuggtmoy's Beloved")
     (re.compile(r'\bBeloved\b',                 re.IGNORECASE), "Servants"),
+    # High-density dark-vocabulary words common in T1-4 background / temple text
+    (re.compile(r'\bmurderous\b',               re.IGNORECASE), "hostile"),
+    (re.compile(r'\boppressors?\b',             re.IGNORECASE), "enemies"),
+    (re.compile(r'\bslaughter\b',               re.IGNORECASE), "defeat"),
+    (re.compile(r'\babominations?\b',           re.IGNORECASE), "evils"),
+    (re.compile(r'\bpestilence\b',              re.IGNORECASE), "misfortune"),
+    (re.compile(r'\bwickedness\b',              re.IGNORECASE), "evil"),
+    (re.compile(r'\btyranny\b',                 re.IGNORECASE), "domination"),
+    (re.compile(r'\bhubris\b',                  re.IGNORECASE), "pride"),
 ]
 
 
