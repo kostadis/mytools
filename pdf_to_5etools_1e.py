@@ -283,10 +283,12 @@ Object types to use:
 Rules:
 - Every [ROOM-KEY-N] opens a new {"type":"entries","name":"N. Room Name"} block.
   If there is no explicit room name, use the first few words of the description.
-- Structural labels that introduce room entries — "Room Key", "Key to the [area]",
-  "Encounter Key", "Level One", "Level Two", etc. — must NOT become wrapper entries.
-  Discard the label and emit the numbered room entries that follow as direct siblings
-  at the same level.  Do not nest rooms inside a container named after the label.
+- "Room Key", "Encounter Key", "Area Key", "Key to the [area]" headings that
+  introduce numbered room entries must NOT become wrapper entries — discard the
+  label and emit the numbered room entries that follow as direct siblings at the
+  current level.  Do not nest rooms inside a container named after the label.
+- "Dungeon Level One / Two / Three" and similar dungeon-level headings SHOULD
+  become {"type":"section"} entries so each level is a separate navigable chapter.
 - [INSET-START/END] blocks that have no heading and read as atmospheric prose are
   read-aloud text: use {"type":"inset","name":""}.
 - Named sidebars, DM notes, or special features use {"type":"inset","name":"..."}.
@@ -1199,9 +1201,12 @@ def _has_rooms_in_subtree(entry: Any) -> bool:
 # Room-index structural labels that should be dissolved rather than kept as
 # navigation entries.  These are module-structure artefacts (the heading that
 # introduces the room list) not content sections.
+# NOTE: "Level One / Level Three / ..." are intentionally excluded — they may
+# represent real dungeon levels that should remain as navigation entries.
+# Module-specific fix scripts (e.g. fix_t14_1e.py) handle any Level-labelled
+# wrappers that a particular conversion produces incorrectly.
 _ROOM_INDEX_LABEL_RE = re.compile(
-    r"^(?:room\s+key|encounter\s+key|area\s+key|key\s+to\s+the\b"
-    r"|level\s+(?:one|two|three|four|five|six|seven|eight|\d+)\b)",
+    r"^(?:room\s+key|encounter\s+key|area\s+key|key\s+to\s+the\b)",
     re.I,
 )
 
