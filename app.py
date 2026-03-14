@@ -104,11 +104,14 @@ HTML = r"""<!doctype html>
 <body>
 <div class="container py-4" style="max-width:800px">
 
-  <div class="mb-4">
-    <h4 class="fw-bold mb-0">PDF → 5etools Converter</h4>
-    <p class="text-muted mb-0" style="font-size:.9rem">
-      Supports 5e sourcebooks, scanned PDFs, and 1st Edition AD&amp;D modules
-    </p>
+  <div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+      <h4 class="fw-bold mb-0">PDF → 5etools Converter</h4>
+      <p class="text-muted mb-0" style="font-size:.9rem">
+        Supports 5e sourcebooks, scanned PDFs, and 1st Edition AD&amp;D modules
+      </p>
+    </div>
+    <a href="/editor" class="btn btn-sm btn-outline-secondary">Manual Editor</a>
   </div>
 
   <form id="form" novalidate>
@@ -620,6 +623,502 @@ function setStatus(type, label) {
 
 
 # ---------------------------------------------------------------------------
+# Manual editor HTML
+# ---------------------------------------------------------------------------
+
+EDITOR_HTML = r"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>5etools Manual JSON Editor</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    html, body { height: 100%; overflow: hidden; background: #f4f6f9; }
+    /* ── OCR panel ─────────────────────────────────────────────── */
+    #ocr-panel {
+      background: #1a1b26; border-radius: 6px; padding: 8px;
+      font-family: 'Cascadia Code','Fira Mono',monospace; font-size: .77rem;
+      overflow-y: auto; flex: 1 1 0; min-height: 0;
+    }
+    .ocr-line {
+      padding: 2px 6px; border-radius: 3px; cursor: pointer;
+      white-space: pre-wrap; word-break: break-word;
+      line-height: 1.55; color: #c0caf5; user-select: none;
+    }
+    .ocr-line:hover            { background: rgba(255,255,255,.06); }
+    .ocr-line.sel              { background: #1e3a5f !important; }
+    .ocr-line.used             { opacity: .32; text-decoration: line-through; }
+    .ocr-line.type-h1          { color: #7dcfff; font-weight: 700; }
+    .ocr-line.type-h2          { color: #7aa2f7; font-weight: 600; }
+    .ocr-line.type-h3          { color: #bb9af7; }
+    .ocr-line.type-inset       { color: #e0af68; font-style: italic; }
+    .ocr-line.type-stat        { color: #9ece6a; }
+    .ocr-line.type-room        { color: #f7768e; font-weight: 600; }
+    .ocr-line.type-sep         { color: #414868; border-top: 1px solid #414868; margin: 3px 0; }
+    .ocr-line.type-ctx         { color: #414868; font-style: italic; }
+    /* ── Entry cards ───────────────────────────────────────────── */
+    #entry-panel { overflow-y: auto; flex: 1 1 0; min-height: 0; }
+    .ecard {
+      background: #fff; border: 1px solid #e0e4ea; border-radius: 6px;
+      padding: 5px 8px; margin-bottom: 3px; font-size: .78rem;
+    }
+    .ecard .ename {
+      font-weight: 600; outline: none; border-bottom: 1px dashed transparent;
+      min-width: 40px; display: inline-block;
+    }
+    .ecard .ename:focus  { border-bottom-color: #6b7280; }
+    .ecard .etext {
+      color: #374151; outline: none; border-bottom: 1px dashed transparent;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .ecard .etext:focus  { border-bottom-color: #6b7280; }
+    .ecard .eprev       { color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+    .tbadge { font-size: .6rem; padding: 1px 5px; border-radius: 3px; font-weight: 700; text-transform: uppercase; }
+    .tb-section  { background:#dbeafe; color:#1e40af; }
+    .tb-entries  { background:#ede9fe; color:#5b21b6; }
+    .tb-room     { background:#fef3c7; color:#92400e; }
+    .tb-inset    { background:#d1fae5; color:#065f46; }
+    .tb-list     { background:#fce7f3; color:#9d174d; }
+    .tb-table    { background:#fee2e2; color:#991b1b; }
+    .tb-creature { background:#f3f4f6; color:#374151; }
+    .tb-string   { background:#f0fdf4; color:#166534; }
+    /* ── JSON preview ──────────────────────────────────────────── */
+    #json-pre {
+      background: #1a1b26; color: #c0caf5; font-family: monospace;
+      font-size: .7rem; padding: 8px; border-radius: 6px;
+      height: 160px; overflow-y: auto; white-space: pre;
+    }
+    /* ── Action bar ────────────────────────────────────────────── */
+    #action-bar { background: #fff; border: 1px solid #e0e4ea; border-radius: 6px; padding: 8px 10px; }
+    .abtn { font-size: .72rem; padding: 2px 7px; margin: 2px 1px; }
+    /* ── Misc ──────────────────────────────────────────────────── */
+    .bc-item { font-size: .78rem; }
+  </style>
+</head>
+<body>
+<div class="d-flex flex-column" style="height:100vh; padding:10px; gap:8px">
+
+  <!-- ── Top bar ──────────────────────────────────────────────────────── -->
+  <div class="d-flex flex-wrap gap-2 align-items-end">
+    <a href="/" class="btn btn-sm btn-outline-secondary">← Converter</a>
+    <div>
+      <div style="font-size:.7rem;color:#6b7280">Debug dir</div>
+      <div class="input-group input-group-sm">
+        <input id="debugDir" type="text" class="form-control" style="width:240px" placeholder="/home/user/debug-1">
+        <button class="btn btn-outline-secondary" onclick="listFiles()">Browse</button>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:.7rem;color:#6b7280">File</div>
+      <select id="fileSelect" class="form-select form-select-sm" style="width:230px" onchange="loadFile()">
+        <option value="">— select —</option>
+      </select>
+    </div>
+    <div>
+      <div style="font-size:.7rem;color:#6b7280">ID</div>
+      <input id="advId" type="text" class="form-control form-control-sm" style="width:80px" placeholder="T1-4">
+    </div>
+    <div>
+      <div style="font-size:.7rem;color:#6b7280">Title</div>
+      <input id="advTitle" type="text" class="form-control form-control-sm" style="width:200px" placeholder="Adventure title">
+    </div>
+    <div>
+      <div style="font-size:.7rem;color:#6b7280">Author</div>
+      <input id="advAuthor" type="text" class="form-control form-control-sm" style="width:130px" placeholder="Author">
+    </div>
+    <div class="ms-auto d-flex gap-1 align-items-end">
+      <button class="btn btn-sm btn-outline-danger" onclick="clearAll()">Clear</button>
+      <button class="btn btn-sm btn-success" onclick="downloadJson()">⬇ Download JSON</button>
+    </div>
+  </div>
+
+  <!-- ── Main two-column area ─────────────────────────────────────────── -->
+  <div class="d-flex gap-2 flex-grow-1 min-height-0" style="min-height:0">
+
+    <!-- Left: OCR text -->
+    <div class="d-flex flex-column" style="flex:0 0 50%; min-width:0">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <span style="font-size:.75rem;font-weight:600">OCR Text</span>
+        <span id="sel-count" style="font-size:.72rem;color:#6b7280">No selection</span>
+      </div>
+      <div id="ocr-panel" onclick="handleClick(event)">
+        <div style="color:#414868;font-style:italic">Load a debug input file to begin.</div>
+      </div>
+    </div>
+
+    <!-- Right: builder -->
+    <div class="d-flex flex-column" style="flex:0 0 50%; min-width:0; gap:6px">
+
+      <!-- Breadcrumb -->
+      <div class="d-flex align-items-center gap-2">
+        <button id="back-btn" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="goUp()" disabled>← Up</button>
+        <ol class="breadcrumb mb-0" id="breadcrumb">
+          <li class="breadcrumb-item active bc-item">root</li>
+        </ol>
+      </div>
+
+      <!-- Entry list -->
+      <div id="entry-panel">
+        <div style="font-size:.8rem;color:#9ca3af">No entries yet.</div>
+      </div>
+
+      <!-- Action bar -->
+      <div id="action-bar">
+        <div style="font-size:.68rem;font-weight:700;color:#6b7280;margin-bottom:4px">ADD SELECTED LINES AS</div>
+        <button class="btn btn-sm abtn" style="background:#dbeafe;color:#1e40af;border-color:#93c5fd" onclick="addAs('section')">H1 Section</button>
+        <button class="btn btn-sm abtn" style="background:#ede9fe;color:#5b21b6;border-color:#c4b5fd" onclick="addAs('entries')">H2 Sub-section</button>
+        <button class="btn btn-sm abtn" style="background:#fef3c7;color:#92400e;border-color:#fcd34d" onclick="addAs('room')">Room Key</button>
+        <button class="btn btn-sm abtn" style="background:#d1fae5;color:#065f46;border-color:#6ee7b7" onclick="addAs('inset')">Inset</button>
+        <button class="btn btn-sm abtn" style="background:#fce7f3;color:#9d174d;border-color:#f9a8d4" onclick="addAs('list')">List</button>
+        <button class="btn btn-sm abtn" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5" onclick="addAs('table')">Table</button>
+        <button class="btn btn-sm abtn" style="background:#f3f4f6;color:#374151;border-color:#d1d5db" onclick="addAs('creature')">Stat Block</button>
+        <button class="btn btn-sm abtn" style="background:#f0fdf4;color:#166534;border-color:#86efac" onclick="addAs('string')">Paragraph</button>
+        <button class="btn btn-sm abtn btn-outline-secondary" onclick="skipLines()" title="Mark selected lines as used/ignored">Skip</button>
+      </div>
+
+      <!-- JSON preview -->
+      <div style="font-size:.68rem;font-weight:700;color:#6b7280">JSON PREVIEW</div>
+      <div id="json-pre">{}</div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+let ocrLines = [];        // {raw, clean, ltype, idx, used}
+let selected = new Set(); // selected line indices
+let anchor   = null;      // shift-click anchor
+
+let root = [];            // root entries array
+let path = [];            // array of _eid values tracing cursor into tree
+let _eid = 0;
+
+// ── Tree helpers ─────────────────────────────────────────────────────────────
+function newEid() { return ++_eid; }
+
+function getArr(eid_path) {
+  let arr = root;
+  for (const id of eid_path) {
+    const e = arr.find(x => x._eid === id);
+    if (!e) return arr;
+    arr = e.entries ?? e.items ?? arr;
+  }
+  return arr;
+}
+
+function target()  { return getArr(path); }
+function canDive(e){ return Array.isArray(e.entries) || Array.isArray(e.items); }
+
+// ── OCR parsing ───────────────────────────────────────────────────────────────
+const STRIP_RE = /^\[H[123]\]\s*|^\[(?:INSET|STAT-BLOCK)-(?:START|END)\]\s*|^\[1E-STAT\]\s*|^\[OCR\]\s*|^\[2-COLUMN\]\s*|^\[ROOM-KEY-\d+\]\s*|^\[WANDERING-TABLE\]\s*|^---\s*(?:Page \d+|\(second column\))\s*---\s*|^\[CONTEXT:[^\]]*\]\s*/i;
+
+function clean(raw) { return raw.replace(STRIP_RE, '').trim(); }
+
+function ltype(raw) {
+  if (/^\[CONTEXT:/i.test(raw))                   return 'ctx';
+  if (/^---/.test(raw))                            return 'sep';
+  if (/^\[H1\]/i.test(raw))                        return 'h1';
+  if (/^\[H2\]/i.test(raw))                        return 'h2';
+  if (/^\[H3\]/i.test(raw))                        return 'h3';
+  if (/^\[INSET-(?:START|END)\]/i.test(raw))       return 'inset';
+  if (/^\[(?:STAT-BLOCK-(?:START|END)|1E-STAT)\]/i.test(raw)) return 'stat';
+  if (/^\[WANDERING-TABLE\]/i.test(raw))           return 'stat';
+  if (/^\[ROOM-KEY-\d+\]/i.test(raw))             return 'room';
+  return 'body';
+}
+
+// ── File loading ──────────────────────────────────────────────────────────────
+async function listFiles() {
+  const dir = document.getElementById('debugDir').value.trim();
+  if (!dir) return;
+  const r = await fetch('/api/list-debug-files?dir=' + encodeURIComponent(dir));
+  const d = await r.json();
+  if (d.error) { alert(d.error); return; }
+  const sel = document.getElementById('fileSelect');
+  sel.innerHTML = '<option value="">— select —</option>';
+  (d.files || []).forEach(f => {
+    const o = document.createElement('option');
+    o.value = d.dir + '/' + f;
+    o.textContent = f;
+    sel.appendChild(o);
+  });
+}
+
+async function loadFile() {
+  const fp = document.getElementById('fileSelect').value;
+  if (!fp) return;
+  const r = await fetch('/api/read-debug-file?path=' + encodeURIComponent(fp));
+  const d = await r.json();
+  if (d.error) { alert(d.error); return; }
+  ocrLines = d.content.split('\n').map((raw, idx) => ({raw, clean: clean(raw), ltype: ltype(raw), idx, used: false}));
+  selected.clear(); anchor = null;
+  renderOcr(); updateSelCount();
+}
+
+// ── OCR render ────────────────────────────────────────────────────────────────
+function renderOcr() {
+  const panel = document.getElementById('ocr-panel');
+  panel.innerHTML = '';
+  ocrLines.forEach(line => {
+    const d = document.createElement('div');
+    d.className = 'ocr-line type-' + line.ltype
+                + (selected.has(line.idx) ? ' sel' : '')
+                + (line.used ? ' used' : '');
+    d.dataset.idx = line.idx;
+    d.textContent = line.raw || '\u00a0';
+    panel.appendChild(d);
+  });
+}
+
+function handleClick(e) {
+  const div = e.target.closest('.ocr-line');
+  if (!div) return;
+  const idx = +div.dataset.idx;
+  if (e.shiftKey && anchor !== null) {
+    const lo = Math.min(anchor, idx), hi = Math.max(anchor, idx);
+    if (!e.ctrlKey && !e.metaKey) selected.clear();
+    for (let i = lo; i <= hi; i++) selected.add(i);
+  } else if (e.ctrlKey || e.metaKey) {
+    selected.has(idx) ? selected.delete(idx) : selected.add(idx);
+    anchor = idx;
+  } else {
+    selected.clear(); selected.add(idx); anchor = idx;
+  }
+  renderOcr(); updateSelCount();
+}
+
+function updateSelCount() {
+  const n = selected.size;
+  document.getElementById('sel-count').textContent = n ? `${n} line${n>1?'s':''} selected` : 'No selection';
+}
+
+// ── Entry creation ────────────────────────────────────────────────────────────
+function selLines()  { return [...selected].sort((a,b)=>a-b).map(i => ocrLines[i]).filter(Boolean); }
+function selText(sep){ return selLines().map(l=>l.clean).filter(Boolean).join(sep ?? '\n'); }
+
+function addAs(type) {
+  const lines = selLines().filter(l => l.clean);
+  if (!lines.length) { alert('Select OCR lines first.'); return; }
+
+  const arr = target();
+  let entry;
+
+  if (type === 'string') {
+    entry = {_eid: newEid(), type: 'string', text: lines.map(l=>l.clean).join(' ')};
+
+  } else if (type === 'section' || type === 'entries') {
+    entry = {_eid: newEid(), type, name: lines[0].clean, entries: []};
+
+  } else if (type === 'room') {
+    const first = lines[0].clean;
+    const m = first.match(/^(\d+)[.):\s]+(.+)/);
+    const name = m ? `${m[1]}. ${m[2].trim()}` : first;
+    entry = {_eid: newEid(), type: 'entries', name, entries: []};
+
+  } else if (type === 'inset') {
+    const name = lines[0].clean;
+    const body = lines.slice(1).map(l=>l.clean).filter(Boolean);
+    entry = {_eid: newEid(), type: 'inset', name, entries: body.length ? body : []};
+
+  } else if (type === 'list') {
+    entry = {_eid: newEid(), type: 'list', items: lines.map(l=>l.clean).filter(Boolean)};
+
+  } else if (type === 'table') {
+    const cols = lines[0].clean.split(/\t|\s{2,}/);
+    const rows = lines.slice(1).map(l => l.clean.split(/\t|\s{2,}/));
+    entry = {_eid: newEid(), type: 'table', caption: '', colLabels: cols, rows};
+
+  } else if (type === 'creature') {
+    const nameLine = lines.find(l => l.ltype !== 'stat') ?? lines[0];
+    entry = {_eid: newEid(), type: 'creature', name: nameLine.clean,
+             _1e_original: lines.map(l=>l.clean).join(' ')};
+  }
+
+  if (!entry) return;
+  arr.push(entry);
+  lines.forEach(l => { l.used = true; });
+  selected.clear();
+  renderOcr(); renderEntries(); updateJsonPreview(); updateSelCount();
+}
+
+function skipLines() {
+  selLines().forEach(l => { l.used = true; });
+  selected.clear();
+  renderOcr(); updateSelCount();
+}
+
+// ── Tree navigation ───────────────────────────────────────────────────────────
+function enterEntry(eid) {
+  const e = target().find(x => x._eid === eid);
+  if (e && canDive(e)) { path.push(eid); renderEntries(); updateBreadcrumb(); }
+}
+
+function goUp() {
+  if (path.length) { path.pop(); renderEntries(); updateBreadcrumb(); }
+}
+
+function deleteEntry(eid) {
+  const arr = target();
+  const i = arr.findIndex(x => x._eid === eid);
+  if (i !== -1) arr.splice(i, 1);
+  renderEntries(); updateJsonPreview();
+}
+
+function moveEntry(eid, dir) {
+  const arr = target();
+  const i = arr.findIndex(x => x._eid === eid);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  renderEntries(); updateJsonPreview();
+}
+
+// ── Entry rendering ───────────────────────────────────────────────────────────
+const BADGE = {section:'tb-section', entries:'tb-entries', inset:'tb-inset',
+               list:'tb-list', table:'tb-table', creature:'tb-creature', string:'tb-string'};
+const LABEL = {section:'H1 Section', entries:'Section', inset:'Inset',
+               list:'List', table:'Table', creature:'Stat Block', string:'Paragraph'};
+
+function isRoom(e) { return e.type === 'entries' && /^\d+\./.test(e.name ?? ''); }
+
+function preview(e) {
+  if (e.type === 'string')   return e.text ?? '';
+  if (e.type === 'list')     return (e.items ?? []).slice(0,3).join(' • ');
+  if (e.type === 'table')    return `[Table ${(e.colLabels??[]).join(' | ')}]`;
+  if (e.type === 'creature') return (e._1e_original ?? '').slice(0, 80);
+  const n = (e.entries ?? e.items ?? []).length;
+  return `${n} item${n===1?'':'s'} inside`;
+}
+
+function renderEntries() {
+  const panel = document.getElementById('entry-panel');
+  const arr   = target();
+  if (!arr.length) {
+    panel.innerHTML = '<div style="font-size:.8rem;color:#9ca3af">No entries here. Select OCR lines and click an action button.</div>';
+    document.getElementById('back-btn').disabled = path.length === 0;
+    return;
+  }
+  panel.innerHTML = '';
+  arr.forEach(e => {
+    const room  = isRoom(e);
+    const badge = room ? 'tb-room' : (BADGE[e.type] ?? 'tb-string');
+    const label = room ? 'Room Key' : (LABEL[e.type] ?? e.type);
+    const dive  = canDive(e);
+    const card  = document.createElement('div');
+    card.className = 'ecard';
+    card.innerHTML = `
+      <div class="d-flex align-items-start gap-2">
+        <span class="tbadge ${badge} mt-1 flex-shrink-0">${esc(label)}</span>
+        <div class="flex-grow-1" style="min-width:0">
+          ${e.name !== undefined ? `<div class="ename" contenteditable="true"
+              onblur="saveName(${e._eid}, this.textContent)">${esc(e.name)}</div>` : ''}
+          ${e.type === 'string' ? `<div class="etext" contenteditable="true"
+              onblur="saveText(${e._eid}, this.textContent)">${esc(e.text)}</div>` : ''}
+          ${e.type !== 'string' && e.name === undefined ? `<div class="eprev">${esc(preview(e))}</div>` : ''}
+          ${e.name !== undefined && e.type !== 'string' ? `<div class="eprev" style="font-size:.7rem">${esc(preview(e))}</div>` : ''}
+        </div>
+        <div class="d-flex gap-1 flex-shrink-0 align-items-center">
+          ${dive ? `<button class="btn btn-outline-primary py-0 px-1" style="font-size:.65rem"
+                             onclick="enterEntry(${e._eid})">→</button>` : ''}
+          <button class="btn btn-outline-secondary py-0 px-1" style="font-size:.65rem" onclick="moveEntry(${e._eid},-1)">↑</button>
+          <button class="btn btn-outline-secondary py-0 px-1" style="font-size:.65rem" onclick="moveEntry(${e._eid},1)">↓</button>
+          <button class="btn btn-outline-danger py-0 px-1"   style="font-size:.65rem" onclick="deleteEntry(${e._eid})">✕</button>
+        </div>
+      </div>`;
+    panel.appendChild(card);
+  });
+  document.getElementById('back-btn').disabled = path.length === 0;
+}
+
+function saveName(eid, text) {
+  const e = target().find(x => x._eid === eid);
+  if (e) { e.name = text.trim(); updateJsonPreview(); }
+}
+function saveText(eid, text) {
+  const e = target().find(x => x._eid === eid);
+  if (e) { e.text = text.trim(); updateJsonPreview(); }
+}
+
+function updateBreadcrumb() {
+  const bc = document.getElementById('breadcrumb');
+  bc.innerHTML = '';
+  const crumbs = ['root'];
+  let arr = root;
+  for (const id of path) {
+    const e = arr.find(x => x._eid === id);
+    crumbs.push(e?.name ?? `[${id}]`);
+    arr = e?.entries ?? e?.items ?? [];
+  }
+  crumbs.forEach((c, i) => {
+    const li = document.createElement('li');
+    li.className = 'breadcrumb-item bc-item' + (i === crumbs.length-1 ? ' active' : '');
+    li.textContent = c;
+    bc.appendChild(li);
+  });
+}
+
+// ── JSON build ────────────────────────────────────────────────────────────────
+function buildEntries(arr) {
+  return arr.map(e => {
+    if (e.type === 'string') return e.text;
+    const out = {};
+    for (const [k,v] of Object.entries(e)) {
+      if (k === '_eid') continue;
+      if (k === 'entries') out.entries = buildEntries(v);
+      else out[k] = v;
+    }
+    return out;
+  });
+}
+
+function buildHomebrew() {
+  const id     = document.getElementById('advId').value.trim()     || 'HOMEBREW';
+  const title  = document.getElementById('advTitle').value.trim()  || 'My Adventure';
+  const author = document.getElementById('advAuthor').value.trim() || 'Unknown';
+  const entries = buildEntries(root);
+  return {
+    _meta: {sources: [{json: id, abbreviation: id.slice(0,6).toUpperCase(),
+                        full: title, authors: [author], version: '1.0'}]},
+    adventure:     [{name: title, id, source: id,
+                     entries: [{type:'section', name: title, entries}]}],
+    adventureData: [{id, entries: [{type:'section', name: title, entries}]}],
+  };
+}
+
+function updateJsonPreview() {
+  const s = JSON.stringify(buildHomebrew(), null, 2);
+  document.getElementById('json-pre').textContent = s.length > 4000 ? s.slice(0,4000)+'\n… (truncated)' : s;
+}
+
+function downloadJson() {
+  const json = JSON.stringify(buildHomebrew(), null, 2);
+  const id   = document.getElementById('advId').value.trim() || 'homebrew';
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([json], {type:'application/json'})),
+    download: `adventure-${id.toLowerCase()}-manual.json`,
+  });
+  a.click();
+}
+
+function clearAll() {
+  if (!confirm('Clear all entries?')) return;
+  root = []; path = [];
+  renderEntries(); updateJsonPreview(); updateBreadcrumb();
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -814,6 +1313,38 @@ def download(job_id: str):
         as_attachment=True,
         download_name=job.output_path.name,
     )
+
+
+# ---------------------------------------------------------------------------
+# Manual editor routes
+# ---------------------------------------------------------------------------
+
+@app.route("/editor")
+def editor():
+    return EDITOR_HTML
+
+
+@app.route("/api/list-debug-files")
+def list_debug_files():
+    dirpath = request.args.get("dir", "").strip()
+    if not dirpath:
+        return jsonify({"error": "No path provided"}), 400
+    p = Path(dirpath).expanduser().resolve()
+    if not p.is_dir():
+        return jsonify({"error": f"Not a directory: {dirpath}"}), 400
+    files = sorted(f.name for f in p.glob("*-input.txt"))
+    return jsonify({"files": files, "dir": str(p)})
+
+
+@app.route("/api/read-debug-file")
+def read_debug_file():
+    filepath = request.args.get("path", "").strip()
+    if not filepath:
+        return jsonify({"error": "No path provided"}), 400
+    p = Path(filepath).expanduser().resolve()
+    if not p.exists():
+        return jsonify({"error": f"File not found: {filepath}"}), 404
+    return jsonify({"content": p.read_text(encoding="utf-8", errors="replace")})
 
 
 # ---------------------------------------------------------------------------
