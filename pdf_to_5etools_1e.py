@@ -98,7 +98,6 @@ DEFAULT_CHUNK     = 3      # smaller chunks: 1e pages are information-dense
 DEFAULT_DPI       = 400    # higher DPI for aged/scanned modules
 MIN_DIGITAL_CHARS = 50
 MAX_CHUNK_CHARS   = 14_000
-COLUMN_GAP_RATIO  = 0.15   # T1-4 has narrow columns — lower threshold
 TESS_CONFIG       = r"--oem 3 --psm 1"
 
 
@@ -550,21 +549,43 @@ def ocr_page_image(img: Image.Image, lang: str = "eng") -> dict:
         return {"text": "", "columns": 1}
 
     # ── Column detection (supports 1, 2, or 3 columns) ─────────────────────
-    xs = sorted(w["left"] for w in words)
-    gap_threshold = page_width * COLUMN_GAP_RATIO
-    # Collect all significant gaps not at the page edges
-    raw_gaps: list[tuple[int, int]] = []  # (gap_size, mid_x)
-    for k in range(len(xs) - 1):
-        gap = xs[k + 1] - xs[k]
-        mid_x = (xs[k] + xs[k + 1]) // 2
-        if gap > gap_threshold and page_width * 0.08 < mid_x < page_width * 0.92:
-            raw_gaps.append((gap, mid_x))
-    raw_gaps.sort(reverse=True)
+    # Use a word-center-x density histogram to find inter-column whitespace.
+    # Gaps in the sorted-left-edge list are unreliable because word positions
+    # vary widely within a column, so the gap-in-sorted-xs approach fails for
+    # narrow-gutter multi-column layouts like T1-4.
+    NBINS = 100
+    hist: list[int] = [0] * NBINS
+    for w in words:
+        cx = w["left"] + w["width"] // 2
+        b = min(int(cx * NBINS / page_width), NBINS - 1)
+        hist[b] += 1
+
+    peak = max(hist) or 1
+    valley_threshold = peak * 0.10  # bins with <10 % of peak are whitespace
+
+    # Find contiguous valley regions in the interior of the page
+    lo_bin = int(NBINS * 0.08)
+    hi_bin = int(NBINS * 0.92)
+    valleys: list[tuple[int, int]] = []  # (width_bins, center_x)
+    vstart: int | None = None
+    for i in range(lo_bin, hi_bin + 1):
+        in_valley = i <= hi_bin and hist[i] <= valley_threshold
+        if in_valley and vstart is None:
+            vstart = i
+        elif not in_valley and vstart is not None:
+            center_x = int((vstart + i - 1) / 2 * page_width / NBINS)
+            valleys.append((i - vstart, center_x))
+            vstart = None
+    if vstart is not None:
+        center_x = int((vstart + hi_bin) / 2 * page_width / NBINS)
+        valleys.append((hi_bin - vstart + 1, center_x))
+
+    valleys.sort(reverse=True)  # widest valley first → most confident split
 
     # Keep up to 2 splits that are sufficiently separated from each other
     min_sep = page_width * 0.15
     col_splits: list[int] = []
-    for _, mid_x in raw_gaps:
+    for _, mid_x in valleys:
         if all(abs(mid_x - s) > min_sep for s in col_splits):
             col_splits.append(mid_x)
         if len(col_splits) == 2:
