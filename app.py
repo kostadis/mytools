@@ -255,6 +255,16 @@ HTML = r"""<!doctype html>
                 </label>
               </div>
             </div>
+            <div class="col-sm-4 d-flex align-items-end pb-1">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox"
+                       id="noRetry" name="no_retry">
+                <label class="form-check-label" for="noRetry">
+                  No retry
+                  <span class="text-muted">(skip failed chunks, no page-by-page fallback)</span>
+                </label>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1237,6 +1247,8 @@ def convert():
             cmd += ["--pages", page_range]
         if skip_pages:
             cmd += ["--skip-pages", skip_pages]
+        if "no_retry" in request.form:
+            cmd.append("--no-retry")
 
     # Create job and launch background thread
     job_id = str(uuid.uuid4())

@@ -1197,6 +1197,7 @@ def convert(
     extract_monsters: bool,
     monsters_only: bool,
     no_cr_adjustment: bool,
+    no_retry: bool,
     debug_dir: Path | None,
     verbose: bool,
 ) -> None:
@@ -1327,20 +1328,24 @@ def convert(
             entries = call_claude(client, chunk_text, model, verbose,
                                   debug_dir=debug_dir, chunk_id=f"chunk-{i:04d}")
             if entries is None:
-                # Content filter hit — retry each page individually
-                print(f"    [RETRY] Retrying chunk {i+1} page-by-page ...", flush=True)
-                entries = []
-                for page_num, page_text in chunk:
-                    if not page_text.strip():
-                        continue
-                    single = f"\n--- Page {page_num} ---\n{page_text}\n"
-                    result = call_claude(client, single, model, verbose,
-                                        debug_dir=debug_dir,
-                                        chunk_id=f"chunk-{i:04d}-p{page_num}")
-                    if result is None:
-                        print(f"    [SKIP] Page {page_num} rejected by content filter.", flush=True)
-                    else:
-                        entries.extend(result)
+                if no_retry or chunk_size == 1:
+                    print(f"    [SKIP] Chunk {i+1} rejected — skipping (no retry).", flush=True)
+                    entries = []
+                else:
+                    # Content filter hit — retry each page individually
+                    print(f"    [RETRY] Retrying chunk {i+1} page-by-page ...", flush=True)
+                    entries = []
+                    for page_num, page_text in chunk:
+                        if not page_text.strip():
+                            continue
+                        single = f"\n--- Page {page_num} ---\n{page_text}\n"
+                        result = call_claude(client, single, model, verbose,
+                                            debug_dir=debug_dir,
+                                            chunk_id=f"chunk-{i:04d}-p{page_num}")
+                        if result is None:
+                            print(f"    [SKIP] Page {page_num} rejected by content filter.", flush=True)
+                        else:
+                            entries.extend(result)
             print(f"    → {len(entries)} entries parsed"
                   + ("  ← EMPTY — check debug files" if debug_dir and not entries else ""),
                   flush=True)
@@ -1526,6 +1531,9 @@ def main() -> None:
     parser.add_argument("--no-cr-adjustment", action="store_true",
                         dest="no_cr_adjustment",
                         help="Disable CR bump for monsters with special abilities")
+    parser.add_argument("--no-retry", action="store_true", dest="no_retry",
+                        help="Skip failed chunks instead of retrying page-by-page. "
+                             "Automatically active when --pages-per-chunk 1.")
     parser.add_argument("--extract-monsters", action="store_true",
                         dest="extract_monsters")
     parser.add_argument("--monsters-only", action="store_true",
@@ -1599,6 +1607,7 @@ def main() -> None:
         extract_monsters=args.extract_monsters,
         monsters_only=args.monsters_only,
         no_cr_adjustment=args.no_cr_adjustment,
+        no_retry=args.no_retry,
         debug_dir=debug_dir,
         verbose=args.verbose,
     )
