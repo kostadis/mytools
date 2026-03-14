@@ -14,8 +14,11 @@ What this script does
      • Dungeon Level Three  (entries[0:42]  — intro + rooms 301–338)
      • The Interdicted Prison of Zuggtmoy  (entries[42:47] — rooms 350–353)
      • Room Key             (entries[47:]   — rooms 401–435)
-3. Reassigns sequential IDs.
-4. Rebuilds adventure.contents from the corrected chapter list.
+3. Extracts "The Greater Temple" and "Temple Guard Forces and Tactical Notes"
+   sub-entries from room 353 in the Zuggtmoy chapter, then renames the
+   following "Room Key" chapter to "The Greater Temple" and prepends them.
+4. Reassigns sequential IDs.
+5. Rebuilds adventure.contents from the corrected chapter list.
 
 Usage
 -----
@@ -177,14 +180,58 @@ def fix(in_path: Path, out_path: Path) -> None:
         chapters[merged_idx:merged_idx + 1] = new_chapters
         print(f"  [2] Split into 3 chapters; total now: {len(chapters)}")
 
-    # ── 3. Reassign IDs ───────────────────────────────────────────────────────
+    # ── 3. Extract Greater Temple from Zuggtmoy chapter ──────────────────────
+    ZUGGTMOY_NAME = "The Interdicted Prison of Zuggtmoy"
+    GREATER_TEMPLE_CHAPTER = "Room Key"
+    EXTRACT_NAMES = {"The Greater Temple", "Temple Guard Forces and Tactical Notes"}
+
+    zuggtmoy_ch = next(
+        (ch for ch in chapters if ch.get("name") == ZUGGTMOY_NAME),
+        None,
+    )
+    room_key_idx = next(
+        (i for i, ch in enumerate(chapters) if ch.get("name") == GREATER_TEMPLE_CHAPTER),
+        None,
+    )
+
+    if zuggtmoy_ch is None:
+        print(f"  [3] '{ZUGGTMOY_NAME}' chapter not found — skipping Greater Temple fix")
+    elif room_key_idx is None:
+        print(f"  [3] '{GREATER_TEMPLE_CHAPTER}' chapter not found — skipping Greater Temple fix")
+    else:
+        # Find room 353 by scanning Zuggtmoy entries
+        room353 = next(
+            (e for e in zuggtmoy_ch.get("entries", [])
+             if isinstance(e, dict) and re.match(r"^353[a-z]?\.", e.get("name", ""))),
+            None,
+        )
+        if room353 is None:
+            print("  [3] Room 353 not found in Zuggtmoy chapter — skipping extraction")
+        else:
+            keep, extracted = [], []
+            for e in room353.get("entries", []):
+                if isinstance(e, dict) and e.get("name") in EXTRACT_NAMES:
+                    extracted.append(e)
+                else:
+                    keep.append(e)
+            room353["entries"] = keep
+            print(f"  [3] Extracted {len(extracted)} entries from room 353: "
+                  f"{[e.get('name') for e in extracted]}")
+
+            gt_ch = chapters[room_key_idx]
+            gt_ch["name"] = "The Greater Temple"
+            gt_ch["entries"] = extracted + gt_ch["entries"]
+            print(f"  [3] Renamed '{GREATER_TEMPLE_CHAPTER}' → 'The Greater Temple'; "
+                  f"prepended {len(extracted)} entries ({len(gt_ch['entries'])} total)")
+
+    # ── 4. Reassign IDs ───────────────────────────────────────────────────────
     _reset_ids()
     assign_ids(chapters)
-    print(f"  [3] IDs reassigned")
+    print(f"  [4] IDs reassigned")
 
-    # ── 4. Rebuild TOC ────────────────────────────────────────────────────────
+    # ── 5. Rebuild TOC ────────────────────────────────────────────────────────
     adv_meta["contents"] = build_toc(chapters)
-    print(f"  [4] TOC rebuilt: {len(adv_meta['contents'])} chapters")
+    print(f"  [5] TOC rebuilt: {len(adv_meta['contents'])} chapters")
 
     # ── Write output ──────────────────────────────────────────────────────────
     if out_path == in_path:
