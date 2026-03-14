@@ -264,6 +264,7 @@ The text is annotated with these structural markers:
     [italic]…[/italic]    — italic span
     [OCR]                 — this page was OCR'd (expect minor noise)
     [2-COLUMN]            — two-column layout detected on this page
+    [3-COLUMN]            — three-column layout detected on this page
 
 Return ONLY a valid JSON array of 5etools entry objects.  No markdown fences,
 no explanation — raw JSON only.
@@ -548,30 +549,37 @@ def ocr_page_image(img: Image.Image, lang: str = "eng") -> dict:
     if not words:
         return {"text": "", "columns": 1}
 
-    # ── Column detection (narrower gap threshold for TSR modules) ──────────
-    mid_lo = page_width * 0.30
-    mid_hi = page_width * 0.70
-    mid_words = [w for w in words if mid_lo < w["left"] + w["width"] / 2 < mid_hi]
+    # ── Column detection (supports 1, 2, or 3 columns) ─────────────────────
+    xs = sorted(w["left"] for w in words)
+    gap_threshold = page_width * COLUMN_GAP_RATIO
+    # Collect all significant gaps not at the page edges
+    raw_gaps: list[tuple[int, int]] = []  # (gap_size, mid_x)
+    for k in range(len(xs) - 1):
+        gap = xs[k + 1] - xs[k]
+        mid_x = (xs[k] + xs[k + 1]) // 2
+        if gap > gap_threshold and page_width * 0.08 < mid_x < page_width * 0.92:
+            raw_gaps.append((gap, mid_x))
+    raw_gaps.sort(reverse=True)
 
-    columns = 1
-    col_split_x = page_width // 2
+    # Keep up to 2 splits that are sufficiently separated from each other
+    min_sep = page_width * 0.15
+    col_splits: list[int] = []
+    for _, mid_x in raw_gaps:
+        if all(abs(mid_x - s) > min_sep for s in col_splits):
+            col_splits.append(mid_x)
+        if len(col_splits) == 2:
+            break
+    col_splits.sort()
+    columns = len(col_splits) + 1 if col_splits else 1
 
-    if mid_words:
-        xs = sorted(w["left"] for w in words)
-        gap_threshold = page_width * COLUMN_GAP_RATIO
-        max_gap = 0
-        best_split = page_width // 2
-        for k in range(len(xs) - 1):
-            gap = xs[k + 1] - xs[k]
-            if gap > max_gap and mid_lo < xs[k] < mid_hi:
-                max_gap = gap
-                best_split = (xs[k] + xs[k + 1]) // 2
-        if max_gap > gap_threshold:
-            columns = 2
-            col_split_x = best_split
+    def _col_of(cx: int) -> int:
+        for i, split in enumerate(col_splits):
+            if cx < split:
+                return i
+        return len(col_splits)
 
     def reading_order_key(w: dict) -> tuple:
-        col = 0 if (w["left"] + w["width"] // 2) < col_split_x else 1
+        col = _col_of(w["left"] + w["width"] // 2)
         return (col, w["top"], w["left"])
 
     words.sort(key=reading_order_key)
@@ -586,7 +594,7 @@ def ocr_page_image(img: Image.Image, lang: str = "eng") -> dict:
 
     def line_order_key(key: tuple) -> tuple:
         first = line_map[key][0]
-        col = 0 if (first["left"] + first["width"] // 2) < col_split_x else 1
+        col = _col_of(first["left"] + first["width"] // 2)
         return (col, first["top"])
 
     sorted_keys = sorted(line_map.keys(), key=line_order_key)
@@ -922,7 +930,7 @@ def _strip_noise_lines(text: str) -> str:
         r'^\s*(?:\[INSET-(?:START|END)\]|\[OCR\]'
         r'|\[STAT-BLOCK-(?:START|END)\]|\[1E-STAT\]'
         r'|\[WANDERING-TABLE\]|\[TABLE-(?:START|END)\]'
-        r'|\[ROOM-KEY-\d+\]|---\s*(?:Page\s*\d+|\(second column\))\s*---)'
+        r'|\[ROOM-KEY-\d+\]|---\s*(?:Page\s*\d+|\(second column\)|\(third column\))\s*---)'
     )
     clean: list[str] = []
     for line in text.split("\n"):
@@ -1257,7 +1265,8 @@ def convert(
         elif page_idx in ocr_images:
             result = ocr_page_image(ocr_images[page_idx], lang=lang)
             if result["text"].strip():
-                flag = "[OCR]" + (" [2-COLUMN]" if result["columns"] == 2 else "")
+                ncol = result["columns"]
+                flag = "[OCR]" + (f" [{ncol}-COLUMN]" if ncol > 1 else "")
                 page_texts.append(f"{flag}\n{result['text']}")
             else:
                 page_texts.append("")

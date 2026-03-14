@@ -812,7 +812,7 @@ function target()  { return getArr(path); }
 function canDive(e){ return Array.isArray(e.entries) || Array.isArray(e.items); }
 
 // ── OCR parsing ───────────────────────────────────────────────────────────────
-const STRIP_RE = /^\[H[123]\]\s*|^\[(?:INSET|STAT-BLOCK)-(?:START|END)\]\s*|^\[1E-STAT\]\s*|^\[OCR\]\s*|^\[2-COLUMN\]\s*|^\[ROOM-KEY-\d+\]\s*|^\[WANDERING-TABLE\]\s*|^---\s*(?:Page \d+|\(second column\))\s*---\s*|^\[CONTEXT:[^\]]*\]\s*/i;
+const STRIP_RE = /^\[H[123]\]\s*|^\[(?:INSET|STAT-BLOCK)-(?:START|END)\]\s*|^\[1E-STAT\]\s*|^\[OCR\]\s*|^\[\d-COLUMN\]\s*|^\[ROOM-KEY-\d+\]\s*|^\[WANDERING-TABLE\]\s*|^---\s*(?:Page \d+|\(second column\)|\(third column\))\s*---\s*|^\[CONTEXT:[^\]]*\]\s*/i;
 
 function clean(raw) { return raw.replace(STRIP_RE, '').trim(); }
 
@@ -826,6 +826,7 @@ function ltype(raw) {
   if (/^\[(?:STAT-BLOCK-(?:START|END)|1E-STAT)\]/i.test(raw)) return 'stat';
   if (/^\[WANDERING-TABLE\]/i.test(raw))           return 'stat';
   if (/^\[ROOM-KEY-\d+\]/i.test(raw))             return 'room';
+  if (/^---\s*\(third column\)\s*---/i.test(raw)) return 'sep';
   return 'body';
 }
 
