@@ -584,9 +584,11 @@ def ocr_page_image(img: Image.Image, lang: str = "eng") -> dict:
 
     words.sort(key=reading_order_key)
 
-    heights = [w["height"] for w in words if w["height"] > 0]
-    avg_h = sum(heights) / len(heights) if heights else 20
-    h1_h, h2_h, h3_h = avg_h * 1.8, avg_h * 1.4, avg_h * 1.15
+    heights = sorted(w["height"] for w in words if w["height"] > 0)
+    # Median is more robust than mean: one very tall glyph won't skew the reference.
+    avg_h = heights[len(heights) // 2] if heights else 20
+    # Raised thresholds reduce false-positive H3 tagging of body text.
+    h1_h, h2_h, h3_h = avg_h * 1.9, avg_h * 1.55, avg_h * 1.30
 
     line_map: dict[tuple, list[dict]] = defaultdict(list)
     for w in words:
@@ -612,14 +614,15 @@ def ocr_page_image(img: Image.Image, lang: str = "eng") -> dict:
             annotated_lines.append("")
         prev_block = block_num
 
-        max_h    = max(w["height"] for w in line_words)
+        lh = sorted(w["height"] for w in line_words if w["height"] > 0)
+        line_h   = lh[int(len(lh) * 0.75)] if lh else avg_h   # 75th-pct avoids one-tall-cap false positives
         is_short = len(line_text) < 80
 
-        if max_h >= h1_h and is_short:
+        if line_h >= h1_h and is_short:
             annotated_lines.append(f"[H1] {line_text}")
-        elif max_h >= h2_h and is_short:
+        elif line_h >= h2_h and is_short:
             annotated_lines.append(f"[H2] {line_text}")
-        elif max_h >= h3_h and is_short:
+        elif line_h >= h3_h and is_short:
             annotated_lines.append(f"[H3] {line_text}")
         else:
             annotated_lines.append(line_text)
@@ -663,14 +666,15 @@ def ocr_page_image(img: Image.Image, lang: str = "eng") -> dict:
         if not line_text:
             continue
 
-        max_h    = max(w["height"] for w in line_words)
+        lh = sorted(w["height"] for w in line_words if w["height"] > 0)
+        line_h   = lh[int(len(lh) * 0.75)] if lh else avg_h
         is_short = len(line_text) < 80
 
-        if max_h >= h1_h and is_short:
+        if line_h >= h1_h and is_short:
             final_lines.append(f"[H1] {line_text}")
-        elif max_h >= h2_h and is_short:
+        elif line_h >= h2_h and is_short:
             final_lines.append(f"[H2] {line_text}")
-        elif max_h >= h3_h and is_short:
+        elif line_h >= h3_h and is_short:
             final_lines.append(f"[H3] {line_text}")
         else:
             final_lines.append(line_text)
