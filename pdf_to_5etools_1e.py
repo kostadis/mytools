@@ -283,6 +283,10 @@ Object types to use:
 Rules:
 - Every [ROOM-KEY-N] opens a new {"type":"entries","name":"N. Room Name"} block.
   If there is no explicit room name, use the first few words of the description.
+- Structural labels that introduce room entries — "Room Key", "Key to the [area]",
+  "Encounter Key", "Level One", "Level Two", etc. — must NOT become wrapper entries.
+  Discard the label and emit the numbered room entries that follow as direct siblings
+  at the same level.  Do not nest rooms inside a container named after the label.
 - [INSET-START/END] blocks that have no heading and read as atmospheric prose are
   read-aloud text: use {"type":"inset","name":""}.
 - Named sidebars, DM notes, or special features use {"type":"inset","name":"..."}.
@@ -1164,6 +1168,114 @@ def normalize_chapters(entries: list[Any], default_name: str) -> list[dict]:
     return chapters
 
 
+def _is_numbered_room(entry: Any) -> bool:
+    """Return True for room/area entries whose name starts with a digit."""
+    if isinstance(entry, str):
+        return False
+    return bool(re.match(r"^\d", entry.get("name", "")))
+
+
+def _is_random_table(entry: Any) -> bool:
+    """Return True for entries that are tables, insets, or named random-encounter
+    sections — these are always kept at chapter level."""
+    if isinstance(entry, str):
+        return False
+    if entry.get("type") in ("table", "inset"):
+        return True
+    return bool(re.match(r"random", entry.get("name", ""), re.I))
+
+
+def _has_rooms_in_subtree(entry: Any) -> bool:
+    """Return True if the entry contains at least one numbered room anywhere
+    in its entries sub-tree."""
+    if not isinstance(entry, dict):
+        return False
+    for child in entry.get("entries", []):
+        if _is_numbered_room(child) or _has_rooms_in_subtree(child):
+            return True
+    return False
+
+
+# Room-index structural labels that should be dissolved rather than kept as
+# navigation entries.  These are module-structure artefacts (the heading that
+# introduces the room list) not content sections.
+_ROOM_INDEX_LABEL_RE = re.compile(
+    r"^(?:room\s+key|encounter\s+key|area\s+key|key\s+to\s+the\b"
+    r"|level\s+(?:one|two|three|four|five|six|seven|eight|\d+)\b)",
+    re.I,
+)
+
+
+def normalize_dungeon_chapters(chapters: list[dict]) -> None:
+    """
+    Post-process every chapter that contains numbered room entries so that:
+
+    1.  Room-index-label wrappers dissolved.  Top-level named entries whose
+        name matches a known room-index pattern ("Room Key", "Level One",
+        "Encounter Key", etc.) and whose sub-tree contains numbered rooms are
+        dissolved: their children are promoted in-place.  The pass repeats
+        until stable so nested wrappers (Level One → Room Key → rooms) are
+        fully unwrapped.  Legitimate section groupings such as "First Floor"
+        or "Upper Level" that do not match the pattern are left untouched.
+
+    2.  Orphan entries folded.  After the first numbered room has been seen,
+        any subsequent top-level entry that is not a numbered room or a
+        random-table/inset is appended to the entries list of the most
+        recent preceding numbered room.  Plain strings between rooms are
+        treated the same way.  Entries appearing *before* the first numbered
+        room are left untouched as chapter-level introduction text.
+    """
+    for chapter in chapters:
+        if not isinstance(chapter, dict):
+            continue
+        entries = chapter.get("entries", [])
+
+        # Skip chapters that have no rooms anywhere in their tree
+        if not any(_is_numbered_room(e) or _has_rooms_in_subtree(e) for e in entries):
+            continue
+
+        # ── Pass 1: dissolve room-index-label wrappers (repeat until stable) ─
+        changed = True
+        while changed:
+            changed = False
+            new_entries: list[Any] = []
+            for entry in entries:
+                if (isinstance(entry, dict)
+                        and not _is_numbered_room(entry)
+                        and not _is_random_table(entry)
+                        and entry.get("name")
+                        and _ROOM_INDEX_LABEL_RE.match(entry["name"])
+                        and _has_rooms_in_subtree(entry)):
+                    new_entries.extend(entry.get("entries", []))
+                    changed = True
+                else:
+                    new_entries.append(entry)
+            entries = new_entries
+
+        # ── Pass 2: fold orphan entries after first room ───────────────────
+        result: list[Any] = []
+        last_room: dict | None = None
+        for entry in entries:
+            if _is_numbered_room(entry):
+                result.append(entry)
+                last_room = entry
+            elif _is_random_table(entry):
+                result.append(entry)
+            elif isinstance(entry, str):
+                if last_room is not None:
+                    last_room.setdefault("entries", []).append(entry)
+                else:
+                    result.append(entry)
+            else:
+                # Named non-room entry: fold into preceding room if one exists
+                if last_room is not None:
+                    last_room.setdefault("entries", []).append(entry)
+                else:
+                    result.append(entry)
+
+        chapter["entries"] = result
+
+
 def build_toc(data: list[Any]) -> list[dict]:
     toc: list[dict] = []
     for entry in data:
@@ -1438,6 +1550,12 @@ def convert(
     # so that 5etools' headerMap chapter-index lookups resolve correctly.
     if output_type != "book":
         all_entries = normalize_chapters(all_entries, title)
+
+    # Dissolve room-group wrappers ("Room Key", "Level One", etc.) and fold
+    # orphan named entries into their preceding room so every numbered room
+    # appears as a direct child of its chapter (depth 1) and is individually
+    # navigable in the 5etools sidebar.
+    normalize_dungeon_chapters(all_entries)
 
     reset_ids()
     assign_ids(all_entries)
