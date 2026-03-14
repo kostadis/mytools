@@ -65,6 +65,15 @@ def is_random_table(entry: Any) -> bool:
     return bool(re.match(r"random", entry.get("name", ""), re.I))
 
 
+def has_numbered_room_in_subtree(entry: Any) -> bool:
+    """Return True if entry or any descendant is a numbered room."""
+    if not isinstance(entry, dict):
+        return False
+    if is_numbered_room(entry):
+        return True
+    return any(has_numbered_room_in_subtree(child) for child in entry.get("entries", []))
+
+
 # ── Fix 1: Chapter 16 rename + dissolve "Level One" wrapper ──────────────────
 
 def fix_ch16(chapter: dict) -> None:
@@ -140,12 +149,12 @@ def fold_orphans(chapter: dict) -> None:
                 result.append(entry)
         else:
             # Named non-room entry
-            if last_room is not None:
+            if last_room is not None and not has_numbered_room_in_subtree(entry):
                 last_room.setdefault("entries", []).append(entry)
                 folded += 1
                 print(f"  [fix3] Folded {entry.get('name')!r} into {last_room.get('name')!r}")
             else:
-                # Before first room → chapter intro, keep
+                # Section-wrappers containing rooms, or entries before first room → keep
                 result.append(entry)
 
     if folded:
