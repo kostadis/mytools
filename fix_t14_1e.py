@@ -22,7 +22,10 @@ Fixes applied
    same way.  Entries appearing before the first room are left in place as
    chapter-level introduction text.
 
-4. adventure.contents is rebuilt from the normalised data so sidebar
+4. Room 403 (Study): Barkinar and Deggum stat blocks replaced/added;
+   "Senshock (continued)" extracted and promoted to room "404. Mages' Study".
+
+5. adventure.contents is rebuilt from the normalised data so sidebar
    navigation stays in sync.
 
 Usage
@@ -150,7 +153,128 @@ def fold_orphans(chapter: dict) -> None:
     chapter["entries"] = result
 
 
-# ── Fix 4: Rebuild adventure.contents ────────────────────────────────────────
+# ── Fix 4: Room 403/404 — stat blocks and Senshock extraction ────────────────
+
+def fix_room_403_404(chapters: list) -> None:
+    """
+    Fix structural and content issues in the Greater Temple dungeon chapter:
+
+    a) Replace the truncated Barkinar stat line with the full stats.
+    b) Add the full Deggum stat block (missing from converted output).
+    c) Extract the "Senshock (continued)" sub-entry from room 403 and promote
+       it to its own top-level room entry "404. Mages' Study".
+    """
+    gt_ch = next(
+        (ch for ch in chapters if ch.get("name") == "The Greater Temple"),
+        None,
+    )
+    if gt_ch is None:
+        print("  [fix4] 'The Greater Temple' chapter not found — skipping")
+        return
+
+    entries = gt_ch.get("entries", [])
+    r403_idx = next(
+        (i for i, e in enumerate(entries)
+         if isinstance(e, dict) and re.match(r"^403[a-z]?\.", e.get("name", ""))),
+        None,
+    )
+    if r403_idx is None:
+        print("  [fix4] Room 403 not found — skipping")
+        return
+
+    r403 = entries[r403_idx]
+
+    # ── a) Barkinar ───────────────────────────────────────────────────────────
+    barkinar = next(
+        (e for e in r403.get("entries", [])
+         if isinstance(e, dict) and e.get("name") == "Barkinar"),
+        None,
+    )
+    if barkinar:
+        desc = barkinar["entries"][0] if barkinar.get("entries") else ""
+        barkinar["entries"] = [
+            desc,
+            "{@i Barkinar: AC \u22121 (plate +1, shield +2), MV 12\", Level 7 Cleric,"
+            " hp 60, #AT 1, D by weapon (staff of striking) or spell,"
+            " SA wears boots of levitation, SD spells; XP 1680}",
+            "S 11 I 16 W 17 D 10 Co 16 Ch 8",
+            {
+                "type": "entries",
+                "name": "Spells Memorized",
+                "entries": [
+                    "{@b First level:} {@spell command}, {@spell cure light wounds} (\u00d72),"
+                    " {@spell remove fear}, {@spell sanctuary}",
+                    "{@b Second level:} {@spell hold person} (\u00d72), resist fire,"
+                    " {@spell silence} 15\u2019 radius, slow poison",
+                    "{@b Third level:} {@spell dispel magic}, prayer, {@spell bestow curse}",
+                    "{@b Fourth level:} cure serious wounds",
+                ],
+            },
+        ]
+        print("  [fix4a] Replaced Barkinar stat block")
+    else:
+        print("  [fix4a] Barkinar sub-entry not found — skipped")
+
+    # ── b) Deggum ─────────────────────────────────────────────────────────────
+    deggum = next(
+        (e for e in r403.get("entries", [])
+         if isinstance(e, dict) and e.get("name") == "Deggum"),
+        None,
+    )
+    if deggum:
+        desc = deggum["entries"][0] if deggum.get("entries") else ""
+        deggum["entries"] = [
+            desc,
+            "{@i Deggum: AC 2 (chain & shield), MV 12\", Level 5/4 Cleric/Magic-User,"
+            " hp 21, #AT 1, D by weapon or spell, SA spells,"
+            " SD ring of fire resistance; XP 1118}",
+            "S 12 I 15 W 18 D 7 Co 10 Ch 11",
+            {
+                "type": "entries",
+                "name": "Cleric Spells Memorized",
+                "entries": [
+                    "{@b First level:} {@spell bless}, {@spell cure light wounds},"
+                    " {@spell detect magic}, {@spell sanctuary} (\u00d72)",
+                    "{@b Second level:} {@spell augury}, chant, {@spell hold person},"
+                    " poison, spiritual hammer",
+                    "{@b Third level:} continual darkness, {@spell animate dead}",
+                ],
+            },
+            {
+                "type": "entries",
+                "name": "Magic-User Spells Memorized",
+                "entries": [
+                    "{@b First level:} {@spell magic missile} (\u00d73)",
+                    "{@b Second level:} {@spell invisibility} (\u00d72)",
+                ],
+            },
+        ]
+        print("  [fix4b] Replaced Deggum stat block")
+    else:
+        print("  [fix4b] Deggum sub-entry not found — skipped")
+
+    # ── c) Senshock (continued) → room 404 ───────────────────────────────────
+    r403_entries = r403.get("entries", [])
+    senshock_idx = next(
+        (i for i, e in enumerate(r403_entries)
+         if isinstance(e, dict) and e.get("name") == "Senshock (continued)"),
+        None,
+    )
+    if senshock_idx is not None:
+        senshock_cont = r403_entries.pop(senshock_idx)
+        r404: dict = {
+            "type": "entries",
+            "name": "404. Mages\u2019 Study",
+            "entries": senshock_cont.get("entries", []),
+        }
+        entries.insert(r403_idx + 1, r404)
+        print(f"  [fix4c] Created room 404 from 'Senshock (continued)'"
+              f" ({len(r404['entries'])} entries)")
+    else:
+        print("  [fix4c] 'Senshock (continued)' not in room 403 — skipped")
+
+
+# ── Fix 5: Rebuild adventure.contents ────────────────────────────────────────
 
 def build_toc(chapters: list[dict]) -> list[dict]:
     """Rebuild the adventure contents (TOC) from the normalised chapter data."""
@@ -197,6 +321,11 @@ def fix(in_path: Path, out_path: Path) -> None:
         dissolve_room_keys(ch)
         fold_orphans(ch)
         print()
+
+    # Fix 4: room 403 stat blocks + extract room 404
+    print("Fix 4: rooms 403/404")
+    fix_room_403_404(chapters)
+    print()
 
     # Rebuild TOC
     toc = build_toc(chapters)
