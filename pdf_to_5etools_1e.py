@@ -1128,6 +1128,42 @@ def assign_ids(entries: list[Any]) -> list[Any]:
                 assign_ids(entry["items"])
     return entries
 
+def normalize_chapters(entries: list[Any], default_name: str) -> list[dict]:
+    """Ensure the top-level entry list is purely a list of section-type chapters.
+
+    5etools maps adventureData.data[i] ↔ adventure.contents[i] by index.
+    If all_entries contains non-section items at the top level (strings,
+    type:"entries", etc.), data and contents diverge → chapter lookups in
+    headerMap fail → duplicate-named sections (e.g. "Room Key" in Level 1
+    and Level 3) both resolve to the same anchor.
+
+    Fix: fold non-section top-level items into the preceding section's
+    entries list.  If there is no preceding section, open a catch-all one.
+    """
+    chapters: list[dict] = []
+    pending: list[Any] = []
+
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("type") == "section":
+            if pending:
+                if chapters:
+                    chapters[-1].setdefault("entries", []).extend(pending)
+                else:
+                    chapters.append({"type": "section", "name": default_name, "entries": pending})
+                pending = []
+            chapters.append(entry)
+        else:
+            pending.append(entry)
+
+    if pending:
+        if chapters:
+            chapters[-1].setdefault("entries", []).extend(pending)
+        else:
+            chapters.append({"type": "section", "name": default_name, "entries": pending})
+
+    return chapters
+
+
 def build_toc(data: list[Any]) -> list[dict]:
     toc: list[dict] = []
     for entry in data:
@@ -1135,8 +1171,9 @@ def build_toc(data: list[Any]) -> list[dict]:
             continue
         ch: dict = {"name": entry.get("name", "Untitled"), "headers": []}
         for sub in entry.get("entries", []):
-            if isinstance(sub, dict) and sub.get("type") == "entries":
-                ch["headers"].append(sub.get("name", ""))
+            # Include both "entries" and "section" typed sub-entries as TOC headers
+            if isinstance(sub, dict) and sub.get("type") in ("entries", "section") and sub.get("name"):
+                ch["headers"].append(sub["name"])
         toc.append(ch)
     return toc
 
@@ -1392,11 +1429,19 @@ def convert(
 
     # ── 5. Assemble output ────────────────────────────────────────────────────
     print("[5/5] Finalising output ...", flush=True)
-    reset_ids()
-    assign_ids(all_entries)
 
     title   = pdf_path.stem.replace("_", " ").replace("-", " ").title()
     today   = date.today().isoformat()
+
+    # Normalise so every top-level entry is a section-type chapter.
+    # This keeps adventureData.data[i] in sync with adventure.contents[i]
+    # so that 5etools' headerMap chapter-index lookups resolve correctly.
+    if output_type != "book":
+        all_entries = normalize_chapters(all_entries, title)
+
+    reset_ids()
+    assign_ids(all_entries)
+
     toc     = build_toc(all_entries)
 
     import time as _time
