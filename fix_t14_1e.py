@@ -163,6 +163,9 @@ def fix_room_403_404(chapters: list) -> None:
     b) Add the full Deggum stat block (missing from converted output).
     c) Extract the "Senshock (continued)" sub-entry from room 403 and promote
        it to its own top-level room entry "404. Mages' Study".
+    d) Prepend the full room 404 description (wizard-locked door, furnishings,
+       shelf traps, wardrobe compartments, workbench, Senshock biography) and
+       rename the room to match the PDF heading.
     """
     gt_ch = next(
         (ch for ch in chapters if ch.get("name") == "The Greater Temple"),
@@ -272,6 +275,114 @@ def fix_room_403_404(chapters: list) -> None:
               f" ({len(r404['entries'])} entries)")
     else:
         print("  [fix4c] 'Senshock (continued)' not in room 403 — skipped")
+
+    # ── d) Rebuild room 404 content ───────────────────────────────────────────
+    r404 = next(
+        (e for e in entries
+         if isinstance(e, dict) and re.match(r"^404[a-z]?\.", e.get("name", ""))),
+        None,
+    )
+    if r404 is None:
+        print("  [fix4d] Room 404 not found — skipped")
+        return
+
+    # Rename to match PDF heading
+    r404["name"] = "404. Room, 20\u2019 \u00d7 30\u2019"
+
+    # Strip orphan continuation fragment left by the converter
+    tail = r404.get("entries", [])
+    if tail and isinstance(tail[0], str) and tail[0].startswith("favor in any way"):
+        tail = tail[1:]
+
+    room_desc: list[Any] = [
+        "The door to this room is wizard locked at 9th level of magic use. This is the"
+        " secluded lair of Senshock, Lord Wizard of the Greater Temple. He may (40%"
+        " chance) be here at any time during daylight hours, working on his own projects,"
+        " or is otherwise busily conferring with clerics, instructing giants, or performing"
+        " some other administrative task. He always carries his black scarab inscribed with"
+        " the letters TZGY, for controlling the curtain behind the altar (area 419 A).",
+        "The room is well-appointed, with tapestries on the walls and furnishings made of"
+        " ebony and rosewood. The bed stands in the southeast corner, adjacent to a small"
+        " fireplace in the east wall. A wardrobe stands at the foot of the bed between it"
+        " and the door.",
+        "The north wall is filled by a long workbench, with beakers bubbling over small"
+        " flames, bottles and boxes of various rare substances, and other laboratory"
+        " paraphernalia. On the west wall is an oaken shelf unit, upon which are three"
+        " large and heavily bound books, a group of twelve pieces of assorted jewelry all"
+        " bearing a black skull motif, three wooden eggs, and two platinum medallions with"
+        " like chains.",
+        "Each of the three books on the shelf is a trap, of course, and all of the same"
+        " type. The books are made of heavy wood, painstakingly painted to look real. A"
+        " book sticks to anyone who touches it, due to a powerful curse (no saving throw)."
+        " It remains so until a {@spell remove curse} is applied by a 9th or higher level"
+        " caster. The jewelry collection is worth 25,000 gp for all, each piece being"
+        " studded with diamond chips and onyx; the average value of individual pieces is"
+        " 1,500 gp if the set is split.",
+        "The wooden eggs appear to be nothing more than nicely crafted puzzles in which the"
+        " pieces are cleverly interlocked, worth 750 gp for the set due to the fine inlay"
+        " work. In the center of each egg, however, is a crystal miniature of the unholy"
+        " symbol used hereabouts; each figure is worth 1,000 gp, but should be destroyed"
+        " by Good characters. The platinum medallions and chains also bear unholy symbols,"
+        " but need only be melted down to be properly spoiled, then worth 200 gp for the"
+        " metal (or 150 gp each for the original medallions).",
+        {
+            "type": "entries",
+            "name": "Wardrobe",
+            "entries": [
+                "The wardrobe is stoutly made, and has five secret compartments disguised"
+                " as parts of the ornamental inlay design. A separate check for secret"
+                " doors is required for each compartment. Each space is a two-inch cube,"
+                " and the contents are as follows:",
+                {
+                    "type": "list",
+                    "items": [
+                        "1 Six black sapphires, each worth 5,000 gp.",
+                        "2 One carnelian (worth 50 gp) bearing a fire trap (D 10\u201314).",
+                        "3 One crumpled black handkerchief, soiled and sticky from use."
+                        " This portable hole contains Senshock\u2019s spell books (see"
+                        " below), a cloak of poisonousness, one large flask of oil bearing"
+                        " a fire trap (D 10\u201314 plus 4\u201324 from the exploding oil),"
+                        " and 29 potion vials held in six wooden racks. The potions include"
+                        " one of nearly every type listed in the DMG, except for animal,"
+                        " dragon, and human control, delusion, and both oils. Those of giant"
+                        " strength and control are of the hill giant type, of course, those"
+                        " being most accessible for materials.",
+                        "4 Four jeweled (but non-magical) bracers, each pair worth"
+                        " 2,000\u20138,000 gp.",
+                        "5 A tiny pocket mirror of life trapping, which causes the first"
+                        " person looking into it to save vs. spells or be ensnared (as the"
+                        " larger version). If it catches a victim, it simultaneously releases"
+                        " its current occupant (a purple worm, hp 88), as it has only one"
+                        " extra-dimensional space. The exchange will be so rapid, however,"
+                        " as to produce the impression that the victim was polymorphed into"
+                        " the worm.",
+                    ],
+                },
+            ],
+        },
+        "On the workbench are various hairs, liquids, and other items obtained from a"
+        " variety of monsters (but no dragons), along with powdered gems, quicksilver, and"
+        " other components. The whole is worth 20,000 gp, plus another 500 gp for exotic"
+        " glassware and utensils. The lot may be gathered and packed for travel at the rate"
+        " of 1,000 gp worth per turn per person, assuming proper sacks and padding are"
+        " available.",
+        "Senshock is the respected and dreaded emissary of Zuggtmoy herself. Just as Iuz"
+        " wields power through Hedrack and Barkinar, so do the scales balance through"
+        " Senshock\u2019s actions on Zuggtmoy\u2019s behalf. Long ago, as an apprentice in"
+        " the local wizard\u2019s guild, Senshock learned the business of potion and wand"
+        " making, and has brought those talents here. He visits the lab (area 330) on"
+        " occasion, or sends bugbears or trolls to fetch the necessary items, but performs"
+        " all of his work here, in his private room.",
+        "Senshock combines his attention to detail with grand strategy planning, and is the"
+        " actual source of many of the better tactics used by the Temple forces. He has been"
+        " assured (by Zuggtmoy) of the position of High Commander and General of all the"
+        " Temple\u2019s mighty forces once the reconstruction is complete. Iuz has been"
+        " noncommittal about this, so Senshock is trying to gain Iuz\u2019 favor in any way"
+        " possible.",
+    ]
+    r404["entries"] = room_desc + tail
+    print(f"  [fix4d] Rebuilt room 404 ({len(room_desc)} new + {len(tail)} carried over"
+          f" = {len(r404['entries'])} total entries)")
 
 
 # ── Fix 5: Rebuild adventure.contents ────────────────────────────────────────
