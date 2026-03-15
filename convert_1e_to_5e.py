@@ -492,11 +492,53 @@ def convert_chapter(chapter: dict, ch_idx: int, client: Any, model: str,
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def _patch_metadata(obj: dict, old_source: str, new_source: str) -> None:
+    """Rewrite all source identifiers so 5etools treats the output as a distinct adventure."""
+    import time as _time
+
+    # _meta.sources
+    for src in obj.get("_meta", {}).get("sources", []):
+        if src.get("json") == old_source:
+            src["json"] = new_source
+            src["abbreviation"] = new_source
+            src["full"] = src.get("full", old_source) + " \u2014 5e Conversion"
+            src["version"] = "1.0.0"
+            src.setdefault("convertedBy", [])
+            if "convert_1e_to_5e" not in src["convertedBy"]:
+                src["convertedBy"].append("convert_1e_to_5e")
+    now = int(_time.time())
+    obj["_meta"]["dateAdded"] = now
+    obj["_meta"]["dateLastModified"] = now
+
+    # adventure[] entries
+    for adv in obj.get("adventure", []):
+        if adv.get("source") == old_source:
+            adv["source"] = new_source
+        if adv.get("id") == old_source:
+            adv["id"] = new_source
+        if adv.get("name", "").endswith("(1E) Notes"):
+            adv["name"] = adv["name"].replace("(1E) Notes", "(5E Conversion)")
+
+    # adventureData[] / bookData[] entries
+    for bucket in ("adventureData", "bookData"):
+        for entry in obj.get(bucket, []):
+            if entry.get("source") == old_source:
+                entry["source"] = new_source
+            if entry.get("id") == old_source:
+                entry["id"] = new_source
+
+
 def convert(in_path: Path, out_path: Path, client: Any, model: str,
             chapter_filter: set[int] | None, verbose: bool, dry_run: bool) -> None:
     print(f"Reading {in_path} …")
     with open(in_path, encoding="utf-8") as f:
         obj = json.load(f)
+
+    # Determine original source ID before any patching
+    original_source = (
+        obj.get("_meta", {}).get("sources", [{}])[0].get("json", "")
+    )
+    new_source = original_source + "-5E" if original_source else "CONVERTED-5E"
 
     data_list = obj.get("adventureData") or obj.get("bookData") or []
     if not data_list:
@@ -522,7 +564,11 @@ def convert(in_path: Path, out_path: Path, client: Any, model: str,
         # Chapters are modified in-place via find_leaf_rooms / room["entries"] = …
         convert_chapter(chapter, idx, client, model, verbose, dry_run)
 
-    print(f"\nWriting {out_path} …")
+    # Patch all source/id references so the output is a distinct 5etools entry
+    _patch_metadata(obj, original_source, new_source)
+    print(f"\nSource ID: {original_source!r} → {new_source!r}")
+
+    print(f"Writing {out_path} …")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent="\t", ensure_ascii=False)
     print("Done.")
