@@ -1327,6 +1327,7 @@ def convert(
     no_retry: bool,
     debug_dir: Path | None,
     verbose: bool,
+    use_toc_hint: bool = True,  # prepend PDF bookmark outline to each chunk
 ) -> None:
     mc_label = f"  Module: {module_code}" if module_code else ""
     print(f"\n{'='*62}")
@@ -1417,6 +1418,19 @@ def convert(
     ]
     print(f"      {len(chunks)} chunks.", flush=True)
 
+    # Extract PDF bookmark TOC for use as a per-chunk hint to Claude
+    from pdf_to_5etools import extract_pdf_toc
+    toc_hint: str | None = None
+    if use_toc_hint:
+        toc_hint = extract_pdf_toc(pdf_path)
+        if toc_hint:
+            n_bm = sum(1 for ln in toc_hint.splitlines()
+                       if ln.strip() and not ln.startswith('==='))
+            print(f"      PDF has {n_bm} bookmark entries — injecting as section hint.",
+                  flush=True)
+        else:
+            print("      PDF has no bookmarks — section hint skipped.", flush=True)
+
     # Build chunk texts up front
     chunk_texts: list[str] = []
     for chunk in chunks:
@@ -1424,6 +1438,8 @@ def convert(
         for page_num, text in chunk:
             if text.strip():
                 ct += f"\n--- Page {page_num} ---\n{text}\n"
+        if toc_hint and ct.strip():
+            ct = toc_hint + "\n\n" + ct
         if len(ct) > MAX_CHUNK_CHARS:
             cut = ct.rfind('\n--- Page', 0, MAX_CHUNK_CHARS)
             ct = ct[:cut] if cut != -1 else ct[:MAX_CHUNK_CHARS]
@@ -1689,6 +1705,12 @@ def main() -> None:
     parser.add_argument("--debug-dir", type=Path, default=None, dest="debug_dir")
     parser.add_argument("--dry-run", action="store_true", dest="dry_run_only")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--no-toc-hint",
+        action="store_true",
+        dest="no_toc_hint",
+        help="Do not inject the PDF bookmark outline as a section hint for Claude.",
+    )
 
     args = parser.parse_args()
 
@@ -1754,6 +1776,7 @@ def main() -> None:
         no_retry=args.no_retry,
         debug_dir=debug_dir,
         verbose=args.verbose,
+        use_toc_hint=not args.no_toc_hint,
     )
 
 

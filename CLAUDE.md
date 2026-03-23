@@ -57,7 +57,7 @@ Each converter's `call_claude` is a thin wrapper that passes its own `SYSTEM_PRO
 
 Bookmark levels: L1 = document title (skipped as min-level), L2 = top-level sections, L3 = subsections, L4+ = fine detail (Treasure, XP Award…) — L4+ are excluded by default. `_decode_pdf_string` fixes Windows-1252/Mac-Roman characters (smart quotes `\x90`→`'`, curly brackets `\x8d`/`\x8e`→`'`/`'`) that PyMuPDF passes through as raw bytes.
 
-The OCR and 1e converters import `extract_pdf_toc` and `_decode_pdf_string` from `pdf_to_5etools` and apply the same hint in their own `convert()` functions.
+The OCR and 1e converters import `extract_pdf_toc` from `pdf_to_5etools` (lazy import inside `convert()`) and apply the same hint in their chunk-building loops. All three converters share identical TOC-hint logic; the function itself lives only in `pdf_to_5etools.py`.
 
 ### Converter pipeline (all three scripts share this structure)
 
@@ -112,6 +112,17 @@ python3 convert_1e_to_5e.py input.json output.json [--chapters A-B] [--dry-run] 
 ```
 
 Default model is `claude-sonnet-4-6`. Contains hardcoded T1-4 zone/level mappings — adapt `ZONES` dict for other modules.
+
+### `validate_tags.py` — post-conversion tag checker
+
+Scans a generated adventure JSON for unknown `{@tag}` references. Unknown tags throw a JS error in the 5etools renderer, causing blank pages. Exits non-zero if any are found.
+
+```bash
+python3 validate_tags.py adventure.json           # report unknown tags
+python3 validate_tags.py adventure.json --fix     # replace in-place with plain text
+```
+
+The known-tag list is derived from `render.js` case statements. Common bad tags produced by Claude: `{@scroll X}` → `{@item scroll of X}`, `{@npc X}` → plain text or `{@creature X}`.
 
 ### `find_triggers.py`
 

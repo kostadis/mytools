@@ -670,6 +670,7 @@ def convert(
     debug_dir: Path | None,  # directory to dump raw chunk I/O for debugging
     verbose: bool,
     page_filter: set[int],  # if non-empty, only process these page numbers
+    use_toc_hint: bool = True,  # prepend PDF bookmark outline to each chunk
 ) -> None:
     print(f"\n{'='*62}")
     print(f"  PDF → 5etools OCR Converter")
@@ -777,6 +778,19 @@ def convert(
         )
     client = anthropic.Anthropic(api_key=key)
 
+    # Extract PDF bookmark TOC for use as a per-chunk hint to Claude
+    from pdf_to_5etools import extract_pdf_toc
+    toc_hint: str | None = None
+    if use_toc_hint:
+        toc_hint = extract_pdf_toc(pdf_path)
+        if toc_hint:
+            n_bm = sum(1 for ln in toc_hint.splitlines()
+                       if ln.strip() and not ln.startswith('==='))
+            print(f"      PDF has {n_bm} bookmark entries — injecting as section hint.",
+                  flush=True)
+        else:
+            print("      PDF has no bookmarks — section hint skipped.", flush=True)
+
     # Build chunk texts up front (needed for both dry-run and real run)
     chunk_texts: list[str] = []
     for chunk in chunks:
@@ -784,6 +798,8 @@ def convert(
         for page_num, text in chunk:
             if text.strip():
                 chunk_text += f"\n--- Page {page_num} ---\n{text}\n"
+        if toc_hint and chunk_text.strip():
+            chunk_text = toc_hint + "\n\n" + chunk_text
         if len(chunk_text) > MAX_CHUNK_CHARS:
             cut = chunk_text.rfind('\n--- Page', 0, MAX_CHUNK_CHARS)
             chunk_text = chunk_text[:cut] if cut != -1 else chunk_text[:MAX_CHUNK_CHARS]
@@ -1121,6 +1137,12 @@ def main() -> None:
     )
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument(
+        "--no-toc-hint",
+        action="store_true",
+        dest="no_toc_hint",
+        help="Do not inject the PDF bookmark outline as a section hint for Claude.",
+    )
+    parser.add_argument(
         "--pages", default=None, metavar="RANGE",
         help='Only process these pages, e.g. "10-20" or "5,10-15".',
     )
@@ -1176,6 +1198,7 @@ def main() -> None:
         debug_dir=debug_dir,
         verbose=args.verbose,
         page_filter=page_filter,
+        use_toc_hint=not args.no_toc_hint,
     )
 
 
