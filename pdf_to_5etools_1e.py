@@ -47,6 +47,8 @@ Usage
 from __future__ import annotations
 
 import argparse
+
+import cli_args as _cli
 import json
 import os
 import re
@@ -1660,32 +1662,13 @@ def main() -> None:
               --force-ocr --dpi 600
         """),
     )
-    parser.add_argument("pdf", type=Path)
-    parser.add_argument("--type", choices=["adventure", "book"],
-                        default="adventure", dest="output_type")
-    parser.add_argument("--output-mode", choices=["homebrew", "server"],
-                        default="homebrew", dest="output_mode")
-    parser.add_argument("--id", default=None, dest="short_id",
-                        help="Short uppercase ID (default: derived from filename)")
+    _cli.add_common_args(parser, default_chunk=DEFAULT_CHUNK, default_model=DEFAULT_MODEL)
+    _cli.add_ocr_args(parser, default_dpi=DEFAULT_DPI)
+    # 1e-converter-specific arguments:
     parser.add_argument("--module-code", default=None, dest="module_code",
                         help='TSR module code, e.g. "T1-4", "B2", "S1"')
     parser.add_argument("--system", choices=["1e", "2e"], default="1e",
                         help="AD&D edition (default: 1e)")
-    parser.add_argument("--author", default="Unknown")
-    parser.add_argument("--out", type=Path, default=None)
-    parser.add_argument("--output-dir", type=Path, default=None, dest="output_dir")
-    parser.add_argument("--api-key", default=None)
-    parser.add_argument("--pages-per-chunk", type=int, default=DEFAULT_CHUNK,
-                        dest="chunk_size")
-    parser.add_argument("--dpi", type=int, default=DEFAULT_DPI)
-    parser.add_argument("--force-ocr", action="store_true")
-    parser.add_argument("--lang", default="eng")
-    parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--pages", default=None, metavar="RANGE",
-                        help='Only process these pages, e.g. "10-20" or "5,10-15". '
-                             'Useful for testing before running the full conversion.')
-    parser.add_argument("--page", type=int, default=None, metavar="N",
-                        help="Only process this single page number.")
     parser.add_argument("--skip-pages", action="append", default=[],
                         dest="skip_pages_args", metavar="RANGE",
                         help='Page(s) to skip, e.g. "1-3" or "127" (repeatable)')
@@ -1695,23 +1678,10 @@ def main() -> None:
     parser.add_argument("--no-retry", action="store_true", dest="no_retry",
                         help="Skip failed chunks instead of retrying page-by-page. "
                              "Automatically active when --pages-per-chunk 1.")
-    parser.add_argument("--extract-monsters", action="store_true",
-                        dest="extract_monsters")
-    parser.add_argument("--monsters-only", action="store_true",
-                        dest="monsters_only")
     parser.add_argument("--trigger-config", type=Path, default=None,
                         dest="trigger_config",
                         help="JSON config of extra trigger substitutions produced "
                              "by find_triggers.py")
-    parser.add_argument("--debug-dir", type=Path, default=None, dest="debug_dir")
-    parser.add_argument("--dry-run", action="store_true", dest="dry_run_only")
-    parser.add_argument("--verbose", action="store_true")
-    parser.add_argument(
-        "--no-toc-hint",
-        action="store_true",
-        dest="no_toc_hint",
-        help="Do not inject the PDF bookmark outline as a section hint for Claude.",
-    )
 
     args = parser.parse_args()
 

@@ -34,9 +34,22 @@ python3 pdf_to_5etools_ocr.py input.pdf [options]
 python3 pdf_to_5etools_1e.py input.pdf [options]
 ```
 
-Requires `ANTHROPIC_API_KEY` env var or `--api-key KEY`. Default model: `claude-haiku-4-5-20251001` (1e/OCR scripts) or `claude-sonnet-4-20250514` (standard script). Use `--dry-run` to estimate token cost without making API calls. Use `--output-mode server` for two-file permanent installs; `--extract-monsters`/`--monsters-only` for stat block extraction. OCR script adds `--dpi N`, `--force-ocr`, `--lang LANG`. 1e script adds `--module-code CODE`, `--system 1e|2e`, `--skip-pages RANGE`, `--no-cr-adjustment`. All scripts support `--no-toc-hint` to skip injecting the PDF bookmark outline into Claude prompts.
+Requires `ANTHROPIC_API_KEY` env var or `--api-key KEY`. Default model: `claude-haiku-4-5-20251001` (1e/OCR scripts) or `claude-sonnet-4-20250514` (standard script). Use `--dry-run` to estimate token cost without making API calls. Use `--output-mode server` for two-file permanent installs; `--extract-monsters`/`--monsters-only` for stat block extraction. All scripts share a common argument set (see `cli_args.py`). OCR script adds `--dpi N`, `--force-ocr`, `--lang LANG`. 1e script adds `--module-code CODE`, `--system 1e|2e`, `--skip-pages RANGE`, `--no-cr-adjustment`. Standard script adds `--batch`. All scripts support `--no-toc-hint` to skip injecting the PDF bookmark outline into Claude prompts.
 
 ## Architecture
+
+### Shared CLI layer — `cli_args.py`
+
+All three converters import from `cli_args.py` for their argparse setup:
+- `add_common_args(parser, *, default_chunk, default_model)` — adds every argument shared by all three converters (`--type`, `--output-mode`, `--id`, `--author`, `--out`, `--output-dir`, `--api-key`, `--pages-per-chunk`, `--model`, `--extract-monsters`, `--monsters-only`, `--debug-dir`, `--dry-run`, `--verbose`, `--no-toc-hint`, `--pages`, `--page`). Note `--id` always uses `dest="short_id"`.
+- `add_ocr_args(parser, *, default_dpi)` — adds `--dpi`, `--force-ocr`, `--lang` (shared by OCR and 1e converters only).
+
+Each converter calls the relevant helpers then adds its own unique args:
+- **`pdf_to_5etools.py`**: `add_common_args` + `--batch`
+- **`pdf_to_5etools_ocr.py`**: `add_common_args` + `add_ocr_args` (no unique args)
+- **`pdf_to_5etools_1e.py`**: `add_common_args` + `add_ocr_args` + `--module-code`, `--system`, `--skip-pages`, `--no-cr-adjustment`, `--no-retry`, `--trigger-config`
+
+**When adding or changing any shared CLI argument, edit `cli_args.py` only** — changes propagate to all three converters automatically.
 
 ### Shared API layer — `claude_api.py`
 

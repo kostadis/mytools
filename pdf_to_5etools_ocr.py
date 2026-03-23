@@ -64,6 +64,8 @@ Options
 from __future__ import annotations
 
 import argparse
+
+import cli_args as _cli
 import json
 import os
 import re
@@ -1063,93 +1065,8 @@ def main() -> None:
           python3 pdf_to_5etools_ocr.py "Module.pdf" --lang eng+fra
         """),
     )
-    parser.add_argument("pdf", type=Path, help="Input PDF")
-    parser.add_argument("--type", choices=["adventure", "book"],
-                        default="adventure", dest="output_type",
-                        help="Content type (default: adventure)")
-    parser.add_argument(
-        "--output-mode",
-        choices=["homebrew", "server"],
-        default="homebrew",
-        dest="output_mode",
-        help=(
-            "homebrew = single file for Load from File (default); "
-            "server = two files for permanent server install"
-        ),
-    )
-    parser.add_argument("--id", default=None,
-                        help="Short uppercase ID (default: derived from filename)")
-    parser.add_argument("--author", default="Unknown")
-    parser.add_argument(
-        "--out", type=Path, default=None,
-        help="Full output filename (overrides --output-dir)",
-    )
-    parser.add_argument(
-        "--output-dir", type=Path, default=None, dest="output_dir",
-        help="Directory to write output file(s) into (default: same folder as the PDF)",
-    )
-    parser.add_argument("--api-key", default=None)
-    parser.add_argument("--pages-per-chunk", type=int, default=DEFAULT_CHUNK,
-                        dest="chunk_size")
-    parser.add_argument("--dpi", type=int, default=DEFAULT_DPI)
-    parser.add_argument("--force-ocr", action="store_true",
-                        help="OCR every page, even those with digital text")
-    parser.add_argument("--lang", default="eng",
-                        help="Tesseract language code (default: eng)")
-    parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument(
-        "--extract-monsters",
-        action="store_true",
-        dest="extract_monsters",
-        help=(
-            "Run a second Claude pass on each chunk to extract monster stat blocks "
-            "into the bestiary. Monsters appear in bestiary.html after loading."
-        ),
-    )
-    parser.add_argument(
-        "--monsters-only",
-        action="store_true",
-        dest="monsters_only",
-        help=(
-            "Skip adventure text extraction entirely — only extract monster stat "
-            "blocks. Produces a bestiary-only homebrew JSON. Fastest and cheapest "
-            "if you only need the bestiary entries."
-        ),
-    )
-    parser.add_argument(
-        "--debug-dir",
-        type=Path,
-        default=None,
-        dest="debug_dir",
-        help=(
-            "Directory to save raw chunk inputs and Claude responses for debugging. "
-            "Creates one -input.txt and one -response.txt / -parsed.json per chunk."
-        ),
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        dest="dry_run_only",
-        help=(
-            "Count tokens and estimate API cost without calling Claude. "
-            "Requires an API key (token counting is free)."
-        ),
-    )
-    parser.add_argument("--verbose", action="store_true")
-    parser.add_argument(
-        "--no-toc-hint",
-        action="store_true",
-        dest="no_toc_hint",
-        help="Do not inject the PDF bookmark outline as a section hint for Claude.",
-    )
-    parser.add_argument(
-        "--pages", default=None, metavar="RANGE",
-        help='Only process these pages, e.g. "10-20" or "5,10-15".',
-    )
-    parser.add_argument(
-        "--page", type=int, default=None, metavar="N",
-        help="Only process this single page number.",
-    )
+    _cli.add_common_args(parser, default_chunk=DEFAULT_CHUNK, default_model=DEFAULT_MODEL)
+    _cli.add_ocr_args(parser, default_dpi=DEFAULT_DPI)
 
     args = parser.parse_args()
 
@@ -1158,7 +1075,7 @@ def main() -> None:
         sys.exit(f"PDF not found: {pdf_path}")
 
     short_id: str = (
-        args.id
+        args.short_id
         or re.sub(r"[^A-Z0-9]", "", pdf_path.stem.upper())[:8]
         or "HOMEBREW"
     )
