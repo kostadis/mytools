@@ -79,6 +79,7 @@ except ImportError:
         "    sudo apt install tesseract-ocr tesseract-ocr-eng poppler-utils"
     )
 
+import claude_api as _api
 
 def normalise_path(raw: str) -> Path:
     r"""Accept Windows, WSL-mount, or Unix paths."""
@@ -97,7 +98,7 @@ DEFAULT_MODEL     = "claude-haiku-4-5-20251001"
 DEFAULT_CHUNK     = 3      # smaller chunks: 1e pages are information-dense
 DEFAULT_DPI       = 400    # higher DPI for aged/scanned modules
 MIN_DIGITAL_CHARS = 50
-MAX_CHUNK_CHARS   = 14_000
+MAX_CHUNK_CHARS   = 80_000  # safety cap (~20K tokens, well within 200K context)
 TESS_CONFIG       = r"--oem 3 --psm 1"
 
 
@@ -235,7 +236,7 @@ _FLOAT_TO_CR: dict[float, str] = {v: k for k, v in _CR_TO_FLOAT.items()}
 
 # ── System prompts ────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT_1E = textwrap.dedent("""
+SYSTEM_PROMPT_1E = textwrap.dedent(f"""
 You are a tabletop role-playing game archivist and rules converter.  Your task
 is to convert text from a published 1st Edition Advanced Dungeons & Dragons
 adventure module into 5etools JSON format.  All content is fictional game
@@ -271,40 +272,38 @@ no explanation — raw JSON only.
 Object types to use:
 
   Plain paragraph  → a bare JSON string
-  Named section    → {"type":"entries","name":"Title","entries":[...]}
-  Top section      → {"type":"section","name":"Title","entries":[...]}
-  Keyed room area  → {"type":"entries","name":"17. Vestibule","entries":[...]}
-  Bulleted list    → {"type":"list","items":["a","b"]}
-  Table            → {"type":"table","caption":"","colLabels":[],"colStyles":[],"rows":[[]]}
-  Boxed/sidebar    → {"type":"inset","name":"Title","entries":[...]}
-  Read-aloud text  → {"type":"inset","name":"","entries":["text..."]}
-  Image stub       → {"type":"image","href":{"type":"internal","path":"img/placeholder.webp"},"title":"caption"}
+  Named section    → {{"type":"entries","name":"Title","entries":[...]}}
+  Top section      → {{"type":"section","name":"Title","entries":[...]}}
+  Keyed room area  → {{"type":"entries","name":"17. Vestibule","entries":[...]}}
+  Bulleted list    → {{"type":"list","items":["a","b"]}}
+  Table            → {{"type":"table","caption":"","colLabels":[],"colStyles":[],"rows":[[]]}}
+  Boxed/sidebar    → {{"type":"inset","name":"Title","entries":[...]}}
+  Read-aloud text  → {{"type":"inset","name":"","entries":["text..."]}}
+  Image stub       → {{"type":"image","href":{{"type":"internal","path":"img/placeholder.webp"}},"title":"caption"}}
 
 Rules:
-- Every [ROOM-KEY-N] opens a new {"type":"entries","name":"N. Room Name"} block.
+- Every [ROOM-KEY-N] opens a new {{"type":"entries","name":"N. Room Name"}} block.
   If there is no explicit room name, use the first few words of the description.
 - "Room Key", "Encounter Key", "Area Key", "Key to the [area]" headings that
   introduce numbered room entries must NOT become wrapper entries — discard the
   label and emit the numbered room entries that follow as direct siblings at the
   current level.  Do not nest rooms inside a container named after the label.
 - "Dungeon Level One / Two / Three" and similar dungeon-level headings SHOULD
-  become {"type":"section"} entries so each level is a separate navigable chapter.
+  become {{"type":"section"}} entries so each level is a separate navigable chapter.
 - [INSET-START/END] blocks that have no heading and read as atmospheric prose are
-  read-aloud text: use {"type":"inset","name":""}.
-- Named sidebars, DM notes, or special features use {"type":"inset","name":"..."}.
+  read-aloud text: use {{"type":"inset","name":""}}.
+- Named sidebars, DM notes, or special features use {{"type":"inset","name":"..."}}.
 - Preserve all 1e game-mechanical text accurately.
-- Use {@b text} for bold, {@i text} for italic.
-- Use {@creature Name} for monster names, {@spell Name} for spells,
-  {@item Name} for magic items, {@dice NdN} for dice expressions.
-- Wandering monster tables ([WANDERING-TABLE]) → {"type":"table"} with colLabels
+{_api.COMMON_TAG_RULES}
+- Wandering monster tables ([WANDERING-TABLE]) → {{"type":"table"}} with colLabels
   from the table headers (e.g., ["d12","Monster","Number Appearing"]).
 - Stat lines ([1E-STAT], [STAT-BLOCK-START/END]) should be kept verbatim inside
-  the room entry as italic text: "{@i Gnolls (6): AC 5; MV 9\"; HD 2; hp 9; #AT 1; D 2-8}"
+  the room entry as italic text: "{{@i Gnolls (6): AC 5; MV 9\\"; HD 2; hp 9; #AT 1; D 2-8}}"
   A separate pass converts these stats; do NOT attempt conversion here.
-- NPC blocks ([NPC-BLOCK]) should be a {"type":"entries","name":"NPC Name"}
+- NPC blocks ([NPC-BLOCK]) should be a {{"type":"entries","name":"NPC Name"}}
   with the stat lines as italic body text.
 - Do NOT add IDs — they are added later.
-- Merge hyphenated line-breaks: "adven-\nture" → "adventure".
+- Merge hyphenated line-breaks: "adven-\\nture" → "adventure".
 - If a page contains only noise or blank content, return [].
 """).strip()
 
@@ -828,33 +827,6 @@ def extract_digital_page(page_obj: fitz.Page, body_size: float) -> str | None:
 
 # ── Claude API ────────────────────────────────────────────────────────────────
 
-def _parse_claude_response(raw: str, verbose: bool,
-                           debug_dir: Path | None = None,
-                           chunk_id: str = "") -> list[Any]:
-    raw = raw.strip()
-    if debug_dir:
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        (debug_dir / f"{chunk_id}-response.txt").write_text(raw, encoding="utf-8")
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$",          "", raw)
-    try:
-        result = json.loads(raw)
-        if not isinstance(result, list):
-            result = [result]
-        if debug_dir:
-            (debug_dir / f"{chunk_id}-parsed.json").write_text(
-                json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-        return result
-    except json.JSONDecodeError as e:
-        print(f"    [WARN] JSON parse error in {chunk_id}: {e}", flush=True)
-        if debug_dir:
-            (debug_dir / f"{chunk_id}-parse-error.txt").write_text(
-                f"Error: {e}\n\n{raw}", encoding="utf-8"
-            )
-        return []
-
-
 _CHUNK_PREFIX = (
     "[CONTEXT: The following is fictional text from a published 1st Edition "
     "Advanced Dungeons & Dragons tabletop RPG module. It is being converted "
@@ -1049,29 +1021,17 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
                 model: str, verbose: bool,
                 debug_dir: Path | None = None,
                 chunk_id: str = "chunk-0000") -> list[Any] | None:
-    """Return parsed entries, or None if the API rejected the chunk."""
+    """Preprocess chunk text, call Claude, return entries or None on API rejection."""
     chunk_text = _CHUNK_PREFIX + _neutralize_triggers(_sanitize_text(chunk_text))
-
-    if verbose:
-        print(f"    → Sending {len(chunk_text):,} chars to Claude...", flush=True)
-    if debug_dir:
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        (debug_dir / f"{chunk_id}-input.txt").write_text(chunk_text, encoding="utf-8")
-
     try:
-        msg = client.messages.create(
-            model=model, max_tokens=8192,
-            system=SYSTEM_PROMPT_1E,
-            messages=[{"role": "user", "content": chunk_text}],
-        )
+        return _api.call_claude(client, chunk_text, model, SYSTEM_PROMPT_1E,
+                                verbose, debug_dir, chunk_id)
     except anthropic.BadRequestError as e:
         print(f"    [WARN] API rejected {chunk_id} ({e}); will retry page-by-page.", flush=True)
         if debug_dir:
+            debug_dir.mkdir(parents=True, exist_ok=True)
             (debug_dir / f"{chunk_id}-api-error.txt").write_text(str(e), encoding="utf-8")
         return None
-
-    return _parse_claude_response(msg.content[0].text, verbose,
-                                  debug_dir=debug_dir, chunk_id=chunk_id)
 
 
 def call_claude_for_monsters(client: anthropic.Anthropic, chunk_text: str,
@@ -1079,24 +1039,16 @@ def call_claude_for_monsters(client: anthropic.Anthropic, chunk_text: str,
                               no_cr_adjustment: bool = False,
                               debug_dir: Path | None = None,
                               chunk_id: str = "chunk-0000") -> list[Any] | None:
+    """Extract and post-process 1e monster stat blocks from a chunk."""
     chunk_text = _CHUNK_PREFIX + _neutralize_triggers(_sanitize_text(chunk_text))
-
     if verbose:
         print(f"    [monsters] Scanning {len(chunk_text):,} chars...", flush=True)
-
     try:
-        msg = client.messages.create(
-            model=model, max_tokens=8192,
-            system=MONSTER_SYSTEM_PROMPT_1E,
-            messages=[{"role": "user", "content": chunk_text}],
-        )
+        raw_monsters = _api.call_claude(client, chunk_text, model, MONSTER_SYSTEM_PROMPT_1E,
+                                        verbose, debug_dir, chunk_id)
     except anthropic.BadRequestError as e:
         print(f"    [WARN] API rejected {chunk_id}-monsters ({e}); skipping.", flush=True)
         return None
-    raw_monsters = _parse_claude_response(
-        msg.content[0].text, verbose,
-        debug_dir=debug_dir, chunk_id=f"{chunk_id}-monsters",
-    )
 
     monsters: list[Any] = []
     for m in raw_monsters:
@@ -1473,9 +1425,10 @@ def convert(
             if text.strip():
                 ct += f"\n--- Page {page_num} ---\n{text}\n"
         if len(ct) > MAX_CHUNK_CHARS:
-            ct = ct[:MAX_CHUNK_CHARS]
-            if verbose:
-                print(f"    [WARN] Trimmed chunk to {MAX_CHUNK_CHARS} chars.")
+            cut = ct.rfind('\n--- Page', 0, MAX_CHUNK_CHARS)
+            ct = ct[:cut] if cut != -1 else ct[:MAX_CHUNK_CHARS]
+            print(f"    [WARN] Chunk exceeds {MAX_CHUNK_CHARS:,} chars — trimmed to last page boundary. "
+                  f"Consider reducing --pages-per-chunk.", flush=True)
         chunk_texts.append(ct)
 
     # ── 4. API / dry-run ─────────────────────────────────────────────────────
@@ -1521,9 +1474,11 @@ def convert(
                             print(f"    [SKIP] Page {page_num} rejected by content filter.", flush=True)
                         else:
                             entries.extend(result)
-            print(f"    → {len(entries)} entries parsed"
-                  + ("  ← EMPTY — check debug files" if debug_dir and not entries else ""),
-                  flush=True)
+            if entries:
+                print(f"    → {len(entries)} entries parsed", flush=True)
+            else:
+                tip = f"Check {debug_dir}/" if debug_dir else "Re-run with --debug-dir DIR to inspect raw API responses."
+                print(f"    → 0 entries — chunk produced no output. {tip}", flush=True)
             all_entries.extend(entries)
         print(f"      Total entries: {len(all_entries)}", flush=True)
     else:

@@ -95,6 +95,8 @@ except ImportError:
         "    sudo apt install tesseract-ocr tesseract-ocr-eng poppler-utils"
     )
 
+import claude_api as _api
+
 def normalise_path(raw: str) -> Path:
     r"""
     Accept any of these path formats and return a usable Path:
@@ -117,14 +119,14 @@ DEFAULT_MODEL      = "claude-haiku-4-5-20251001"
 DEFAULT_CHUNK      = 4
 DEFAULT_DPI        = 300
 MIN_DIGITAL_CHARS  = 50     # pages with fewer chars than this → OCR
-MAX_CHUNK_CHARS    = 14_000
+MAX_CHUNK_CHARS    = 80_000  # safety cap (~20K tokens, well within 200K context)
 COLUMN_GAP_RATIO   = 0.20   # gap > 20% of page width → column break
 
 # Tesseract page-segmentation mode 1 = auto OSD, 6 = single block
 # PSM 1 handles most RPG pages well (auto-detects orientation + columns)
 TESS_CONFIG = r"--oem 3 --psm 1"
 
-SYSTEM_PROMPT = textwrap.dedent("""
+SYSTEM_PROMPT = textwrap.dedent(f"""
 You are an expert at converting RPG sourcebook text into the 5etools adventure
 JSON format.  The text you receive was extracted from a PDF (some pages via
 direct extraction, some via OCR) and may contain minor OCR artefacts like
@@ -149,23 +151,21 @@ no explanation — raw JSON only.
 Use these object types:
 
   Plain paragraph  → a bare JSON string
-  Named section    → {"type":"entries","name":"Title","entries":[...]}
-  Top section      → {"type":"section","name":"Title","entries":[...]}
-  Bulleted list    → {"type":"list","items":["a","b"]}
-  Table            → {"type":"table","caption":"","colLabels":[],"colStyles":[],"rows":[[]]}
-  Boxed/sidebar    → {"type":"inset","name":"Title","entries":[...]}
-  Read-aloud text  → {"type":"inset","name":"","entries":["text..."]}
-  Image stub       → {"type":"image","href":{"type":"internal","path":"img/placeholder.webp"},"title":"caption"}
+  Named section    → {{"type":"entries","name":"Title","entries":[...]}}
+  Top section      → {{"type":"section","name":"Title","entries":[...]}}
+  Bulleted list    → {{"type":"list","items":["a","b"]}}
+  Table            → {{"type":"table","caption":"","colLabels":[],"colStyles":[],"rows":[[]]}}
+  Boxed/sidebar    → {{"type":"inset","name":"Title","entries":[...]}}
+  Read-aloud text  → {{"type":"inset","name":"","entries":["text..."]}}
+  Image stub       → {{"type":"image","href":{{"type":"internal","path":"img/placeholder.webp"}},"title":"caption"}}
 
 Rules:
 - Preserve all flavour text and game rules accurately.
-- Use {@b text} for bold, {@i text} for italic.
-- Use {@creature Name} for monster names, {@spell Name} for spells,
-  {@item Name} for magic items, {@dice NdN} for dice expressions.
+{_api.COMMON_TAG_RULES}
 - Nest sub-sections inside their parent section's entries array.
 - Do NOT add IDs — those are added later.
 - Tables must have colLabels and rows even if only one column.
-- Merge hyphenated line-breaks: "adven-\nture" → "adventure".
+- Merge hyphenated line-breaks: "adven-\\nture" → "adventure".
 - If a page contains only noise or blank content, return [].
 """).strip()
 
@@ -572,56 +572,17 @@ def compute_body_size(pdf_doc: fitz.Document) -> float:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Claude API
+# Claude API — delegates to claude_api for shared retry/parse logic
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def call_claude(client: anthropic.Anthropic, chunk_text: str,
                 model: str, verbose: bool,
                 debug_dir: Path | None = None,
                 chunk_id: str = "chunk-0000") -> list[Any]:
-    if verbose:
-        print(f"    → Sending {len(chunk_text):,} chars to Claude ...",
-              flush=True)
-    if debug_dir:
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        (debug_dir / f"{chunk_id}-input.txt").write_text(chunk_text, encoding="utf-8")
-
-    msg = client.messages.create(
-        model=model,
-        max_tokens=8192,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": chunk_text}],
-    )
-
-    raw = msg.content[0].text.strip()
-    if debug_dir:
-        (debug_dir / f"{chunk_id}-response.txt").write_text(raw, encoding="utf-8")
-
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
-
-    try:
-        result = json.loads(raw)
-        if not isinstance(result, list):
-            result = [result]
-        if debug_dir:
-            (debug_dir / f"{chunk_id}-parsed.json").write_text(
-                json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-        return result
-    except json.JSONDecodeError as e:
-        print(f"    [WARN] JSON parse failed in {chunk_id}: {e}", flush=True)
-        print(f"    Raw (first 400): {raw[:400]}", flush=True)
-        if debug_dir:
-            (debug_dir / f"{chunk_id}-parse-error.txt").write_text(
-                f"Error: {e}\n\n{raw}", encoding="utf-8"
-            )
-        # If response was truncated by token limit, warn clearly
-        if msg.stop_reason == 'max_tokens':
-            print(f"    [WARN] {chunk_id} hit max_tokens — response truncated. "
-                  f"Try --pages-per-chunk with a smaller value.", flush=True)
-        return []
-
+    """Send one chunk to Claude with the OCR system prompt."""
+    return _api.call_claude(client, chunk_text, model, SYSTEM_PROMPT,
+                            verbose, debug_dir, chunk_id)
 
 
 def call_claude_for_monsters(client: anthropic.Anthropic, chunk_text: str,
@@ -629,40 +590,20 @@ def call_claude_for_monsters(client: anthropic.Anthropic, chunk_text: str,
                               verbose: bool,
                               debug_dir: Path | None = None,
                               chunk_id: str = "chunk-0000") -> list[Any]:
-    """Second-pass Claude call to extract monster stat blocks from a text chunk."""
+    """Extract monster stat blocks from a chunk (second-pass call)."""
     if verbose:
         print(f"    [monsters] Scanning {len(chunk_text):,} chars for stat blocks...",
               flush=True)
 
-    msg = client.messages.create(
-        model=model,
-        max_tokens=8192,
-        system=MONSTER_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": chunk_text}],
-    )
-
-    raw = msg.content[0].text.strip()
-    if debug_dir:
-        (debug_dir / f"{chunk_id}-monsters-response.txt").write_text(raw, encoding="utf-8")
-
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
-
-    try:
-        monsters = json.loads(raw)
-        if not isinstance(monsters, list):
-            monsters = []
-    except json.JSONDecodeError as e:
-        if verbose:
-            print(f"    [monsters] JSON parse failed: {e}", flush=True)
-        monsters = []
+    monsters = _api.call_claude(client, chunk_text, model, MONSTER_SYSTEM_PROMPT,
+                                verbose, debug_dir, f"{chunk_id}-monsters")
 
     for m in monsters:
         if isinstance(m, dict):
             m["source"] = source_id
 
     if monsters and verbose:
-        names = [m.get("name","?") for m in monsters if isinstance(m, dict)]
+        names = [m.get("name", "?") for m in monsters if isinstance(m, dict)]
         print(f"    [monsters] Found {len(monsters)}: {', '.join(names)}", flush=True)
 
     return monsters
@@ -844,9 +785,10 @@ def convert(
             if text.strip():
                 chunk_text += f"\n--- Page {page_num} ---\n{text}\n"
         if len(chunk_text) > MAX_CHUNK_CHARS:
-            chunk_text = chunk_text[:MAX_CHUNK_CHARS]
-            if verbose:
-                print(f"    [WARN] Trimmed to {MAX_CHUNK_CHARS} chars.")
+            cut = chunk_text.rfind('\n--- Page', 0, MAX_CHUNK_CHARS)
+            chunk_text = chunk_text[:cut] if cut != -1 else chunk_text[:MAX_CHUNK_CHARS]
+            print(f"    [WARN] Chunk exceeds {MAX_CHUNK_CHARS:,} chars — trimmed to last page boundary. "
+                  f"Consider reducing --pages-per-chunk.", flush=True)
         chunk_texts.append(chunk_text)
 
     if dry_run_only:
@@ -891,6 +833,20 @@ def convert(
             )
             all_monsters.extend(monsters)
         print(f"      Total monsters found: {len(all_monsters)}", flush=True)
+
+    # ── Hoist stray top-level non-section entries ─────────────────────────────
+    # 5etools indexes chapters by direct array position: data[ixChapter].
+    # Any non-section object at the top level shifts subsequent chapters by 1.
+    fixed: list[Any] = []
+    for item in all_entries:
+        if isinstance(item, dict) and item.get("type") != "section":
+            if fixed and isinstance(fixed[-1], dict) and fixed[-1].get("type") == "section":
+                fixed[-1].setdefault("entries", []).append(item)
+            else:
+                fixed.append({"type": "section", "name": item.get("name", "Preamble"), "entries": [item] if item.get("type") != "entries" else item.get("entries", [])})
+        else:
+            fixed.append(item)
+    all_entries = fixed
 
     # ── Post-process ──────────────────────────────────────────────────────────
     if monsters_only and not all_monsters:

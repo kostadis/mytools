@@ -102,9 +102,10 @@ Inline tags supported by 5etools renderer:
     {@i text}          italic
     {@creature Name}   link to bestiary
     {@spell Name}      link to spell
-    {@item Name}       link to item
+    {@item Name}       link to item (use for scrolls too: {@item scroll of X})
     {@dc N}            difficulty class
     {@dice NdN+N}      dice roll
+ONLY use these tags. Do not invent others (no {@scroll}, {@npc}, etc.).
 """
 
 from __future__ import annotations
@@ -128,6 +129,8 @@ try:
     import anthropic
 except ImportError:
     sys.exit("anthropic is required.  Install with:  pip install anthropic")
+
+import claude_api as _api
 
 
 
@@ -154,9 +157,9 @@ def normalise_path(raw: str) -> Path:
 
 DEFAULT_MODEL  = "claude-haiku-4-5-20251001"
 DEFAULT_CHUNK  = 6   # pages per API call
-MAX_CHUNK_CHARS = 12_000  # safety cap on chars sent per call
+MAX_CHUNK_CHARS = 80_000  # safety cap on chars sent per call (~20K tokens, well within 200K context)
 
-SYSTEM_PROMPT = textwrap.dedent("""
+SYSTEM_PROMPT = textwrap.dedent(f"""
 You are an expert at converting RPG sourcebook text into the 5etools adventure
 JSON format.  You will receive the raw text of several consecutive pages from a
 PDF, annotated with heading level hints (H1/H2/H3).
@@ -168,19 +171,16 @@ The array should contain the entries that appear in those pages.  Use these
 object types:
 
   Plain paragraph → a bare JSON string
-  Named section   → {"type":"entries","name":"Title","entries":[...]}
-  Top section     → {"type":"section","name":"Title","entries":[...]}
-  Bulleted list   → {"type":"list","items":["a","b"]}
-  Table           → {"type":"table","caption":"","colLabels":[],"colStyles":[],"rows":[[]]}
-  Boxed/sidebar   → {"type":"inset","name":"Title","entries":[...]}
-  Read-aloud text → {"type":"inset","name":"","entries":["text..."]}
+  Named section   → {{"type":"entries","name":"Title","entries":[...]}}
+  Top section     → {{"type":"section","name":"Title","entries":[...]}}
+  Bulleted list   → {{"type":"list","items":["a","b"]}}
+  Table           → {{"type":"table","caption":"","colLabels":[],"colStyles":[],"rows":[[]]}}
+  Boxed/sidebar   → {{"type":"inset","name":"Title","entries":[...]}}
+  Read-aloud text → {{"type":"inset","name":"","entries":["text..."]}}
 
 Rules:
 - Preserve all flavour text and game rules accurately.
-- Use {@b text} for bold, {@i text} for italic.
-- Use {@creature Name} when a monster name appears.
-- Use {@spell Name} for spell names, {@item Name} for magic item names.
-- Use {@dice NdN} for dice expressions.
+{_api.COMMON_TAG_RULES}
 - Nest sub-sections inside their parent section's entries array.
 - Do NOT add IDs — those are added later.
 - Tables must have colLabels and rows even if only one column.
@@ -253,12 +253,129 @@ Alignment abbreviations: L=Lawful, N=Neutral, C=Chaotic, G=Good, E=Evil, U=Unali
 # PDF extraction
 # ---------------------------------------------------------------------------
 
+def _detect_running_headers(doc: Any, min_pages: int = 3) -> set[str]:
+    """Return text strings that are running headers or footers.
+
+    Strategy: collect the first and last text lines of each page's block stream
+    (PDFs sometimes store footer blocks first in stream order regardless of
+    visual position), plus text that visually sits in the bottom 10% of the
+    page.  Candidate texts that appear on min_pages or more pages and are at
+    least 8 characters long are treated as repeating chrome to suppress.
+    """
+    from collections import Counter
+    candidate_texts: list[str] = []
+
+    for page in doc:
+        page_h   = page.rect.height
+        bottom_y = page_h * 0.90  # bottom 10% band
+
+        text_blocks = [b for b in page.get_text("dict")["blocks"] if b.get("type") == 0]
+        if not text_blocks:
+            continue
+
+        # first and last block in stream order (catches out-of-order footers)
+        edge_blocks = {id(text_blocks[0]), id(text_blocks[-1])}
+
+        for blk in text_blocks:
+            y0 = blk.get("bbox", (0, 0, 0, 0))[1]
+            in_bottom_band = y0 >= bottom_y
+            in_edge_block  = id(blk) in edge_blocks
+            if not (in_bottom_band or in_edge_block):
+                continue
+            for line in blk.get("lines", []):
+                text = " ".join(
+                    sp.get("text", "").strip() for sp in line.get("spans", [])
+                ).strip()
+                if text and len(text) >= 8:
+                    candidate_texts.append(text)
+
+    counts = Counter(candidate_texts)
+    return {t for t, n in counts.items() if n >= min_pages}
+
+
+# ---------------------------------------------------------------------------
+# PDF bookmark / TOC extraction
+# ---------------------------------------------------------------------------
+
+# Characters in the 0x80–0x9F range that PDFs sometimes embed using
+# Windows-1252 or Mac-Roman encodings rather than proper Unicode.
+_PDF_CHAR_MAP: dict[str, str] = {
+    '\x80': '€',    '\x82': '‚',    '\x83': 'ƒ',    '\x84': '„',
+    '\x85': '…',    '\x86': '†',    '\x87': '‡',    '\x89': '‰',
+    '\x8b': '‹',    '\x8c': 'Œ',    '\x95': '•',    '\x96': '–',
+    '\x97': '—',    '\x99': '™',    '\x9b': '›',    '\x9c': 'œ',
+    # Variants observed in DDEX modules:
+    '\x8d': '\u2018',   # left single quotation mark
+    '\x8e': '\u2019',   # right single quotation mark
+    '\x90': '\u2019',   # right single quotation mark / apostrophe
+    '\x91': '\u2018',   '\x92': '\u2019',
+    '\x93': '\u201c',   '\x94': '\u201d',
+}
+
+
+def _decode_pdf_string(text: str) -> str:
+    """Replace raw Windows-1252 bytes in a PDF string with proper Unicode."""
+    for bad, good in _PDF_CHAR_MAP.items():
+        text = text.replace(bad, good)
+    return text.strip()
+
+
+def extract_pdf_toc(pdf_path: Path | str, max_level: int = 3) -> str | None:
+    """Extract the PDF bookmark outline and return a formatted text hint.
+
+    Returns ``None`` when the PDF has no bookmarks.  The hint is prepended to
+    each Claude chunk so Claude knows the authoritative section names and page
+    numbers before it reads the text content.
+
+    Only levels ≤ *max_level* are included (level 1 is almost always the
+    document title; level 2 are top-level sections; level 3 are subsections).
+    Level 4+ items (Treasure, XP Award, Development…) are omitted to keep the
+    hint compact.
+    """
+    doc = fitz.open(str(pdf_path))
+    try:
+        raw: list[list] = doc.get_toc(simple=True)  # [[level, title, page], …]
+    finally:
+        doc.close()
+
+    if not raw:
+        return None
+
+    # Skip entries deeper than max_level
+    entries = [(lvl, _decode_pdf_string(title), page)
+               for lvl, title, page in raw
+               if lvl <= max_level]
+
+    if not entries:
+        return None
+
+    # Normalise so the shallowest level present becomes level 1
+    min_lvl = min(lvl for lvl, _, _ in entries)
+
+    lines = [
+        "=== PDF TABLE OF CONTENTS ===",
+        "Use these exact names for section headings in the JSON output.",
+        "",
+    ]
+    for lvl, title, page in entries:
+        indent = "  " * (lvl - min_lvl)
+        lines.append(f"{indent}p{page}: {title}")
+    lines.append("")
+    lines.append("=== END OF TABLE OF CONTENTS ===")
+
+    return "\n".join(lines)
+
+
 def extract_pages(pdf_path: Path) -> list[dict]:
     """Return a list of page dicts with keys: page_num, blocks.
     Each block: {text, size, bold, italic, is_heading, heading_level}
     """
     doc = fitz.open(str(pdf_path))
     pages: list[dict] = []
+
+    # Detect running headers before heading classification so they are never
+    # tagged as H1/H2/H3 regardless of font size.
+    running_headers = _detect_running_headers(doc)
 
     # First pass: collect all font sizes to establish heading thresholds
     all_sizes: list[float] = []
@@ -314,17 +431,24 @@ def extract_pages(pdf_path: Path) -> list[dict]:
                 if not text:
                     continue
 
+                # Skip running headers/footers entirely — don't even include
+                # them as plain text, as they confuse Claude into creating
+                # spurious sections from footer/title text.
+                if text in running_headers:
+                    continue
+
                 heading_level = 0
                 is_heading = False
-                if max_size >= h1_thresh and (is_bold or len(text) < 80):
-                    heading_level = 1
-                    is_heading = True
-                elif max_size >= h2_thresh and (is_bold or len(text) < 80):
-                    heading_level = 2
-                    is_heading = True
-                elif max_size >= h3_thresh and is_bold and len(text) < 80:
-                    heading_level = 3
-                    is_heading = True
+                if text not in running_headers:
+                    if max_size >= h1_thresh and (is_bold or len(text) < 80):
+                        heading_level = 1
+                        is_heading = True
+                    elif max_size >= h2_thresh and (is_bold or len(text) < 80):
+                        heading_level = 2
+                        is_heading = True
+                    elif max_size >= h3_thresh and is_bold and len(text) < 80:
+                        heading_level = 3
+                        is_heading = True
 
                 structured.append({
                     "text": text,
@@ -376,78 +500,21 @@ def chunk_pages(pages: list[dict], chunk_size: int) -> list[list[dict]]:
 
 
 # ---------------------------------------------------------------------------
-# Claude API call
+# Claude API call — delegates to claude_api for shared retry/parse logic
 # ---------------------------------------------------------------------------
 
-def _parse_claude_response(raw: str, verbose: bool,
-                            debug_dir: Path | None = None,
-                            chunk_id: str = "") -> list[Any]:
-    """Parse a raw Claude text response into a JSON list."""
-    raw = raw.strip()
-    # Save raw response before any stripping
-    if debug_dir:
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        (debug_dir / f"{chunk_id}-response.txt").write_text(raw, encoding="utf-8")
-
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
-    try:
-        result = json.loads(raw)
-        if not isinstance(result, list):
-            result = [result]
-        if debug_dir:
-            (debug_dir / f"{chunk_id}-parsed.json").write_text(
-                json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-        return result
-    except json.JSONDecodeError as e:
-        print(f"    [WARN] JSON parse error in {chunk_id}: {e}", flush=True)
-        print(f"    Raw response (first 400 chars): {raw[:400]}", flush=True)
-        if debug_dir:
-            (debug_dir / f"{chunk_id}-parse-error.txt").write_text(
-                f"Error: {e}\n\n{raw}", encoding="utf-8"
-            )
-        if verbose:
-            print(f"    Full raw response saved to {debug_dir}/{chunk_id}-response.txt")
-        return []
+# Re-export so that tests and merge_patch.py can still import from this module.
+_recover_partial_json = _api._recover_partial_json
+_parse_claude_response = _api._parse_claude_response
 
 
 def call_claude(client: anthropic.Anthropic, chunk_text: str,
                 model: str, verbose: bool,
                 debug_dir: Path | None = None,
                 chunk_id: str = "chunk-0000") -> list[Any]:
-    """Send a single chunk to Claude and return parsed JSON array (standard API)."""
-    if verbose:
-        print(f"    Sending {len(chunk_text):,} chars to Claude...", flush=True)
-    if debug_dir:
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        (debug_dir / f"{chunk_id}-input.txt").write_text(chunk_text, encoding="utf-8")
-
-    message = client.messages.create(
-        model=model,
-        max_tokens=8192,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": chunk_text}],
-    )
-    result = _parse_claude_response(message.content[0].text, verbose,
-                                    debug_dir=debug_dir, chunk_id=chunk_id)
-
-    # If parse failed AND the response looks truncated, retry with half the input
-    if not result and message.stop_reason == 'max_tokens':
-        print(f"    [RETRY] Hit max_tokens — splitting chunk and retrying...", flush=True)
-        half = len(chunk_text) // 2
-        split_point = chunk_text.rfind('\n--- Page', 0, half + 1)
-        if split_point == -1:
-            split_point = half
-        for part_idx, part in enumerate([chunk_text[:split_point], chunk_text[split_point:]]):
-            if not part.strip():
-                continue
-            sub_id = f"{chunk_id}-part{part_idx}"
-            print(f"      Retrying {sub_id} ({len(part):,} chars)...", flush=True)
-            result.extend(call_claude(client, part, model, verbose,
-                                      debug_dir=debug_dir, chunk_id=sub_id))
-
-    return result
+    """Send one chunk to Claude with the standard 5e system prompt."""
+    return _api.call_claude(client, chunk_text, model, SYSTEM_PROMPT,
+                            verbose, debug_dir, chunk_id)
 
 
 def call_claude_batch(client: anthropic.Anthropic, chunks: list[str],
@@ -472,7 +539,7 @@ def call_claude_batch(client: anthropic.Anthropic, chunks: list[str],
             "custom_id": f"chunk-{i:04d}",
             "params": {
                 "model": model,
-                "max_tokens": 8192,
+                "max_tokens": _api.MAX_OUTPUT_TOKENS,
                 "system": SYSTEM_PROMPT,
                 "messages": [{"role": "user", "content": text}],
             },
@@ -485,7 +552,6 @@ def call_claude_batch(client: anthropic.Anthropic, chunks: list[str],
     print(f"  Batch ID: {batch_id}", flush=True)
     print("  Waiting for batch to complete (polls every 15 s)...", flush=True)
 
-    # Poll until processing_status == "ended"
     while True:
         batch = client.messages.batches.retrieve(batch_id)
         status = batch.processing_status
@@ -501,7 +567,6 @@ def call_claude_batch(client: anthropic.Anthropic, chunks: list[str],
             break
         _time.sleep(15)
 
-    # Collect results in order
     results_map: dict[str, list[Any]] = {}
     for result in client.messages.batches.results(batch_id):
         cid = result.custom_id
@@ -510,9 +575,8 @@ def call_claude_batch(client: anthropic.Anthropic, chunks: list[str],
             if msg.stop_reason == 'max_tokens':
                 print(f"    [WARN] {cid} hit max_tokens — response may be truncated. "
                       f"Try --pages-per-chunk with a smaller value.", flush=True)
-            raw = msg.content[0].text
-            results_map[cid] = _parse_claude_response(
-                raw, verbose, debug_dir=debug_dir, chunk_id=cid
+            results_map[cid], _ = _api._parse_claude_response(
+                msg.content[0].text, verbose, debug_dir=debug_dir, chunk_id=cid
             )
         else:
             print(f"    [WARN] {cid} failed: {result.result.type}", flush=True)
@@ -524,17 +588,14 @@ def call_claude_batch(client: anthropic.Anthropic, chunks: list[str],
 
     ordered = [results_map.get(f"chunk-{i:04d}", []) for i in range(len(chunks))]
 
-    # Always print per-chunk summary
     print(f"\n  Chunk results summary:", flush=True)
     for i, entries in enumerate(ordered):
         cid = f"chunk-{i:04d}"
-        status = f"{len(entries)} entries"
-        flag = "  ← EMPTY — check debug files" if len(entries) == 0 else ""
-        print(f"    {cid}: {status}{flag}", flush=True)
+        flag = "  ← EMPTY — check debug files" if not entries else ""
+        print(f"    {cid}: {len(entries)} entries{flag}", flush=True)
     print(flush=True)
 
     return ordered
-
 
 
 def call_claude_for_monsters(client: anthropic.Anthropic, chunk_text: str,
@@ -542,34 +603,20 @@ def call_claude_for_monsters(client: anthropic.Anthropic, chunk_text: str,
                               verbose: bool,
                               debug_dir: Path | None = None,
                               chunk_id: str = "chunk-0000") -> list[Any]:
-    """
-    Second-pass Claude call: extract structured monster stat blocks from a chunk.
-    Returns a list of 5etools monster objects (may be empty if no stat blocks found).
-    """
+    """Extract monster stat blocks from a chunk (second-pass call)."""
     if verbose:
         print(f"    [monsters] Scanning {len(chunk_text):,} chars for stat blocks...",
               flush=True)
 
-    message = client.messages.create(
-        model=model,
-        max_tokens=8192,
-        system=MONSTER_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": chunk_text}],
-    )
+    monsters = _api.call_claude(client, chunk_text, model, MONSTER_SYSTEM_PROMPT,
+                                verbose, debug_dir, f"{chunk_id}-monsters")
 
-    monsters = _parse_claude_response(
-        message.content[0].text, verbose,
-        debug_dir=debug_dir,
-        chunk_id=f"{chunk_id}-monsters"
-    )
-
-    # Stamp source and mark as NPC if not already set
     for m in monsters:
         if isinstance(m, dict):
             m["source"] = source_id
 
     if monsters and verbose:
-        names = [m.get("name","?") for m in monsters if isinstance(m, dict)]
+        names = [m.get("name", "?") for m in monsters if isinstance(m, dict)]
         print(f"    [monsters] Found {len(monsters)}: {', '.join(names)}", flush=True)
 
     return monsters
@@ -645,6 +692,7 @@ def convert(
     debug_dir: Path | None,  # directory to dump raw chunk I/O for debugging
     verbose: bool,
     page_filter: set[int],  # if non-empty, only process these page numbers
+    use_toc_hint: bool = True,  # prepend PDF bookmark outline to each chunk
 ) -> None:
     print(f"\n{'='*60}")
     print(f"  PDF → 5etools converter")
@@ -694,6 +742,18 @@ def convert(
     print(f"[3/5] Converting {len(chunks)} chunks via Claude ({model}) [{api_label}]...",
           flush=True)
 
+    # Extract PDF bookmark TOC for use as a per-chunk hint to Claude
+    toc_hint: str | None = None
+    if use_toc_hint:
+        toc_hint = extract_pdf_toc(pdf_path)
+        if toc_hint:
+            n_bm = sum(1 for ln in toc_hint.splitlines()
+                       if ln.strip() and not ln.startswith('==='))
+            print(f"      PDF has {n_bm} bookmark entries — injecting as section hint.",
+                  flush=True)
+        else:
+            print("      PDF has no bookmarks — section hint skipped.", flush=True)
+
     # Build the annotated text for every chunk up front
     chunk_texts: list[str] = []
     for chunk in chunks:
@@ -702,10 +762,14 @@ def convert(
             annotated = page_to_annotated_text(p)
             if annotated.strip():
                 chunk_text += f"\n--- Page {p['page_num']} ---\n{annotated}\n"
+        if toc_hint and chunk_text.strip():
+            chunk_text = toc_hint + "\n\n" + chunk_text
         if len(chunk_text) > MAX_CHUNK_CHARS:
-            chunk_text = chunk_text[:MAX_CHUNK_CHARS]
-            if verbose:
-                print(f"    [WARN] Chunk trimmed to {MAX_CHUNK_CHARS} chars.")
+            # Trim at a page boundary so we don't cut mid-page.
+            cut = chunk_text.rfind('\n--- Page', 0, MAX_CHUNK_CHARS)
+            chunk_text = chunk_text[:cut] if cut != -1 else chunk_text[:MAX_CHUNK_CHARS]
+            print(f"    [WARN] Chunk exceeds {MAX_CHUNK_CHARS:,} chars — trimmed to last page boundary. "
+                  f"Consider reducing --pages-per-chunk.", flush=True)
         chunk_texts.append(chunk_text)
 
     if dry_run_only:
@@ -747,9 +811,11 @@ def convert(
                 entries = call_claude(client, chunk_text, model, verbose,
                                       debug_dir=debug_dir,
                                       chunk_id=f"chunk-{i:04d}")
-                print(f"    → {len(entries)} entries parsed"
-                      + ("  ← EMPTY — check debug files" if debug_dir and not entries else ""),
-                      flush=True)
+                if entries:
+                    print(f"    → {len(entries)} entries parsed", flush=True)
+                else:
+                    tip = f"Check {debug_dir}/" if debug_dir else "Re-run with --debug-dir DIR to inspect raw API responses."
+                    print(f"    → 0 entries — chunk produced no output. {tip}", flush=True)
                 all_entries.extend(entries)
         print(f"      Total raw entries collected: {len(all_entries)}")
     else:
@@ -768,6 +834,22 @@ def convert(
             )
             all_monsters.extend(monsters)
         print(f"      Total monsters found: {len(all_monsters)}", flush=True)
+
+    # ── 3b. Hoist stray top-level non-section entries ────────────────────────
+    # 5etools indexes chapters by direct array position: data[ixChapter].
+    # Any non-section object at the top level shifts subsequent chapters by 1,
+    # breaking TOC navigation.  Move orphans into the preceding section's entries.
+    fixed: list[Any] = []
+    for item in all_entries:
+        if isinstance(item, dict) and item.get("type") != "section":
+            if fixed and isinstance(fixed[-1], dict) and fixed[-1].get("type") == "section":
+                fixed[-1].setdefault("entries", []).append(item)
+            else:
+                # No preceding section yet — promote to a section so index is intact.
+                fixed.append({"type": "section", "name": item.get("name", "Preamble"), "entries": [item] if item.get("type") != "entries" else item.get("entries", [])})
+        else:
+            fixed.append(item)
+    all_entries = fixed
 
     # ── 4. Assign IDs ────────────────────────────────────────────────────────
     print("[4/5] Assigning IDs...", flush=True)
@@ -1155,6 +1237,12 @@ def main() -> None:
     )
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument(
+        "--no-toc-hint",
+        action="store_true",
+        dest="no_toc_hint",
+        help="Do not inject the PDF bookmark outline as a section hint for Claude.",
+    )
+    parser.add_argument(
         "--pages", default=None, metavar="RANGE",
         help='Only process these pages, e.g. "10-20" or "5,10-15".',
     )
@@ -1208,6 +1296,7 @@ def main() -> None:
         debug_dir=debug_dir,
         verbose=args.verbose,
         page_filter=page_filter,
+        use_toc_hint=not args.no_toc_hint,
     )
 
 

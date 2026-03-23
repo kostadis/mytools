@@ -266,7 +266,8 @@ class TestParseClaudeResponse(unittest.TestCase):
     """_parse_claude_response handles valid JSON, markdown fences, and errors."""
 
     def _call(self, raw: str):
-        return BASE._parse_claude_response(raw, verbose=False)
+        result, _ = BASE._parse_claude_response(raw, verbose=False)
+        return result
 
     def test_plain_json_array(self):
         raw = '[{"type":"section","name":"Intro"}]'
