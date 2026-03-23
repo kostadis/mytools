@@ -39,7 +39,15 @@ COMMON_NESTING_RULES = """\
 (e.g. "Chapter 1", "A. Prison Facility").
 - Sub-areas within a location (e.g. A1, A2, B3 rooms; sub-sections of a chapter) \
 must use {"type":"entries"} nested inside their parent section — never as top-level sections.
-- Nest sub-sections inside their parent section's entries array."""
+- Nest sub-sections inside their parent section's entries array.
+- In the contents[] TOC, a section's "headers" array lists named sub-sections a reader \
+would navigate to. Rules for headers[]:
+  - Do NOT repeat the section's own name as a header entry.
+  - Named sub-rooms within a location (e.g. A1, A2, C3, E7) go as \
+{"header": "name", "depth": 1} objects, not flat strings.
+  - Do NOT include generic sub-headings: "Creatures", "Treasure", "Development", \
+"Trap", "Hazard", "Tactics", "Morale", "Reward", or stat-block / NPC / \
+encounter-group names (e.g. "Klaven Shocktroopers (2)", "Maulvorge")."""
 
 
 # ---------------------------------------------------------------------------

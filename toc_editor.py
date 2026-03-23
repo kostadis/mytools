@@ -4,7 +4,7 @@ toc_editor.py — Interactive TOC editor for 5etools adventure/book JSON files.
 
 Displays the contents[] (sidebar TOC) alongside the corresponding data[] section
 at each array index so mismatches are immediately visible.  Supports inline
-rename, drag-and-drop reorder, add/delete rows.  Every save appends a
+rename, ↑↓ reorder (sections and headers), add/delete rows.  Every save appends a
 before/after pair to toc_corrections.jsonl for use as training examples.
 
 Usage:
@@ -86,7 +86,15 @@ def load_adventure(path: Path) -> dict:
                 "snippet": "",
             })
 
-    return {"toc": toc, "data_sections": data_sections}
+    # Annotate each toc entry with its original data[] index so save can
+    # reorder data[] when the user reorders sections.
+    annotated_toc = []
+    for i, entry in enumerate(toc):
+        e = dict(entry)
+        e["_dataIdx"] = i
+        annotated_toc.append(e)
+
+    return {"toc": annotated_toc, "data_sections": data_sections}
 
 
 # ---------------------------------------------------------------------------
@@ -171,17 +179,37 @@ def api_demote():
 
 @app.route("/api/save", methods=["POST"])
 def api_save():
-    body = request.json or {}
-    path = Path(body.get("path", ""))
+    body    = request.json or {}
+    path    = Path(body.get("path", ""))
     new_toc = body.get("toc", [])
 
     with open(path, encoding="utf-8") as f:
         raw = json.load(f)
 
     index_key = "adventure" if "adventure" in raw else "book"
-    old_toc = raw[index_key][0].get("contents", [])
-    raw[index_key][0]["contents"] = new_toc
+    data_key  = "adventureData" if "adventure" in raw else "bookData"
+    old_toc   = raw[index_key][0].get("contents", [])
+    data      = raw[data_key][0].get("data", [])
 
+    # Reorder data[] to match the new section order, using the _dataIdx
+    # field that was injected by load_adventure().
+    orig_indices = [e.get("_dataIdx") for e in new_toc if isinstance(e, dict)]
+    if (orig_indices
+            and all(isinstance(i, int) for i in orig_indices)
+            and len(orig_indices) == len(data)):
+        valid = [i for i in orig_indices if 0 <= i < len(data)]
+        if len(valid) == len(data):
+            raw[data_key][0]["data"] = [data[i] for i in valid]
+
+    # Strip _dataIdx before persisting (it's a UI-only field)
+    clean_toc = [
+        {k: v for k, v in e.items() if k != "_dataIdx"}
+        for e in new_toc
+    ]
+    raw[index_key][0]["contents"] = clean_toc
+
+    bak = path.with_suffix(".bak")
+    bak.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(raw, f, indent="\t", ensure_ascii=False)
 
@@ -189,7 +217,7 @@ def api_save():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "source_file": str(path),
         "toc_before": old_toc,
-        "toc_after": new_toc,
+        "toc_after": clean_toc,
     }
     with open(CORRECTIONS_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(pair, ensure_ascii=False) + "\n")
@@ -210,27 +238,31 @@ HTML = r"""<!DOCTYPE html>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <style>
   body { font-size: 14px; }
-  .drag-handle { cursor: grab; color: #aaa; user-select: none; padding: 0 6px; }
-  .drag-handle:active { cursor: grabbing; }
-  .sortable-ghost { opacity: 0.4; background: #cfe2ff !important; }
   tr.mismatch td { background: #fff3cd; }
   tr.orphan td   { background: #f8d7da; }
+  tr.hdr-row td  { background: #f8f9fa; }
   .data-name { color: #444; }
   .snippet   { color: #888; font-size: 0.78em; white-space: nowrap;
                overflow: hidden; text-overflow: ellipsis; max-width: 340px; }
-  .hdr-input { font-size: 0.78em; color: #666; border: none; background: transparent;
-               width: 100%; outline: none; padding: 1px 2px; }
-  .hdr-input:focus { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 3px; }
   #tocTable td, #tocTable th { vertical-align: middle; }
+  .col-chk  { width: 2em;   text-align: center; }
+  .col-move { width: 3.2em; white-space: nowrap; text-align: center; }
   .col-idx  { width: 2.5em; text-align: center; color: #999; font-size: 0.8em; }
-  .col-drag { width: 1.5em; }
   .col-match{ width: 1.8em; text-align: center; }
   .col-type { width: 5.5em; text-align: center; }
-  .col-del    { width: 2em;   text-align: center; }
-  .col-demote { width: 2em;   text-align: center; }
-  .col-chk    { width: 2em;   text-align: center; }
+  .col-del  { width: 2em;   text-align: center; }
   .match-ok   { color: #198754; }
   .match-fail { color: #dc3545; font-weight: bold; }
+  .btn-mv {
+    background: none; border: 1px solid #dee2e6; border-radius: 3px;
+    padding: 0 3px; font-size: 0.75em; cursor: pointer; color: #666;
+    line-height: 1.4;
+  }
+  .btn-mv:hover { background: #e9ecef; color: #000; }
+  .btn-mv:disabled { opacity: 0.25; cursor: default; }
+  .hdr-indent    { padding-left: 2.5em !important; color: #555; font-style: italic; }
+  .subhdr-indent { padding-left: 5em  !important; color: #777; font-style: italic; font-size:0.82em; }
+  tr.subhdr-row td { background: #f0f0f0; }
 </style>
 </head>
 <body class="bg-light">
@@ -242,16 +274,20 @@ HTML = r"""<!DOCTYPE html>
     <select id="fileSelect" class="form-select form-select-sm" style="max-width:420px">
       <option value="">— select a file —</option>
     </select>
-    <button id="btnLoad"         class="btn btn-sm btn-primary">Load</button>
-    <button id="btnSave"         class="btn btn-sm btn-success"          disabled>Save</button>
-    <button id="btnRevert"       class="btn btn-sm btn-outline-secondary" disabled>Revert</button>
-    <button id="btnDemoteSelect" class="btn btn-sm btn-outline-warning"   disabled>↓ Demote selected (<span id="selCount">0</span>)</button>
+    <button id="btnLoad"   class="btn btn-sm btn-primary">Load</button>
+    <button id="btnSave"   class="btn btn-sm btn-success"          disabled>Save</button>
+    <button id="btnRevert" class="btn btn-sm btn-outline-secondary" disabled>Revert</button>
+    <span class="ms-1 text-muted small">Add:</span>
+    <button id="btnAddSection"    class="btn btn-sm btn-outline-primary"   disabled>+ Section</button>
+    <button id="btnAddHeader"     class="btn btn-sm btn-outline-secondary" disabled>+ Header</button>
+    <button id="btnAddSubheader"  class="btn btn-sm btn-outline-secondary" disabled>+ Sub-header</button>
+    <button id="btnDemoteSelect"  class="btn btn-sm btn-outline-warning"   disabled>↳ Demote selected (<span id="selCount">0</span>)</button>
     <span id="statusMsg" class="ms-2 small text-muted"></span>
   </div>
 
   <!-- Summary bar -->
   <div id="summaryBar" class="d-none mb-2 small d-flex gap-3 align-items-center flex-wrap">
-    <span>TOC entries: <strong id="sToc">0</strong></span>
+    <span>TOC sections: <strong id="sToc">0</strong></span>
     <span>Data items: <strong id="sData">0</strong></span>
     <span>Name mismatches: <strong id="sMismatch">0</strong></span>
     <span>Non-section data items: <strong id="sOrphan">0</strong></span>
@@ -267,14 +303,13 @@ HTML = r"""<!DOCTYPE html>
       <table class="table table-sm table-bordered mb-0" id="tocTable">
         <thead class="table-dark">
           <tr>
-            <th class="col-chk"><input type="checkbox" id="chkAll" title="Select all"></th>
+            <th class="col-chk"><input type="checkbox" id="chkAll" title="Select all sections"></th>
+            <th class="col-move">Move</th>
             <th class="col-idx">#</th>
-            <th class="col-drag"></th>
-            <th>TOC Entry Name <span class="text-muted fw-normal">(editable · headers below)</span></th>
+            <th>TOC Entry / Header <span class="text-muted fw-normal">(editable)</span></th>
             <th class="col-match" title="Name matches data section at same index">≈</th>
             <th>Data section at this index <span class="text-muted fw-normal">(read-only)</span></th>
             <th class="col-type">Type</th>
-            <th class="col-demote" title="Move this section inside the one above it">↓</th>
             <th class="col-del"></th>
           </tr>
         </thead>
@@ -282,20 +317,14 @@ HTML = r"""<!DOCTYPE html>
       </table>
     </div>
   </div>
-
-  <div class="mt-2 d-none" id="addArea">
-    <button class="btn btn-sm btn-outline-primary" id="btnAdd">+ Add row</button>
-  </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script>
 const PRELOAD = "__PRELOAD__";
 
 let currentFile  = null;
 let originalToc  = null;
 let dataSections = [];
-let sortable     = null;
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────
 
@@ -326,9 +355,11 @@ function loadFile(path) {
       dataSections = d.data_sections;
       originalToc  = JSON.parse(JSON.stringify(d.toc));
       renderTable(d.toc);
-      document.getElementById("btnSave").disabled   = false;
-      document.getElementById("btnRevert").disabled = false;
-      document.getElementById("addArea").classList.remove("d-none");
+      document.getElementById("btnSave").disabled      = false;
+      document.getElementById("btnRevert").disabled    = false;
+      document.getElementById("btnAddSection").disabled   = false;
+      document.getElementById("btnAddHeader").disabled    = false;
+      document.getElementById("btnAddSubheader").disabled = false;
       setStatus("Loaded: " + path);
       refresh();
     })
@@ -340,54 +371,58 @@ function loadFile(path) {
 function renderTable(toc) {
   const tbody = document.getElementById("tocBody");
   tbody.innerHTML = "";
-  toc.forEach((entry, i) => tbody.appendChild(makeRow(entry, i)));
-  if (sortable) sortable.destroy();
-  sortable = new Sortable(tbody, {
-    handle: ".drag-handle",
-    animation: 150,
-    ghostClass: "sortable-ghost",
-    onEnd: refresh,
+  let si = 0;
+  toc.forEach(entry => {
+    tbody.appendChild(makeSectionRow(entry, si));
+    (entry.headers || []).forEach(h => {
+      if (h && typeof h === "object" && h.depth) {
+        tbody.appendChild(makeSubheaderRow(h.header ?? ""));
+      } else {
+        tbody.appendChild(makeHeaderRow(typeof h === "string" ? h : (h.header ?? "")));
+      }
+    });
+    si++;
   });
 }
 
-function makeRow(entry, i) {
-  const ds = dataSections[i] || null;
+function makeSectionRow(entry, si) {
+  const ds = dataSections[si] || null;
   const tr = document.createElement("tr");
-  // Store full original entry so extra fields (ordinal, etc.) are preserved on save
-  tr.dataset.entry = JSON.stringify(entry);
+  tr.dataset.kind    = "section";
+  tr.dataset.dataIdx = entry._dataIdx ?? si;
+  // Preserve extra fields (ordinal, etc.) not shown in the UI
+  const extra = {};
+  for (const [k, v] of Object.entries(entry)) {
+    if (!["name", "headers", "_dataIdx"].includes(k)) extra[k] = v;
+  }
+  tr.dataset.extra = JSON.stringify(extra);
 
   const nameMatch = ds && entry.name === ds.name;
   const isSection = ds ? ds.is_section : true;
   tr.className = rowCls(ds, nameMatch, isSection);
 
-  const hdrText = (entry.headers || []).join(" | ");
-  const dsName  = ds ? esc(ds.name) : "<em class='text-muted'>—</em>";
-  const snippet = ds && ds.snippet
+  const dsName    = ds ? esc(ds.name) : "<em class='text-muted'>—</em>";
+  const snippet   = ds && ds.snippet
     ? `<div class="snippet" title="${esc(ds.snippet)}">${esc(ds.snippet)}</div>` : "";
   const typeBadge = ds
     ? `<span class="badge ${isSection ? "bg-success" : "bg-danger"}">${esc(ds.type)}</span>` : "";
-  const matchIcon = !ds ? "" : (nameMatch
-    ? `<span class="match-ok">✓</span>`
-    : `<span class="match-fail">✗</span>`);
+  const matchIcon = !ds ? "" : nameMatch
+    ? `<span class="match-ok">✓</span>` : `<span class="match-fail">✗</span>`;
 
-  const chkCell   = i === 0
+  const chkCell = si === 0
     ? `<td class="col-chk"></td>`
     : `<td class="col-chk"><input type="checkbox" class="row-chk"></td>`;
-  const demoteBtn = i === 0
-    ? `<td class="col-demote"></td>`
-    : `<td class="col-demote">
-         <button class="btn btn-sm btn-link text-secondary p-0 btn-demote"
-                 title="Nest inside section above">↓</button>
-       </td>`;
 
   tr.innerHTML = `
     ${chkCell}
-    <td class="col-idx row-idx">${i}</td>
-    <td class="col-drag drag-handle">≡</td>
+    <td class="col-move">
+      <button class="btn-mv btn-mv-up"  title="Move section up">↑</button>
+      <button class="btn-mv btn-mv-dn"  title="Move section down">↓</button>
+      <button class="btn-mv btn-mv-dem" title="Demote: nest inside section above" style="font-size:0.65em">↳</button>
+    </td>
+    <td class="col-idx row-idx">${si}</td>
     <td>
       <input type="text" class="form-control form-control-sm toc-name" value="${esc(entry.name)}">
-      <input type="text" class="hdr-input mt-1 px-1" placeholder="headers (pipe-separated: A | B | C)"
-             value="${esc(hdrText)}" title="Sub-headers shown in sidebar (separate with |)">
     </td>
     <td class="col-match match-icon">${matchIcon}</td>
     <td>
@@ -395,19 +430,208 @@ function makeRow(entry, i) {
       ${snippet}
     </td>
     <td class="col-type">${typeBadge}</td>
-    ${demoteBtn}
     <td class="col-del">
-      <button class="btn btn-sm btn-link text-danger p-0 btn-del" title="Remove row">×</button>
+      <button class="btn btn-sm btn-link text-danger p-0 btn-del" title="Remove section and its headers">×</button>
     </td>`;
 
-  tr.querySelector(".btn-del").onclick = () => { tr.remove(); refresh(); };
-  tr.querySelector(".toc-name").oninput = refresh;
-  if (i > 0) {
-    tr.querySelector(".btn-demote").onclick = () => demoteRows([tr]);
-    tr.querySelector(".row-chk").onchange   = updateSelCount;
-  }
+  tr.querySelector(".btn-mv-up").onclick  = () => { moveSectionUp(tr);   refresh(); };
+  tr.querySelector(".btn-mv-dn").onclick  = () => { moveSectionDown(tr); refresh(); };
+  tr.querySelector(".btn-mv-dem").onclick = () => demoteRows([tr]);
+  tr.querySelector(".toc-name").oninput   = refresh;
+  tr.querySelector(".btn-del").onclick    = () => { removeSectionBlock(tr); refresh(); };
+  if (si > 0) tr.querySelector(".row-chk").onchange = updateSelCount;
   return tr;
 }
+
+function makeHeaderRow(name) {
+  const tr = document.createElement("tr");
+  tr.dataset.kind = "header";
+  tr.className = "hdr-row";
+
+  tr.innerHTML = `
+    <td class="col-chk"></td>
+    <td class="col-move">
+      <button class="btn-mv btn-mv-up"  title="Move header block up within section">↑</button>
+      <button class="btn-mv btn-mv-dn"  title="Move header block down within section">↓</button>
+      <button class="btn-mv btn-mv-dem" title="Demote to sub-header under previous header" style="font-size:0.65em">↳</button>
+    </td>
+    <td class="col-idx" style="color:#bbb">·</td>
+    <td class="hdr-indent" colspan="4">
+      <input type="text" class="form-control form-control-sm toc-name"
+             style="font-size:0.85em; font-style:italic" value="${esc(name)}">
+    </td>
+    <td class="col-del">
+      <button class="btn btn-sm btn-link text-danger p-0 btn-del" title="Remove header and its sub-headers">×</button>
+    </td>`;
+
+  tr.querySelector(".btn-mv-up").onclick  = () => { moveHeaderUp(tr);   };
+  tr.querySelector(".btn-mv-dn").onclick  = () => { moveHeaderDown(tr); };
+  tr.querySelector(".btn-mv-dem").onclick = () => demoteHeader(tr);
+  tr.querySelector(".btn-del").onclick    = () => { getHeaderBlock(tr).forEach(r => r.remove()); };
+  return tr;
+}
+
+function makeSubheaderRow(name) {
+  const tr = document.createElement("tr");
+  tr.dataset.kind = "subheader";
+  tr.className = "subhdr-row";
+
+  tr.innerHTML = `
+    <td class="col-chk"></td>
+    <td class="col-move">
+      <button class="btn-mv btn-mv-up" title="Move sub-header up within header">↑</button>
+      <button class="btn-mv btn-mv-dn" title="Move sub-header down within header">↓</button>
+    </td>
+    <td class="col-idx" style="color:#ccc">·</td>
+    <td class="subhdr-indent" colspan="4">
+      <input type="text" class="form-control form-control-sm toc-name" value="${esc(name)}">
+    </td>
+    <td class="col-del">
+      <button class="btn btn-sm btn-link text-danger p-0 btn-del" title="Remove sub-header">×</button>
+    </td>`;
+
+  tr.querySelector(".btn-mv-up").onclick = () => moveSubheaderUp(tr);
+  tr.querySelector(".btn-mv-dn").onclick = () => moveSubheaderDown(tr);
+  tr.querySelector(".btn-del").onclick   = () => tr.remove();
+  return tr;
+}
+
+// ── Block helpers ──────────────────────────────────────────────────────────
+
+/** Collect section row + all following header/subheader rows until next section. */
+function getSectionBlock(sectionTr) {
+  const rows = [sectionTr];
+  let next = sectionTr.nextElementSibling;
+  while (next && next.dataset.kind !== "section") {
+    rows.push(next);
+    next = next.nextElementSibling;
+  }
+  return rows;
+}
+
+/** Collect header row + all immediately-following subheader rows. */
+function getHeaderBlock(headerTr) {
+  const rows = [headerTr];
+  let next = headerTr.nextElementSibling;
+  while (next && next.dataset.kind === "subheader") {
+    rows.push(next);
+    next = next.nextElementSibling;
+  }
+  return rows;
+}
+
+function prevSectionRow(tr) {
+  let el = tr.previousElementSibling;
+  while (el) {
+    if (el.dataset.kind === "section") return el;
+    el = el.previousElementSibling;
+  }
+  return null;
+}
+
+/** Find the previous header row (not subheader) before tr, stopping at section boundary. */
+function prevHeaderRow(tr) {
+  let el = tr.previousElementSibling;
+  while (el && el.dataset.kind !== "section") {
+    if (el.dataset.kind === "header") return el;
+    el = el.previousElementSibling;
+  }
+  return null;
+}
+
+/** Find the next header row (not subheader) after a block, stopping at section boundary. */
+function nextHeaderRowAfterBlock(block) {
+  let el = block[block.length - 1].nextElementSibling;
+  while (el && el.dataset.kind !== "section") {
+    if (el.dataset.kind === "header") return el;
+    el = el.nextElementSibling;
+  }
+  return null;
+}
+
+function nextSectionRowAfterBlock(block) {
+  let el = block[block.length - 1].nextElementSibling;
+  while (el) {
+    if (el.dataset.kind === "section") return el;
+    el = el.nextElementSibling;
+  }
+  return null;
+}
+
+// ── Move operations ────────────────────────────────────────────────────────
+
+function moveSectionUp(tr) {
+  const block = getSectionBlock(tr);
+  const prevSec = prevSectionRow(tr);
+  if (!prevSec) return;
+  const prevBlock = getSectionBlock(prevSec);
+  const tbody = tr.parentElement;
+  block.forEach(row => tbody.insertBefore(row, prevBlock[0]));
+}
+
+function moveSectionDown(tr) {
+  const block = getSectionBlock(tr);
+  const nextSec = nextSectionRowAfterBlock(block);
+  if (!nextSec) return;
+  const nextBlock = getSectionBlock(nextSec);
+  const tbody = tr.parentElement;
+  nextBlock.forEach(row => tbody.insertBefore(row, block[0]));
+}
+
+/** Move header block (header + its subheaders) up past the previous header block. */
+function moveHeaderUp(tr) {
+  const block = getHeaderBlock(tr);
+  const prev = prevHeaderRow(tr);
+  if (!prev) return;
+  const prevBlock = getHeaderBlock(prev);
+  const tbody = tr.parentElement;
+  block.forEach(row => tbody.insertBefore(row, prevBlock[0]));
+}
+
+/** Move header block down past the next header block. */
+function moveHeaderDown(tr) {
+  const block = getHeaderBlock(tr);
+  const next = nextHeaderRowAfterBlock(block);
+  if (!next) return;
+  const nextBlock = getHeaderBlock(next);
+  const tbody = tr.parentElement;
+  nextBlock.forEach(row => tbody.insertBefore(row, block[0]));
+}
+
+function moveSubheaderUp(tr) {
+  const prev = tr.previousElementSibling;
+  if (!prev || prev.dataset.kind !== "subheader") return;
+  tr.parentElement.insertBefore(tr, prev);
+}
+
+function moveSubheaderDown(tr) {
+  const next = tr.nextElementSibling;
+  if (!next || next.dataset.kind !== "subheader") return;
+  tr.parentElement.insertBefore(next, tr);
+}
+
+/** Demote a header row to a sub-header under the previous header's block. */
+function demoteHeader(tr) {
+  const prev = prevHeaderRow(tr);
+  if (!prev) { setStatus("No header above to demote into.", true); return; }
+  const block = getHeaderBlock(tr);
+  const prevBlock = getHeaderBlock(prev);
+  const anchor = prevBlock[prevBlock.length - 1].nextElementSibling;
+  const tbody = tr.parentElement;
+  // Convert each row in block to subheader rows
+  block.forEach(row => {
+    const name = row.querySelector(".toc-name").value.trim();
+    const subRow = makeSubheaderRow(name);
+    tbody.insertBefore(subRow, anchor);
+    row.remove();
+  });
+}
+
+function removeSectionBlock(sectionTr) {
+  getSectionBlock(sectionTr).forEach(row => row.remove());
+}
+
+// ── Refresh stats + row colouring ─────────────────────────────────────────
 
 function rowCls(ds, nameMatch, isSection) {
   if (!ds) return "";
@@ -416,89 +640,68 @@ function rowCls(ds, nameMatch, isSection) {
   return "";
 }
 
-// ── Refresh stats + row colouring ─────────────────────────────────────────
-
 function refresh() {
   const rows = [...document.querySelectorAll("#tocBody tr")];
-  let mismatches = 0, orphans = 0;
+  let si = 0, mismatches = 0, orphans = 0;
 
-  rows.forEach((tr, i) => {
-    const ds        = dataSections[i] || null;
+  rows.forEach(tr => {
+    if (tr.dataset.kind !== "section") return;
+
+    const ds        = dataSections[si] || null;
     const nameVal   = tr.querySelector(".toc-name").value;
     const nameMatch = ds && nameVal === ds.name;
     const isSection = ds ? ds.is_section : true;
 
-    tr.querySelector(".row-idx").textContent = i;
-    tr.querySelector(".match-icon").innerHTML = !ds ? ""
+    tr.querySelector(".row-idx").textContent    = si;
+    tr.querySelector(".match-icon").innerHTML   = !ds ? ""
       : nameMatch ? `<span class="match-ok">✓</span>`
                   : `<span class="match-fail">✗</span>`;
     tr.className = rowCls(ds, nameMatch, isSection);
 
     if (ds && !nameMatch) mismatches++;
     if (ds && !isSection) orphans++;
+    si++;
   });
 
-  document.getElementById("sToc").textContent      = rows.length;
+  document.getElementById("sToc").textContent      = si;
   document.getElementById("sData").textContent     = dataSections.length;
   document.getElementById("sMismatch").textContent = mismatches;
   document.getElementById("sMismatch").className   =
     mismatches ? "text-danger fw-bold" : "text-success fw-bold";
   document.getElementById("sOrphan").textContent   = orphans;
   document.getElementById("summaryBar").classList.remove("d-none");
+  document.getElementById("chkAll").checked = false;
   updateSelCount();
 }
 
-// ── Add row ───────────────────────────────────────────────────────────────
+// ── Build TOC from DOM ─────────────────────────────────────────────────────
 
-document.getElementById("btnAdd").onclick = () => {
-  const tbody = document.getElementById("tocBody");
-  const i = tbody.children.length;
-  tbody.appendChild(makeRow({ name: "New Section", headers: [] }, i));
-  refresh();
-};
-
-// ── Save ──────────────────────────────────────────────────────────────────
-
-document.getElementById("btnSave").onclick = () => {
-  if (!currentFile) return;
+function buildToc() {
   const rows = [...document.querySelectorAll("#tocBody tr")];
-  const toc = rows.map(tr => {
-    // Preserve any extra fields (ordinal, etc.) from the original entry
-    const base    = JSON.parse(tr.dataset.entry || "{}");
-    const name    = tr.querySelector(".toc-name").value.trim();
-    const hdrRaw  = tr.querySelector(".hdr-input").value.trim();
-    const headers = hdrRaw
-      ? hdrRaw.split("|").map(h => h.trim()).filter(Boolean) : [];
-    return { ...base, name, headers };
+  const toc  = [];
+  let current = null;
+
+  rows.forEach(tr => {
+    if (tr.dataset.kind === "section") {
+      if (current) toc.push(current);
+      const extra = JSON.parse(tr.dataset.extra || "{}");
+      current = {
+        ...extra,
+        name: tr.querySelector(".toc-name").value.trim(),
+        headers: [],
+        _dataIdx: parseInt(tr.dataset.dataIdx, 10),
+      };
+    } else if (tr.dataset.kind === "header" && current) {
+      const name = tr.querySelector(".toc-name").value.trim();
+      if (name) current.headers.push(name);
+    } else if (tr.dataset.kind === "subheader" && current) {
+      const name = tr.querySelector(".toc-name").value.trim();
+      if (name) current.headers.push({ header: name, depth: 1 });
+    }
   });
-
-  setStatus("Saving…");
-  fetch("/api/save", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: currentFile, toc }),
-  })
-  .then(r => r.json())
-  .then(d => {
-    if (d.error) { setStatus("Save error: " + d.error, true); return; }
-    // Update stored entries so row colours reflect the saved state
-    document.querySelectorAll("#tocBody tr").forEach((tr, i) => {
-      tr.dataset.entry = JSON.stringify(toc[i]);
-    });
-    originalToc = JSON.parse(JSON.stringify(toc));
-    setStatus("Saved ✓  Training pair appended to toc_corrections.jsonl");
-  })
-  .catch(e => setStatus("Save error: " + e, true));
-};
-
-// ── Revert ────────────────────────────────────────────────────────────────
-
-document.getElementById("btnRevert").onclick = () => {
-  if (!originalToc) return;
-  renderTable(originalToc);
-  refresh();
-  setStatus("Reverted to last loaded state.");
-};
+  if (current) toc.push(current);
+  return toc;
+}
 
 // ── Selection ─────────────────────────────────────────────────────────────
 
@@ -514,30 +717,109 @@ function updateSelCount() {
 }
 
 document.getElementById("btnDemoteSelect").onclick = () => {
-  const checked = [...document.querySelectorAll(".row-chk:checked")]
-    .map(c => c.closest("tr"));
-  if (checked.length) demoteRows(checked);
+  const trs = [...document.querySelectorAll(".row-chk:checked")].map(c => c.closest("tr"));
+  if (trs.length) demoteRows(trs);
 };
 
-// ── Demote ────────────────────────────────────────────────────────────────
+// ── Add rows ──────────────────────────────────────────────────────────────
 
-function demoteRows(trs) {
-  const items = trs.map(tr => ({
-    idx:  parseInt(tr.querySelector(".row-idx").textContent, 10),
-    name: tr.querySelector(".toc-name").value.trim() || "?",
-  }));
-  const names = items.map(it => `  • [${it.idx}] ${it.name}`).join("\n");
+document.getElementById("btnAddSection").onclick = () => {
+  const tbody = document.getElementById("tocBody");
+  const si    = [...tbody.querySelectorAll("tr[data-kind='section']")].length;
+  tbody.appendChild(makeSectionRow({ name: "New Section", headers: [] }, si));
+  refresh();
+};
 
-  if (!confirm(`Demote ${items.length} section(s) — each will be nested inside the section above it:\n\n${names}\n\nA .bak backup will be written first.`)) return;
+document.getElementById("btnAddHeader").onclick = () => {
+  const tbody = document.getElementById("tocBody");
+  if (!tbody.querySelector("tr[data-kind='section']")) {
+    setStatus("Add a section first before adding a header.", true);
+    return;
+  }
+  tbody.appendChild(makeHeaderRow("New Header"));
+};
 
-  setStatus("Demoting…");
-  fetch("/api/demote", {
+document.getElementById("btnAddSubheader").onclick = () => {
+  const tbody = document.getElementById("tocBody");
+  if (!tbody.querySelector("tr[data-kind='header']")) {
+    setStatus("Add a header first before adding a sub-header.", true);
+    return;
+  }
+  tbody.appendChild(makeSubheaderRow("New Sub-header"));
+};
+
+// ── Save ──────────────────────────────────────────────────────────────────
+
+document.getElementById("btnSave").onclick = () => {
+  if (!currentFile) return;
+  const toc = buildToc();
+
+  setStatus("Saving…");
+  fetch("/api/save", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: currentFile, indices: items.map(it => it.idx) }),
+    body: JSON.stringify({ path: currentFile, toc }),
   })
   .then(r => r.json())
   .then(d => {
+    if (d.error) { setStatus("Save error: " + d.error, true); return; }
+    setStatus("Saved ✓  Training pair appended to toc_corrections.jsonl — reloading…");
+    // Reload so data[] order is reflected in the alignment columns
+    loadFile(currentFile);
+  })
+  .catch(e => setStatus("Save error: " + e, true));
+};
+
+// ── Revert ────────────────────────────────────────────────────────────────
+
+document.getElementById("btnRevert").onclick = () => {
+  if (!originalToc) return;
+  renderTable(originalToc);
+  refresh();
+  setStatus("Reverted to last loaded state.");
+};
+
+// ── Demote (server-side) ──────────────────────────────────────────────────
+
+function demoteRows(trs) {
+  // Collect current visual indices (section rows only)
+  const sectionRows = [...document.querySelectorAll("#tocBody tr[data-kind='section']")];
+  const items = trs.map(tr => {
+    const idx  = sectionRows.indexOf(tr);
+    const name = tr.querySelector(".toc-name").value.trim() || "?";
+    return { idx, name };
+  }).filter(it => it.idx >= 1);  // can't demote index 0
+
+  if (!items.length) {
+    setStatus("First section cannot be demoted.", true);
+    return;
+  }
+
+  const names = items.map(it => `  • [${it.idx}] ${it.name}`).join("\n");
+  if (!confirm(
+    `Demote ${items.length} section(s) — each will be nested inside the section above it:\n\n${names}\n\nA .bak backup will be written first.`
+  )) return;
+
+  // Save first so indices in file match current visual order
+  const toc = buildToc();
+  fetch("/api/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: currentFile, toc }),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { setStatus("Save error before demote: " + d.error, true); return; }
+    setStatus("Demoting…");
+    return fetch("/api/demote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: currentFile, indices: items.map(it => it.idx) }),
+    });
+  })
+  .then(r => r && r.json())
+  .then(d => {
+    if (!d) return;
     if (d.error) { setStatus("Demote error: " + d.error, true); return; }
     setStatus(`Demoted ${items.length} section(s). Reloading…`);
     loadFile(currentFile);

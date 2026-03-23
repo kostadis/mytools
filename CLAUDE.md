@@ -43,6 +43,7 @@ Requires `ANTHROPIC_API_KEY` env var or `--api-key KEY`. Default model: `claude-
 All three converters delegate Claude API calls to `claude_api.py`, which owns:
 - `MAX_OUTPUT_TOKENS = 20_000` — single place to change the output token budget
 - `COMMON_TAG_RULES` — shared prompt fragment listing all valid `{@tag}` references; injected into every converter's `SYSTEM_PROMPT` via f-string. Update here when the set of supported 5etools inline tags changes.
+- `COMMON_NESTING_RULES` — shared prompt fragment governing section/entries nesting and `headers[]` content. Rules enforced: (1) `{"type":"section"}` for top-level chapters/locations only; (2) sub-rooms (A1, C3, E7…) go as `{"header": "name", "depth": 1}` objects in `headers[]`, not flat strings; (3) do not repeat the section's own name as a header entry; (4) do not include "Creatures", "Treasure", "Development", stat-block names, or encounter-group names in `headers[]`.
 - `_parse_claude_response` — strips markdown fences, parses JSON, returns `(list, bool)`
 - `_recover_partial_json` — salvages complete entries from truncated/malformed responses
 - `call_claude(client, chunk_text, model, system_prompt, verbose, debug_dir, chunk_id)` — full retry logic: tail retry on `max_tokens` with partial output, split retry on `max_tokens` or `end_turn` with malformed JSON
@@ -84,7 +85,13 @@ All three converters import `extract_pdf_toc` from `pdf_utils` (lazy import insi
 
 ### `toc_editor.py` — TOC editor UI
 
-Flask app (port 5101) for reviewing and correcting the `contents[]` TOC in a generated adventure JSON. Shows TOC entries side-by-side with `data[]` sections at the same array index; highlights mismatches (yellow) and non-`section` top-level data entries (red). Supports drag-and-drop reorder (SortableJS), add/delete rows, and live name editing. Save writes back to the JSON and appends a `{before, after}` training pair to `toc_corrections.jsonl`.
+Flask app (port 5101) for reviewing and correcting the `contents[]` TOC in a generated adventure JSON. Three-level hierarchy:
+
+- **Section rows** (level 1) — top-level `data[]` entries; ↑↓ moves the whole block, ↳ demotes to `entries` inside the section above (server-side, modifies `data[]`)
+- **Header rows** (level 2, italic) — entries in `headers[]`; ↑↓ moves the header + its sub-headers as a unit within the section; ↳ demotes to sub-header under the previous header
+- **Sub-header rows** (level 3, grey) — stored as `{"header": "name", "depth": 1}` in `headers[]`; ↑↓ moves within the parent header block
+
+Highlights mismatches (yellow = name doesn't match `data[]` at same index, red = `data[]` entry is not a `section`). Multi-select checkboxes on section rows + "Demote selected" toolbar button for bulk demote. Save rewrites both `contents[]` and reorders `data[]` to match any section moves, then appends a `{before, after}` pair to `toc_corrections.jsonl`.
 
 ```bash
 python3 toc_editor.py [file.json] [--port N]
@@ -175,7 +182,7 @@ CR = table lookup from HD (see hd_to_cr() in pdf_to_5etools_1e.py)
 - `--debug-dir DIR` saves raw chunk I/O for debugging failed conversions.
 - **5etools TOC/data alignment**: `adventure[0].contents[n]` maps to `adventureData[0].data[n]` by direct array index. Every top-level `data[]` entry must be `type: "section"` — non-section entries shift all subsequent chapter navigation by 1. The post-processing hoist step enforces this automatically.
 - **Retry logic lives in `claude_api.py`** — do not duplicate it in the individual converters.
-- **Shared prompt fragments live in `claude_api.py`** (`COMMON_TAG_RULES`) — do not duplicate tag rules in individual converters.
+- **Shared prompt fragments live in `claude_api.py`** (`COMMON_TAG_RULES`, `COMMON_NESTING_RULES`) — do not duplicate tag or nesting rules in individual converters.
 - **TOC hint lives in `pdf_utils.py`** (`extract_pdf_toc`, `_decode_pdf_string`) — all converters import from there, not from each other.
 - **`{@tag}` validation** — run `python3 validate_tags.py adventure.json` after conversion to catch unknown tags (which cause blank pages in 5etools). Use `--fix` to replace them with plain text in-place.
 
