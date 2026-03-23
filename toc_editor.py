@@ -114,16 +114,36 @@ def api_load():
         return jsonify({"error": str(exc)}), 500
 
 
+def _demote_one(data: list, contents: list, idx: int) -> None:
+    """Demote data[idx] into data[idx-1] in-place. Updates contents in sync."""
+    entry = data.pop(idx)
+    entry["type"] = "entries"
+    data[idx - 1].setdefault("entries", []).append(entry)
+
+    if idx < len(contents):
+        moved = contents.pop(idx)
+        prev  = contents[idx - 1]
+        prev.setdefault("headers", [])
+        prev["headers"].append(moved["name"])
+        if moved.get("headers"):
+            prev["headers"].extend(moved["headers"])
+
+
 @app.route("/api/demote", methods=["POST"])
 def api_demote():
-    """Move data[index] down one level: nest it inside data[index-1].entries
-    and remove it from the top-level array.  Updates contents[] in sync."""
-    body = request.json or {}
-    path = Path(body.get("path", ""))
-    idx  = body.get("index")
+    """Move one or more data[] entries down one level into the section above.
 
-    if idx is None or idx < 1:
-        return jsonify({"error": "index must be >= 1"}), 400
+    Body: { "path": "...", "indices": [3, 5, 7] }
+    Indices are processed highest-first so earlier positions stay stable.
+    """
+    body    = request.json or {}
+    path    = Path(body.get("path", ""))
+    indices = body.get("indices", [])
+
+    if not indices:
+        return jsonify({"error": "indices list is empty"}), 400
+    if any(i < 1 for i in indices):
+        return jsonify({"error": "all indices must be >= 1"}), 400
 
     with open(path, encoding="utf-8") as f:
         raw = json.load(f)
@@ -133,27 +153,14 @@ def api_demote():
     contents  = raw[index_key][0].get("contents", [])
     data      = raw[data_key][0].get("data", [])
 
-    if idx >= len(data):
-        return jsonify({"error": f"index {idx} out of range (data has {len(data)} items)"}), 400
-
-    # ── data[]: demote section → entries, append to previous section ─────
-    entry = data.pop(idx)
-    entry["type"] = "entries"
-    data[idx - 1].setdefault("entries", []).append(entry)
-
-    # ── contents[]: move entry name into previous entry's headers ─────────
-    if idx < len(contents):
-        moved = contents.pop(idx)
-        prev  = contents[idx - 1]
-        prev.setdefault("headers", [])
-        prev["headers"].append(moved["name"])
-        if moved.get("headers"):
-            prev["headers"].extend(moved["headers"])
+    for idx in sorted(set(indices), reverse=True):
+        if idx >= len(data):
+            return jsonify({"error": f"index {idx} out of range"}), 400
+        _demote_one(data, contents, idx)
 
     raw[index_key][0]["contents"] = contents
     raw[data_key][0]["data"]      = data
 
-    # Write back (create .bak first)
     bak = path.with_suffix(".bak")
     bak.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     with open(path, "w", encoding="utf-8") as f:
@@ -221,6 +228,7 @@ HTML = r"""<!DOCTYPE html>
   .col-type { width: 5.5em; text-align: center; }
   .col-del    { width: 2em;   text-align: center; }
   .col-demote { width: 2em;   text-align: center; }
+  .col-chk    { width: 2em;   text-align: center; }
   .match-ok   { color: #198754; }
   .match-fail { color: #dc3545; font-weight: bold; }
 </style>
@@ -234,9 +242,10 @@ HTML = r"""<!DOCTYPE html>
     <select id="fileSelect" class="form-select form-select-sm" style="max-width:420px">
       <option value="">— select a file —</option>
     </select>
-    <button id="btnLoad"   class="btn btn-sm btn-primary">Load</button>
-    <button id="btnSave"   class="btn btn-sm btn-success"          disabled>Save</button>
-    <button id="btnRevert" class="btn btn-sm btn-outline-secondary" disabled>Revert</button>
+    <button id="btnLoad"         class="btn btn-sm btn-primary">Load</button>
+    <button id="btnSave"         class="btn btn-sm btn-success"          disabled>Save</button>
+    <button id="btnRevert"       class="btn btn-sm btn-outline-secondary" disabled>Revert</button>
+    <button id="btnDemoteSelect" class="btn btn-sm btn-outline-warning"   disabled>↓ Demote selected (<span id="selCount">0</span>)</button>
     <span id="statusMsg" class="ms-2 small text-muted"></span>
   </div>
 
@@ -258,6 +267,7 @@ HTML = r"""<!DOCTYPE html>
       <table class="table table-sm table-bordered mb-0" id="tocTable">
         <thead class="table-dark">
           <tr>
+            <th class="col-chk"><input type="checkbox" id="chkAll" title="Select all"></th>
             <th class="col-idx">#</th>
             <th class="col-drag"></th>
             <th>TOC Entry Name <span class="text-muted fw-normal">(editable · headers below)</span></th>
@@ -360,6 +370,9 @@ function makeRow(entry, i) {
     ? `<span class="match-ok">✓</span>`
     : `<span class="match-fail">✗</span>`);
 
+  const chkCell   = i === 0
+    ? `<td class="col-chk"></td>`
+    : `<td class="col-chk"><input type="checkbox" class="row-chk"></td>`;
   const demoteBtn = i === 0
     ? `<td class="col-demote"></td>`
     : `<td class="col-demote">
@@ -368,6 +381,7 @@ function makeRow(entry, i) {
        </td>`;
 
   tr.innerHTML = `
+    ${chkCell}
     <td class="col-idx row-idx">${i}</td>
     <td class="col-drag drag-handle">≡</td>
     <td>
@@ -389,7 +403,8 @@ function makeRow(entry, i) {
   tr.querySelector(".btn-del").onclick = () => { tr.remove(); refresh(); };
   tr.querySelector(".toc-name").oninput = refresh;
   if (i > 0) {
-    tr.querySelector(".btn-demote").onclick = () => demoteRow(tr);
+    tr.querySelector(".btn-demote").onclick = () => demoteRows([tr]);
+    tr.querySelector(".row-chk").onchange   = updateSelCount;
   }
   return tr;
 }
@@ -430,6 +445,7 @@ function refresh() {
     mismatches ? "text-danger fw-bold" : "text-success fw-bold";
   document.getElementById("sOrphan").textContent   = orphans;
   document.getElementById("summaryBar").classList.remove("d-none");
+  updateSelCount();
 }
 
 // ── Add row ───────────────────────────────────────────────────────────────
@@ -484,28 +500,46 @@ document.getElementById("btnRevert").onclick = () => {
   setStatus("Reverted to last loaded state.");
 };
 
+// ── Selection ─────────────────────────────────────────────────────────────
+
+document.getElementById("chkAll").onchange = function () {
+  document.querySelectorAll(".row-chk").forEach(c => { c.checked = this.checked; });
+  updateSelCount();
+};
+
+function updateSelCount() {
+  const n = document.querySelectorAll(".row-chk:checked").length;
+  document.getElementById("selCount").textContent = n;
+  document.getElementById("btnDemoteSelect").disabled = n === 0 || !currentFile;
+}
+
+document.getElementById("btnDemoteSelect").onclick = () => {
+  const checked = [...document.querySelectorAll(".row-chk:checked")]
+    .map(c => c.closest("tr"));
+  if (checked.length) demoteRows(checked);
+};
+
 // ── Demote ────────────────────────────────────────────────────────────────
 
-function demoteRow(tr) {
-  const idx = parseInt(tr.querySelector(".row-idx").textContent, 10);
-  const name = tr.querySelector(".toc-name").value.trim() || "this section";
-  const prevRow = tr.previousElementSibling;
-  const prevName = prevRow
-    ? (prevRow.querySelector(".toc-name").value.trim() || "the section above")
-    : "the section above";
+function demoteRows(trs) {
+  const items = trs.map(tr => ({
+    idx:  parseInt(tr.querySelector(".row-idx").textContent, 10),
+    name: tr.querySelector(".toc-name").value.trim() || "?",
+  }));
+  const names = items.map(it => `  • [${it.idx}] ${it.name}`).join("\n");
 
-  if (!confirm(`Move "${name}" (index ${idx}) inside "${prevName}"?\n\nThis will:\n• Remove it from the top-level data[] array\n• Nest it as an entries block inside the section above\n• Add its name to that section's TOC headers\n\nA .bak backup will be written first.`)) return;
+  if (!confirm(`Demote ${items.length} section(s) — each will be nested inside the section above it:\n\n${names}\n\nA .bak backup will be written first.`)) return;
 
   setStatus("Demoting…");
   fetch("/api/demote", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: currentFile, index: idx }),
+    body: JSON.stringify({ path: currentFile, indices: items.map(it => it.idx) }),
   })
   .then(r => r.json())
   .then(d => {
     if (d.error) { setStatus("Demote error: " + d.error, true); return; }
-    setStatus(`Demoted "${name}" into "${prevName}". Reloading…`);
+    setStatus(`Demoted ${items.length} section(s). Reloading…`);
     loadFile(currentFile);
   })
   .catch(e => setStatus("Demote error: " + e, true));
