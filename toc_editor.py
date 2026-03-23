@@ -360,7 +360,7 @@ function makeRow(entry, i) {
   const isSection = ds ? ds.is_section : true;
   tr.className = rowCls(ds, nameMatch, isSection);
 
-  const hdrText = (entry.headers || []).join(", ");
+  const hdrText = (entry.headers || []).join(" | ");
   const dsName  = ds ? esc(ds.name) : "<em class='text-muted'>—</em>";
   const snippet = ds && ds.snippet
     ? `<div class="snippet" title="${esc(ds.snippet)}">${esc(ds.snippet)}</div>` : "";
@@ -386,8 +386,8 @@ function makeRow(entry, i) {
     <td class="col-drag drag-handle">≡</td>
     <td>
       <input type="text" class="form-control form-control-sm toc-name" value="${esc(entry.name)}">
-      <input type="text" class="hdr-input mt-1 px-1" placeholder="headers (comma-separated)"
-             value="${esc(hdrText)}" title="Sub-headers shown in sidebar">
+      <input type="text" class="hdr-input mt-1 px-1" placeholder="headers (pipe-separated: A | B | C)"
+             value="${esc(hdrText)}" title="Sub-headers shown in sidebar (separate with |)">
     </td>
     <td class="col-match match-icon">${matchIcon}</td>
     <td>
@@ -468,7 +468,7 @@ document.getElementById("btnSave").onclick = () => {
     const name    = tr.querySelector(".toc-name").value.trim();
     const hdrRaw  = tr.querySelector(".hdr-input").value.trim();
     const headers = hdrRaw
-      ? hdrRaw.split(",").map(h => h.trim()).filter(Boolean) : [];
+      ? hdrRaw.split("|").map(h => h.trim()).filter(Boolean) : [];
     return { ...base, name, headers };
   });
 

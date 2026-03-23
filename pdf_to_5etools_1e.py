@@ -295,6 +295,7 @@ Rules:
 - Named sidebars, DM notes, or special features use {{"type":"inset","name":"..."}}.
 - Preserve all 1e game-mechanical text accurately.
 {_api.COMMON_TAG_RULES}
+{_api.COMMON_NESTING_RULES}
 - Wandering monster tables ([WANDERING-TABLE]) → {{"type":"table"}} with colLabels
   from the table headers (e.g., ["d12","Monster","Number Appearing"]).
 - Stat lines ([1E-STAT], [STAT-BLOCK-START/END]) should be kept verbatim inside

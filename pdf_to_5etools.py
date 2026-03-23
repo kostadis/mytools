@@ -181,7 +181,7 @@ object types:
 Rules:
 - Preserve all flavour text and game rules accurately.
 {_api.COMMON_TAG_RULES}
-- Nest sub-sections inside their parent section's entries array.
+{_api.COMMON_NESTING_RULES}
 - Do NOT add IDs — those are added later.
 - Tables must have colLabels and rows even if only one column.
 - If a page contains only an image description or blank content, return [].

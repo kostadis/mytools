@@ -32,6 +32,15 @@ COMMON_TAG_RULES = """\
 - Use {@dice NdN} for dice expressions.
 - Only use the tags above — do NOT invent tags like {@scroll}, {@npc}, {@room}, etc."""
 
+# Shared prompt fragment — nesting rules injected into every converter's SYSTEM_PROMPT.
+# Update here when section/entries nesting behaviour needs to change across all converters.
+COMMON_NESTING_RULES = """\
+- Use {"type":"section"} ONLY for major top-level chapters or named locations \
+(e.g. "Chapter 1", "A. Prison Facility").
+- Sub-areas within a location (e.g. A1, A2, B3 rooms; sub-sections of a chapter) \
+must use {"type":"entries"} nested inside their parent section — never as top-level sections.
+- Nest sub-sections inside their parent section's entries array."""
+
 
 # ---------------------------------------------------------------------------
 # Response parsing helpers
