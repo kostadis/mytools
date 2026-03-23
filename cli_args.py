@@ -73,6 +73,15 @@ def add_common_args(
         help=f"Claude model (default: {default_model})",
     )
     parser.add_argument(
+        "--batch",
+        action="store_true",
+        dest="use_batch",
+        help=(
+            "Use the Anthropic Batch API (50%% cheaper, but async — "
+            "takes minutes to complete rather than streaming immediately)"
+        ),
+    )
+    parser.add_argument(
         "--extract-monsters",
         action="store_true",
         dest="extract_monsters",

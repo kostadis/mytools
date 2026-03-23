@@ -209,3 +209,182 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
                   flush=True)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Pricing helpers (shared by dry_run across all converters)
+# ---------------------------------------------------------------------------
+
+_PRICE = {
+    "haiku":  {"input": 0.80,  "output": 4.00},
+    "sonnet": {"input": 3.00,  "output": 15.00},
+    "opus":   {"input": 15.00, "output": 75.00},
+}
+
+
+def _model_tier(model: str) -> str:
+    m = model.lower()
+    if "haiku"  in m: return "haiku"
+    if "sonnet" in m: return "sonnet"
+    if "opus"   in m: return "opus"
+    return "sonnet"
+
+
+# ---------------------------------------------------------------------------
+# Batch API
+# ---------------------------------------------------------------------------
+
+def call_claude_batch(
+    client: anthropic.Anthropic,
+    chunks: list[str],
+    model: str,
+    system_prompt: str,
+    verbose: bool,
+    debug_dir: Path | None = None,
+) -> list[list[Any]]:
+    """Submit all chunks as a single Batch API request (50% cheaper, async).
+
+    Polls until complete, then returns results in chunk order.
+    """
+    import time as _time
+
+    print(f"  Submitting {len(chunks)} requests to Batch API...", flush=True)
+
+    if debug_dir:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        for i, text in enumerate(chunks):
+            (debug_dir / f"chunk-{i:04d}-input.txt").write_text(text, encoding="utf-8")
+        print(f"  [DEBUG] Saved {len(chunks)} chunk inputs to {debug_dir}/", flush=True)
+
+    requests = [
+        {
+            "custom_id": f"chunk-{i:04d}",
+            "params": {
+                "model": model,
+                "max_tokens": MAX_OUTPUT_TOKENS,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": text}],
+            },
+        }
+        for i, text in enumerate(chunks)
+    ]
+
+    batch = client.messages.batches.create(requests=requests)
+    batch_id = batch.id
+    print(f"  Batch ID: {batch_id}", flush=True)
+    print("  Waiting for batch to complete (polls every 15 s)...", flush=True)
+
+    while True:
+        batch = client.messages.batches.retrieve(batch_id)
+        status = batch.processing_status
+        counts = batch.request_counts
+        print(
+            f"    status={status}  "
+            f"processing={counts.processing}  "
+            f"succeeded={counts.succeeded}  "
+            f"errored={counts.errored}",
+            flush=True,
+        )
+        if status == "ended":
+            break
+        _time.sleep(15)
+
+    results_map: dict[str, list[Any]] = {}
+    for result in client.messages.batches.results(batch_id):
+        cid = result.custom_id
+        if result.result.type == "succeeded":
+            msg = result.result.message
+            if msg.stop_reason == "max_tokens":
+                print(f"    [WARN] {cid} hit max_tokens — response may be truncated. "
+                      f"Try --pages-per-chunk with a smaller value.", flush=True)
+            results_map[cid], _ = _parse_claude_response(
+                msg.content[0].text, verbose, debug_dir=debug_dir, chunk_id=cid
+            )
+        else:
+            print(f"    [WARN] {cid} failed: {result.result.type}", flush=True)
+            if debug_dir:
+                (debug_dir / f"{cid}-api-error.txt").write_text(
+                    str(result.result), encoding="utf-8"
+                )
+            results_map[cid] = []
+
+    ordered = [results_map.get(f"chunk-{i:04d}", []) for i in range(len(chunks))]
+
+    print(f"\n  Chunk results summary:", flush=True)
+    for i, entries in enumerate(ordered):
+        cid = f"chunk-{i:04d}"
+        flag = "  ← EMPTY — check debug files" if not entries else ""
+        print(f"    {cid}: {len(entries)} entries{flag}", flush=True)
+    print(flush=True)
+
+    return ordered
+
+
+# ---------------------------------------------------------------------------
+# Dry-run cost estimator
+# ---------------------------------------------------------------------------
+
+def dry_run(
+    client: anthropic.Anthropic,
+    chunk_texts: list[str],
+    chunks: list,
+    model: str,
+    system_prompt: str,
+    use_batch: bool,
+    verbose: bool,
+) -> None:
+    """Count tokens for every chunk and print a cost estimate. No inference."""
+    tier     = _model_tier(model)
+    prices   = _PRICE.get(tier, _PRICE["sonnet"])
+    discount = 0.5 if use_batch else 1.0
+
+    print(f"\n[DRY-RUN] Token count + cost estimate")
+    print(f"  Model  : {model}  ({'Batch API -50%%' if use_batch else 'Standard API'})")
+    print(f"  Pricing: ${prices['input']:.2f} / ${prices['output']:.2f} per M tokens "
+          f"(in/out){'  ×0.5 batch discount' if use_batch else ''}")
+    print()
+
+    total_input = 0
+    est_output_per_chunk = 1_000
+    skipped = 0
+
+    for i, chunk_text in enumerate(chunk_texts):
+        if not chunk_text.strip():
+            skipped += 1
+            continue
+
+        resp = client.messages.count_tokens(
+            model=model,
+            system=system_prompt,
+            messages=[{"role": "user", "content": chunk_text}],
+        )
+        tok = resp.input_tokens
+        total_input += tok
+
+        if verbose or len(chunk_texts) <= 12:
+            try:
+                if chunks and hasattr(chunks[i][0], "__getitem__"):
+                    page_nums = [p["page_num"] for p in chunks[i]]
+                else:
+                    page_nums = [p for p, _ in chunks[i]]
+                label = f"pages {page_nums[0]}–{page_nums[-1]}"
+            except Exception:
+                label = f"chunk {i}"
+            print(f"  chunk-{i:04d}  ({label})  →  {tok:,} input tokens")
+
+    total_output = est_output_per_chunk * (len(chunk_texts) - skipped)
+    cost_input   = total_input  / 1_000_000 * prices["input"]  * discount
+    cost_output  = total_output / 1_000_000 * prices["output"] * discount
+    cost_total   = cost_input + cost_output
+
+    print()
+    print(f"  ─────────────────────────────────────────")
+    print(f"  Chunks          : {len(chunk_texts) - skipped} ({skipped} empty/skipped)")
+    print(f"  Total input     : {total_input:,} tokens  →  ${cost_input:.4f}")
+    print(f"  Est. output     : ~{total_output:,} tokens  →  ${cost_output:.4f}")
+    print(f"  ─────────────────────────────────────────")
+    print(f"  Estimated total : ${cost_total:.4f}  "
+          f"({'with' if use_batch else 'without'} batch discount)")
+    print(f"  ─────────────────────────────────────────")
+    print()
+    print("  No API inference was performed. Remove --dry-run to convert.")

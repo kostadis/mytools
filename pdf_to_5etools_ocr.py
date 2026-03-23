@@ -666,6 +666,7 @@ def convert(
     model: str,
     output_mode: str,   # "homebrew" = single file for Load from File
                         # "server"   = two files for permanent server install
+    use_batch: bool,    # True = Batch API (50% cheaper, async ~minutes)
     dry_run_only: bool, # True = count tokens + estimate cost, no inference
     extract_monsters: bool, # True = second Claude pass to extract stat blocks
     monsters_only: bool,    # True = skip adventure extraction, monsters only
@@ -679,6 +680,7 @@ def convert(
     print(f"  Input :  {pdf_path}")
     print(f"  Output:  {out_path}")
     print(f"  Type  :  {output_type}   ID: {short_id}   Mode: {output_mode}")
+    print(f"  API   :  {'Batch (50% discount)' if use_batch else 'Standard'}")
     print(f"  DPI   :  {dpi}   Force-OCR: {force_ocr}   Lang: {lang}")
     if extract_monsters:
         print(f"  Mode  :  Extract monsters enabled (second Claude pass per chunk)")
@@ -811,29 +813,42 @@ def convert(
 
     if dry_run_only:
         # ── Dry run: count tokens, print estimate, exit early ─────────────
-        dry_run(client, chunk_texts, chunks, model, use_batch=False, verbose=verbose)
+        _api.dry_run(client, chunk_texts, chunks, model, SYSTEM_PROMPT, use_batch, verbose)
         return
 
     all_entries: list[Any] = []
     all_monsters: list[Any] = []
 
     if not monsters_only:
-        print(f"[4/5] Converting {len(chunks)} chunks via Claude ({model}) ...",
+        api_label = "Batch API (50% discount)" if use_batch else "Standard API"
+        print(f"[4/5] Converting {len(chunks)} chunks via Claude ({model}) [{api_label}]...",
               flush=True)
-        for i, (chunk, chunk_text) in enumerate(zip(chunks, chunk_texts)):
-            page_nums = [p for p, _ in chunk]
-            print(f"  Chunk {i+1}/{len(chunks)}  "
-                  f"(pages {page_nums[0]}–{page_nums[-1]})", flush=True)
-            if not chunk_text.strip():
-                if verbose:
-                    print("    [SKIP] Empty chunk.")
-                continue
-            entries = call_claude(client, chunk_text, model, verbose,
-                                  debug_dir=debug_dir, chunk_id=f"chunk-{i:04d}")
-            print(f"    → {len(entries)} entries parsed"
-                  + ("  ← EMPTY — check debug files" if debug_dir and not entries else ""),
-                  flush=True)
-            all_entries.extend(entries)
+        if use_batch:
+            non_empty = [(i, t) for i, t in enumerate(chunk_texts) if t.strip()]
+            if not non_empty:
+                print("    [WARN] All chunks empty — nothing to send.")
+            else:
+                texts_to_send = [t for _, t in non_empty]
+                batch_results = _api.call_claude_batch(
+                    client, texts_to_send, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir
+                )
+                for entries in batch_results:
+                    all_entries.extend(entries)
+        else:
+            for i, (chunk, chunk_text) in enumerate(zip(chunks, chunk_texts)):
+                page_nums = [p for p, _ in chunk]
+                print(f"  Chunk {i+1}/{len(chunks)}  "
+                      f"(pages {page_nums[0]}–{page_nums[-1]})", flush=True)
+                if not chunk_text.strip():
+                    if verbose:
+                        print("    [SKIP] Empty chunk.")
+                    continue
+                entries = call_claude(client, chunk_text, model, verbose,
+                                      debug_dir=debug_dir, chunk_id=f"chunk-{i:04d}")
+                print(f"    → {len(entries)} entries parsed"
+                      + ("  ← EMPTY — check debug files" if debug_dir and not entries else ""),
+                      flush=True)
+                all_entries.extend(entries)
         print(f"      Total entries: {len(all_entries)}", flush=True)
     else:
         print("[4/5] Skipping adventure extraction (--monsters-only)", flush=True)
@@ -1109,6 +1124,7 @@ def main() -> None:
         lang=args.lang,
         model=args.model,
         output_mode=args.output_mode,
+        use_batch=args.use_batch,
         dry_run_only=args.dry_run_only,
         extract_monsters=args.extract_monsters,
         monsters_only=args.monsters_only,

@@ -1252,57 +1252,11 @@ def build_toc(data: list[Any]) -> list[dict]:
 
 # ── Dry-run (token cost estimate) ─────────────────────────────────────────────
 
-_PRICE = {
-    "haiku":  {"input": 0.80,  "output": 4.00},
-    "sonnet": {"input": 3.00,  "output": 15.00},
-    "opus":   {"input": 15.00, "output": 75.00},
-}
-
-def _model_tier(model: str) -> str:
-    m = model.lower()
-    if "haiku"  in m: return "haiku"
-    if "sonnet" in m: return "sonnet"
-    if "opus"   in m: return "opus"
-    return "sonnet"
-
 def dry_run(client: anthropic.Anthropic, chunk_texts: list[str],
-            chunks: list, model: str, verbose: bool) -> None:
-    tier   = _model_tier(model)
-    prices = _PRICE.get(tier, _PRICE["sonnet"])
-    print(f"\n[DRY-RUN] Token count + cost estimate")
-    print(f"  Model  : {model}")
-    print(f"  Pricing: ${prices['input']:.2f} / ${prices['output']:.2f} per M tokens")
-    print()
-    total_input = 0
-    est_out_per_chunk = 1_000
-    skipped = 0
-    for i, chunk_text in enumerate(chunk_texts):
-        if not chunk_text.strip():
-            skipped += 1
-            continue
-        resp = client.messages.count_tokens(
-            model=model, system=SYSTEM_PROMPT_1E,
-            messages=[{"role": "user", "content": chunk_text}],
-        )
-        tok = resp.input_tokens
-        total_input += tok
-        if verbose or len(chunk_texts) <= 12:
-            try:
-                page_nums = [p for p, _ in chunks[i]]
-                label = f"pages {page_nums[0]}–{page_nums[-1]}"
-            except Exception:
-                label = f"chunk {i}"
-            print(f"  chunk-{i:04d}  ({label})  →  {tok:,} input tokens")
-    total_output = est_out_per_chunk * (len(chunk_texts) - skipped)
-    cost_in  = total_input  / 1_000_000 * prices["input"]
-    cost_out = total_output / 1_000_000 * prices["output"]
-    print()
-    print(f"  Total input     : {total_input:,} tokens  →  ${cost_in:.4f}")
-    print(f"  Est. output     : ~{total_output:,} tokens  →  ${cost_out:.4f}")
-    print(f"  Estimated total : ${cost_in + cost_out:.4f}")
-    print()
-    print("  No API inference was performed. Remove --dry-run to convert.")
-    print()
+            chunks: list, model: str, use_batch: bool, verbose: bool) -> None:
+    """Thin wrapper — delegates to the shared implementation in claude_api."""
+    _api.dry_run(client, chunk_texts, chunks, model, SYSTEM_PROMPT_1E,
+                 use_batch=use_batch, verbose=verbose)
 
 
 # ── Main conversion driver ────────────────────────────────────────────────────
@@ -1323,6 +1277,7 @@ def convert(
     lang: str,
     model: str,
     output_mode: str,
+    use_batch: bool,
     dry_run_only: bool,
     extract_monsters: bool,
     monsters_only: bool,
@@ -1338,6 +1293,7 @@ def convert(
     print(f"  Input :  {pdf_path}")
     print(f"  Output:  {out_path}")
     print(f"  Type  :  {output_type}   ID: {short_id}   Mode: {output_mode}")
+    print(f"  API   :  {'Batch (async, 50% cheaper)' if use_batch else 'Standard (streaming)'}")
     if mc_label: print(mc_label)
     if pages:     print(f"  Pages :  {sorted(pages)}")
     if skip_pages: print(f"  Skip  :  pages {sorted(skip_pages)}")
@@ -1457,7 +1413,7 @@ def convert(
     client = anthropic.Anthropic(api_key=key)
 
     if dry_run_only:
-        dry_run(client, chunk_texts, chunks, model, verbose)
+        dry_run(client, chunk_texts, chunks, model, use_batch, verbose)
         return
 
     all_entries: list[Any] = []
@@ -1465,40 +1421,49 @@ def convert(
 
     if not monsters_only:
         print(f"[4/5] Converting {len(chunks)} chunks via Claude ({model}) ...", flush=True)
-        for i, (chunk, chunk_text) in enumerate(zip(chunks, chunk_texts)):
-            page_nums = [p for p, _ in chunk]
-            print(f"  Chunk {i+1}/{len(chunks)}  "
-                  f"(pages {page_nums[0]}–{page_nums[-1]})", flush=True)
-            if not chunk_text.strip():
-                if verbose: print("    [SKIP] Empty chunk.")
-                continue
-            entries = call_claude(client, chunk_text, model, verbose,
-                                  debug_dir=debug_dir, chunk_id=f"chunk-{i:04d}")
-            if entries is None:
-                if no_retry or chunk_size == 1:
-                    print(f"    [SKIP] Chunk {i+1} rejected — skipping (no retry).", flush=True)
-                    entries = []
+        if use_batch:
+            non_empty = [(i, t) for i, t in enumerate(chunk_texts) if t.strip()]
+            texts_to_send = [t for _, t in non_empty]
+            batch_results = _api.call_claude_batch(
+                client, texts_to_send, model, SYSTEM_PROMPT_1E, verbose, debug_dir=debug_dir,
+            )
+            for entries in batch_results:
+                all_entries.extend(entries)
+        else:
+            for i, (chunk, chunk_text) in enumerate(zip(chunks, chunk_texts)):
+                page_nums = [p for p, _ in chunk]
+                print(f"  Chunk {i+1}/{len(chunks)}  "
+                      f"(pages {page_nums[0]}–{page_nums[-1]})", flush=True)
+                if not chunk_text.strip():
+                    if verbose: print("    [SKIP] Empty chunk.")
+                    continue
+                entries = call_claude(client, chunk_text, model, verbose,
+                                      debug_dir=debug_dir, chunk_id=f"chunk-{i:04d}")
+                if entries is None:
+                    if no_retry or chunk_size == 1:
+                        print(f"    [SKIP] Chunk {i+1} rejected — skipping (no retry).", flush=True)
+                        entries = []
+                    else:
+                        # Content filter hit — retry each page individually
+                        print(f"    [RETRY] Retrying chunk {i+1} page-by-page ...", flush=True)
+                        entries = []
+                        for page_num, page_text in chunk:
+                            if not page_text.strip():
+                                continue
+                            single = f"\n--- Page {page_num} ---\n{page_text}\n"
+                            result = call_claude(client, single, model, verbose,
+                                                debug_dir=debug_dir,
+                                                chunk_id=f"chunk-{i:04d}-p{page_num}")
+                            if result is None:
+                                print(f"    [SKIP] Page {page_num} rejected by content filter.", flush=True)
+                            else:
+                                entries.extend(result)
+                if entries:
+                    print(f"    → {len(entries)} entries parsed", flush=True)
                 else:
-                    # Content filter hit — retry each page individually
-                    print(f"    [RETRY] Retrying chunk {i+1} page-by-page ...", flush=True)
-                    entries = []
-                    for page_num, page_text in chunk:
-                        if not page_text.strip():
-                            continue
-                        single = f"\n--- Page {page_num} ---\n{page_text}\n"
-                        result = call_claude(client, single, model, verbose,
-                                            debug_dir=debug_dir,
-                                            chunk_id=f"chunk-{i:04d}-p{page_num}")
-                        if result is None:
-                            print(f"    [SKIP] Page {page_num} rejected by content filter.", flush=True)
-                        else:
-                            entries.extend(result)
-            if entries:
-                print(f"    → {len(entries)} entries parsed", flush=True)
-            else:
-                tip = f"Check {debug_dir}/" if debug_dir else "Re-run with --debug-dir DIR to inspect raw API responses."
-                print(f"    → 0 entries — chunk produced no output. {tip}", flush=True)
-            all_entries.extend(entries)
+                    tip = f"Check {debug_dir}/" if debug_dir else "Re-run with --debug-dir DIR to inspect raw API responses."
+                    print(f"    → 0 entries — chunk produced no output. {tip}", flush=True)
+                all_entries.extend(entries)
         print(f"      Total entries: {len(all_entries)}", flush=True)
     else:
         print("[4/5] Skipping adventure extraction (--monsters-only)", flush=True)
@@ -1740,6 +1705,7 @@ def main() -> None:
         lang=args.lang,
         model=args.model,
         output_mode=args.output_mode,
+        use_batch=args.use_batch,
         dry_run_only=args.dry_run_only,
         extract_monsters=args.extract_monsters,
         monsters_only=args.monsters_only,
