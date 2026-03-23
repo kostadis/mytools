@@ -51,13 +51,15 @@ Each converter's `call_claude` is a thin wrapper that passes its own `SYSTEM_PRO
 
 `claude_api` is imported at module top-level (before `SYSTEM_PROMPT` is defined) so that `_api.COMMON_TAG_RULES` is available when the f-string prompt is constructed.
 
-### PDF bookmark / TOC extraction — `extract_pdf_toc`
+### PDF bookmark / TOC extraction — `pdf_utils.py`
 
-`pdf_to_5etools.py` exposes `extract_pdf_toc(pdf_path, max_level=3) -> str | None`, which reads the PDF's built-in bookmark outline via `doc.get_toc()` and returns a formatted text block (or `None` if the PDF has no bookmarks). The block is prepended to every Claude chunk so Claude sees the authoritative section names and page numbers before reading the content. Disable with `--no-toc-hint`.
+`pdf_utils.py` is a shared library (depends on PyMuPDF, kept separate from `claude_api.py` which has no PDF dependency) that owns:
+- `extract_pdf_toc(pdf_path, max_level=3) -> str | None` — reads the PDF's built-in bookmark outline via `doc.get_toc()` and returns a formatted text block (or `None` if the PDF has no bookmarks). Prepended to every Claude chunk so Claude sees authoritative section names and page numbers. Disable with `--no-toc-hint`.
+- `_decode_pdf_string(text)` — fixes Windows-1252/Mac-Roman characters (smart quotes `\x90`→`'`, curly brackets `\x8d`/`\x8e`→`'`/`'`) that PyMuPDF passes through as raw bytes.
 
-Bookmark levels: L1 = document title (skipped as min-level), L2 = top-level sections, L3 = subsections, L4+ = fine detail (Treasure, XP Award…) — L4+ are excluded by default. `_decode_pdf_string` fixes Windows-1252/Mac-Roman characters (smart quotes `\x90`→`'`, curly brackets `\x8d`/`\x8e`→`'`/`'`) that PyMuPDF passes through as raw bytes.
+Bookmark levels: L1 = document title (skipped as min-level), L2 = top-level sections, L3 = subsections, L4+ (Treasure, XP Award…) excluded by default.
 
-The OCR and 1e converters import `extract_pdf_toc` from `pdf_to_5etools` (lazy import inside `convert()`) and apply the same hint in their chunk-building loops. All three converters share identical TOC-hint logic; the function itself lives only in `pdf_to_5etools.py`.
+All three converters import `extract_pdf_toc` from `pdf_utils` (lazy import inside `convert()`). `pdf_to_5etools.py` also re-exports it for backwards compatibility.
 
 ### Converter pipeline (all three scripts share this structure)
 
@@ -149,7 +151,7 @@ CR = table lookup from HD (see hd_to_cr() in pdf_to_5etools_1e.py)
 - **5etools TOC/data alignment**: `adventure[0].contents[n]` maps to `adventureData[0].data[n]` by direct array index. Every top-level `data[]` entry must be `type: "section"` — non-section entries shift all subsequent chapter navigation by 1. The post-processing hoist step enforces this automatically.
 - **Retry logic lives in `claude_api.py`** — do not duplicate it in the individual converters.
 - **Shared prompt fragments live in `claude_api.py`** (`COMMON_TAG_RULES`) — do not duplicate tag rules in individual converters.
-- **TOC hint lives in `pdf_to_5etools.py`** (`extract_pdf_toc`, `_decode_pdf_string`) — OCR and 1e import from there rather than duplicating.
+- **TOC hint lives in `pdf_utils.py`** (`extract_pdf_toc`, `_decode_pdf_string`) — all converters import from there, not from each other.
 - **`{@tag}` validation** — run `python3 validate_tags.py adventure.json` after conversion to catch unknown tags (which cause blank pages in 5etools). Use `--fix` to replace them with plain text in-place.
 
 ## Refactoring rule

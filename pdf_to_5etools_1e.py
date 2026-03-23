@@ -1419,7 +1419,7 @@ def convert(
     print(f"      {len(chunks)} chunks.", flush=True)
 
     # Extract PDF bookmark TOC for use as a per-chunk hint to Claude
-    from pdf_to_5etools import extract_pdf_toc
+    from pdf_utils import extract_pdf_toc
     toc_hint: str | None = None
     if use_toc_hint:
         toc_hint = extract_pdf_toc(pdf_path)
