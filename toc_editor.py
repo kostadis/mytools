@@ -114,6 +114,54 @@ def api_load():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/demote", methods=["POST"])
+def api_demote():
+    """Move data[index] down one level: nest it inside data[index-1].entries
+    and remove it from the top-level array.  Updates contents[] in sync."""
+    body = request.json or {}
+    path = Path(body.get("path", ""))
+    idx  = body.get("index")
+
+    if idx is None or idx < 1:
+        return jsonify({"error": "index must be >= 1"}), 400
+
+    with open(path, encoding="utf-8") as f:
+        raw = json.load(f)
+
+    index_key = "adventure" if "adventure" in raw else "book"
+    data_key  = "adventureData" if "adventure" in raw else "bookData"
+    contents  = raw[index_key][0].get("contents", [])
+    data      = raw[data_key][0].get("data", [])
+
+    if idx >= len(data):
+        return jsonify({"error": f"index {idx} out of range (data has {len(data)} items)"}), 400
+
+    # ── data[]: demote section → entries, append to previous section ─────
+    entry = data.pop(idx)
+    entry["type"] = "entries"
+    data[idx - 1].setdefault("entries", []).append(entry)
+
+    # ── contents[]: move entry name into previous entry's headers ─────────
+    if idx < len(contents):
+        moved = contents.pop(idx)
+        prev  = contents[idx - 1]
+        prev.setdefault("headers", [])
+        prev["headers"].append(moved["name"])
+        if moved.get("headers"):
+            prev["headers"].extend(moved["headers"])
+
+    raw[index_key][0]["contents"] = contents
+    raw[data_key][0]["data"]      = data
+
+    # Write back (create .bak first)
+    bak = path.with_suffix(".bak")
+    bak.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(raw, f, indent="\t", ensure_ascii=False)
+
+    return jsonify({"ok": True, "new_length": len(data)})
+
+
 @app.route("/api/save", methods=["POST"])
 def api_save():
     body = request.json or {}
@@ -171,7 +219,8 @@ HTML = r"""<!DOCTYPE html>
   .col-drag { width: 1.5em; }
   .col-match{ width: 1.8em; text-align: center; }
   .col-type { width: 5.5em; text-align: center; }
-  .col-del  { width: 2em;   text-align: center; }
+  .col-del    { width: 2em;   text-align: center; }
+  .col-demote { width: 2em;   text-align: center; }
   .match-ok   { color: #198754; }
   .match-fail { color: #dc3545; font-weight: bold; }
 </style>
@@ -215,6 +264,7 @@ HTML = r"""<!DOCTYPE html>
             <th class="col-match" title="Name matches data section at same index">≈</th>
             <th>Data section at this index <span class="text-muted fw-normal">(read-only)</span></th>
             <th class="col-type">Type</th>
+            <th class="col-demote" title="Move this section inside the one above it">↓</th>
             <th class="col-del"></th>
           </tr>
         </thead>
@@ -310,6 +360,13 @@ function makeRow(entry, i) {
     ? `<span class="match-ok">✓</span>`
     : `<span class="match-fail">✗</span>`);
 
+  const demoteBtn = i === 0
+    ? `<td class="col-demote"></td>`
+    : `<td class="col-demote">
+         <button class="btn btn-sm btn-link text-secondary p-0 btn-demote"
+                 title="Nest inside section above">↓</button>
+       </td>`;
+
   tr.innerHTML = `
     <td class="col-idx row-idx">${i}</td>
     <td class="col-drag drag-handle">≡</td>
@@ -324,12 +381,16 @@ function makeRow(entry, i) {
       ${snippet}
     </td>
     <td class="col-type">${typeBadge}</td>
+    ${demoteBtn}
     <td class="col-del">
       <button class="btn btn-sm btn-link text-danger p-0 btn-del" title="Remove row">×</button>
     </td>`;
 
   tr.querySelector(".btn-del").onclick = () => { tr.remove(); refresh(); };
   tr.querySelector(".toc-name").oninput = refresh;
+  if (i > 0) {
+    tr.querySelector(".btn-demote").onclick = () => demoteRow(tr);
+  }
   return tr;
 }
 
@@ -422,6 +483,33 @@ document.getElementById("btnRevert").onclick = () => {
   refresh();
   setStatus("Reverted to last loaded state.");
 };
+
+// ── Demote ────────────────────────────────────────────────────────────────
+
+function demoteRow(tr) {
+  const idx = parseInt(tr.querySelector(".row-idx").textContent, 10);
+  const name = tr.querySelector(".toc-name").value.trim() || "this section";
+  const prevRow = tr.previousElementSibling;
+  const prevName = prevRow
+    ? (prevRow.querySelector(".toc-name").value.trim() || "the section above")
+    : "the section above";
+
+  if (!confirm(`Move "${name}" (index ${idx}) inside "${prevName}"?\n\nThis will:\n• Remove it from the top-level data[] array\n• Nest it as an entries block inside the section above\n• Add its name to that section's TOC headers\n\nA .bak backup will be written first.`)) return;
+
+  setStatus("Demoting…");
+  fetch("/api/demote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: currentFile, index: idx }),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { setStatus("Demote error: " + d.error, true); return; }
+    setStatus(`Demoted "${name}" into "${prevName}". Reloading…`);
+    loadFile(currentFile);
+  })
+  .catch(e => setStatus("Demote error: " + e, true));
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
