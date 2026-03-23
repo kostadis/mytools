@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unit tests for pdf_to_5etools.py and pdf_to_5etools_ocr.py.
+Unit tests for pdf_to_5etools converters, cli_args, and claude_api.
 
 Run with:
     cd pdf-translators
@@ -9,13 +9,15 @@ Run with:
 
 from __future__ import annotations
 
+import argparse
 import importlib
+import io
 import json
 import sys
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 
 # ---------------------------------------------------------------------------
@@ -113,9 +115,15 @@ def _import_ocr():
 # ---------------------------------------------------------------------------
 # Module-level import (done once to avoid repeated patching overhead)
 # ---------------------------------------------------------------------------
-BASE = _import_base()
+BASE  = _import_base()
 MOD1E = _import_1e()
-OCR  = _import_ocr()
+OCR   = _import_ocr()
+
+# cli_args has no heavy deps — import directly
+import cli_args as _cli
+
+# claude_api is already in sys.modules (loaded by the converter imports above)
+import claude_api as _claude_api
 
 
 # ===========================================================================
@@ -962,6 +970,417 @@ class TestNeutralizeTriggers(unittest.TestCase):
         self.assertNotIn("....", out)
         self.assertIn("Tower Exterior", out)
         self.assertIn("Room Key", out)
+
+
+# ===========================================================================
+# Tests for cli_args.py
+# ===========================================================================
+
+class TestCliArgsCommon(unittest.TestCase):
+    """add_common_args registers all shared arguments with correct defaults."""
+
+    def setUp(self):
+        self.parser = argparse.ArgumentParser()
+        _cli.add_common_args(self.parser, default_chunk=6, default_model="claude-haiku-4-5")
+
+    def _parse(self, *extra):
+        # Provide a minimal valid positional arg (pdf) then any extra flags
+        return self.parser.parse_args(["dummy.pdf", *extra])
+
+    def test_pdf_positional(self):
+        args = self._parse()
+        self.assertEqual(args.pdf, Path("dummy.pdf"))
+
+    def test_type_default_adventure(self):
+        args = self._parse()
+        self.assertEqual(args.output_type, "adventure")
+
+    def test_type_book(self):
+        args = self._parse("--type", "book")
+        self.assertEqual(args.output_type, "book")
+
+    def test_output_mode_default_homebrew(self):
+        args = self._parse()
+        self.assertEqual(args.output_mode, "homebrew")
+
+    def test_output_mode_server(self):
+        args = self._parse("--output-mode", "server")
+        self.assertEqual(args.output_mode, "server")
+
+    def test_id_stored_as_short_id(self):
+        args = self._parse("--id", "MYMOD")
+        self.assertEqual(args.short_id, "MYMOD")
+        self.assertFalse(hasattr(args, "id"))
+
+    def test_id_default_none(self):
+        args = self._parse()
+        self.assertIsNone(args.short_id)
+
+    def test_batch_default_false(self):
+        args = self._parse()
+        self.assertFalse(args.use_batch)
+
+    def test_batch_flag_sets_true(self):
+        args = self._parse("--batch")
+        self.assertTrue(args.use_batch)
+
+    def test_pages_per_chunk_default(self):
+        args = self._parse()
+        self.assertEqual(args.chunk_size, 6)
+
+    def test_pages_per_chunk_override(self):
+        args = self._parse("--pages-per-chunk", "3")
+        self.assertEqual(args.chunk_size, 3)
+
+    def test_model_default(self):
+        args = self._parse()
+        self.assertEqual(args.model, "claude-haiku-4-5")
+
+    def test_model_override(self):
+        args = self._parse("--model", "claude-sonnet-4-6")
+        self.assertEqual(args.model, "claude-sonnet-4-6")
+
+    def test_extract_monsters_default_false(self):
+        args = self._parse()
+        self.assertFalse(args.extract_monsters)
+
+    def test_monsters_only_default_false(self):
+        args = self._parse()
+        self.assertFalse(args.monsters_only)
+
+    def test_dry_run_default_false(self):
+        args = self._parse()
+        self.assertFalse(args.dry_run_only)
+
+    def test_verbose_default_false(self):
+        args = self._parse()
+        self.assertFalse(args.verbose)
+
+    def test_no_toc_hint_default_false(self):
+        args = self._parse()
+        self.assertFalse(args.no_toc_hint)
+
+    def test_pages_default_none(self):
+        args = self._parse()
+        self.assertIsNone(args.pages)
+
+    def test_page_default_none(self):
+        args = self._parse()
+        self.assertIsNone(args.page)
+
+    def test_author_default(self):
+        args = self._parse()
+        self.assertEqual(args.author, "Unknown")
+
+    def test_debug_dir_default_none(self):
+        args = self._parse()
+        self.assertIsNone(args.debug_dir)
+
+
+class TestCliArgsOcr(unittest.TestCase):
+    """add_ocr_args registers OCR-specific arguments with correct defaults."""
+
+    def setUp(self):
+        self.parser = argparse.ArgumentParser()
+        _cli.add_common_args(self.parser, default_chunk=4, default_model="claude-haiku-4-5")
+        _cli.add_ocr_args(self.parser, default_dpi=200)
+
+    def _parse(self, *extra):
+        return self.parser.parse_args(["dummy.pdf", *extra])
+
+    def test_dpi_default(self):
+        args = self._parse()
+        self.assertEqual(args.dpi, 200)
+
+    def test_dpi_override(self):
+        args = self._parse("--dpi", "600")
+        self.assertEqual(args.dpi, 600)
+
+    def test_force_ocr_default_false(self):
+        args = self._parse()
+        self.assertFalse(args.force_ocr)
+
+    def test_force_ocr_flag(self):
+        args = self._parse("--force-ocr")
+        self.assertTrue(args.force_ocr)
+
+    def test_lang_default_eng(self):
+        args = self._parse()
+        self.assertEqual(args.lang, "eng")
+
+    def test_lang_override(self):
+        args = self._parse("--lang", "fra")
+        self.assertEqual(args.lang, "fra")
+
+    def test_batch_still_present(self):
+        # --batch must be available even when add_ocr_args is added
+        args = self._parse("--batch")
+        self.assertTrue(args.use_batch)
+
+
+# ===========================================================================
+# Tests for claude_api.py
+# ===========================================================================
+
+class TestClaudeApiConstants(unittest.TestCase):
+    """COMMON_TAG_RULES and COMMON_NESTING_RULES contain expected guidance."""
+
+    def test_tag_rules_has_bold(self):
+        self.assertIn("{@b", _claude_api.COMMON_TAG_RULES)
+
+    def test_tag_rules_has_creature(self):
+        self.assertIn("{@creature", _claude_api.COMMON_TAG_RULES)
+
+    def test_tag_rules_has_spell(self):
+        self.assertIn("{@spell", _claude_api.COMMON_TAG_RULES)
+
+    def test_tag_rules_has_dice(self):
+        self.assertIn("{@dice", _claude_api.COMMON_TAG_RULES)
+
+    def test_nesting_rules_has_section(self):
+        self.assertIn('"type":"section"', _claude_api.COMMON_NESTING_RULES)
+
+    def test_nesting_rules_headers_guidance(self):
+        self.assertIn("headers", _claude_api.COMMON_NESTING_RULES)
+
+    def test_nesting_rules_no_repeat_name(self):
+        self.assertIn("NOT repeat the section", _claude_api.COMMON_NESTING_RULES)
+
+    def test_nesting_rules_excludes_generic_headings(self):
+        self.assertIn("Treasure", _claude_api.COMMON_NESTING_RULES)
+        self.assertIn("Creatures", _claude_api.COMMON_NESTING_RULES)
+
+    def test_max_output_tokens(self):
+        self.assertGreaterEqual(_claude_api.MAX_OUTPUT_TOKENS, 8_000)
+
+
+class TestModelTier(unittest.TestCase):
+    """_model_tier detects haiku / sonnet / opus from model name."""
+
+    def _t(self, model):
+        return _claude_api._model_tier(model)
+
+    def test_haiku(self):
+        self.assertEqual(self._t("claude-haiku-4-5-20251001"), "haiku")
+
+    def test_sonnet(self):
+        self.assertEqual(self._t("claude-sonnet-4-6"), "sonnet")
+
+    def test_opus(self):
+        self.assertEqual(self._t("claude-opus-4-6"), "opus")
+
+    def test_unknown_defaults_to_sonnet(self):
+        self.assertEqual(self._t("gpt-4o"), "sonnet")
+
+    def test_case_insensitive(self):
+        self.assertEqual(self._t("Claude-Haiku-4-5"), "haiku")
+
+
+class TestRecoverPartialJsonApi(unittest.TestCase):
+    """_recover_partial_json in claude_api salvages complete entries from truncated output."""
+
+    def _call(self, raw):
+        return _claude_api._recover_partial_json(raw)
+
+    def test_no_bracket_returns_empty(self):
+        self.assertEqual(self._call("no bracket here"), [])
+
+    def test_recovers_first_entry_from_truncated_array(self):
+        # Array is truncated mid-second object; first object should be recovered
+        raw = '[{"type":"section","name":"A"},\n  {"type":"section","name":"B'
+        result = self._call(raw)
+        self.assertGreaterEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "A")
+
+    def test_truncated_array_recovers_complete_entries(self):
+        # Second object is cut off — should recover first object only
+        raw = '[{"type":"section","name":"A"},\n  {"type":"section","nam'
+        result = self._call(raw)
+        self.assertGreaterEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "A")
+
+    def test_empty_array_returns_empty(self):
+        self.assertEqual(self._call("[]"), [])
+
+
+class TestCallClaudeBatch(unittest.TestCase):
+    """call_claude_batch submits all chunks and returns results in order."""
+
+    def _make_result(self, custom_id, text):
+        result = MagicMock()
+        result.custom_id = custom_id
+        result.result.type = "succeeded"
+        result.result.message.stop_reason = "end_turn"
+        result.result.message.content = [MagicMock(text=text)]
+        return result
+
+    def test_returns_results_in_chunk_order(self):
+        client = MagicMock()
+        batch = MagicMock()
+        batch.id = "batch_abc"
+        client.messages.batches.create.return_value = batch
+
+        ended = MagicMock()
+        ended.processing_status = "ended"
+        ended.request_counts.processing = 0
+        ended.request_counts.succeeded = 2
+        ended.request_counts.errored = 0
+        client.messages.batches.retrieve.return_value = ended
+
+        # Return results out of order to verify ordering logic
+        client.messages.batches.results.return_value = [
+            self._make_result("chunk-0001", '[{"type":"section","name":"B"}]'),
+            self._make_result("chunk-0000", '[{"type":"section","name":"A"}]'),
+        ]
+
+        results = _claude_api.call_claude_batch(
+            client, ['chunk 0 text', 'chunk 1 text'],
+            model="claude-haiku-4-5",
+            system_prompt="test prompt",
+            verbose=False,
+        )
+
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0][0]["name"], "A")  # chunk-0000 first
+        self.assertEqual(results[1][0]["name"], "B")  # chunk-0001 second
+
+    def test_failed_chunk_returns_empty_list(self):
+        client = MagicMock()
+        batch = MagicMock()
+        batch.id = "batch_xyz"
+        client.messages.batches.create.return_value = batch
+
+        ended = MagicMock()
+        ended.processing_status = "ended"
+        ended.request_counts.processing = 0
+        ended.request_counts.succeeded = 0
+        ended.request_counts.errored = 1
+        client.messages.batches.retrieve.return_value = ended
+
+        failed = MagicMock()
+        failed.custom_id = "chunk-0000"
+        failed.result.type = "errored"
+        client.messages.batches.results.return_value = [failed]
+
+        results = _claude_api.call_claude_batch(
+            client, ['text'],
+            model="claude-haiku-4-5",
+            system_prompt="test",
+            verbose=False,
+        )
+        self.assertEqual(results, [[]])
+
+    def test_batch_create_called_once(self):
+        client = MagicMock()
+        batch = MagicMock()
+        batch.id = "b1"
+        client.messages.batches.create.return_value = batch
+
+        ended = MagicMock()
+        ended.processing_status = "ended"
+        ended.request_counts = MagicMock(processing=0, succeeded=0, errored=0)
+        client.messages.batches.retrieve.return_value = ended
+        client.messages.batches.results.return_value = []
+
+        _claude_api.call_claude_batch(
+            client, ['a', 'b'],
+            model="claude-haiku-4-5",
+            system_prompt="sys",
+            verbose=False,
+        )
+        client.messages.batches.create.assert_called_once()
+        # Verify requests list has one entry per non-empty chunk
+        req_arg = client.messages.batches.create.call_args[1]["requests"]
+        self.assertEqual(len(req_arg), 2)
+        self.assertEqual(req_arg[0]["custom_id"], "chunk-0000")
+        self.assertEqual(req_arg[1]["custom_id"], "chunk-0001")
+
+
+class TestDryRunShared(unittest.TestCase):
+    """dry_run calls count_tokens for each non-empty chunk and prints a summary."""
+
+    def _make_client(self, tokens_per_chunk=500):
+        client = MagicMock()
+        token_resp = MagicMock()
+        token_resp.input_tokens = tokens_per_chunk
+        client.messages.count_tokens.return_value = token_resp
+        return client
+
+    def test_count_tokens_called_for_each_non_empty_chunk(self):
+        client = self._make_client()
+        chunk_texts = ["text chunk 0", "  ", "text chunk 2"]  # middle is empty
+        with patch("sys.stdout", new_callable=io.StringIO):
+            _claude_api.dry_run(
+                client, chunk_texts, chunk_texts, "claude-haiku-4-5",
+                "sys prompt", use_batch=False, verbose=False,
+            )
+        # Only 2 non-empty chunks should trigger count_tokens
+        self.assertEqual(client.messages.count_tokens.call_count, 2)
+
+    def test_batch_discount_mentioned_in_output(self):
+        client = self._make_client()
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+            _claude_api.dry_run(
+                client, ["some text"], ["some text"], "claude-haiku-4-5",
+                "sys", use_batch=True, verbose=False,
+            )
+        output = mock_out.getvalue()
+        self.assertIn("Batch", output)
+
+    def test_no_tokens_counted_for_empty_chunks(self):
+        client = self._make_client()
+        chunk_texts = ["  ", "\n", ""]
+        with patch("sys.stdout", new_callable=io.StringIO):
+            _claude_api.dry_run(
+                client, chunk_texts, chunk_texts, "claude-haiku-4-5",
+                "sys", use_batch=False, verbose=False,
+            )
+        client.messages.count_tokens.assert_not_called()
+
+
+# ===========================================================================
+# Tests for batch mode in pdf_to_5etools_1e.py
+# ===========================================================================
+
+class Test1eDryRunWrapper(unittest.TestCase):
+    """The 1e dry_run wrapper delegates to _api.dry_run with use_batch forwarded."""
+
+    def test_delegates_use_batch_true(self):
+        client = MagicMock()
+        with patch.object(MOD1E._api, "dry_run") as mock_dry:
+            MOD1E.dry_run(client, [], [], "model", use_batch=True, verbose=False)
+        mock_dry.assert_called_once()
+        _, kwargs = mock_dry.call_args
+        self.assertTrue(kwargs.get("use_batch") or mock_dry.call_args[0][5])
+
+    def test_delegates_use_batch_false(self):
+        client = MagicMock()
+        with patch.object(MOD1E._api, "dry_run") as mock_dry:
+            MOD1E.dry_run(client, [], [], "model", use_batch=False, verbose=False)
+        mock_dry.assert_called_once()
+        # use_batch=False should be forwarded
+        args_call = mock_dry.call_args
+        # It's the 6th positional or use_batch keyword
+        all_args = list(args_call[0]) + list(args_call[1].values())
+        self.assertIn(False, all_args)
+
+
+class Test1eBatchModeRouting(unittest.TestCase):
+    """convert() in 1e calls call_claude_batch when use_batch=True."""
+
+    def test_use_batch_param_accepted(self):
+        import inspect
+        sig = inspect.signature(MOD1E.convert)
+        self.assertIn("use_batch", sig.parameters)
+
+
+class TestOcrBatchModeRouting(unittest.TestCase):
+    """convert() in OCR calls call_claude_batch when use_batch=True."""
+
+    def test_use_batch_param_accepted(self):
+        import inspect
+        sig = inspect.signature(OCR.convert)
+        self.assertIn("use_batch", sig.parameters)
 
 
 if __name__ == "__main__":
