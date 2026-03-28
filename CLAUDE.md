@@ -90,6 +90,31 @@ Flask app (port 5101) for reviewing and correcting the `contents[]` TOC in a gen
 python3 toc_editor.py [file.json] [--port N]
 ```
 
+### `toc_fixer.py` — heuristic TOC & nesting repair
+
+Flask app (port 5102) for restructuring the `data[]` nesting AND rebuilding `contents[]` after conversion. LLMs often produce flat or incorrectly-nested trees; this tool uses the PDF's bookmark outline and pattern heuristics to assign correct levels, then lets the user manually adjust before saving.
+
+```bash
+python3 toc_fixer.py [file.json] [--pdf file.pdf] [--port N]
+# http://localhost:5102
+```
+
+Three-panel UI: PDF TOC (authoritative) | Current JSON TOC | Proposed TOC (live preview). Flat heading table below with per-row level dropdowns.
+
+**Heuristics (applied in sequence or independently):**
+- **PDF Anchor** — PDF level-1 bookmarks → `proposed_level=1`; all other headings assigned to the enclosing `pdf_section` by sequential scan. Requires PDF file.
+- **Keyed Room** — within each `pdf_section` group:
+  - `A.`, `B.`, `A Name` (single letter, < 40 chars) → `letter_level` (anchor+1)
+  - `A1.`, `A 1.`, `GT 1.` (letter+number) → `room_level` (anchor+2)
+  - **Interrupted-series promotion**: if a heading at level < `room_level` appears between consecutive numbered members (e.g. between A4 and A5), all numbered members of that letter group are promoted to `letter_level`
+  - **Deduplication**: for headings sharing the same keyed-room pattern (e.g. bare `"A15"` and `"A15. Microbiology Lab"`), only the longest name is kept; the shorter wrapper node is silently absorbed during rebuild
+
+**Rebuild algorithm** (`rebuild_tree`): stack-based (Markdown-heading style). Each heading is placed under the nearest ancestor at a lower level; non-heading leaf content is preserved at its original node. Top-level wrapper items (parent of a kept sub-heading) are skipped rather than folded. `fix_adventure_json.assign_ids` + `build_toc` are called after rebuild to produce clean IDs and `contents[]`.
+
+Save writes a `.bak` backup then overwrites the JSON.
+
+**Imports from sibling modules:** `fix_adventure_json.{assign_ids, reset_ids, build_toc}`, `toc_editor.list_json_files`, `pdf_utils._decode_pdf_string`.
+
 ### `merge_patch.py` — patch incomplete conversions
 
 Re-runs the converter on specific pages and merges the result into an existing adventure JSON without re-doing the whole document.
