@@ -34,7 +34,7 @@ python3 pdf_to_5etools_ocr.py input.pdf [options]
 python3 pdf_to_5etools_1e.py input.pdf [options]
 ```
 
-Requires `ANTHROPIC_API_KEY` env var or `--api-key KEY`. Default model: `claude-haiku-4-5-20251001` (1e/OCR scripts) or `claude-sonnet-4-20250514` (standard script). Use `--dry-run` to estimate token cost without making API calls. Use `--batch` (all three scripts) for the Batch API — 50% cheaper but async. Use `--output-mode server` for two-file permanent installs; `--extract-monsters`/`--monsters-only` for stat block extraction. All scripts share a common argument set (see `cli_args.py`). OCR script adds `--dpi N`, `--force-ocr`, `--lang LANG`. 1e script adds `--module-code CODE`, `--system 1e|2e`, `--skip-pages RANGE`, `--no-cr-adjustment`. All scripts support `--no-toc-hint` to skip injecting the PDF bookmark outline into Claude prompts.
+Requires `ANTHROPIC_API_KEY` env var or `--api-key KEY`. Default model: `claude-haiku-4-5-20251001` (all three converters). Use `--dry-run` to estimate token cost without making API calls. Use `--batch` (all three scripts) for the Batch API — 50% cheaper but async. Use `--output-mode server` for two-file permanent installs; `--extract-monsters`/`--monsters-only` for stat block extraction. All scripts share a common argument set (see `cli_args.py`). OCR script adds `--dpi N`, `--force-ocr`, `--lang LANG`. 1e script adds `--module-code CODE`, `--system 1e|2e`, `--skip-pages RANGE`, `--no-cr-adjustment`. All scripts support `--no-toc-hint` to skip injecting the PDF bookmark outline into Claude prompts.
 
 ## Architecture
 
@@ -140,6 +140,24 @@ Save writes a `.bak` backup then overwrites the JSON.
 
 **Imports from sibling modules:** `fix_adventure_json.{assign_ids, reset_ids, build_toc}`, `toc_editor.list_json_files`, `pdf_utils._decode_pdf_string`.
 
+### `fix_adventure_json.py` — chapter-index normalizer
+
+Post-processes a converter-generated adventure JSON to fix chapter-index mismatches. Non-section top-level entries in `data[]` cause `contents[i]` and `data[i]` to diverge, breaking sidebar navigation. Also used as a library by `toc_fixer.py`.
+
+```bash
+python3 fix_adventure_json.py input.json [output.json]
+```
+
+Exports: `normalize_chapters()`, `reset_ids()`, `assign_ids()`, `build_toc()`. Overwrites in place with `.bak` backup if no output path given.
+
+### `patch_5e_chapters.py` — re-convert specific chapters
+
+Re-converts specific chapters from a 1e source JSON into an existing 5e adventure JSON, fixing structural issues without re-doing the whole document. Restores chapter structure from the 1e source, then re-runs the 5e conversion on individual room entries.
+
+```bash
+python3 patch_5e_chapters.py source_1e.json target_5e.json --chapters 16,19-20 [--model MODEL]
+```
+
 ### `merge_patch.py` — patch incomplete conversions
 
 Re-runs the converter on specific pages and merges the result into an existing adventure JSON without re-doing the whole document.
@@ -209,6 +227,13 @@ python3 monster_editor.py [file.json] [--port N]
 
 **Imports from sibling modules:** `extract_monsters.{_has_ac_table, statblock_to_text, SYSTEM_PROMPT}`, `claude_api.call_claude`, `toc_editor.list_json_files`.
 
+### Module-specific fix scripts
+
+One-shot scripts for fixing structural issues in specific module conversions. Not general-purpose — kept for reference and re-use on similar modules:
+
+- **`fix_t14_1e.py`** — fixes Temple of Elemental Evil (T1-4) conversion: dissolves "Room Key" wrappers, promotes dungeon rooms, folds orphaned entries into preceding rooms, rebuilds TOC
+- **`fix_t14_split.py`** — splits a merged T1-4 chapter (Levels Three + Zuggtmoy + Greater Temple) into three proper chapters
+
 ### `find_triggers.py`
 
 Standalone helper for identifying content-filter trigger phrases in rejected chunks. Reads debug input files or stdin, outputs a `triggers.json` for use with `--trigger-config`.
@@ -236,6 +261,8 @@ CR = table lookup from HD (see hd_to_cr() in pdf_to_5etools_1e.py)
 - **Shared prompt fragments live in `claude_api.py`** (`COMMON_TAG_RULES`, `COMMON_NESTING_RULES`) — do not duplicate tag or nesting rules in individual converters.
 - **TOC hint lives in `pdf_utils.py`** (`extract_pdf_toc`, `_decode_pdf_string`) — all converters import from there, not from each other.
 - **`{@tag}` validation** — run `python3 validate_tags.py adventure.json` after conversion to catch unknown tags (which cause blank pages in 5etools). Use `--fix` to replace them with plain text in-place.
+- **5etools source ID conflicts** — adventure and bestiary files must use different `_meta.sources[].json` IDs or 5etools treats them as the same homebrew. The monster_editor uses `{source}b` (e.g. `TOWORLDSb`) for bestiary files while keeping individual monsters' `"source"` field pointing to the adventure source so `{@creature}` tags link correctly.
+- **5etools NPC filter** — named NPCs with `isNpc: true` are hidden by default in the bestiary; toggle the "Adventure NPC" filter button to see them.
 
 ## Refactoring rule
 
