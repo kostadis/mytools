@@ -187,6 +187,37 @@ class TestSaveAdventure:
         # Chapter 2 has Room C
         assert "Room C" in toc[1]["headers"]
 
+    def test_save_promotes_non_section_top_level(self, sample_adventure):
+        sess = ae.load_adventure(sample_adventure)
+        # Inject a non-section entry at top level
+        sess["data"].append({"type": "entries", "name": "Orphan", "entries": ["text"]})
+        warnings = ae.save_adventure(sess, sess["data"])
+        assert len(warnings) == 1
+        assert "promoted to 'section'" in warnings[0]
+        assert sess["data"][-1]["type"] == "section"
+
+    def test_save_wraps_bare_string(self, sample_adventure):
+        sess = ae.load_adventure(sample_adventure)
+        sess["data"].append("bare string at top level")
+        warnings = ae.save_adventure(sess, sess["data"])
+        assert len(warnings) == 1
+        assert "wrapped in a section" in warnings[0]
+        assert sess["data"][-1]["type"] == "section"
+        assert sess["data"][-1]["entries"] == ["bare string at top level"]
+
+    def test_save_toc_aligned_after_fix(self, sample_adventure):
+        sess = ae.load_adventure(sample_adventure)
+        # Add non-section — should be auto-promoted
+        sess["data"].append({"type": "entries", "name": "Extra", "entries": []})
+        ae.save_adventure(sess, sess["data"])
+        toc = sess["meta"]["contents"]
+        data = sess["data"]
+        # TOC and data should be aligned
+        assert len(toc) == len(data)
+        for i, entry in enumerate(data):
+            assert entry["type"] == "section"
+            assert toc[i]["name"] == entry["name"]
+
 
 # ---------------------------------------------------------------------------
 # API routes
@@ -250,6 +281,34 @@ class TestAPIRoutes:
         assert resp.get_json()["ok"] is True
         bak = Path(path).with_suffix(".bak")
         assert bak.exists()
+
+
+# ---------------------------------------------------------------------------
+# Code quality: no pk in onclick attributes
+# ---------------------------------------------------------------------------
+
+class TestNoPkInOnclick:
+    """Verify that no onclick attributes interpolate JSON path keys.
+
+    Path keys like [0,"entries",2] break HTML attributes because of the
+    double quotes. This was a recurring bug — this test catches regressions.
+    """
+
+    def test_html_has_no_pk_in_onclick(self, app_client):
+        client, path = app_client
+        resp = client.get("/")
+        html = resp.data.decode("utf-8")
+        # Extract all JS source (between <script> tags)
+        import re
+        scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, re.DOTALL)
+        js = "\n".join(scripts)
+        # Look for the dangerous pattern: onclick="someFunc('${pk}')"
+        # This would appear in the JS template literals
+        dangerous = re.findall(r'''onclick="[^"]*\$\{pk\}''', js)
+        assert dangerous == [], (
+            f"Found onclick attributes interpolating pk — this breaks on nested paths. "
+            f"Use addEventListener instead. Matches: {dangerous}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -567,8 +626,453 @@ class TestDemoteNode:
 
 
 # ---------------------------------------------------------------------------
+# Dissolve node
+# ---------------------------------------------------------------------------
+
+class TestDissolveNode:
+    """Test dissolving a node — removing it but keeping its children in place."""
+
+    def _dissolve(self, data, path):
+        """Python implementation of dissolveNode logic."""
+        node = _get_by_path(data, path)
+        child_key = "items" if node.get("type") == "list" else "entries"
+        children = node.get(child_key, [])
+        idx = path[-1]
+        parent = _get_parent_array(data, path)
+        parent[idx:idx + 1] = children
+
+    def test_dissolve_section_promotes_children(self):
+        data = _make_test_data()
+        # Dissolve Chapter 1 at [0] — its entries should become top-level
+        ch1_entries = data[0]["entries"][:]  # 3 items: string, Room A, Room B
+        self._dissolve(data, [0])
+        # data should now be: Para 1, Room A, Room B, Chapter 2
+        assert len(data) == 4
+        assert data[0] == "Para 1"
+        assert data[1]["name"] == "Room A"
+        assert data[2]["name"] == "Room B"
+        assert data[3]["name"] == "Chapter 2"
+
+    def test_dissolve_nested_entry(self):
+        data = _make_test_data()
+        # Dissolve Room A at [0, "entries", 1] — its entries go into Chapter 1
+        # Room A has entries: ["Room A text."]
+        self._dissolve(data, [0, "entries", 1])
+        # Chapter 1 entries: "Para 1", "Room A text.", {Room B}
+        assert len(data[0]["entries"]) == 3
+        assert data[0]["entries"][0] == "Para 1"
+        assert data[0]["entries"][1] == "Room A text."
+        assert data[0]["entries"][2]["name"] == "Room B"
+
+    def test_dissolve_empty_node_just_removes(self):
+        data = _make_test_data()
+        # Clear Room B's entries
+        data[0]["entries"][2]["entries"] = []
+        self._dissolve(data, [0, "entries", 2])
+        # Chapter 1 should now have: Para 1, Room A (Room B gone, nothing spliced)
+        assert len(data[0]["entries"]) == 2
+
+    def test_dissolve_preserves_sibling_order(self):
+        data = _make_test_data()
+        # Add Room D after Room C in Chapter 2
+        data[1]["entries"].append(
+            {"type": "entries", "name": "Room D", "entries": ["Room D text."]}
+        )
+        # Dissolve Room C at [1, "entries", 0] — "Room C text." + table should appear before Room D
+        room_c_count = len(data[1]["entries"][0]["entries"])
+        self._dissolve(data, [1, "entries", 0])
+        # Chapter 2 entries: Room C's children..., Room D
+        assert data[1]["entries"][-1]["name"] == "Room D"
+        assert len(data[1]["entries"]) == room_c_count + 1
+
+
+# ---------------------------------------------------------------------------
+# Bulk operations (multi-select)
+# ---------------------------------------------------------------------------
+
+def _group_by_parent(data, paths):
+    """Group paths by parent array. Returns [{parent_path, parent, indices}]."""
+    from collections import OrderedDict
+    groups = OrderedDict()
+    for path in paths:
+        pp = tuple(path[:-1])
+        if pp not in groups:
+            groups[pp] = {"parent_path": list(pp), "indices": []}
+        groups[pp]["indices"].append(path[-1])
+    result = []
+    for pp, g in groups.items():
+        g["indices"].sort()
+        g["parent"] = data if len(g["parent_path"]) == 0 else _get_by_path(data, g["parent_path"])
+        result.append(g)
+    return result
+
+
+def _bulk_demote(data, paths):
+    """Python implementation of bulkDemote — group by parent, all go into same target."""
+    groups = _group_by_parent(data, paths)
+    for group in groups:
+        parent = group["parent"]
+        indices = group["indices"]
+        first_idx = indices[0]
+        if first_idx == 0:
+            continue
+        target = parent[first_idx - 1]
+        if isinstance(target, str) or not isinstance(target, dict):
+            continue
+        sib_child_key = "items" if target.get("type") == "list" else "entries"
+        if sib_child_key not in target:
+            target[sib_child_key] = []
+        nodes = []
+        for idx in reversed(indices):
+            nodes.insert(0, parent.pop(idx))
+        target[sib_child_key].extend(nodes)
+
+
+def _bulk_promote(data, paths):
+    """Python implementation of bulkPromote — group by parent, all go into grandparent."""
+    groups = _group_by_parent(data, paths)
+    for group in reversed(groups):
+        parent_path = group["parent_path"]
+        parent = group["parent"]
+        indices = group["indices"]
+        if len(parent_path) < 2:
+            continue
+        parent_obj_path = parent_path[:-1]
+        grandparent = _get_parent_array(data, parent_obj_path)
+        if not isinstance(grandparent, list):
+            continue
+        parent_idx = parent_obj_path[-1]
+        nodes = []
+        for idx in reversed(indices):
+            nodes.insert(0, parent.pop(idx))
+        grandparent[parent_idx + 1:parent_idx + 1] = nodes
+
+
+def _bulk_delete(data, paths):
+    """Python implementation of bulkDelete — process in reverse order."""
+    for path in reversed(paths):
+        parent = _get_parent_array(data, path)
+        idx = path[-1]
+        if isinstance(parent, list) and idx < len(parent):
+            parent.pop(idx)
+
+
+def _bulk_move(data, paths, direction):
+    """Python implementation of bulkMove — move selected block as a unit."""
+    groups = _group_by_parent(data, paths)
+    for group in groups:
+        parent = group["parent"]
+        indices = group["indices"]  # sorted ascending
+        if direction < 0:
+            if indices[0] <= 0:
+                continue
+            before_idx = indices[0] - 1
+            item = parent.pop(before_idx)
+            insert_at = indices[-1]  # shifted down by 1 after pop
+            parent.insert(insert_at, item)
+        else:
+            last_idx = indices[-1]
+            if last_idx >= len(parent) - 1:
+                continue
+            after_idx = last_idx + 1
+            item = parent.pop(after_idx)
+            parent.insert(indices[0], item)
+
+
+def _bulk_dissolve(data, paths):
+    """Python implementation of bulkDissolve — process in reverse order."""
+    for path in reversed(paths):
+        node = _get_by_path(data, path)
+        if isinstance(node, str):
+            continue
+        child_key = "items" if node.get("type") == "list" else "entries"
+        children = node.get(child_key, [])
+        idx = path[-1]
+        parent = _get_parent_array(data, path)
+        parent[idx:idx + 1] = children
+
+
+class TestBulkDemote:
+    def test_demote_skips_when_preceding_is_string(self):
+        """Demote Room A and Room B — preceding is string, so whole group is skipped."""
+        data = _make_test_data()
+        # Chapter 1 entries: "Para 1" (idx 0), Room A (idx 1), Room B (idx 2)
+        # Group target is parent[0] = "Para 1" (string) — can't nest into it
+        _bulk_demote(data, [[0, "entries", 1], [0, "entries", 2]])
+        # Nothing should change
+        assert len(data[0]["entries"]) == 3
+
+    def test_demote_consecutive_range_all_into_same_target(self):
+        """Demote B, C, D — all go into A (the sibling before B), not cascading."""
+        data = [{"type": "section", "name": "S", "entries": [
+            {"type": "entries", "name": "A", "entries": []},
+            {"type": "entries", "name": "B", "entries": []},
+            {"type": "entries", "name": "C", "entries": []},
+            {"type": "entries", "name": "D", "entries": []},
+            {"type": "entries", "name": "E", "entries": []},
+        ]}]
+        _bulk_demote(data, [[0, "entries", 1], [0, "entries", 2], [0, "entries", 3]])
+        # Should have: A (with B, C, D as children), E
+        assert len(data[0]["entries"]) == 2
+        assert data[0]["entries"][0]["name"] == "A"
+        assert data[0]["entries"][1]["name"] == "E"
+        # A has B, C, D as flat children (not nested)
+        a_children = data[0]["entries"][0]["entries"]
+        assert len(a_children) == 3
+        assert a_children[0]["name"] == "B"
+        assert a_children[1]["name"] == "C"
+        assert a_children[2]["name"] == "D"
+
+    def test_demote_top_level_sections(self):
+        data = _make_test_data()
+        # Demote Chapter 2 [1] into Chapter 1 [0]
+        _bulk_demote(data, [[1]])
+        assert len(data) == 1
+        assert data[0]["entries"][-1]["name"] == "Chapter 2"
+
+    def test_demote_preserves_order(self):
+        """Selected nodes appear in the target in their original order."""
+        data = [{"type": "section", "name": "S", "entries": [
+            {"type": "entries", "name": "X", "entries": []},
+            {"type": "entries", "name": "A", "entries": []},
+            {"type": "entries", "name": "B", "entries": []},
+            {"type": "entries", "name": "C", "entries": []},
+        ]}]
+        _bulk_demote(data, [[0, "entries", 1], [0, "entries", 2], [0, "entries", 3]])
+        x_children = data[0]["entries"][0]["entries"]
+        assert [c["name"] for c in x_children] == ["A", "B", "C"]
+
+
+class TestBulkPromote:
+    def test_promote_multiple_from_same_parent(self):
+        data = _make_test_data()
+        # Promote Room A and Room B out of Chapter 1
+        _bulk_promote(data, [[0, "entries", 1], [0, "entries", 2]])
+        # Both should be top-level now, inserted after Chapter 1
+        assert len(data) == 4  # Chapter 1, Room A, Room B, Chapter 2
+        assert data[0]["name"] == "Chapter 1"
+        assert data[1]["name"] == "Room A"
+        assert data[2]["name"] == "Room B"
+        assert data[3]["name"] == "Chapter 2"
+        # Chapter 1 should only have "Para 1"
+        assert len(data[0]["entries"]) == 1
+        assert data[0]["entries"][0] == "Para 1"
+
+    def test_promote_top_level_is_noop(self):
+        data = _make_test_data()
+        original_len = len(data)
+        _bulk_promote(data, [[0], [1]])
+        assert len(data) == original_len  # nothing changed
+
+    def test_promote_preserves_order(self):
+        """Promoted nodes appear in grandparent in their original order."""
+        data = [{"type": "section", "name": "S", "entries": [
+            {"type": "entries", "name": "A", "entries": []},
+            {"type": "entries", "name": "B", "entries": []},
+            {"type": "entries", "name": "C", "entries": []},
+        ]}]
+        _bulk_promote(data, [[0, "entries", 0], [0, "entries", 1], [0, "entries", 2]])
+        # All promoted to top level after S
+        assert len(data) == 4
+        assert data[0]["name"] == "S"
+        assert data[1]["name"] == "A"
+        assert data[2]["name"] == "B"
+        assert data[3]["name"] == "C"
+
+
+class TestBulkMove:
+    def test_move_block_up(self):
+        """Move B and C up by one — A should end up after C."""
+        data = [{"type": "section", "name": "S", "entries": [
+            {"type": "entries", "name": "A", "entries": []},
+            {"type": "entries", "name": "B", "entries": []},
+            {"type": "entries", "name": "C", "entries": []},
+            {"type": "entries", "name": "D", "entries": []},
+        ]}]
+        _bulk_move(data, [[0, "entries", 1], [0, "entries", 2]], -1)
+        names = [e["name"] for e in data[0]["entries"]]
+        assert names == ["B", "C", "A", "D"]
+
+    def test_move_block_down(self):
+        """Move B and C down by one — D should end up before B."""
+        data = [{"type": "section", "name": "S", "entries": [
+            {"type": "entries", "name": "A", "entries": []},
+            {"type": "entries", "name": "B", "entries": []},
+            {"type": "entries", "name": "C", "entries": []},
+            {"type": "entries", "name": "D", "entries": []},
+        ]}]
+        _bulk_move(data, [[0, "entries", 1], [0, "entries", 2]], 1)
+        names = [e["name"] for e in data[0]["entries"]]
+        assert names == ["A", "D", "B", "C"]
+
+    def test_move_up_at_top_is_noop(self):
+        """Can't move up when first selected is at index 0."""
+        data = [{"type": "section", "name": "S", "entries": [
+            {"type": "entries", "name": "A", "entries": []},
+            {"type": "entries", "name": "B", "entries": []},
+        ]}]
+        _bulk_move(data, [[0, "entries", 0], [0, "entries", 1]], -1)
+        names = [e["name"] for e in data[0]["entries"]]
+        assert names == ["A", "B"]
+
+    def test_move_down_at_bottom_is_noop(self):
+        """Can't move down when last selected is at the end."""
+        data = [{"type": "section", "name": "S", "entries": [
+            {"type": "entries", "name": "A", "entries": []},
+            {"type": "entries", "name": "B", "entries": []},
+        ]}]
+        _bulk_move(data, [[0, "entries", 0], [0, "entries", 1]], 1)
+        names = [e["name"] for e in data[0]["entries"]]
+        assert names == ["A", "B"]
+
+    def test_move_top_level_sections_up(self):
+        data = _make_test_data()
+        _bulk_move(data, [[1]], -1)
+        assert data[0]["name"] == "Chapter 2"
+        assert data[1]["name"] == "Chapter 1"
+
+    def test_move_top_level_sections_down(self):
+        data = _make_test_data()
+        _bulk_move(data, [[0]], 1)
+        assert data[0]["name"] == "Chapter 2"
+        assert data[1]["name"] == "Chapter 1"
+
+    def test_move_preserves_non_selected(self):
+        """Move middle elements, verify surrounding elements stay put."""
+        data = [{"type": "section", "name": "S", "entries": [
+            {"type": "entries", "name": "A", "entries": []},
+            {"type": "entries", "name": "B", "entries": []},
+            {"type": "entries", "name": "C", "entries": []},
+            {"type": "entries", "name": "D", "entries": []},
+            {"type": "entries", "name": "E", "entries": []},
+        ]}]
+        # Move C down — D hops over to before C
+        _bulk_move(data, [[0, "entries", 2]], 1)
+        names = [e["name"] for e in data[0]["entries"]]
+        assert names == ["A", "B", "D", "C", "E"]
+
+
+class TestBulkDelete:
+    def test_delete_multiple_siblings(self):
+        data = _make_test_data()
+        # Delete Room A and Room B from Chapter 1
+        _bulk_delete(data, [[0, "entries", 1], [0, "entries", 2]])
+        assert len(data[0]["entries"]) == 1
+        assert data[0]["entries"][0] == "Para 1"
+
+    def test_delete_top_level_sections(self):
+        data = _make_test_data()
+        _bulk_delete(data, [[0], [1]])
+        assert len(data) == 0
+
+    def test_delete_preserves_unselected(self):
+        data = [{"type": "section", "name": "S", "entries": [
+            {"type": "entries", "name": "A", "entries": []},
+            {"type": "entries", "name": "B", "entries": []},
+            {"type": "entries", "name": "C", "entries": []},
+            {"type": "entries", "name": "D", "entries": []},
+        ]}]
+        # Delete B and D (indices 1, 3)
+        _bulk_delete(data, [[0, "entries", 1], [0, "entries", 3]])
+        assert len(data[0]["entries"]) == 2
+        assert data[0]["entries"][0]["name"] == "A"
+        assert data[0]["entries"][1]["name"] == "C"
+
+
+class TestBulkDissolve:
+    def test_dissolve_multiple(self):
+        data = _make_test_data()
+        # Dissolve both Room A and Room B — their children get spliced into Chapter 1
+        _bulk_dissolve(data, [[0, "entries", 1], [0, "entries", 2]])
+        # Room B dissolved first (reverse): "Room B text." replaces Room B
+        # Then Room A dissolved: "Room A text." replaces Room A
+        # Chapter 1 entries: "Para 1", "Room A text.", "Room B text."
+        assert len(data[0]["entries"]) == 3
+        assert data[0]["entries"][0] == "Para 1"
+        assert data[0]["entries"][1] == "Room A text."
+        assert data[0]["entries"][2] == "Room B text."
+
+    def test_dissolve_skips_strings(self):
+        data = _make_test_data()
+        original_len = len(data[0]["entries"])
+        # Try dissolving a string entry — should be skipped
+        _bulk_dissolve(data, [[0, "entries", 0]])
+        assert len(data[0]["entries"]) == original_len  # unchanged
+
+
+# ---------------------------------------------------------------------------
 # Undo log helpers
 # ---------------------------------------------------------------------------
+
+class TestJoinLines:
+    """Test the joinLines logic — Python equivalent of the JS function."""
+
+    @staticmethod
+    def _join_lines(text):
+        """Python port of the JS joinLines function."""
+        lines = text.split("\n")
+        parts = []
+        for i, line in enumerate(lines):
+            if line.strip() == "":
+                parts.append("\n\n")
+            elif line.endswith("-") and i + 1 < len(lines) and lines[i + 1].strip() != "":
+                parts.append(line[:-1])
+            else:
+                parts.append(line)
+                if i + 1 < len(lines) and lines[i + 1].strip() != "":
+                    parts.append(" ")
+        import re
+        result = "".join(parts)
+        result = re.sub(r" +", " ", result)
+        result = re.sub(r"\n{3,}", "\n\n", result)
+        return result.strip()
+
+    def test_simple_line_join(self):
+        text = "Five guards are alert here at all times. One fac-\ning the door"
+        result = self._join_lines(text)
+        assert result == "Five guards are alert here at all times. One facing the door"
+
+    def test_hyphenated_word_join(self):
+        text = "sur-\ncoats"
+        result = self._join_lines(text)
+        assert result == "surcoats"
+
+    def test_soft_wrap_join(self):
+        text = "the guards alert\narea 130 (or 128, as appropriate)."
+        result = self._join_lines(text)
+        assert result == "the guards alert area 130 (or 128, as appropriate)."
+
+    def test_blank_line_preserves_paragraph(self):
+        text = "First paragraph.\n\nSecond paragraph."
+        result = self._join_lines(text)
+        assert result == "First paragraph.\n\nSecond paragraph."
+
+    def test_full_pdf_paste(self):
+        text = (
+            "Five guards are alert here at all times. One fac-\n"
+            "ing the door, and another posted ten feet up\n"
+            "the northeast corridor (position G on the\n"
+            "map), are armed with heavy crossbows and\n"
+            "longswords."
+        )
+        result = self._join_lines(text)
+        assert "fac-" not in result
+        assert "facing the door" in result
+        assert "\n" not in result
+        assert result.startswith("Five guards")
+        assert result.endswith("longswords.")
+
+    def test_multiple_paragraphs_with_hyphens(self):
+        text = "First para-\ngraph text.\n\nSecond para-\ngraph text."
+        result = self._join_lines(text)
+        assert result == "First paragraph text.\n\nSecond paragraph text."
+
+    def test_empty_string(self):
+        assert self._join_lines("") == ""
+
+    def test_single_line(self):
+        assert self._join_lines("No breaks here.") == "No breaks here."
+
 
 class TestUndoLogHelpers:
     def test_undolog_path(self):
@@ -601,3 +1105,95 @@ class TestUndoLogHelpers:
         assert len(summary) == 1
         assert summary[0]["action"] == "edit"
         assert "data" not in summary[0]
+
+
+# ---------------------------------------------------------------------------
+# Flags
+# ---------------------------------------------------------------------------
+
+class TestFlags:
+    """Test the _flags metadata system."""
+
+    def test_add_flag(self):
+        data = _make_test_data()
+        node = data[0]["entries"][1]  # Room A
+        assert "_flags" not in node
+        node["_flags"] = ["1e"]
+        assert node["_flags"] == ["1e"]
+
+    def test_multiple_flags(self):
+        data = _make_test_data()
+        node = data[0]
+        node["_flags"] = ["1e", "review"]
+        assert "1e" in node["_flags"]
+        assert "review" in node["_flags"]
+
+    def test_toggle_flag_off(self):
+        data = _make_test_data()
+        node = data[0]
+        node["_flags"] = ["1e", "review"]
+        node["_flags"].remove("1e")
+        assert node["_flags"] == ["review"]
+
+    def test_clear_flags(self):
+        data = _make_test_data()
+        node = data[0]
+        node["_flags"] = ["1e"]
+        del node["_flags"]
+        assert "_flags" not in node
+
+    def test_bulk_flag(self):
+        data = _make_test_data()
+        targets = [data[0]["entries"][1], data[0]["entries"][2]]  # Room A, Room B
+        for node in targets:
+            if not isinstance(node, dict):
+                continue
+            if "_flags" not in node:
+                node["_flags"] = []
+            if "1e" not in node["_flags"]:
+                node["_flags"].append("1e")
+        assert data[0]["entries"][1]["_flags"] == ["1e"]
+        assert data[0]["entries"][2]["_flags"] == ["1e"]
+
+    def test_bulk_clear_flags(self):
+        data = _make_test_data()
+        data[0]["_flags"] = ["1e", "review"]
+        data[0]["entries"][1]["_flags"] = ["todo"]
+        targets = [data[0], data[0]["entries"][1]]
+        for node in targets:
+            if isinstance(node, dict) and "_flags" in node:
+                del node["_flags"]
+        assert "_flags" not in data[0]
+        assert "_flags" not in data[0]["entries"][1]
+
+    def test_flags_survive_save(self, sample_adventure):
+        """Flags stored as _flags are preserved through save/load cycle."""
+        sess = ae.load_adventure(sample_adventure)
+        sess["data"][0]["_flags"] = ["1e"]
+        sess["data"][0]["entries"][1]["_flags"] = ["review", "todo"]
+        ae.save_adventure(sess, sess["data"])
+        # Write and reload
+        import shutil
+        p = sample_adventure
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(sess["raw"], f, indent="\t", ensure_ascii=False)
+        sess2 = ae.load_adventure(p)
+        assert sess2["data"][0]["_flags"] == ["1e"]
+        assert sess2["data"][0]["entries"][1]["_flags"] == ["review", "todo"]
+
+    def test_count_flagged(self):
+        """Count all flagged nodes in a tree."""
+        data = _make_test_data()
+        data[0]["_flags"] = ["1e"]
+        data[0]["entries"][1]["_flags"] = ["review"]
+        count = 0
+        def walk(entries):
+            nonlocal count
+            for e in entries:
+                if isinstance(e, dict):
+                    if e.get("_flags"):
+                        count += 1
+                    if "entries" in e:
+                        walk(e["entries"])
+        walk(data)
+        assert count == 2

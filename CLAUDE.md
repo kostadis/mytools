@@ -9,7 +9,8 @@ Converts tabletop RPG PDFs (primarily D&D/AD&D sourcebooks and modules) into [5e
 ## Running tests
 
 ```bash
-pytest test_pdf_to_5etools.py -v
+pytest test_pdf_to_5etools.py -v        # converter tests
+pytest test_adventure_editor.py -v      # adventure editor tests
 ```
 
 Tests mock all external dependencies (PyMuPDF, Anthropic API, Tesseract, PIL, pdf2image) — no API key or system packages required.
@@ -17,6 +18,7 @@ Tests mock all external dependencies (PyMuPDF, Anthropic API, Tesseract, PIL, pd
 To run a single test:
 ```bash
 pytest test_pdf_to_5etools.py -v -k "test_function_name"
+pytest test_adventure_editor.py -v -k "test_function_name"
 ```
 
 ## Running the web UI
@@ -227,6 +229,32 @@ python3 monster_editor.py [file.json] [--port N]
 
 **Imports from sibling modules:** `extract_monsters.{_has_ac_table, statblock_to_text, SYSTEM_PROMPT}`, `claude_api.call_claude`, `toc_editor.list_json_files`.
 
+### `adventure_editor.py` — visual block editor
+
+Flask app (port 5104) for editing 5etools adventure/book JSON as a block tree with live preview. Two-panel layout: collapsible block tree (left) + CSS-approximated 5etools preview (right).
+
+```bash
+python3 adventure_editor.py [file.json] [--port N]
+# http://localhost:5104
+# or: ./start_editor.sh [file.json]
+```
+
+**Block types supported:** section, entries, inset, insetReadaloud, list, table, image, quote, hr.
+
+**Features:**
+- Collapsible block tree with color-coded type badges; collapse/expand all, expand to level 1-3
+- Click a node to edit inline (buffered edit with Done/Cancel — no live re-rendering while typing)
+- Block operations: move up/down, promote (outdent)/demote (indent) nesting, add sibling/child, delete
+- Add block modal with type picker; smart paste for tables (tab/pipe/colon-separated) and stat blocks (auto-parses AC/HP/CR/abilities/traits)
+- Tag toolbar for inserting `{@spell}`, `{@creature}`, `{@dc}`, `{@damage}`, etc. into textareas
+- Preview panel auto-scrolls to selected block with blue highlight
+- Persistent undo/redo log saved to `{filename}.undolog.json`; History dropdown to jump to any state; Ctrl+Z / Ctrl+Shift+Z keyboard shortcuts
+- Save rebuilds IDs and TOC via `fix_adventure_json`, creates `.bak` backup
+
+**Imports from sibling modules:** `toc_editor.list_json_files`, `fix_adventure_json.{assign_ids, reset_ids, build_toc}`.
+
+**Tests:** `pytest test_adventure_editor.py -v` (38 tests covering load, save, undo, move, promote, demote).
+
 ### Module-specific fix scripts
 
 One-shot scripts for fixing structural issues in specific module conversions. Not general-purpose — kept for reference and re-use on similar modules:
@@ -263,6 +291,11 @@ CR = table lookup from HD (see hd_to_cr() in pdf_to_5etools_1e.py)
 - **`{@tag}` validation** — run `python3 validate_tags.py adventure.json` after conversion to catch unknown tags (which cause blank pages in 5etools). Use `--fix` to replace them with plain text in-place.
 - **5etools source ID conflicts** — adventure and bestiary files must use different `_meta.sources[].json` IDs or 5etools treats them as the same homebrew. The monster_editor uses `{source}b` (e.g. `TOWORLDSb`) for bestiary files while keeping individual monsters' `"source"` field pointing to the adventure source so `{@creature}` tags link correctly.
 - **5etools NPC filter** — named NPCs with `isNpc: true` are hidden by default in the bestiary; toggle the "Adventure NPC" filter button to see them.
+
+## UI preferences
+
+- **No confirmation dialogs for undoable actions.** If an operation can be undone (delete, move, dissolve, etc.), do not show `confirm()` or `prompt()` dialogs. Instead, provide separate buttons for each action and rely on undo. Confirmation dialogs break flow and are unnecessary when undo exists.
+- **Never put `pk` (JSON path keys) in HTML strings or `onclick` attributes.** Path keys like `[0,"entries",2]` contain double quotes that break HTML attribute parsing. Always use `addEventListener` with closures instead. Use CSS class names (`.btn-done`, `.btn-cancel`, `.btn-add-child`) on the HTML elements, then attach handlers after setting `innerHTML`. See `buildTreeNode` and `buildEditForm` in `adventure_editor.py` for the pattern.
 
 ## Refactoring rule
 

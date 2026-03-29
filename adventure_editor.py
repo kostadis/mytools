@@ -59,11 +59,24 @@ def load_adventure(path: Path) -> dict:
     }
 
 
-def save_adventure(sess: dict, new_data: list) -> None:
-    """Rebuild IDs and TOC, then write the adventure JSON with .bak backup."""
+def save_adventure(sess: dict, new_data: list) -> list[str]:
+    """Rebuild IDs and TOC, then update the session. Returns list of warnings."""
     raw = sess["raw"]
     index_key = sess["index_key"]
     data_key = sess["data_key"]
+    warnings = []
+
+    # Guard: promote non-section top-level entries to sections
+    for i, entry in enumerate(new_data):
+        if isinstance(entry, dict) and entry.get("type") != "section":
+            old_type = entry.get("type", "?")
+            entry["type"] = "section"
+            warnings.append(f"data[{i}] was type '{old_type}', promoted to 'section' "
+                            f"(non-section top-level breaks TOC alignment)")
+        elif isinstance(entry, str):
+            # Bare string at top level — wrap in a section
+            new_data[i] = {"type": "section", "name": "Untitled", "entries": [entry]}
+            warnings.append(f"data[{i}] was a bare string, wrapped in a section")
 
     # Replace data
     raw[data_key][0]["data"] = new_data
@@ -79,6 +92,7 @@ def save_adventure(sess: dict, new_data: list) -> None:
     # Update session
     sess["data"] = new_data
     sess["meta"] = raw[index_key][0]
+    return warnings
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +184,7 @@ def api_save():
         return jsonify({"error": "File not loaded"}), 400
 
     try:
-        save_adventure(sess, new_data)
+        save_warnings = save_adventure(sess, new_data)
 
         # Write .bak backup
         p = Path(path)
@@ -186,6 +200,7 @@ def api_save():
         return jsonify({
             "ok": True,
             "sections": len(new_data),
+            "warnings": save_warnings,
             "toc_entries": len(sess["meta"].get("contents", [])),
         })
     except Exception as e:
@@ -364,6 +379,9 @@ body { font-size: 14px; margin: 0; overflow: hidden; height: 100vh; }
 .node-header { display: flex; align-items: center; gap: 4px; padding: 2px 4px; border-radius: 3px; cursor: pointer; min-height: 28px; }
 .node-header:hover { background: #e9ecef; }
 .node-header.selected { background: #cfe2ff; }
+.node-header.multi-selected { background: #d4edda; }
+
+.node-row-num { width: 28px; text-align: right; font-size: 10px; color: #999; flex-shrink: 0; margin-right: 2px; user-select: none; }
 
 .node-toggle { width: 16px; text-align: center; font-size: 10px; cursor: pointer; color: #666; flex-shrink: 0; user-select: none; }
 .node-badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; color: #fff; flex-shrink: 0; font-weight: 600; }
@@ -377,6 +395,14 @@ body { font-size: 14px; margin: 0; overflow: hidden; height: 100vh; }
 .badge-quote { background: #6c757d; }
 .badge-hr { background: #adb5bd; }
 .badge-string { background: #495057; }
+
+/* Flags */
+.node-flags { display: flex; gap: 2px; flex-shrink: 0; margin-right: 2px; }
+.flag-dot { font-size: 9px; padding: 0 4px; border-radius: 3px; color: #fff; cursor: default; line-height: 1.6; }
+.flag-1e { background: #d63384; }
+.flag-review { background: #fd7e14; }
+.flag-todo { background: #6f42c1; }
+.flag-custom { background: #6c757d; }
 
 .node-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .node-label.text-preview { color: #666; font-style: italic; }
@@ -395,6 +421,11 @@ body { font-size: 14px; margin: 0; overflow: hidden; height: 100vh; }
 .node-edit textarea { font-family: monospace; font-size: 12px; resize: vertical; }
 .node-edit .edit-actions { display: flex; gap: 4px; margin-top: 6px; }
 .node-edit .edit-actions .btn { font-size: 11px; }
+
+/* Multi-select bar */
+.multi-bar { padding: 4px 8px; background: #d4edda; border-bottom: 1px solid #b8dacc; display: none; align-items: center; gap: 6px; font-size: 12px; }
+.multi-bar.active { display: flex; }
+.multi-bar .btn { font-size: 11px; padding: 1px 6px; }
 
 .node-children { }
 
@@ -479,6 +510,10 @@ body { font-size: 14px; margin: 0; overflow: hidden; height: 100vh; }
       <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); expandToLevel(3)">Level 3</a></li>
     </ul>
   </div>
+  <span style="border-left:1px solid #ccc; height:20px; margin:0 4px"></span>
+  <span id="flagCount" class="text-muted" style="font-size:11px"></span>
+  <button class="btn btn-sm btn-outline-secondary" onclick="jumpToFlag(-1)" title="Previous flagged">&laquo;</button>
+  <button class="btn btn-sm btn-outline-secondary" onclick="jumpToFlag(1)" title="Next flagged">&raquo;</button>
   <span class="flex-grow-1"></span>
   <span id="statusMsg" class="text-muted" style="font-size:12px">Ready</span>
 </div>
@@ -487,6 +522,21 @@ body { font-size: 14px; margin: 0; overflow: hidden; height: 100vh; }
 <div class="main-wrap">
   <!-- Left: editor -->
   <div class="panel-editor">
+    <div class="multi-bar" id="multiBar">
+      <span id="multiCount">0 selected</span>
+      <button class="btn btn-outline-secondary" onclick="bulkMove(-1)" title="Move selected up">&uarr; Up</button>
+      <button class="btn btn-outline-secondary" onclick="bulkMove(1)" title="Move selected down">&darr; Down</button>
+      <button class="btn btn-outline-primary" onclick="bulkDemote()" title="Demote all selected (nest into preceding sibling)">Demote &rarr;</button>
+      <button class="btn btn-outline-primary" onclick="bulkPromote()" title="Promote all selected (move out of parent)">Promote &larr;</button>
+      <button class="btn btn-outline-warning" onclick="bulkDissolve()" title="Dissolve all selected (remove blocks, keep children)">Dissolve</button>
+      <button class="btn btn-outline-danger" onclick="bulkDelete()" title="Delete all selected">Delete</button>
+      <span style="border-left:1px solid #b8dacc; height:20px; margin:0 4px"></span>
+      <button class="btn btn-outline-secondary" style="background:#d63384;color:#fff;border-color:#d63384" onclick="bulkFlag('1e')" title="Flag as 1e stat block">Flag 1e</button>
+      <button class="btn btn-outline-secondary" style="background:#fd7e14;color:#fff;border-color:#fd7e14" onclick="bulkFlag('review')" title="Flag for review">Flag Review</button>
+      <button class="btn btn-outline-secondary" onclick="bulkClearFlags()" title="Clear all flags from selected">Clear flags</button>
+      <span class="flex-grow-1"></span>
+      <button class="btn btn-outline-secondary" onclick="clearMultiSelect()">Clear</button>
+    </div>
     <div class="tree-area" id="treeArea">
       <div class="text-muted text-center mt-5">Load a file to begin editing</div>
     </div>
@@ -552,6 +602,7 @@ body { font-size: 14px; margin: 0; overflow: hidden; height: 100vh; }
             placeholder="Paste content here..."
             oninput="onAddBlockPasteInput()"></textarea>
           <div id="addBlockParseResult"></div>
+          <button type="button" class="btn btn-sm btn-outline-info mt-1" onclick="document.getElementById('addBlockPaste').value = joinLines(document.getElementById('addBlockPaste').value); onAddBlockPasteInput();">Join lines</button>
         </div>
       </div>
       <div class="modal-footer py-1">
@@ -570,17 +621,56 @@ let state = {
   path: "",
   data: [],
   selectedPath: null,  // JSON-encoded path array, e.g. "[0,\"entries\",2]"
+  multiSelect: new Set(), // set of pk strings for multi-selection
   dirty: false,
   collapsed: {},  // pathKey -> true if collapsed
   undoPosition: -1,
   undoTotal: 0,
 };
 
+// Visible node ordering — maps row number to pk and vice versa
+let _visibleNodes = [];  // [{pk, path}] in render order
+let _pkToRow = {};       // pk -> row number
+
 let lastActiveTextarea = null;
+
+// =========================================================================
+// RULE: Never put pk (pathKey) in HTML strings or onclick attributes.
+// pk contains JSON like [0,"entries",2] — the quotes break HTML attributes.
+// Always use addEventListener with closures instead. See buildTreeNode
+// action buttons and buildEditForm for the correct pattern.
+// =========================================================================
 
 // =========================================================================
 // Utilities
 // =========================================================================
+function joinLines(text) {
+  // Join broken lines from PDF copy-paste into continuous paragraphs.
+  // - Lines ending with a hyphen: remove hyphen and join directly (e.g. "fac-\ning" -> "facing")
+  // - Blank lines: preserved as paragraph breaks
+  // - All other line breaks: replaced with a space
+  const lines = text.split("\n");
+  const parts = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === "") {
+      // Blank line = paragraph break
+      parts.push("\n\n");
+    } else if (line.endsWith("-") && i + 1 < lines.length && lines[i + 1].trim() !== "") {
+      // Hyphenated line break — join without space, remove hyphen
+      parts.push(line.slice(0, -1));
+    } else {
+      parts.push(line);
+      // Add space before next line unless it's blank or this is the last line
+      if (i + 1 < lines.length && lines[i + 1].trim() !== "") {
+        parts.push(" ");
+      }
+    }
+  }
+  // Clean up: collapse multiple spaces, trim paragraph breaks
+  return parts.join("").replace(/ +/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function escHtml(s) {
   const d = document.createElement("div");
   d.textContent = s || "";
@@ -773,7 +863,14 @@ async function doSave() {
     state.dirty = false;
     document.getElementById("dirtyDot").style.display = "none";
     document.getElementById("saveBtn").disabled = true;
-    setStatus(`Saved: ${result.sections} sections, ${result.toc_entries} TOC entries`, "text-success");
+    const warnCount = (result.warnings || []).length;
+    if (warnCount > 0) {
+      const warnMsg = result.warnings.join("\n");
+      setStatus(`Saved with ${warnCount} fix(es): ${result.warnings[0]}`, "text-warning");
+      console.warn("Save warnings:", warnMsg);
+    } else {
+      setStatus(`Saved: ${result.sections} sections, ${result.toc_entries} TOC entries`, "text-success");
+    }
   } catch (e) {
     setStatus("Save failed: " + e.message, "text-danger");
   }
@@ -783,6 +880,9 @@ async function doSave() {
 // Tree rendering
 // =========================================================================
 function renderTree() {
+  _visibleNodes = [];
+  _pkToRow = {};
+
   const area = document.getElementById("treeArea");
   area.innerHTML = "";
   const root = document.createElement("div");
@@ -799,6 +899,7 @@ function renderTree() {
   root.appendChild(addBar);
 
   area.appendChild(root);
+  updateMultiBar();
 }
 
 function buildTreeNode(node, path, depth) {
@@ -808,6 +909,12 @@ function buildTreeNode(node, path, depth) {
   const hasChildren = children.length > 0;
   const isCollapsed = !!state.collapsed[pk];
   const isSelected = state.selectedPath === pk;
+  const isMulti = state.multiSelect.has(pk);
+
+  // Track visible node ordering
+  const rowNum = _visibleNodes.length;
+  _visibleNodes.push({ pk, path: [...path] });
+  _pkToRow[pk] = rowNum;
 
   const wrap = document.createElement("div");
   wrap.className = `tree-node depth-${depth}`;
@@ -815,7 +922,13 @@ function buildTreeNode(node, path, depth) {
 
   // Header row
   const header = document.createElement("div");
-  header.className = "node-header" + (isSelected ? " selected" : "");
+  header.className = "node-header" + (isSelected ? " selected" : "") + (isMulti ? " multi-selected" : "");
+
+  // Row number
+  const rowNumEl = document.createElement("span");
+  rowNumEl.className = "node-row-num";
+  rowNumEl.textContent = rowNum;
+  header.appendChild(rowNumEl);
 
   // Toggle
   const toggle = document.createElement("span");
@@ -831,6 +944,22 @@ function buildTreeNode(node, path, depth) {
   badge.className = `node-badge ${badgeClass(type)}`;
   badge.textContent = badgeLabel(type);
   header.appendChild(badge);
+
+  // Flag dots
+  const flags = getNodeFlags(node);
+  if (flags.length > 0) {
+    const flagWrap = document.createElement("span");
+    flagWrap.className = "node-flags";
+    for (const fid of flags) {
+      const fd = KNOWN_FLAGS.find(f => f.id === fid);
+      const dot = document.createElement("span");
+      dot.className = `flag-dot ${fd ? fd.cls : "flag-custom"}`;
+      dot.textContent = fd ? fd.label : fid;
+      dot.title = fd ? fd.desc : fid;
+      flagWrap.appendChild(dot);
+    }
+    header.appendChild(flagWrap);
+  }
 
   // Label
   const label = document.createElement("span");
@@ -859,11 +988,13 @@ function buildTreeNode(node, path, depth) {
     { label: "\u2190", title: "Promote (move out of parent)", cls: "btn-nest", fn: () => promoteNode(pk) },
     { label: "\u2192", title: "Demote (nest into sibling above)", cls: "btn-nest", fn: () => demoteNode(pk) },
     { label: "+", title: "Add sibling after", cls: "", fn: () => addSibling(pk) },
-    { label: "\u00D7", title: "Delete", cls: "btn-del", fn: () => deleteNode(pk) },
+    { label: "\u229F", title: "Dissolve (delete block, keep children)", cls: "btn-dissolve", fn: () => dissolveNode(pk) },
+    { label: "\u00D7", title: "Delete (block + children)", cls: "btn-del", fn: () => deleteNode(pk) },
   ];
   for (const bd of btnDefs) {
     const btn = document.createElement("button");
-    btn.className = `btn btn-outline-${bd.cls === "btn-del" ? "danger" : "secondary"} ${bd.cls}`;
+    const color = (bd.cls === "btn-del") ? "danger" : (bd.cls === "btn-dissolve") ? "warning" : "secondary";
+    btn.className = `btn btn-outline-${color} ${bd.cls}`;
     btn.title = bd.title;
     btn.textContent = bd.label;
     btn.addEventListener("click", (e) => { e.stopPropagation(); bd.fn(); });
@@ -871,7 +1002,15 @@ function buildTreeNode(node, path, depth) {
   }
   header.appendChild(actions);
 
-  header.onclick = () => selectNode(pk);
+  header.onclick = (e) => {
+    if (e.shiftKey) {
+      shiftSelectTo(pk);
+    } else if (e.ctrlKey || e.metaKey) {
+      toggleMultiSelect(pk);
+    } else {
+      selectNode(pk);
+    }
+  };
   wrap.appendChild(header);
 
   // Inline edit form (if selected)
@@ -900,10 +1039,58 @@ function buildTreeNode(node, path, depth) {
 // =========================================================================
 // Inline edit forms
 // =========================================================================
+const KNOWN_FLAGS = [
+  { id: "1e", label: "1e stat", cls: "flag-1e", desc: "1st edition stat block — needs 5e conversion" },
+  { id: "review", label: "Review", cls: "flag-review", desc: "Needs manual review" },
+  { id: "todo", label: "TODO", cls: "flag-todo", desc: "Work in progress" },
+];
+
+function getNodeFlags(node) {
+  if (typeof node === "string" || !node) return [];
+  return node._flags || [];
+}
+
+function buildFlagToggleHtml(node) {
+  const flags = getNodeFlags(node);
+  let html = '<div class="mt-1"><label style="font-size:11px;font-weight:600;color:#555">Flags</label><div class="d-flex gap-1 flex-wrap">';
+  for (const f of KNOWN_FLAGS) {
+    const active = flags.includes(f.id);
+    html += `<button class="btn btn-sm ${active ? "" : "btn-outline-"}secondary flag-toggle" data-flag="${f.id}" title="${f.desc}">`
+      + `<span class="flag-dot ${f.cls}" style="display:inline-block">${f.label}</span>`
+      + `${active ? " ✓" : ""}</button>`;
+  }
+  html += `</div></div>`;
+  return html;
+}
+
+function attachFlagListeners(form, pk) {
+  form.querySelectorAll(".flag-toggle").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const flagId = btn.dataset.flag;
+      const path = parsePath(pk);
+      const node = getByPath(state.data, path);
+      if (!node || typeof node === "string") return;
+      pushUndo(`Toggle flag: ${flagId}`);
+      if (!node._flags) node._flags = [];
+      const idx = node._flags.indexOf(flagId);
+      if (idx >= 0) node._flags.splice(idx, 1);
+      else node._flags.push(flagId);
+      if (node._flags.length === 0) delete node._flags;
+      markDirty();
+      renderTree();
+      state.selectedPath = pk;
+      highlightSelected();
+      renderPreview();
+      updateFlagCount();
+    });
+  });
+}
+
 function buildEditForm(node, path, type) {
   const form = document.createElement("div");
   form.className = "node-edit";
   const pk = pathKey(path);
+  form.dataset.pk = pk;
 
   if (type === "string") {
     form.innerHTML = `
@@ -911,13 +1098,14 @@ function buildEditForm(node, path, type) {
       <textarea class="form-control edit-field" data-field="__string__" rows="4"
         onfocus="lastActiveTextarea=this">${escHtml(node)}</textarea>
       <div class="edit-actions">
-        <button class="btn btn-sm btn-primary" onclick="commitEdit('${pk}')">Done</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Cancel</button>
+        <button class="btn btn-sm btn-primary btn-done">Done</button>
+        <button class="btn btn-sm btn-outline-secondary btn-cancel">Cancel</button>
+        <button class="btn btn-sm btn-outline-info ms-auto btn-join-lines" title="Join broken lines into one paragraph">Join lines</button>
       </div>`;
   } else if (type === "hr") {
     form.innerHTML = `<span class="text-muted">Horizontal rule (no editable fields)</span>
       <div class="edit-actions">
-        <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Close</button>
+        <button class="btn btn-sm btn-outline-secondary btn-cancel">Close</button>
       </div>`;
   } else if (type === "table") {
     form.appendChild(buildTableEditor(node, path));
@@ -930,8 +1118,8 @@ function buildEditForm(node, path, type) {
       <label>Path (href.path)</label>
       <input class="form-control mb-1 edit-field" data-field="href.path" value="${escHtml((node.href && node.href.path) || "")}">
       <div class="edit-actions">
-        <button class="btn btn-sm btn-primary" onclick="commitEdit('${pk}')">Done</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Cancel</button>
+        <button class="btn btn-sm btn-primary btn-done">Done</button>
+        <button class="btn btn-sm btn-outline-secondary btn-cancel">Cancel</button>
       </div>`;
   } else if (type === "quote") {
     const entriesText = (node.entries || []).filter(e => typeof e === "string").join("\n");
@@ -944,8 +1132,9 @@ function buildEditForm(node, path, type) {
       <label>From</label>
       <input class="form-control mb-1 edit-field" data-field="from" value="${escHtml(node.from || "")}">
       <div class="edit-actions">
-        <button class="btn btn-sm btn-primary" onclick="commitEdit('${pk}')">Done</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Cancel</button>
+        <button class="btn btn-sm btn-primary btn-done">Done</button>
+        <button class="btn btn-sm btn-outline-secondary btn-cancel">Cancel</button>
+        <button class="btn btn-sm btn-outline-info ms-auto btn-join-lines" title="Join broken lines into one paragraph">Join lines</button>
       </div>`;
   } else {
     // section, entries, inset, insetReadaloud — all have optional name + entries
@@ -955,7 +1144,6 @@ function buildEditForm(node, path, type) {
       html += `<label>Name</label>
         <input class="form-control mb-1 edit-field" data-field="name" value="${escHtml(node.name || "")}">`;
     }
-    // Type selector
     html += `<label>Type</label>
       <select class="form-select form-select-sm mb-1 edit-field" data-field="type">
         <option value="section" ${type === "section" ? "selected" : ""}>section</option>
@@ -964,12 +1152,40 @@ function buildEditForm(node, path, type) {
         <option value="insetReadaloud" ${type === "insetReadaloud" ? "selected" : ""}>insetReadaloud</option>
       </select>`;
     html += `<div class="edit-actions">
-      <button class="btn btn-sm btn-primary" onclick="commitEdit('${pk}')">Done</button>
-      <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Cancel</button>
-      <button class="btn btn-sm btn-outline-primary ms-auto" onclick="addChild('${pk}')">+ Add child</button>
+      <button class="btn btn-sm btn-primary btn-done">Done</button>
+      <button class="btn btn-sm btn-outline-secondary btn-cancel">Cancel</button>
+      <button class="btn btn-sm btn-outline-primary ms-auto btn-add-child">+ Add child</button>
     </div>`;
     form.innerHTML = html;
   }
+
+  // Add flag toggles for non-string, non-hr types
+  if (type !== "string" && type !== "hr") {
+    const flagDiv = document.createElement("div");
+    flagDiv.innerHTML = buildFlagToggleHtml(node);
+    form.appendChild(flagDiv);
+  }
+
+  // Attach event listeners using closures (avoids pk in HTML attributes)
+  form.querySelectorAll(".btn-done").forEach(btn => {
+    btn.addEventListener("click", () => commitEdit(pk));
+  });
+  form.querySelectorAll(".btn-cancel").forEach(btn => {
+    btn.addEventListener("click", () => cancelEdit());
+  });
+  form.querySelectorAll(".btn-add-child").forEach(btn => {
+    btn.addEventListener("click", () => addChild(pk));
+  });
+  form.querySelectorAll(".btn-join-lines").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const ta = form.querySelector("textarea");
+      if (ta) {
+        ta.value = joinLines(ta.value);
+        ta.focus();
+      }
+    });
+  });
+  attachFlagListeners(form, pk);
 
   return form;
 }
@@ -978,6 +1194,7 @@ function buildTableEditor(node, path) {
   const div = document.createElement("div");
   div.className = "table-editor";
   const pk = pathKey(path);
+  div.dataset.pk = pk;
   const cols = node.colLabels || [];
   const rows = node.rows || [];
 
@@ -988,7 +1205,7 @@ function buildTableEditor(node, path) {
   for (let c = 0; c < cols.length; c++) {
     html += `<th><input class="form-control form-control-sm tbl-col" data-col="${c}" value="${escHtml(cols[c])}"></th>`;
   }
-  html += `<th style="width:30px"><button class="btn btn-sm btn-outline-primary" onclick="addTableCol('${pk}')" title="Add column">+</button></th>`;
+  html += `<th style="width:30px"><button class="btn btn-sm btn-outline-primary btn-add-col" title="Add column">+</button></th>`;
   html += `</tr></thead><tbody>`;
   for (let r = 0; r < rows.length; r++) {
     html += `<tr>`;
@@ -997,23 +1214,34 @@ function buildTableEditor(node, path) {
       html += `<td><input class="form-control form-control-sm tbl-cell" data-row="${r}" data-col="${c}"
         onfocus="lastActiveTextarea=this" value="${escHtml(String(val))}"></td>`;
     }
-    html += `<td><button class="btn btn-sm btn-outline-danger" onclick="deleteTableRow('${pk}', ${r})">&times;</button></td>`;
+    html += `<td><button class="btn btn-sm btn-outline-danger btn-del-row" data-row="${r}">&times;</button></td>`;
     html += `</tr>`;
   }
   html += `</tbody></table>`;
   html += `<div class="edit-actions">
-    <button class="btn btn-sm btn-outline-primary" onclick="addTableRow('${pk}')">+ Row</button>
-    <button class="btn btn-sm btn-primary ms-auto" onclick="commitTableEdit('${pk}')">Done</button>
-    <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Cancel</button>
+    <button class="btn btn-sm btn-outline-primary btn-add-row">+ Row</button>
+    <button class="btn btn-sm btn-primary ms-auto btn-done">Done</button>
+    <button class="btn btn-sm btn-outline-secondary btn-cancel">Cancel</button>
   </div>`;
 
   div.innerHTML = html;
+
+  // Attach listeners
+  div.querySelector(".btn-add-col").addEventListener("click", () => addTableCol(pk));
+  div.querySelector(".btn-add-row").addEventListener("click", () => addTableRow(pk));
+  div.querySelector(".btn-done").addEventListener("click", () => commitTableEdit(pk));
+  div.querySelector(".btn-cancel").addEventListener("click", () => cancelEdit());
+  div.querySelectorAll(".btn-del-row").forEach(btn => {
+    btn.addEventListener("click", () => deleteTableRow(pk, parseInt(btn.dataset.row)));
+  });
+
   return div;
 }
 
 function buildListEditor(node, path) {
   const div = document.createElement("div");
   const pk = pathKey(path);
+  div.dataset.pk = pk;
   const items = node.items || [];
 
   let html = `<label>List items</label>`;
@@ -1022,16 +1250,25 @@ function buildListEditor(node, path) {
     html += `<div class="list-item-row">
       <input class="form-control form-control-sm list-item" data-idx="${i}"
         onfocus="lastActiveTextarea=this" value="${escHtml(val)}">
-      <button class="btn btn-sm btn-outline-danger" onclick="deleteListItem('${pk}', ${i})">&times;</button>
+      <button class="btn btn-sm btn-outline-danger btn-del-item" data-idx="${i}">&times;</button>
     </div>`;
   }
   html += `<div class="edit-actions">
-    <button class="btn btn-sm btn-outline-primary" onclick="addListItem('${pk}')">+ Item</button>
-    <button class="btn btn-sm btn-primary ms-auto" onclick="commitListEdit('${pk}')">Done</button>
-    <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Cancel</button>
+    <button class="btn btn-sm btn-outline-primary btn-add-item">+ Item</button>
+    <button class="btn btn-sm btn-primary ms-auto btn-done">Done</button>
+    <button class="btn btn-sm btn-outline-secondary btn-cancel">Cancel</button>
   </div>`;
 
   div.innerHTML = html;
+
+  // Attach listeners
+  div.querySelector(".btn-add-item").addEventListener("click", () => addListItem(pk));
+  div.querySelector(".btn-done").addEventListener("click", () => commitListEdit(pk));
+  div.querySelector(".btn-cancel").addEventListener("click", () => cancelEdit());
+  div.querySelectorAll(".btn-del-item").forEach(btn => {
+    btn.addEventListener("click", () => deleteListItem(pk, parseInt(btn.dataset.idx)));
+  });
+
   return div;
 }
 
@@ -1197,10 +1434,135 @@ function addListItem(pk) {
 // Node operations (add, delete, move)
 // =========================================================================
 function selectNode(pk) {
+  state.multiSelect.clear();
   state.selectedPath = (state.selectedPath === pk) ? null : pk;
   renderTree();
   highlightSelected();
   scrollPreviewToSelected();
+}
+
+function toggleMultiSelect(pk) {
+  // Ctrl+click: toggle one node in/out of multi-selection
+  if (state.multiSelect.has(pk)) {
+    state.multiSelect.delete(pk);
+  } else {
+    state.multiSelect.add(pk);
+  }
+  state.selectedPath = pk; // track last clicked for shift-select anchor
+  renderTree();
+  highlightSelected();
+}
+
+function shiftSelectTo(pk) {
+  // Shift+click: select range from last selected to this node
+  const anchorPk = state.selectedPath;
+  if (!anchorPk) { toggleMultiSelect(pk); return; }
+
+  const anchorRow = _pkToRow[anchorPk];
+  const targetRow = _pkToRow[pk];
+  if (anchorRow == null || targetRow == null) return;
+
+  const from = Math.min(anchorRow, targetRow);
+  const to = Math.max(anchorRow, targetRow);
+
+  for (let i = from; i <= to; i++) {
+    state.multiSelect.add(_visibleNodes[i].pk);
+  }
+  renderTree();
+  highlightSelected();
+}
+
+function clearMultiSelect() {
+  state.multiSelect.clear();
+  renderTree();
+  highlightSelected();
+}
+
+function updateMultiBar() {
+  const bar = document.getElementById("multiBar");
+  const count = state.multiSelect.size;
+  if (count > 0) {
+    bar.classList.add("active");
+    document.getElementById("multiCount").textContent = `${count} selected`;
+  } else {
+    bar.classList.remove("active");
+  }
+  updateFlagCount();
+}
+
+function updateFlagCount() {
+  // Count all flagged nodes in the entire tree
+  let count = 0;
+  function walk(entries) {
+    for (const e of entries) {
+      if (typeof e !== "object" || !e) continue;
+      if (e._flags && e._flags.length > 0) count++;
+      if (e.entries) walk(e.entries);
+      if (e.items) walk(e.items);
+    }
+  }
+  walk(state.data);
+  const el = document.getElementById("flagCount");
+  el.textContent = count > 0 ? `${count} flagged` : "";
+}
+
+function jumpToFlag(direction) {
+  // Find all flagged visible nodes and jump to the next/previous one
+  const flaggedRows = [];
+  for (let i = 0; i < _visibleNodes.length; i++) {
+    const node = getByPath(state.data, _visibleNodes[i].path);
+    if (node && typeof node === "object" && node._flags && node._flags.length > 0) {
+      flaggedRows.push(i);
+    }
+  }
+  if (flaggedRows.length === 0) {
+    setStatus("No flagged entries", "text-warning");
+    return;
+  }
+
+  // Find current position
+  const currentRow = state.selectedPath ? (_pkToRow[state.selectedPath] ?? -1) : -1;
+  let targetRow;
+
+  if (direction > 0) {
+    // Next: find first flagged row after current
+    targetRow = flaggedRows.find(r => r > currentRow);
+    if (targetRow == null) targetRow = flaggedRows[0]; // wrap around
+  } else {
+    // Previous: find last flagged row before current
+    for (let i = flaggedRows.length - 1; i >= 0; i--) {
+      if (flaggedRows[i] < currentRow) { targetRow = flaggedRows[i]; break; }
+    }
+    if (targetRow == null) targetRow = flaggedRows[flaggedRows.length - 1]; // wrap around
+  }
+
+  const pk = _visibleNodes[targetRow].pk;
+  state.multiSelect.clear();
+  state.selectedPath = pk;
+  // Expand ancestors so the node is visible
+  expandAncestors(parsePath(pk));
+  renderTree();
+  highlightSelected();
+  scrollPreviewToSelected();
+
+  // Also scroll the tree to the selected node
+  setTimeout(() => {
+    for (const el of document.querySelectorAll(".tree-node")) {
+      if (el.dataset.path === pk) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        break;
+      }
+    }
+  }, 50);
+}
+
+function expandAncestors(path) {
+  // Ensure all ancestor nodes are expanded so a deeply nested node is visible
+  for (let i = 1; i < path.length; i += 2) {
+    // Ancestor object paths: [0], [0, "entries", 1], etc.
+    const ancestorPath = path.slice(0, i);
+    state.collapsed[pathKey(ancestorPath)] = false;
+  }
 }
 
 function findByPvPath(pk) {
@@ -1213,20 +1575,20 @@ function findByPvPath(pk) {
 
 function highlightSelected() {
   // Highlight in tree
-  document.querySelectorAll(".node-header").forEach(h => h.classList.remove("selected"));
-  if (state.selectedPath) {
-    const treeNode = document.querySelector(`.tree-node[data-path]`);
-    for (const el of document.querySelectorAll(".tree-node")) {
-      if (el.dataset.path === state.selectedPath) {
-        const hdr = el.querySelector(":scope > .node-header");
-        if (hdr) hdr.classList.add("selected");
-        break;
-      }
-    }
+  document.querySelectorAll(".node-header").forEach(h => {
+    h.classList.remove("selected", "multi-selected");
+  });
+  for (const el of document.querySelectorAll(".tree-node")) {
+    const pk = el.dataset.path;
+    if (!pk) continue;
+    const hdr = el.querySelector(":scope > .node-header");
+    if (!hdr) continue;
+    if (pk === state.selectedPath && state.multiSelect.size === 0) hdr.classList.add("selected");
+    if (state.multiSelect.has(pk)) hdr.classList.add("multi-selected");
   }
   // Highlight in preview
   document.querySelectorAll(".pv-highlight").forEach(el => el.classList.remove("pv-highlight"));
-  if (state.selectedPath) {
+  if (state.selectedPath && state.multiSelect.size === 0) {
     const pvEl = findByPvPath(state.selectedPath);
     if (pvEl) pvEl.classList.add("pv-highlight");
   }
@@ -1407,11 +1769,260 @@ function demoteNode(pk) {
 }
 
 function deleteNode(pk) {
-  if (!confirm("Delete this block?")) return;
   pushUndo("Delete block");
   const path = parsePath(pk);
   deleteByPath(state.data, path);
   state.selectedPath = null;
+  markDirty();
+  renderTree();
+  renderPreview();
+}
+
+function dissolveNode(pk) {
+  pushUndo("Dissolve block");
+  const path = parsePath(pk);
+  const node = getByPath(state.data, path);
+  const childKey = getChildrenKey(node);
+  const children = node[childKey] || [];
+  const idx = path[path.length - 1];
+  const parent = getParentArray(path);
+
+  // Remove the node and splice its children in its place
+  parent.splice(idx, 1, ...children);
+
+  state.selectedPath = null;
+  markDirty();
+  renderTree();
+  renderPreview();
+}
+
+// =========================================================================
+// Bulk operations on multi-selected nodes
+// =========================================================================
+
+function getSelectedPaths() {
+  // Return selected paths sorted by visible row number (ascending)
+  const pks = [...state.multiSelect];
+  pks.sort((a, b) => (_pkToRow[a] ?? 0) - (_pkToRow[b] ?? 0));
+  return pks.map(pk => ({ pk, path: parsePath(pk) }));
+}
+
+function bulkMove(direction) {
+  const selected = getSelectedPaths();
+  if (selected.length === 0) return;
+  pushUndo(`Move ${selected.length} blocks ${direction < 0 ? "up" : "down"}`);
+
+  const groups = groupByParent(selected);
+
+  for (const group of groups) {
+    const parent = group.parent;
+    const indices = group.indices; // sorted ascending
+
+    if (direction < 0) {
+      // Move up: the first selected must not be at index 0
+      if (indices[0] <= 0) continue;
+      // Swap the element before the first selected with the block:
+      // remove the element at indices[0]-1 and re-insert it after the last selected
+      const beforeIdx = indices[0] - 1;
+      const item = parent.splice(beforeIdx, 1)[0];
+      // After removal, the last selected index shifted down by 1
+      const insertAt = indices[indices.length - 1]; // was last+0 after the splice shifted everything down
+      parent.splice(insertAt, 0, item);
+    } else {
+      // Move down: the last selected must not be at the end
+      const lastIdx = indices[indices.length - 1];
+      if (lastIdx >= parent.length - 1) continue;
+      // Remove the element after the last selected and re-insert it before the first selected
+      const afterIdx = lastIdx + 1;
+      const item = parent.splice(afterIdx, 1)[0];
+      parent.splice(indices[0], 0, item);
+    }
+  }
+
+  // Update multi-select paths (they shifted)
+  state.multiSelect.clear();
+  for (const group of groups) {
+    const parentPath = group.parentPath;
+    for (const oldIdx of group.indices) {
+      const newIdx = oldIdx + direction;
+      const newPath = [...parentPath, newIdx];
+      state.multiSelect.add(pathKey(newPath));
+    }
+  }
+
+  state.selectedPath = null;
+  markDirty();
+  renderTree();
+  highlightSelected();
+  renderPreview();
+}
+
+function bulkDemote() {
+  const selected = getSelectedPaths();
+  if (selected.length === 0) return;
+  pushUndo(`Demote ${selected.length} blocks`);
+
+  // Group selected by parent path — all nodes in a group share the same parent array
+  const groups = groupByParent(selected);
+
+  for (const group of groups) {
+    const parent = group.parent;
+    const indices = group.indices; // sorted ascending
+    const firstIdx = indices[0];
+
+    if (firstIdx === 0) continue; // no preceding sibling for the group
+
+    const target = parent[firstIdx - 1];
+    if (typeof target === "string" || !target) continue;
+
+    const targetKey = (target.type === "list") ? "items" : "entries";
+    if (!target[targetKey]) target[targetKey] = [];
+
+    // Remove all selected from parent in reverse order, collect nodes
+    const nodes = [];
+    for (let i = indices.length - 1; i >= 0; i--) {
+      nodes.unshift(parent.splice(indices[i], 1)[0]);
+    }
+    // Append all to target in original order
+    target[targetKey].push(...nodes);
+  }
+
+  state.multiSelect.clear();
+  state.selectedPath = null;
+  markDirty();
+  renderTree();
+  renderPreview();
+}
+
+function bulkPromote() {
+  const selected = getSelectedPaths();
+  if (selected.length === 0) return;
+  pushUndo(`Promote ${selected.length} blocks`);
+
+  // Group selected by parent path
+  const groups = groupByParent(selected);
+
+  // Process groups in reverse so earlier groups' indices aren't affected
+  for (let g = groups.length - 1; g >= 0; g--) {
+    const group = groups[g];
+    const parentPath = group.parentPath;
+    const parent = group.parent;
+    const indices = group.indices;
+
+    // Parent path needs at least 2 segments (e.g. [0, "entries"]) to have a grandparent
+    if (parentPath.length < 2) continue;
+
+    const parentObjPath = parentPath.slice(0, -1); // path to the parent object
+    const grandparentArray = getParentArray(parentObjPath);
+    if (!Array.isArray(grandparentArray)) continue;
+
+    const parentIdx = parentObjPath[parentObjPath.length - 1];
+
+    // Remove all selected from parent in reverse order, collect nodes
+    const nodes = [];
+    for (let i = indices.length - 1; i >= 0; i--) {
+      nodes.unshift(parent.splice(indices[i], 1)[0]);
+    }
+    // Insert all after the parent object in grandparent, preserving order
+    grandparentArray.splice(parentIdx + 1, 0, ...nodes);
+  }
+
+  state.multiSelect.clear();
+  state.selectedPath = null;
+  markDirty();
+  renderTree();
+  renderPreview();
+}
+
+function groupByParent(selected) {
+  // Group selected paths by their parent array path.
+  // Returns [{parentPath, parent (array ref), indices (sorted asc)}]
+  const map = new Map(); // parentPathKey -> {parentPath, indices}
+  for (const s of selected) {
+    const path = s.path;
+    const parentPath = path.slice(0, -1);
+    const ppk = JSON.stringify(parentPath);
+    if (!map.has(ppk)) {
+      map.set(ppk, { parentPath, indices: [] });
+    }
+    map.get(ppk).indices.push(path[path.length - 1]);
+  }
+  const groups = [];
+  for (const [ppk, g] of map) {
+    g.indices.sort((a, b) => a - b);
+    g.parent = g.parentPath.length === 0 ? state.data : getByPath(state.data, g.parentPath);
+    groups.push(g);
+  }
+  return groups;
+}
+
+function bulkDelete() {
+  const selected = getSelectedPaths();
+  if (selected.length === 0) return;
+  pushUndo(`Delete ${selected.length} blocks`);
+
+  // Process in reverse row order so indices stay valid
+  for (let i = selected.length - 1; i >= 0; i--) {
+    deleteByPath(state.data, selected[i].path);
+  }
+
+  state.multiSelect.clear();
+  state.selectedPath = null;
+  markDirty();
+  renderTree();
+  renderPreview();
+}
+
+function bulkDissolve() {
+  const selected = getSelectedPaths();
+  if (selected.length === 0) return;
+  pushUndo(`Dissolve ${selected.length} blocks`);
+
+  // Process in reverse row order so indices stay valid
+  for (let i = selected.length - 1; i >= 0; i--) {
+    const path = selected[i].path;
+    const node = getByPath(state.data, path);
+    if (typeof node === "string") continue;
+    const childKey = getChildrenKey(node);
+    const children = node[childKey] || [];
+    const idx = path[path.length - 1];
+    const parent = getParentArray(path);
+    parent.splice(idx, 1, ...children);
+  }
+
+  state.multiSelect.clear();
+  state.selectedPath = null;
+  markDirty();
+  renderTree();
+  renderPreview();
+}
+
+function bulkFlag(flagId) {
+  const selected = getSelectedPaths();
+  if (selected.length === 0) return;
+  pushUndo(`Flag ${selected.length} blocks: ${flagId}`);
+  for (const s of selected) {
+    const node = getByPath(state.data, s.path);
+    if (!node || typeof node === "string") continue;
+    if (!node._flags) node._flags = [];
+    if (!node._flags.includes(flagId)) node._flags.push(flagId);
+  }
+  state.multiSelect.clear();
+  markDirty();
+  renderTree();
+  renderPreview();
+}
+
+function bulkClearFlags() {
+  const selected = getSelectedPaths();
+  if (selected.length === 0) return;
+  pushUndo(`Clear flags from ${selected.length} blocks`);
+  for (const s of selected) {
+    const node = getByPath(state.data, s.path);
+    if (!node || typeof node === "string") continue;
+    delete node._flags;
+  }
+  state.multiSelect.clear();
   markDirty();
   renderTree();
   renderPreview();
