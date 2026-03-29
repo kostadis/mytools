@@ -393,6 +393,8 @@ body { font-size: 14px; margin: 0; overflow: hidden; height: 100vh; }
 .node-edit label { font-size: 11px; font-weight: 600; color: #555; }
 .node-edit .form-control { font-size: 13px; }
 .node-edit textarea { font-family: monospace; font-size: 12px; resize: vertical; }
+.node-edit .edit-actions { display: flex; gap: 4px; margin-top: 6px; }
+.node-edit .edit-actions .btn { font-size: 11px; }
 
 .node-children { }
 
@@ -465,6 +467,18 @@ body { font-size: 14px; margin: 0; overflow: hidden; height: 100vh; }
     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" id="historyBtn" data-bs-toggle="dropdown" disabled title="Change history">History</button>
     <ul class="dropdown-menu dropdown-menu-end" id="historyMenu" style="max-height:400px; overflow-y:auto; font-size:12px; min-width:350px;"></ul>
   </div>
+  <span style="border-left:1px solid #ccc; height:20px; margin:0 4px"></span>
+  <button class="btn btn-sm btn-outline-secondary" onclick="collapseAll()" title="Collapse all">Collapse</button>
+  <button class="btn btn-sm btn-outline-secondary" onclick="expandAll()" title="Expand all">Expand</button>
+  <div class="dropdown d-inline-block">
+    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="Expand to level...">Level</button>
+    <ul class="dropdown-menu" style="font-size:12px; min-width:120px">
+      <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); expandToLevel(0)">Sections only</a></li>
+      <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); expandToLevel(1)">Level 1</a></li>
+      <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); expandToLevel(2)">Level 2</a></li>
+      <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); expandToLevel(3)">Level 3</a></li>
+    </ul>
+  </div>
   <span class="flex-grow-1"></span>
   <span id="statusMsg" class="text-muted" style="font-size:12px">Ready</span>
 </div>
@@ -499,6 +513,52 @@ body { font-size: 14px; margin: 0; overflow: hidden; height: 100vh; }
   <!-- Right: preview -->
   <div class="panel-preview" id="previewArea">
     <div class="text-muted text-center mt-5">Preview will appear here</div>
+  </div>
+</div>
+
+<!-- Add Block Modal -->
+<div class="modal fade" id="addBlockModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Add Block</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2">
+          <label class="form-label fw-bold" style="font-size:12px">Block Type</label>
+          <select class="form-select form-select-sm" id="addBlockType" onchange="onAddBlockTypeChange()">
+            <option value="section">Section (top-level chapter)</option>
+            <option value="entries" selected>Entries (subsection with heading)</option>
+            <option value="text">Text (paragraph)</option>
+            <option value="inset">Inset (sidebar box)</option>
+            <option value="insetReadaloud">Read-Aloud Box</option>
+            <option value="table">Table (paste tab/pipe-separated)</option>
+            <option value="statblock">Stat Block (paste text)</option>
+            <option value="list">List</option>
+            <option value="quote">Quote</option>
+            <option value="image">Image</option>
+            <option value="hr">Horizontal Rule</option>
+          </select>
+        </div>
+        <div class="mb-2" id="addBlockNameRow">
+          <label class="form-label fw-bold" style="font-size:12px">Name</label>
+          <input class="form-control form-control-sm" id="addBlockName" placeholder="Section or entry name...">
+        </div>
+        <div class="mb-2" id="addBlockPasteRow" style="display:none">
+          <label class="form-label fw-bold" style="font-size:12px">Content (paste text)</label>
+          <textarea class="form-control form-control-sm" id="addBlockPaste" rows="8"
+            style="font-family:monospace; font-size:12px"
+            placeholder="Paste content here..."
+            oninput="onAddBlockPasteInput()"></textarea>
+          <div id="addBlockParseResult"></div>
+        </div>
+      </div>
+      <div class="modal-footer py-1">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-primary" onclick="confirmAddBlock()">Add</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -790,17 +850,25 @@ function buildTreeNode(node, path, depth) {
   }
   header.appendChild(label);
 
-  // Action buttons
+  // Action buttons — use addEventListener to avoid HTML-escaping issues with JSON path keys
   const actions = document.createElement("span");
   actions.className = "node-actions";
-  actions.innerHTML = `
-    <button class="btn btn-outline-secondary btn-move" title="Move up" onclick="event.stopPropagation(); moveNode('${pk}', -1)">\u2191</button>
-    <button class="btn btn-outline-secondary btn-move" title="Move down" onclick="event.stopPropagation(); moveNode('${pk}', 1)">\u2193</button>
-    <button class="btn btn-outline-secondary btn-nest" title="Promote (move out of parent)" onclick="event.stopPropagation(); promoteNode('${pk}')">\u2190</button>
-    <button class="btn btn-outline-secondary btn-nest" title="Demote (nest into sibling above)" onclick="event.stopPropagation(); demoteNode('${pk}')">\u2192</button>
-    <button class="btn btn-outline-secondary" title="Add sibling after" onclick="event.stopPropagation(); addSibling('${pk}')">+</button>
-    <button class="btn btn-outline-danger" title="Delete" onclick="event.stopPropagation(); deleteNode('${pk}')">\u00D7</button>
-  `;
+  const btnDefs = [
+    { label: "\u2191", title: "Move up", cls: "btn-move", fn: () => moveNode(pk, -1) },
+    { label: "\u2193", title: "Move down", cls: "btn-move", fn: () => moveNode(pk, 1) },
+    { label: "\u2190", title: "Promote (move out of parent)", cls: "btn-nest", fn: () => promoteNode(pk) },
+    { label: "\u2192", title: "Demote (nest into sibling above)", cls: "btn-nest", fn: () => demoteNode(pk) },
+    { label: "+", title: "Add sibling after", cls: "", fn: () => addSibling(pk) },
+    { label: "\u00D7", title: "Delete", cls: "btn-del", fn: () => deleteNode(pk) },
+  ];
+  for (const bd of btnDefs) {
+    const btn = document.createElement("button");
+    btn.className = `btn btn-outline-${bd.cls === "btn-del" ? "danger" : "secondary"} ${bd.cls}`;
+    btn.title = bd.title;
+    btn.textContent = bd.label;
+    btn.addEventListener("click", (e) => { e.stopPropagation(); bd.fn(); });
+    actions.appendChild(btn);
+  }
   header.appendChild(actions);
 
   header.onclick = () => selectNode(pk);
@@ -808,7 +876,11 @@ function buildTreeNode(node, path, depth) {
 
   // Inline edit form (if selected)
   if (isSelected) {
-    wrap.appendChild(buildEditForm(node, path, type));
+    const editForm = buildEditForm(node, path, type);
+    // Stop all keyboard events from bubbling out of the edit form
+    editForm.addEventListener("keydown", (e) => e.stopPropagation());
+    editForm.addEventListener("click", (e) => e.stopPropagation());
+    wrap.appendChild(editForm);
   }
 
   // Children
@@ -831,15 +903,22 @@ function buildTreeNode(node, path, depth) {
 function buildEditForm(node, path, type) {
   const form = document.createElement("div");
   form.className = "node-edit";
+  const pk = pathKey(path);
 
   if (type === "string") {
     form.innerHTML = `
       <label>Text</label>
-      <textarea class="form-control" rows="3" onfocus="lastActiveTextarea=this"
-        oninput="updateStringNode(this, '${pathKey(path)}')">${escHtml(node)}</textarea>
-    `;
+      <textarea class="form-control edit-field" data-field="__string__" rows="4"
+        onfocus="lastActiveTextarea=this">${escHtml(node)}</textarea>
+      <div class="edit-actions">
+        <button class="btn btn-sm btn-primary" onclick="commitEdit('${pk}')">Done</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Cancel</button>
+      </div>`;
   } else if (type === "hr") {
-    form.innerHTML = `<span class="text-muted">Horizontal rule (no editable fields)</span>`;
+    form.innerHTML = `<span class="text-muted">Horizontal rule (no editable fields)</span>
+      <div class="edit-actions">
+        <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Close</button>
+      </div>`;
   } else if (type === "table") {
     form.appendChild(buildTableEditor(node, path));
   } else if (type === "list") {
@@ -847,45 +926,47 @@ function buildEditForm(node, path, type) {
   } else if (type === "image") {
     form.innerHTML = `
       <label>Title</label>
-      <input class="form-control mb-1" value="${escHtml(node.title || "")}"
-        oninput="updateField('${pathKey(path)}', 'title', this.value)">
+      <input class="form-control mb-1 edit-field" data-field="title" value="${escHtml(node.title || "")}">
       <label>Path (href.path)</label>
-      <input class="form-control mb-1" value="${escHtml((node.href && node.href.path) || "")}"
-        oninput="updateImagePath('${pathKey(path)}', this.value)">
-    `;
+      <input class="form-control mb-1 edit-field" data-field="href.path" value="${escHtml((node.href && node.href.path) || "")}">
+      <div class="edit-actions">
+        <button class="btn btn-sm btn-primary" onclick="commitEdit('${pk}')">Done</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Cancel</button>
+      </div>`;
   } else if (type === "quote") {
     const entriesText = (node.entries || []).filter(e => typeof e === "string").join("\n");
     form.innerHTML = `
       <label>Quote text (one paragraph per line)</label>
-      <textarea class="form-control mb-1" rows="3" onfocus="lastActiveTextarea=this"
-        oninput="updateQuoteEntries('${pathKey(path)}', this.value)">${escHtml(entriesText)}</textarea>
+      <textarea class="form-control mb-1 edit-field" data-field="__quote_entries__" rows="3"
+        onfocus="lastActiveTextarea=this">${escHtml(entriesText)}</textarea>
       <label>By</label>
-      <input class="form-control mb-1" value="${escHtml(node.by || "")}"
-        oninput="updateField('${pathKey(path)}', 'by', this.value)">
+      <input class="form-control mb-1 edit-field" data-field="by" value="${escHtml(node.by || "")}">
       <label>From</label>
-      <input class="form-control" value="${escHtml(node.from || "")}"
-        oninput="updateField('${pathKey(path)}', 'from', this.value)">
-    `;
+      <input class="form-control mb-1 edit-field" data-field="from" value="${escHtml(node.from || "")}">
+      <div class="edit-actions">
+        <button class="btn btn-sm btn-primary" onclick="commitEdit('${pk}')">Done</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Cancel</button>
+      </div>`;
   } else {
     // section, entries, inset, insetReadaloud — all have optional name + entries
     const showName = (type !== "insetReadaloud");
     let html = "";
     if (showName) {
       html += `<label>Name</label>
-        <input class="form-control mb-1" value="${escHtml(node.name || "")}"
-          oninput="updateField('${pathKey(path)}', 'name', this.value)">`;
+        <input class="form-control mb-1 edit-field" data-field="name" value="${escHtml(node.name || "")}">`;
     }
     // Type selector
     html += `<label>Type</label>
-      <select class="form-select form-select-sm mb-1" onchange="changeNodeType('${pathKey(path)}', this.value)">
+      <select class="form-select form-select-sm mb-1 edit-field" data-field="type">
         <option value="section" ${type === "section" ? "selected" : ""}>section</option>
         <option value="entries" ${type === "entries" ? "selected" : ""}>entries</option>
         <option value="inset" ${type === "inset" ? "selected" : ""}>inset</option>
         <option value="insetReadaloud" ${type === "insetReadaloud" ? "selected" : ""}>insetReadaloud</option>
       </select>`;
-    // Add child button
-    html += `<div class="mt-1">
-      <button class="btn btn-sm btn-outline-primary" onclick="addChild('${pathKey(path)}')">+ Add child entry</button>
+    html += `<div class="edit-actions">
+      <button class="btn btn-sm btn-primary" onclick="commitEdit('${pk}')">Done</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Cancel</button>
+      <button class="btn btn-sm btn-outline-primary ms-auto" onclick="addChild('${pk}')">+ Add child</button>
     </div>`;
     form.innerHTML = html;
   }
@@ -901,13 +982,11 @@ function buildTableEditor(node, path) {
   const rows = node.rows || [];
 
   let html = `<label>Caption</label>
-    <input class="form-control mb-1" value="${escHtml(node.caption || "")}"
-      oninput="updateField('${pk}', 'caption', this.value)">`;
+    <input class="form-control mb-1 tbl-caption" value="${escHtml(node.caption || "")}">`;
 
   html += `<table class="table table-sm table-bordered mb-1"><thead><tr>`;
   for (let c = 0; c < cols.length; c++) {
-    html += `<th><input class="form-control form-control-sm" value="${escHtml(cols[c])}"
-      oninput="updateColLabel('${pk}', ${c}, this.value)"></th>`;
+    html += `<th><input class="form-control form-control-sm tbl-col" data-col="${c}" value="${escHtml(cols[c])}"></th>`;
   }
   html += `<th style="width:30px"><button class="btn btn-sm btn-outline-primary" onclick="addTableCol('${pk}')" title="Add column">+</button></th>`;
   html += `</tr></thead><tbody>`;
@@ -915,15 +994,18 @@ function buildTableEditor(node, path) {
     html += `<tr>`;
     for (let c = 0; c < cols.length; c++) {
       const val = (rows[r] && rows[r][c] != null) ? rows[r][c] : "";
-      html += `<td><input class="form-control form-control-sm" value="${escHtml(String(val))}"
-        onfocus="lastActiveTextarea=this"
-        oninput="updateTableCell('${pk}', ${r}, ${c}, this.value)"></td>`;
+      html += `<td><input class="form-control form-control-sm tbl-cell" data-row="${r}" data-col="${c}"
+        onfocus="lastActiveTextarea=this" value="${escHtml(String(val))}"></td>`;
     }
     html += `<td><button class="btn btn-sm btn-outline-danger" onclick="deleteTableRow('${pk}', ${r})">&times;</button></td>`;
     html += `</tr>`;
   }
   html += `</tbody></table>`;
-  html += `<button class="btn btn-sm btn-outline-primary" onclick="addTableRow('${pk}')">+ Add row</button>`;
+  html += `<div class="edit-actions">
+    <button class="btn btn-sm btn-outline-primary" onclick="addTableRow('${pk}')">+ Row</button>
+    <button class="btn btn-sm btn-primary ms-auto" onclick="commitTableEdit('${pk}')">Done</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Cancel</button>
+  </div>`;
 
   div.innerHTML = html;
   return div;
@@ -938,97 +1020,137 @@ function buildListEditor(node, path) {
   for (let i = 0; i < items.length; i++) {
     const val = typeof items[i] === "string" ? items[i] : JSON.stringify(items[i]);
     html += `<div class="list-item-row">
-      <input class="form-control form-control-sm" value="${escHtml(val)}"
-        onfocus="lastActiveTextarea=this"
-        oninput="updateListItem('${pk}', ${i}, this.value)">
+      <input class="form-control form-control-sm list-item" data-idx="${i}"
+        onfocus="lastActiveTextarea=this" value="${escHtml(val)}">
       <button class="btn btn-sm btn-outline-danger" onclick="deleteListItem('${pk}', ${i})">&times;</button>
     </div>`;
   }
-  html += `<button class="btn btn-sm btn-outline-primary" onclick="addListItem('${pk}')">+ Add item</button>`;
+  html += `<div class="edit-actions">
+    <button class="btn btn-sm btn-outline-primary" onclick="addListItem('${pk}')">+ Item</button>
+    <button class="btn btn-sm btn-primary ms-auto" onclick="commitListEdit('${pk}')">Done</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="cancelEdit()">Cancel</button>
+  </div>`;
 
   div.innerHTML = html;
   return div;
 }
 
 // =========================================================================
-// Edit operations
+// Edit operations — commit on "Done", not on every keystroke
 // =========================================================================
-function updateStringNode(textarea, pk) {
-  pushUndoDebounced("Edit text");
+
+function findNodeEdit(pk) {
+  for (const el of document.querySelectorAll(".tree-node")) {
+    if (el.dataset.path === pk) {
+      return el.querySelector(".node-edit");
+    }
+  }
+  return null;
+}
+
+function commitEdit(pk) {
+  // Read all edit-field values from the form and apply to the data model
   const path = parsePath(pk);
-  setByPath(state.data, path, textarea.value);
+  const node = getByPath(state.data, path);
+  const type = getNodeType(node);
+  const formEl = findNodeEdit(pk);
+  if (!formEl) { cancelEdit(); return; }
+
+  pushUndo("Edit " + (type === "string" ? "text" : (node.name || type)));
+
+  if (type === "string") {
+    const ta = formEl.querySelector('[data-field="__string__"]');
+    if (ta) setByPath(state.data, path, ta.value);
+  } else {
+    // Read all .edit-field inputs
+    formEl.querySelectorAll(".edit-field").forEach(el => {
+      const field = el.dataset.field;
+      const val = el.value;
+      if (field === "__quote_entries__") {
+        node.entries = val.split("\n").filter(l => l.length > 0);
+      } else if (field === "href.path") {
+        if (!node.href) node.href = { type: "internal" };
+        node.href.path = val;
+      } else if (field === "type") {
+        node.type = val;
+      } else {
+        if (val === "" && field !== "name") {
+          delete node[field];
+        } else {
+          node[field] = val;
+        }
+      }
+    });
+  }
+
   markDirty();
+  state.selectedPath = null;
+  renderTree();
   renderPreview();
 }
 
-function updateField(pk, field, value) {
-  pushUndoDebounced(`Edit ${field}`);
+function commitTableEdit(pk) {
   const path = parsePath(pk);
   const node = getByPath(state.data, path);
-  if (node && typeof node === "object") {
-    if (value === "" && field !== "name") {
-      delete node[field];
-    } else {
-      node[field] = value;
-    }
-    markDirty();
-    renderPreview();
-    // Re-render tree to update labels
-    renderTree();
-    // Re-select
-    state.selectedPath = pk;
-    highlightSelected();
+  const formEl = findNodeEdit(pk);
+  if (!formEl || !node) { cancelEdit(); return; }
+
+  pushUndo("Edit table");
+
+  // Read caption
+  const capInput = formEl.querySelector(".tbl-caption");
+  if (capInput) {
+    if (capInput.value.trim()) node.caption = capInput.value.trim();
+    else delete node.caption;
   }
+
+  // Read column labels
+  formEl.querySelectorAll(".tbl-col").forEach(el => {
+    const c = parseInt(el.dataset.col);
+    if (node.colLabels && c < node.colLabels.length) node.colLabels[c] = el.value;
+  });
+
+  // Read cells
+  formEl.querySelectorAll(".tbl-cell").forEach(el => {
+    const r = parseInt(el.dataset.row);
+    const c = parseInt(el.dataset.col);
+    if (node.rows && node.rows[r]) node.rows[r][c] = el.value;
+  });
+
+  markDirty();
+  state.selectedPath = null;
+  renderTree();
+  renderPreview();
 }
 
-function updateImagePath(pk, value) {
-  pushUndoDebounced("Edit image path");
+function commitListEdit(pk) {
   const path = parsePath(pk);
   const node = getByPath(state.data, path);
-  if (node) {
-    if (!node.href) node.href = { type: "internal" };
-    node.href.path = value;
-    markDirty();
-    renderPreview();
-  }
+  const formEl = findNodeEdit(pk);
+  if (!formEl || !node) { cancelEdit(); return; }
+
+  pushUndo("Edit list");
+
+  // Read all list item inputs
+  const newItems = [];
+  formEl.querySelectorAll(".list-item").forEach(el => {
+    newItems.push(el.value);
+  });
+  node.items = newItems;
+
+  markDirty();
+  state.selectedPath = null;
+  renderTree();
+  renderPreview();
 }
 
-function updateQuoteEntries(pk, value) {
-  pushUndoDebounced("Edit quote");
-  const path = parsePath(pk);
-  const node = getByPath(state.data, path);
-  if (node) {
-    node.entries = value.split("\n").filter(l => l.length > 0);
-    markDirty();
-    renderPreview();
-  }
+function cancelEdit() {
+  state.selectedPath = null;
+  renderTree();
+  renderPreview();
 }
 
-function changeNodeType(pk, newType) {
-  pushUndo(`Change type to ${newType}`);
-  const path = parsePath(pk);
-  const node = getByPath(state.data, path);
-  if (node && typeof node === "object") {
-    node.type = newType;
-    markDirty();
-    renderTree();
-    state.selectedPath = pk;
-    highlightSelected();
-    renderPreview();
-  }
-}
-
-// Table edit helpers
-function updateColLabel(pk, colIdx, value) {
-  pushUndoDebounced("Edit column label");
-  const node = getByPath(state.data, parsePath(pk));
-  if (node && node.colLabels) { node.colLabels[colIdx] = value; markDirty(); renderPreview(); }
-}
-function updateTableCell(pk, row, col, value) {
-  pushUndoDebounced("Edit table cell");
-  const node = getByPath(state.data, parsePath(pk));
-  if (node && node.rows && node.rows[row]) { node.rows[row][col] = value; markDirty(); renderPreview(); }
-}
+// Table structural operations (these re-render the form immediately)
 function addTableRow(pk) {
   pushUndo("Add table row");
   const node = getByPath(state.data, parsePath(pk));
@@ -1055,12 +1177,7 @@ function addTableCol(pk) {
   }
 }
 
-// List edit helpers
-function updateListItem(pk, idx, value) {
-  pushUndoDebounced("Edit list item");
-  const node = getByPath(state.data, parsePath(pk));
-  if (node && node.items) { node.items[idx] = value; markDirty(); renderPreview(); }
-}
+// List structural operations
 function deleteListItem(pk, idx) {
   pushUndo("Delete list item");
   const node = getByPath(state.data, parsePath(pk));
@@ -1129,6 +1246,55 @@ function toggleCollapse(pk) {
   state.collapsed[pk] = !state.collapsed[pk];
   renderTree();
   state.selectedPath = state.selectedPath; // preserve
+  highlightSelected();
+}
+
+function collapseAll() {
+  // Walk the entire tree and collapse every node that has children
+  function walkCollapse(node, path) {
+    if (typeof node === "string") return;
+    const children = getChildren(node);
+    if (children.length > 0) {
+      state.collapsed[pathKey(path)] = true;
+      const childKey = getChildrenKey(node);
+      for (let i = 0; i < children.length; i++) {
+        walkCollapse(children[i], [...path, childKey, i]);
+      }
+    }
+  }
+  for (let i = 0; i < state.data.length; i++) {
+    walkCollapse(state.data[i], [i]);
+  }
+  renderTree();
+  highlightSelected();
+}
+
+function expandAll() {
+  state.collapsed = {};
+  renderTree();
+  highlightSelected();
+}
+
+function expandToLevel(maxDepth) {
+  // First collapse everything, then expand nodes up to maxDepth
+  state.collapsed = {};
+  function walkLevel(node, path, depth) {
+    if (typeof node === "string") return;
+    const children = getChildren(node);
+    if (children.length > 0) {
+      if (depth >= maxDepth) {
+        state.collapsed[pathKey(path)] = true;
+      }
+      const childKey = getChildrenKey(node);
+      for (let i = 0; i < children.length; i++) {
+        walkLevel(children[i], [...path, childKey, i], depth + 1);
+      }
+    }
+  }
+  for (let i = 0; i < state.data.length; i++) {
+    walkLevel(state.data[i], [i], 0);
+  }
+  renderTree();
   highlightSelected();
 }
 
@@ -1267,13 +1433,15 @@ function addTopLevelSection() {
 }
 
 // =========================================================================
-// Add block with type picker (replaces simple string sibling)
+// Add block — modal-based type picker with smart paste
 // =========================================================================
+let _addBlockCallback = null;
+
 function addSibling(pk) {
-  showBlockTypePicker((type) => {
+  openAddBlockModal((newNode) => {
+    const type = typeof newNode === "string" ? "text" : (newNode.type || "block");
     pushUndo(`Add ${type}`);
     const path = parsePath(pk);
-    const newNode = createEmptyBlock(type);
     insertAfterPath(state.data, path, newNode);
     const newPath = [...path.slice(0, -1), path[path.length - 1] + 1];
     state.selectedPath = pathKey(newPath);
@@ -1285,14 +1453,14 @@ function addSibling(pk) {
 }
 
 function addChild(pk) {
-  showBlockTypePicker((type) => {
+  openAddBlockModal((newNode) => {
+    const type = typeof newNode === "string" ? "text" : (newNode.type || "block");
     pushUndo(`Add child ${type}`);
     const path = parsePath(pk);
     const node = getByPath(state.data, path);
     if (!node || typeof node === "string") return;
     const childKey = getChildrenKey(node);
     if (!node[childKey]) node[childKey] = [];
-    const newNode = createEmptyBlock(type);
     node[childKey].push(newNode);
     state.collapsed[pk] = false;
     const newPath = [...path, childKey, node[childKey].length - 1];
@@ -1304,39 +1472,306 @@ function addChild(pk) {
   });
 }
 
-function createEmptyBlock(type) {
-  switch (type) {
-    case "string": return "New paragraph text";
-    case "section": return { type: "section", name: "New Section", entries: [] };
-    case "entries": return { type: "entries", name: "New Heading", entries: [] };
-    case "inset": return { type: "inset", name: "Sidebar", entries: ["Sidebar content"] };
-    case "insetReadaloud": return { type: "insetReadaloud", entries: ["Read-aloud text goes here."] };
-    case "list": return { type: "list", items: ["Item 1"] };
-    case "table": return { type: "table", colLabels: ["Column 1", "Column 2"], colStyles: ["", ""], rows: [["", ""]] };
-    case "image": return { type: "image", href: { type: "internal", path: "" }, title: "" };
-    case "quote": return { type: "quote", entries: ["Quote text"], by: "", from: "" };
-    case "hr": return { type: "hr" };
-    default: return "New text";
+function openAddBlockModal(callback) {
+  _addBlockCallback = callback;
+  // Reset modal state
+  document.getElementById("addBlockType").value = "entries";
+  document.getElementById("addBlockName").value = "";
+  document.getElementById("addBlockPaste").value = "";
+  document.getElementById("addBlockParseResult").innerHTML = "";
+  document.getElementById("addBlockNameRow").style.display = "";
+  document.getElementById("addBlockPasteRow").style.display = "none";
+  onAddBlockTypeChange();
+  const modal = new bootstrap.Modal(document.getElementById("addBlockModal"));
+  modal.show();
+  // Focus the name field after modal opens
+  document.getElementById("addBlockModal").addEventListener("shown.bs.modal", () => {
+    const nameField = document.getElementById("addBlockName");
+    if (nameField.offsetParent !== null) nameField.focus();
+  }, { once: true });
+}
+
+function onAddBlockTypeChange() {
+  const type = document.getElementById("addBlockType").value;
+  const nameRow = document.getElementById("addBlockNameRow");
+  const pasteRow = document.getElementById("addBlockPasteRow");
+  const parseResult = document.getElementById("addBlockParseResult");
+  parseResult.innerHTML = "";
+
+  // Show/hide fields based on type
+  if (type === "section" || type === "entries" || type === "inset") {
+    nameRow.style.display = "";
+    pasteRow.style.display = "none";
+  } else if (type === "table" || type === "statblock") {
+    nameRow.style.display = "";
+    pasteRow.style.display = "";
+  } else if (type === "insetReadaloud" || type === "text") {
+    nameRow.style.display = "none";
+    pasteRow.style.display = "";
+    document.getElementById("addBlockPaste").placeholder =
+      type === "text" ? "Enter paragraph text..." : "Enter read-aloud text...";
+  } else {
+    nameRow.style.display = "none";
+    pasteRow.style.display = "none";
   }
 }
 
-function showBlockTypePicker(callback) {
-  // Simple approach: use a prompt-based picker
-  const types = ["string", "entries", "inset", "insetReadaloud", "list", "table", "image", "quote", "hr"];
-  const choice = prompt(
-    "Block type:\n" + types.map((t, i) => `${i + 1}. ${t}`).join("\n") + "\n\nEnter number or type name:",
-    "1"
-  );
-  if (!choice) return;
-  const num = parseInt(choice);
-  let type;
-  if (num >= 1 && num <= types.length) {
-    type = types[num - 1];
-  } else {
-    type = choice.trim();
-    if (!types.includes(type) && type !== "section") type = "string";
+function onAddBlockPasteInput() {
+  const type = document.getElementById("addBlockType").value;
+  const text = document.getElementById("addBlockPaste").value;
+  const resultDiv = document.getElementById("addBlockParseResult");
+
+  if (!text.trim()) { resultDiv.innerHTML = ""; return; }
+
+  if (type === "table") {
+    const parsed = parseTableText(text);
+    if (parsed) {
+      let html = '<div class="mt-2"><small class="text-success">Parsed table:</small>';
+      html += '<table class="table table-sm table-bordered mt-1" style="font-size:12px"><thead><tr>';
+      for (const col of parsed.colLabels) html += `<th>${escHtml(col)}</th>`;
+      html += '</tr></thead><tbody>';
+      for (const row of parsed.rows.slice(0, 5)) {
+        html += '<tr>';
+        for (const cell of row) html += `<td>${escHtml(cell)}</td>`;
+        html += '</tr>';
+      }
+      if (parsed.rows.length > 5) html += `<tr><td colspan="${parsed.colLabels.length}" class="text-muted">...${parsed.rows.length - 5} more rows</td></tr>`;
+      html += '</tbody></table></div>';
+      resultDiv.innerHTML = html;
+    } else {
+      resultDiv.innerHTML = '<small class="text-warning">Could not parse as table. Try tab-separated or pipe-separated format.</small>';
+    }
+  } else if (type === "statblock") {
+    const parsed = parseStatblockText(text);
+    let html = '<div class="mt-2"><small class="text-success">Parsed stat block:</small>';
+    html += '<table class="table table-sm table-bordered mt-1" style="font-size:12px"><tbody>';
+    for (const row of parsed.rows.slice(0, 8)) {
+      html += `<tr><td><b>${escHtml(row[0])}</b></td><td>${escHtml(row[1])}</td></tr>`;
+    }
+    if (parsed.rows.length > 8) html += `<tr><td colspan="2" class="text-muted">...${parsed.rows.length - 8} more rows</td></tr>`;
+    if (parsed.traits.length > 0) {
+      html += `<tr><td colspan="2" class="text-muted">${parsed.traits.length} trait(s)/action(s) found</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    resultDiv.innerHTML = html;
   }
-  callback(type);
+}
+
+function parseTableText(text) {
+  // Try tab-separated first, then pipe-separated, then multi-space
+  const lines = text.trim().split("\n").filter(l => l.trim());
+  if (lines.length < 2) return null;
+
+  let separator = null;
+  // Detect separator from first line
+  if (lines[0].includes("\t")) separator = "\t";
+  else if (lines[0].includes("|")) separator = "|";
+  else if (lines[0].match(/  {2,}/)) separator = /  {2,}/;
+
+  if (!separator) {
+    // Try key:value or key=value format (2-column)
+    const kvLines = lines.filter(l => l.match(/^[^:=]+[:=].+/));
+    if (kvLines.length >= lines.length * 0.6) {
+      const rows = [];
+      for (const l of lines) {
+        const m = l.match(/^([^:=]+)[:=]\s*(.*)/);
+        if (m) rows.push([m[1].trim(), m[2].trim()]);
+        else rows.push([l.trim(), ""]);
+      }
+      return { colLabels: ["Attribute", "Value"], rows };
+    }
+    return null;
+  }
+
+  const splitLine = (line) => {
+    if (separator instanceof RegExp) return line.split(separator).map(s => s.trim());
+    return line.split(separator).map(s => s.trim()).filter(s => s !== "");
+  };
+
+  const headerCells = splitLine(lines[0]);
+  if (headerCells.length < 2) return null;
+
+  // Skip separator lines (e.g., "---|---" or "====")
+  let startRow = 1;
+  if (lines[startRow] && lines[startRow].match(/^[\s|=\-:+]+$/)) startRow++;
+
+  const rows = [];
+  for (let i = startRow; i < lines.length; i++) {
+    const cells = splitLine(lines[i]);
+    // Pad or trim to match header count
+    while (cells.length < headerCells.length) cells.push("");
+    rows.push(cells.slice(0, headerCells.length));
+  }
+
+  return { colLabels: headerCells, rows };
+}
+
+function parseStatblockText(text) {
+  // Parse stat block text into key-value rows + traits/actions
+  const lines = text.trim().split("\n").filter(l => l.trim());
+  const rows = [];
+  const traits = [];
+  const knownKeys = [
+    "Type", "Armor Class", "Hit Points", "Speed", "STR", "DEX", "CON",
+    "INT", "WIS", "CHA", "Saving Throws", "Skills", "Damage Resistances",
+    "Damage Immunities", "Condition Immunities", "Senses", "Languages",
+    "Challenge", "Proficiency Bonus", "Damage Vulnerabilities",
+  ];
+
+  let inTraits = false;
+  let currentTrait = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Check if it's a known key-value pair
+    let matched = false;
+    if (!inTraits) {
+      for (const key of knownKeys) {
+        if (trimmed.startsWith(key)) {
+          let value = trimmed.substring(key.length).replace(/^[\s.:]+/, "").trim();
+          // Handle "Armor Class 14 (natural armor)" format
+          if (!value && trimmed.match(new RegExp(`^${key}\\s+(.+)`, "i"))) {
+            value = trimmed.match(new RegExp(`^${key}\\s+(.+)`, "i"))[1];
+          }
+          rows.push([key, value]);
+          matched = true;
+          break;
+        }
+      }
+      // Check for ability score line: "12 (+1) 14 (+2) ..."
+      if (!matched && trimmed.match(/^\d+\s*\([+\-]\d+\)/)) {
+        const scores = trimmed.match(/(\d+)\s*\([+\-]?\d+\)/g);
+        if (scores && scores.length >= 6) {
+          const abilities = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+          for (let i = 0; i < 6 && i < scores.length; i++) {
+            const m = scores[i].match(/(\d+)/);
+            if (m) rows.push([abilities[i], scores[i]]);
+          }
+          matched = true;
+        }
+      }
+    }
+
+    if (!matched) {
+      inTraits = true;
+      // Check if this looks like a trait/action header (bold text followed by period)
+      const traitMatch = trimmed.match(/^([A-Z][^.]+)\.\s*(.*)/);
+      if (traitMatch) {
+        if (currentTrait) traits.push(currentTrait);
+        currentTrait = { name: traitMatch[1].trim(), text: traitMatch[2] || "" };
+      } else if (currentTrait) {
+        currentTrait.text += (currentTrait.text ? " " : "") + trimmed;
+      } else {
+        // Fallback: treat as trait with no name
+        if (currentTrait) traits.push(currentTrait);
+        currentTrait = { name: "", text: trimmed };
+      }
+    }
+  }
+  if (currentTrait) traits.push(currentTrait);
+
+  return { rows, traits };
+}
+
+function confirmAddBlock() {
+  const type = document.getElementById("addBlockType").value;
+  const name = document.getElementById("addBlockName").value.trim();
+  const pasteText = document.getElementById("addBlockPaste").value.trim();
+
+  let newNode;
+
+  switch (type) {
+    case "section":
+      newNode = { type: "section", name: name || "New Section", entries: [] };
+      break;
+    case "entries":
+      newNode = { type: "entries", name: name || "New Heading", entries: [] };
+      break;
+    case "inset":
+      newNode = { type: "inset", name: name || "Sidebar", entries: [] };
+      break;
+    case "insetReadaloud":
+      newNode = { type: "insetReadaloud", entries: pasteText ? pasteText.split("\n").filter(l => l.trim()) : ["Read-aloud text."] };
+      break;
+    case "text":
+      newNode = pasteText || "New paragraph text";
+      break;
+    case "list":
+      newNode = { type: "list", items: ["Item 1"] };
+      break;
+    case "hr":
+      newNode = { type: "hr" };
+      break;
+    case "image":
+      newNode = { type: "image", href: { type: "internal", path: "" }, title: name || "" };
+      break;
+    case "quote":
+      newNode = { type: "quote", entries: pasteText ? pasteText.split("\n").filter(l => l.trim()) : ["Quote text."], by: "", from: "" };
+      break;
+    case "table": {
+      const parsed = pasteText ? parseTableText(pasteText) : null;
+      if (parsed) {
+        newNode = {
+          type: "table",
+          colLabels: parsed.colLabels,
+          colStyles: parsed.colLabels.map(() => ""),
+          rows: parsed.rows,
+        };
+        if (name) newNode.caption = name;
+      } else {
+        newNode = {
+          type: "table",
+          colLabels: ["Column 1", "Column 2"],
+          colStyles: ["", ""],
+          rows: [["", ""]],
+        };
+        if (name) newNode.caption = name;
+      }
+      break;
+    }
+    case "statblock": {
+      const parsed = pasteText ? parseStatblockText(pasteText) : { rows: [], traits: [] };
+      // Build as an entries block with a stat-block table + trait entries
+      const children = [];
+      if (parsed.rows.length > 0) {
+        children.push({
+          type: "table",
+          colLabels: ["Attribute", "Value"],
+          colStyles: ["", ""],
+          rows: parsed.rows,
+        });
+      }
+      for (const trait of parsed.traits) {
+        if (trait.name) {
+          children.push({
+            type: "entries",
+            name: trait.name,
+            entries: trait.text ? [trait.text] : [],
+          });
+        } else if (trait.text) {
+          children.push(trait.text);
+        }
+      }
+      newNode = {
+        type: "entries",
+        name: name || "Stat Block",
+        entries: children.length > 0 ? children : [],
+      };
+      break;
+    }
+    default:
+      newNode = "New paragraph text";
+  }
+
+  // Close modal
+  bootstrap.Modal.getInstance(document.getElementById("addBlockModal")).hide();
+
+  if (_addBlockCallback) {
+    _addBlockCallback(newNode);
+    _addBlockCallback = null;
+  }
 }
 
 // =========================================================================
@@ -1532,10 +1967,7 @@ function renderTags(html) {
 
 // Push current state as an undo checkpoint BEFORE the mutation happens.
 // Call this at the start of every mutating operation.
-let _undoPending = false;
 function pushUndo(action) {
-  if (_undoPending) return; // Prevent re-entrant pushes
-  _undoPending = true;
   const snapshot = JSON.parse(JSON.stringify(state.data));
   // Fire-and-forget persist to server
   fetch("/api/undolog/push", {
@@ -1548,7 +1980,7 @@ function pushUndo(action) {
       state.undoTotal = res.total;
       updateUndoUI();
     }
-  }).catch(() => {}).finally(() => { _undoPending = false; });
+  }).catch(() => {});
 }
 
 // Debounced undo push for text edits — capture state on first keystroke,
