@@ -176,6 +176,39 @@ python3 validate_tags.py adventure.json --fix     # replace in-place with plain 
 
 The known-tag list is derived from `render.js` case statements. Common bad tags produced by Claude: `{@scroll X}` → `{@item scroll of X}`, `{@npc X}` → plain text or `{@creature X}`.
 
+### `extract_monsters.py` — CLI monster extractor
+
+Scans a parsed adventure JSON for embedded stat block tables (entries containing "Armor Class" rows) and sends them to Claude for conversion into 5etools bestiary JSON format. Can be used standalone or as a library (exports `_has_ac_table`, `statblock_to_text`, `SYSTEM_PROMPT`).
+
+```bash
+python3 extract_monsters.py adventure.json                    # extract all stat blocks
+python3 extract_monsters.py adventure.json --dry-run          # list found blocks, no API calls
+python3 extract_monsters.py adventure.json --model claude-sonnet-4-6 --out bestiary.json
+```
+
+Detects two table formats: key-value rows (`["Armor Class", "14"]`) and multi-column (`colLabels: ["Armor Class", "Hit Points", "Speed"]`). Inherits names from parent entries for unnamed stat blocks.
+
+### `monster_editor.py` — monster extraction UI
+
+Flask app (port 5103) for interactive stat block discovery and extraction from a parsed adventure JSON. Imports discovery logic from `extract_monsters.py` and API calls from `claude_api.py`.
+
+```bash
+python3 monster_editor.py [file.json] [--port N]
+# http://localhost:5103
+```
+
+**Features:**
+- Discovers all stat blocks in the adventure JSON with location metadata (data[] index, parent section, AC/HP/CR summary)
+- Each monster row has a **View** link to the 5etools adventure page (`#SOURCE,N,slug`)
+- Editable names, include/exclude checkboxes, expandable raw JSON preview
+- **Extract Selected** sends checked stat blocks to Claude in batches of 5
+- **Merge into existing file** checkbox: appends new monsters to an existing bestiary, replacing same-named entries (for incremental fixes)
+- Progress bar with polling during extraction, download link on completion
+
+**Source ID handling:** The bestiary file gets its own source ID (`{adventure_source}b`, e.g. `TOWORLDSb`) in `_meta.sources` so it doesn't conflict with the adventure file when both are loaded in 5etools. Individual monsters keep `"source": "{adventure_source}"` so `{@creature}` tags in the adventure link correctly.
+
+**Imports from sibling modules:** `extract_monsters.{_has_ac_table, statblock_to_text, SYSTEM_PROMPT}`, `claude_api.call_claude`, `toc_editor.list_json_files`.
+
 ### `find_triggers.py`
 
 Standalone helper for identifying content-filter trigger phrases in rejected chunks. Reads debug input files or stdin, outputs a `triggers.json` for use with `--trigger-config`.
