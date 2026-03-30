@@ -166,6 +166,14 @@ function runConversions() {
   const numRows = lastRow - DATA_START_ROW + 1;
   const data = sheet.getRange(DATA_START_ROW, 1, numRows, COL_STATUS).getValues();
 
+  // Build a set of all doc URLs already in the sheet so folder expansion
+  // doesn't insert duplicates on re-run.
+  const existingUrls = new Set();
+  for (let i = 0; i < data.length; i++) {
+    const u = data[i][COL_URL - 1].toString().trim();
+    if (u) existingUrls.add(normalizeDocUrl(u));
+  }
+
   let converted = 0, skipped = 0, errors = 0;
 
   for (let i = 0; i < data.length; i++) {
@@ -186,16 +194,21 @@ function runConversions() {
         const newRows = [];
         while (docs.hasNext()) {
           const f = docs.next();
-          newRows.push([f.getUrl(), "", "", "", ""]);
+          const docUrl = f.getUrl();
+          // Only add docs that aren't already in the sheet
+          if (!existingUrls.has(normalizeDocUrl(docUrl))) {
+            newRows.push([docUrl, "", "", "", ""]);
+            existingUrls.add(normalizeDocUrl(docUrl));
+          }
         }
 
         if (newRows.length === 0) {
-          setStatus(sheet, rowIndex, "📂 No Docs found in folder", "#fce8b2");
+          setStatus(sheet, rowIndex, "📂 All docs already listed", "#d9ead3");
         } else {
           // Insert new rows after current row and populate them
           sheet.insertRowsAfter(rowIndex, newRows.length);
           sheet.getRange(rowIndex + 1, 1, newRows.length, 5).setValues(newRows);
-          setStatus(sheet, rowIndex, "📂 Expanded (" + newRows.length + " docs)", "#d9ead3");
+          setStatus(sheet, rowIndex, "📂 Expanded (" + newRows.length + " new docs)", "#d9ead3");
           // Extend our loop to cover the newly inserted rows
           data.splice(i + 1, 0, ...newRows);
         }
@@ -278,6 +291,15 @@ function setStatus(sheet, row, message, color) {
 }
 
 // ─── HELPERS: URL / ID ───────────────────────────────────────────────────────
+
+/**
+ * Normalizes a Doc URL to its file ID so we can deduplicate reliably,
+ * regardless of URL format differences (e.g. trailing query params).
+ */
+function normalizeDocUrl(url) {
+  const id = extractDocId(url);
+  return id || url;
+}
 
 /**
  * Extracts a Drive file ID from a Google Docs/Drive URL,
