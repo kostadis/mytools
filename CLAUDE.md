@@ -4,12 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project does
 
-Converts tabletop RPG PDFs (primarily D&D/AD&D sourcebooks and modules) into [5etools](https://5e.tools) homebrew JSON format. Three specialized converters handle different PDF types, wrapped by a Flask web UI.
+Converts tabletop RPG PDFs (primarily D&D/AD&D sourcebooks and modules) into [5etools](https://5e.tools) homebrew JSON format. Six specialized converters handle different PDF types (three original, three TOC-driven), wrapped by a Flask web UI.
 
 ## Running tests
 
 ```bash
-pytest test_pdf_to_5etools.py -v        # converter tests
+pytest test_pdf_to_5etools.py -v        # converter tests (includes validation retry tests)
+pytest test_adventure_model.py -v       # adventure data model tests
+pytest test_pdf_to_5etools_toc.py -v    # TOC-driven converter tests
+pytest test_pdf_to_5etools_ocr_toc.py -v # OCR TOC converter tests
+pytest test_pdf_to_5etools_1e_toc.py -v  # 1e TOC converter tests
 pytest test_adventure_editor.py -v      # adventure editor tests (81 tests)
 pytest test_validate_adventure.py -v    # JSON structure validator (44 tests, includes all official adventures)
 ```
@@ -19,6 +23,8 @@ Tests mock all external dependencies (PyMuPDF, Anthropic API, Tesseract, PIL, pd
 To run a single test:
 ```bash
 pytest test_pdf_to_5etools.py -v -k "test_function_name"
+pytest test_adventure_model.py -v -k "test_function_name"
+pytest test_pdf_to_5etools_toc.py -v -k "test_function_name"
 pytest test_adventure_editor.py -v -k "test_function_name"
 pytest test_validate_adventure.py -v -k "test_function_name"
 ```
@@ -33,12 +39,20 @@ PORT=8080 python3 app.py
 ## Running converters directly
 
 ```bash
+# Original converters (chunk by page count)
 python3 pdf_to_5etools.py input.pdf [options]
 python3 pdf_to_5etools_ocr.py input.pdf [options]
 python3 pdf_to_5etools_1e.py input.pdf [options]
+
+# TOC-driven converters (chunk by PDF bookmarks)
+python3 pdf_to_5etools_toc.py input.pdf [options]
+python3 pdf_to_5etools_ocr_toc.py input.pdf [options]
+python3 pdf_to_5etools_1e_toc.py input.pdf [options]
 ```
 
-Requires `ANTHROPIC_API_KEY` env var or `--api-key KEY`. Default model: `claude-haiku-4-5-20251001` (all three converters). Use `--dry-run` to estimate token cost without making API calls. Use `--batch` (all three scripts) for the Batch API — 50% cheaper but async. Use `--output-mode server` for two-file permanent installs; `--extract-monsters`/`--monsters-only` for stat block extraction. All scripts share a common argument set (see `cli_args.py`). OCR script adds `--dpi N`, `--force-ocr`, `--lang LANG`. 1e script adds `--module-code CODE`, `--system 1e|2e`, `--skip-pages RANGE`, `--no-cr-adjustment`. All scripts support `--no-toc-hint` to skip injecting the PDF bookmark outline into Claude prompts.
+**Original converters:** Require `ANTHROPIC_API_KEY` env var or `--api-key KEY`. Default model: `claude-haiku-4-5-20251001`. Use `--dry-run` to estimate token cost without making API calls. Use `--batch` for the Batch API — 50% cheaper but async. Use `--output-mode server` for two-file permanent installs; `--extract-monsters`/`--monsters-only` for stat block extraction. All scripts share a common argument set (see `cli_args.py`). OCR script adds `--dpi N`, `--force-ocr`, `--lang LANG`. 1e script adds `--module-code CODE`, `--system 1e|2e`, `--skip-pages RANGE`, `--no-cr-adjustment`. All scripts support `--no-toc-hint` to skip injecting the PDF bookmark outline into Claude prompts.
+
+**TOC-driven converters:** Default model: `claude-sonnet-4-6`. Use PDF bookmarks to determine section boundaries, eliminating structural misalignment. Require PDFs with bookmarks (use `--force-toc` to error if none found). Add `--toc-max-level N` to control bookmark depth. Share the same `--batch`, `--dry-run`, `--debug-dir`, `--pages`, `--verbose` options. Output uses the `adventure_model` typed data model with validation during construction.
 
 ## Architecture
 
@@ -57,14 +71,16 @@ Each converter calls the relevant helpers then adds its own unique args:
 
 ### Shared API layer — `claude_api.py`
 
-All three converters delegate Claude API calls to `claude_api.py`, which owns:
+All converters delegate Claude API calls to `claude_api.py`, which owns:
 - `MAX_OUTPUT_TOKENS = 20_000` — single place to change the output token budget
+- `MAX_VALIDATION_RETRIES = 1` — how many times to retry when validation finds structural errors in parsed output
 - `COMMON_TAG_RULES` — shared prompt fragment listing all valid `{@tag}` references; injected into every converter's `SYSTEM_PROMPT` via f-string. Update here when the set of supported 5etools inline tags changes.
 - `COMMON_NESTING_RULES` — shared prompt fragment governing section/entries nesting and `headers[]` content. Rules enforced: (1) `{"type":"section"}` for top-level chapters/locations only; (2) sub-rooms (A1, C3, E7…) go as `{"header": "name", "depth": 1}` objects in `headers[]`, not flat strings; (3) do not repeat the section's own name as a header entry; (4) do not include "Creatures", "Treasure", "Development", stat-block names, or encounter-group names in `headers[]`.
+- `validate_entries(entries, chunk_id)` — validates parsed JSON entries through the `adventure_model` data model; returns list of error messages (empty = valid)
 - `_parse_claude_response` — strips markdown fences, parses JSON, returns `(list, bool)`
 - `_recover_partial_json` — salvages complete entries from truncated/malformed responses
-- `call_claude(client, chunk_text, model, system_prompt, verbose, debug_dir, chunk_id)` — full retry logic: tail retry on `max_tokens` with partial output, split retry on `max_tokens` or `end_turn` with malformed JSON
-- `call_claude_batch(client, chunks, model, system_prompt, verbose, debug_dir)` — submits all chunks as a single Batch API request (50% cheaper, async); polls every 15 s until complete; returns results in chunk order
+- `call_claude(client, chunk_text, model, system_prompt, verbose, debug_dir, chunk_id)` — full retry logic: tail retry on `max_tokens` with partial output, split retry on `max_tokens` or `end_turn` with malformed JSON. After parsing, runs `validate_entries` and retries with a correction prompt if structural errors are found (unknown tags, missing fields, etc.). Controlled by `MAX_VALIDATION_RETRIES`.
+- `call_claude_batch(client, chunks, model, system_prompt, verbose, debug_dir)` — submits all chunks as a single Batch API request (50% cheaper, async); polls every 15 s until complete; returns results in chunk order. Validates all results post-batch and reports errors (no automatic retry in batch mode — re-run without `--batch` to enable retry).
 - `dry_run(client, chunk_texts, chunks, model, system_prompt, use_batch, verbose)` — calls `count_tokens` for every non-empty chunk and prints a cost estimate; no inference
 - `_model_tier(model)` / `_PRICE` — maps model name to haiku/sonnet/opus tier and pricing for cost estimates
 
@@ -77,12 +93,15 @@ Each converter's `call_claude` is a thin wrapper that passes its own `SYSTEM_PRO
 `pdf_utils.py` is a shared library (depends on PyMuPDF, kept separate from `claude_api.py` which has no PDF dependency) that owns:
 - `extract_pdf_toc(pdf_path, max_level=3) -> str | None` — reads the PDF's built-in bookmark outline via `doc.get_toc()` and returns a formatted text block (or `None` if the PDF has no bookmarks). Prepended to every Claude chunk so Claude sees authoritative section names and page numbers. Disable with `--no-toc-hint`.
 - `_decode_pdf_string(text)` — fixes Windows-1252/Mac-Roman characters (smart quotes `\x90`→`'`, curly brackets `\x8d`/`\x8e`→`'`/`'`) that PyMuPDF passes through as raw bytes.
+- `TocNode` — dataclass representing a node in the PDF bookmark tree with computed page ranges. Fields: `level`, `title`, `start_page`, `end_page`, `children`. Properties: `page_count`. Methods: `walk()` (pre-order traversal of self + all descendants).
+- `parse_toc_tree(raw_toc, total_pages, max_level=99) -> list[TocNode]` — converts PyMuPDF `doc.get_toc(simple=True)` output into a tree of `TocNode` objects. Normalises levels (shallowest becomes 1), computes `end_page` for each node (runs until next sibling/uncle starts), and builds parent-child relationships via stack-based algorithm.
+- `get_toc_tree(pdf_path, max_level=99) -> list[TocNode]` — convenience wrapper that opens the PDF, calls `get_toc()`, and delegates to `parse_toc_tree()`. Returns empty list if no bookmarks.
 
 Bookmark levels: L1 = document title (skipped as min-level), L2 = top-level sections, L3 = subsections, L4+ (Treasure, XP Award…) excluded by default.
 
-All three converters import `extract_pdf_toc` from `pdf_utils` (lazy import inside `convert()`). `pdf_to_5etools.py` also re-exports it for backwards compatibility.
+The original converters import `extract_pdf_toc` from `pdf_utils` (lazy import inside `convert()`). The TOC-driven converters import `TocNode`, `get_toc_tree`, and `parse_toc_tree` for structured bookmark access. `pdf_to_5etools.py` also re-exports `extract_pdf_toc` for backwards compatibility.
 
-### Converter pipeline (all three scripts share this structure)
+### Converter pipeline (original converters share this structure)
 
 1. **Text extraction** — PyMuPDF (`fitz`) extracts text with font-size/bold/italic metadata; OCR scripts additionally use Tesseract for image-heavy pages
 2. **Running-header detection** — recurring page headers/footers identified by stream position (first/last block) and bottom-band position across ≥3 pages; completely excluded from annotated text so Claude never sees them
@@ -92,13 +111,66 @@ All three converters import `extract_pdf_toc` from `pdf_utils` (lazy import insi
 6. **Claude pass** — structured prompt returns JSON array of 5etools entry objects; retried automatically on truncation or malformed output
 7. **Post-processing** — chunks merged; stray non-`section` top-level entries hoisted into the preceding section; sequential IDs assigned; TOC synthesised; final JSON written
 
-### The three converters
+### The original converters (page-count chunking)
 
 - **`pdf_to_5etools.py`** — digitally-typeset PDFs with selectable text
 - **`pdf_to_5etools_ocr.py`** — extends standard with Tesseract OCR fallback (<50 chars/page threshold), two-column layout detection, heading inference from character height
 - **`pdf_to_5etools_1e.py`** — 1e/2e AD&D modules; adds keyed-room detection, inline stat block parsing, automatic stat conversion (descending AC → ascending, THAC0 → attack bonus, MV inches → feet, HD → CR), and content filter substitutions via `triggers.json`
 
 All three support `--batch` (Batch API, 50% cheaper, async).
+
+### Typed data model — `adventure_model.py`
+
+Dataclass-based model for constructing and validating 5etools adventure JSON. Used by the TOC-driven converters and by `claude_api.validate_entries()` for validation retry.
+
+**Key classes:**
+- `ValidationMode` (enum) — `WARN` (collect issues) or `STRICT` (raise immediately)
+- `BuildContext` — threaded through all objects; manages validation mode, result collection, duplicate ID detection
+- `EntryBase` — base for all entry types with `type`, `name`, `id`, `page`, context fields
+- Entry types: `SectionEntry`, `EntriesEntry`, `InsetEntry`, `InsetReadaloudEntry`, `QuoteEntry`, `ListEntry`, `TableEntry`, `ImageEntry`, `ItemEntry`, `HrEntry`, `GenericEntry`, `TableGroupEntry`, `FlowchartEntry`, `FlowBlockEntry`, `StatblockEntry`, `SpellcastingEntry`
+- `Meta`, `MetaSource` — document metadata with source validation
+- `TocEntry`, `TocHeader` — table of contents with depth support
+- `AdventureIndex`, `AdventureData` — index and data sections
+- `HomebrewAdventure` — top-level homebrew document builder with `build()` convenience method (auto-assigns IDs, builds TOC)
+- `OfficialAdventureData` — official adventure format
+
+**Key functions:**
+- `validate_tags(text, path, ctx)` — checks `{@tag}` references and brace balance
+- `parse_entry(raw, ctx, path)` — deserialises raw JSON dict to typed entry object
+- `parse_document(raw, ctx)` — detects format (official/homebrew) and parses full document
+
+**Imports from sibling modules:** `validate_adventure.{VALID_ENTRY_TYPES, KNOWN_TAGS, TAG_RE}`.
+
+**Tests:** `pytest test_adventure_model.py -v` (~90 tests covering entry construction, validation modes, serialization round-trips, document parsing, contents/data alignment, ID assignment, TOC building, and integration against official adventure files).
+
+### The TOC-driven converters (bookmark chunking)
+
+Three converters that use PDF bookmarks to determine section boundaries instead of fixed page counts. This eliminates structural misalignment (chapters split mid-content, "Room Key" wrapper entries, TOC/data index drift). Default model: `claude-sonnet-4-6`.
+
+**Architecture (shared by all three):**
+1. **Text extraction** — same as original converters (digital, OCR, or 1e-specific)
+2. **TOC parsing** — `get_toc_tree()` extracts bookmarks into `TocNode` tree with page ranges
+3. **TOC-driven chunking** — `chunk_by_toc()` creates one chunk per top-level bookmark; oversized chapters are split by child bookmarks first, then by page ranges
+4. **Claude pass** — each chunk prompt includes the section's sub-section list from bookmarks; Claude fills `entries[]` for a single chapter (does NOT create top-level sections)
+5. **Assembly** — `assemble_document()` builds `SectionEntry` objects from the `TocNode` tree + Claude results; `build_toc_from_tree()` constructs the TOC from bookmarks (not Claude output)
+
+**Shared functions (in `pdf_to_5etools_toc.py`, reused by OCR and 1e variants):**
+- `extract_chapter_text(pages, start, end)` — extract annotated text for a page range
+- `build_chapter_prompt(node, text)` — build user message with sub-section hints from bookmarks
+- `chunk_by_toc(toc_roots, pages, prompt_builder)` — split into (TocNode, prompt) pairs; handles oversized chapters
+- `assemble_document(toc_roots, results, ctx)` — build `SectionEntry` list from TOC + Claude results
+- `build_toc_from_tree(toc_roots)` — convert PDF bookmarks to `TocEntry` list
+
+**The three TOC-driven converters:**
+- **`pdf_to_5etools_toc.py`** — digitally-typeset PDFs; requires bookmarks
+- **`pdf_to_5etools_ocr_toc.py`** — extends TOC converter with OCR fallback for scanned pages; lazy-imports `pdf_to_5etools_ocr` for extraction
+- **`pdf_to_5etools_1e_toc.py`** — 1e/2e AD&D modules with TOC chunking; applies `_sanitize_text()` and `_neutralize_triggers()` preprocessing; lazy-imports `pdf_to_5etools_1e` for extraction
+
+**Shared CLI options (all three):** `--short-id`, `--author`, `--output-type {adventure|book}`, `--output-dir`/`--out`, `--use-batch`, `--dry-run`, `--debug-dir`, `--pages`, `--page`, `--chunk-size`, `--model`, `--force-toc`, `--toc-max-level N`, `--verbose`. OCR/1e variants add `--dpi`, `--force-ocr`, `--lang`. 1e variant adds `--module-code`, `--system`, `--skip-pages`, `--no-cr-adjustment`, `--trigger-config`.
+
+**Imports from sibling modules:** `adventure_model.*`, `claude_api.{call_claude, call_claude_batch, dry_run}`, `pdf_utils.{TocNode, get_toc_tree, parse_toc_tree}`, plus lazy imports of original converter extraction functions.
+
+**Tests:** `pytest test_pdf_to_5etools_toc.py -v` (~60 tests covering TocNode, TOC parsing, chunking strategies, prompt building, document assembly). `pytest test_pdf_to_5etools_ocr_toc.py -v` (~11 tests). `pytest test_pdf_to_5etools_1e_toc.py -v` (~10 tests).
 
 ### Output modes
 
@@ -307,9 +379,12 @@ CR = table lookup from HD (see hd_to_cr() in pdf_to_5etools_1e.py)
 - `--debug-dir DIR` saves raw chunk I/O for debugging failed conversions.
 - **5etools TOC/data alignment**: `adventure[0].contents[n]` maps to `adventureData[0].data[n]` by direct array index. Every top-level `data[]` entry must be `type: "section"` — non-section entries shift all subsequent chapter navigation by 1. The post-processing hoist step and adventure_editor save guard enforce this automatically.
 - **Structure validation** — run `python3 validate_adventure.py adventure.json` after conversion or editing to catch structural issues (TOC misalignment, unknown tags, missing fields). Validated against all 98 official adventure files.
+- **Validation retry** — `call_claude` automatically validates parsed output through `adventure_model` and retries with a correction prompt if structural errors are found (unknown tags, missing fields, etc.). Controlled by `MAX_VALIDATION_RETRIES` in `claude_api.py`. Batch mode reports errors but does not auto-retry.
 - **Retry logic lives in `claude_api.py`** — do not duplicate it in the individual converters.
 - **Shared prompt fragments live in `claude_api.py`** (`COMMON_TAG_RULES`, `COMMON_NESTING_RULES`) — do not duplicate tag or nesting rules in individual converters.
 - **TOC hint lives in `pdf_utils.py`** (`extract_pdf_toc`, `_decode_pdf_string`) — all converters import from there, not from each other.
+- **Structured TOC lives in `pdf_utils.py`** (`TocNode`, `parse_toc_tree`, `get_toc_tree`) — TOC-driven converters import from there for bookmark-based chunking.
+- **Adventure data model lives in `adventure_model.py`** — typed dataclass model for constructing and validating entries. Used by TOC-driven converters for assembly and by `claude_api.validate_entries()` for validation retry. Tag/entry-type constants come from `validate_adventure.py`.
 - **`{@tag}` validation** — run `python3 validate_tags.py adventure.json` after conversion to catch unknown tags (which cause blank pages in 5etools). Use `--fix` to replace them with plain text in-place.
 - **5etools source ID conflicts** — adventure and bestiary files must use different `_meta.sources[].json` IDs or 5etools treats them as the same homebrew. The monster_editor uses `{source}b` (e.g. `TOWORLDSb`) for bestiary files while keeping individual monsters' `"source"` field pointing to the adventure source so `{@creature}` tags link correctly.
 - **5etools NPC filter** — named NPCs with `isNpc: true` are hidden by default in the bestiary; toggle the "Adventure NPC" filter button to see them.
