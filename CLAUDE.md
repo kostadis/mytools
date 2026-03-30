@@ -10,7 +10,8 @@ Converts tabletop RPG PDFs (primarily D&D/AD&D sourcebooks and modules) into [5e
 
 ```bash
 pytest test_pdf_to_5etools.py -v        # converter tests
-pytest test_adventure_editor.py -v      # adventure editor tests
+pytest test_adventure_editor.py -v      # adventure editor tests (81 tests)
+pytest test_validate_adventure.py -v    # JSON structure validator (44 tests, includes all official adventures)
 ```
 
 Tests mock all external dependencies (PyMuPDF, Anthropic API, Tesseract, PIL, pdf2image) — no API key or system packages required.
@@ -19,6 +20,7 @@ To run a single test:
 ```bash
 pytest test_pdf_to_5etools.py -v -k "test_function_name"
 pytest test_adventure_editor.py -v -k "test_function_name"
+pytest test_validate_adventure.py -v -k "test_function_name"
 ```
 
 ## Running the web UI
@@ -242,18 +244,21 @@ python3 adventure_editor.py [file.json] [--port N]
 **Block types supported:** section, entries, inset, insetReadaloud, list, table, image, quote, hr.
 
 **Features:**
-- Collapsible block tree with color-coded type badges; collapse/expand all, expand to level 1-3
+- Collapsible block tree with row numbers, color-coded type badges; collapse/expand all, expand to level 1-3
 - Click a node to edit inline (buffered edit with Done/Cancel — no live re-rendering while typing)
-- Block operations: move up/down, promote (outdent)/demote (indent) nesting, add sibling/child, delete
+- Block operations: move up/down, promote (outdent)/demote (indent) nesting, add sibling/child, dissolve (remove block, keep children), delete
+- Multi-select: Ctrl+click to toggle, Shift+click for range select; bulk move up/down, promote, demote, dissolve, delete, flag
 - Add block modal with type picker; smart paste for tables (tab/pipe/colon-separated) and stat blocks (auto-parses AC/HP/CR/abilities/traits)
 - Tag toolbar for inserting `{@spell}`, `{@creature}`, `{@dc}`, `{@damage}`, etc. into textareas
+- "Join lines" button on text/quote editors for fixing PDF copy-paste line breaks (handles hyphenated words, preserves paragraph breaks)
 - Preview panel auto-scrolls to selected block with blue highlight
 - Persistent undo/redo log saved to `{filename}.undolog.json`; History dropdown to jump to any state; Ctrl+Z / Ctrl+Shift+Z keyboard shortcuts
-- Save rebuilds IDs and TOC via `fix_adventure_json`, creates `.bak` backup
+- Flag system: `_flags` metadata on entries (1e-stat, review, todo) with colored dots in tree, prev/next navigation, bulk flag/clear
+- Save rebuilds IDs and TOC via `fix_adventure_json`, auto-promotes non-section top-level entries to prevent TOC misalignment, creates `.bak` backup
 
 **Imports from sibling modules:** `toc_editor.list_json_files`, `fix_adventure_json.{assign_ids, reset_ids, build_toc}`.
 
-**Tests:** `pytest test_adventure_editor.py -v` (38 tests covering load, save, undo, move, promote, demote).
+**Tests:** `pytest test_adventure_editor.py -v` (81 tests covering load, save, undo, move, promote, demote, dissolve, bulk operations, flags, join lines, no-pk-in-onclick regression).
 
 ### Module-specific fix scripts
 
@@ -261,6 +266,22 @@ One-shot scripts for fixing structural issues in specific module conversions. No
 
 - **`fix_t14_1e.py`** — fixes Temple of Elemental Evil (T1-4) conversion: dissolves "Room Key" wrappers, promotes dungeon rooms, folds orphaned entries into preceding rooms, rebuilds TOC
 - **`fix_t14_split.py`** — splits a merged T1-4 chapter (Levels Three + Zuggtmoy + Greater Temple) into three proper chapters
+
+### `validate_adventure.py` — adventure JSON structural validator
+
+Validates 5etools adventure JSON structure against patterns from the 98 official adventure data files. Works as both a CLI tool and importable library.
+
+```bash
+python3 validate_adventure.py adventure.json                              # validate one file
+python3 validate_adventure.py *.json                                      # validate multiple
+python3 validate_adventure.py --official-dir ../data/adventure/           # validate official files
+```
+
+**Checks:** top-level structure (official vs homebrew format), `_meta` sources, contents/data alignment (count, names, all-sections), 25 valid entry types, 80+ valid `{@tag}` names (errors on unknown tags which cause blank pages), unbalanced braces, table/list/image structure, ID uniqueness. Errors = must fix, warnings = should review.
+
+**As a library:** `from validate_adventure import validate; result = validate(json_data)` returns a `ValidationResult` with `.errors`, `.warnings`, `.ok`.
+
+**Tests:** `pytest test_validate_adventure.py -v` (44 tests including integration against all 98 official adventure files).
 
 ### `find_triggers.py`
 
@@ -284,7 +305,8 @@ CR = table lookup from HD (see hd_to_cr() in pdf_to_5etools_1e.py)
 - Classic AD&D modules (T1-4, GDQ series, etc.) often trigger content filters in smaller models. Use `--model claude-sonnet-4-6` for reliable conversion.
 - The 1e converter stores the original stat line in `_1e_original` for manual review.
 - `--debug-dir DIR` saves raw chunk I/O for debugging failed conversions.
-- **5etools TOC/data alignment**: `adventure[0].contents[n]` maps to `adventureData[0].data[n]` by direct array index. Every top-level `data[]` entry must be `type: "section"` — non-section entries shift all subsequent chapter navigation by 1. The post-processing hoist step enforces this automatically.
+- **5etools TOC/data alignment**: `adventure[0].contents[n]` maps to `adventureData[0].data[n]` by direct array index. Every top-level `data[]` entry must be `type: "section"` — non-section entries shift all subsequent chapter navigation by 1. The post-processing hoist step and adventure_editor save guard enforce this automatically.
+- **Structure validation** — run `python3 validate_adventure.py adventure.json` after conversion or editing to catch structural issues (TOC misalignment, unknown tags, missing fields). Validated against all 98 official adventure files.
 - **Retry logic lives in `claude_api.py`** — do not duplicate it in the individual converters.
 - **Shared prompt fragments live in `claude_api.py`** (`COMMON_TAG_RULES`, `COMMON_NESTING_RULES`) — do not duplicate tag or nesting rules in individual converters.
 - **TOC hint lives in `pdf_utils.py`** (`extract_pdf_toc`, `_decode_pdf_string`) — all converters import from there, not from each other.

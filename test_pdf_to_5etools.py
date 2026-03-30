@@ -1383,5 +1383,166 @@ class TestOcrBatchModeRouting(unittest.TestCase):
         self.assertIn("use_batch", sig.parameters)
 
 
+# ===========================================================================
+# Tests for validation retry in claude_api
+# ===========================================================================
+
+class TestValidateEntries(unittest.TestCase):
+    """validate_entries runs parsed entries through the adventure model."""
+
+    def test_valid_entries_returns_empty(self):
+        entries = [
+            {"type": "section", "name": "Ch1", "id": "000", "entries": [
+                "A paragraph with {@spell fireball}.",
+                {"type": "entries", "name": "Sub", "id": "001", "entries": ["Text."]},
+            ]},
+        ]
+        errors = _claude_api.validate_entries(entries, "chunk-0000")
+        self.assertEqual(errors, [])
+
+    def test_unknown_tag_detected(self):
+        entries = [
+            {"type": "section", "name": "Ch1", "entries": [
+                "See {@scroll fireball} for details.",
+            ]},
+        ]
+        errors = _claude_api.validate_entries(entries, "chunk-0000")
+        self.assertTrue(any("scroll" in e for e in errors))
+
+    def test_multiple_errors_detected(self):
+        entries = [
+            {"type": "section", "name": "Ch1", "entries": [
+                "Use {@npc Bob} and {@scroll shield}.",
+            ]},
+        ]
+        errors = _claude_api.validate_entries(entries, "chunk-0000")
+        self.assertGreaterEqual(len(errors), 2)
+
+    def test_image_no_href_detected(self):
+        entries = [
+            {"type": "section", "name": "Ch1", "entries": [
+                {"type": "image"},
+            ]},
+        ]
+        errors = _claude_api.validate_entries(entries, "chunk-0000")
+        self.assertTrue(any("href" in e for e in errors))
+
+    def test_valid_tags_pass(self):
+        entries = [
+            {"type": "section", "name": "Ch1", "entries": [
+                "Cast {@spell fireball} at {@creature goblin}. DC {@dc 15}.",
+                {"type": "list", "items": ["{@item sword}", "arrows"]},
+                {"type": "table", "colLabels": ["Spell"], "rows": [["{@spell magic missile}"]]},
+            ]},
+        ]
+        errors = _claude_api.validate_entries(entries, "chunk-0000")
+        self.assertEqual(errors, [])
+
+    def test_empty_entries_returns_empty(self):
+        self.assertEqual(_claude_api.validate_entries([], "chunk-0000"), [])
+
+
+class TestValidationRetry(unittest.TestCase):
+    """call_claude retries when validation finds errors in parsed output."""
+
+    def _make_message(self, text, stop_reason="end_turn"):
+        msg = MagicMock()
+        msg.content = [MagicMock(text=text)]
+        msg.stop_reason = stop_reason
+        return msg
+
+    def test_retry_on_unknown_tag(self):
+        """When output contains unknown tags, call_claude retries with correction prompt."""
+        client = MagicMock()
+
+        # First call returns bad tags, second call returns fixed output
+        bad_response = '[{"type":"section","name":"Ch1","entries":["See {@scroll fireball}."]}]'
+        good_response = '[{"type":"section","name":"Ch1","entries":["See {@item scroll of fireball}."]}]'
+
+        client.messages.create.side_effect = [
+            self._make_message(bad_response),
+            self._make_message(good_response),
+        ]
+
+        result = _claude_api.call_claude(
+            client, "some pdf text", "claude-haiku-4-5",
+            "system prompt", verbose=False, chunk_id="chunk-0000",
+        )
+
+        # Should have called API twice (original + retry)
+        self.assertEqual(client.messages.create.call_count, 2)
+        # Result should be the fixed version
+        self.assertEqual(result[0]["entries"][0], "See {@item scroll of fireball}.")
+
+    def test_no_retry_on_valid_output(self):
+        """When output is valid, no retry happens."""
+        client = MagicMock()
+
+        good_response = '[{"type":"section","name":"Ch1","entries":["Hello."]}]'
+        client.messages.create.return_value = self._make_message(good_response)
+
+        result = _claude_api.call_claude(
+            client, "some pdf text", "claude-haiku-4-5",
+            "system prompt", verbose=False, chunk_id="chunk-0000",
+        )
+
+        self.assertEqual(client.messages.create.call_count, 1)
+        self.assertEqual(result[0]["name"], "Ch1")
+
+    def test_retry_limited_to_max(self):
+        """Validation retry does not loop — only retries MAX_VALIDATION_RETRIES times."""
+        client = MagicMock()
+
+        # Always returns bad tags — should only retry once
+        bad_response = '[{"type":"section","name":"Ch1","entries":["See {@scroll X}."]}]'
+        client.messages.create.return_value = self._make_message(bad_response)
+
+        result = _claude_api.call_claude(
+            client, "some pdf text", "claude-haiku-4-5",
+            "system prompt", verbose=False, chunk_id="chunk-0000",
+        )
+
+        # 1 original + MAX_VALIDATION_RETRIES retries
+        self.assertEqual(client.messages.create.call_count,
+                         1 + _claude_api.MAX_VALIDATION_RETRIES)
+
+    def test_retry_prompt_includes_errors(self):
+        """The correction prompt includes the validation errors."""
+        client = MagicMock()
+
+        bad_response = '[{"type":"section","name":"Ch1","entries":["See {@npc Bob}."]}]'
+        good_response = '[{"type":"section","name":"Ch1","entries":["See Bob."]}]'
+
+        client.messages.create.side_effect = [
+            self._make_message(bad_response),
+            self._make_message(good_response),
+        ]
+
+        _claude_api.call_claude(
+            client, "some pdf text", "claude-haiku-4-5",
+            "system prompt", verbose=False, chunk_id="chunk-0000",
+        )
+
+        # Check the retry message includes the error text
+        retry_call = client.messages.create.call_args_list[1]
+        retry_content = retry_call[1]["messages"][0]["content"]
+        self.assertIn("validation errors", retry_content)
+        self.assertIn("npc", retry_content)
+
+    def test_no_retry_on_empty_result(self):
+        """Empty results don't trigger validation retry."""
+        client = MagicMock()
+        # Return something that parses to empty
+        client.messages.create.return_value = self._make_message("[]")
+
+        result = _claude_api.call_claude(
+            client, "some pdf text", "claude-haiku-4-5",
+            "system prompt", verbose=False, chunk_id="chunk-0000",
+        )
+
+        self.assertEqual(client.messages.create.call_count, 1)
+        self.assertEqual(result, [])
+
+
 if __name__ == "__main__":
     unittest.main()

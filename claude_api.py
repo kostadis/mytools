@@ -16,6 +16,8 @@ from typing import Any
 
 import anthropic
 
+from adventure_model import BuildContext, ValidationMode, parse_entry
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -48,6 +50,23 @@ would navigate to. Rules for headers[]:
   - Do NOT include generic sub-headings: "Creatures", "Treasure", "Development", \
 "Trap", "Hazard", "Tactics", "Morale", "Reward", or stat-block / NPC / \
 encounter-group names (e.g. "Klaven Shocktroopers (2)", "Maulvorge")."""
+
+MAX_VALIDATION_RETRIES = 1   # how many times to retry when validation finds errors
+
+
+# ---------------------------------------------------------------------------
+# Entry validation helper
+# ---------------------------------------------------------------------------
+
+def validate_entries(entries: list[Any], chunk_id: str = "") -> list[str]:
+    """Validate a list of parsed JSON entries through the adventure model.
+
+    Returns a list of error messages (empty = valid).
+    """
+    ctx = BuildContext(mode=ValidationMode.WARN)
+    for i, entry in enumerate(entries):
+        parse_entry(entry, ctx, f"{chunk_id}[{i}]" if chunk_id else f"[{i}]")
+    return ctx.result.errors
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +143,8 @@ def _parse_claude_response(raw: str, verbose: bool,
 def call_claude(client: anthropic.Anthropic, chunk_text: str,
                 model: str, system_prompt: str, verbose: bool,
                 debug_dir: Path | None = None,
-                chunk_id: str = "chunk-0000") -> list[Any]:
+                chunk_id: str = "chunk-0000",
+                _retry_count: int = 0) -> list[Any]:
     """Send *chunk_text* to Claude and return a parsed JSON list of entries.
 
     Handles two truncation scenarios automatically:
@@ -207,6 +227,33 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
         if not debug_dir:
             print("    [TIP]  Re-run with --debug-dir DIR to save full API responses.",
                   flush=True)
+
+    # --- Validation retry: check parsed entries for structural errors --------
+    if result and _retry_count < MAX_VALIDATION_RETRIES:
+        errors = validate_entries(result, chunk_id)
+        if errors:
+            print(f"    [VALIDATE] {chunk_id}: {len(errors)} validation error(s) — "
+                  f"retrying with corrections...", flush=True)
+            for e in errors[:5]:
+                print(f"      {e}", flush=True)
+            if len(errors) > 5:
+                print(f"      ... and {len(errors) - 5} more", flush=True)
+
+            correction_prompt = (
+                f"{chunk_text}\n\n"
+                f"---\n"
+                f"Your previous response had the following validation errors:\n"
+                + "\n".join(f"- {e}" for e in errors) +
+                f"\n\nPlease fix these errors and return the corrected JSON array."
+            )
+            if debug_dir:
+                (debug_dir / f"{chunk_id}-validation-errors.txt").write_text(
+                    "\n".join(errors), encoding="utf-8"
+                )
+            result = call_claude(client, correction_prompt, model, system_prompt,
+                                  verbose, debug_dir=debug_dir,
+                                  chunk_id=f"{chunk_id}-fix",
+                                  _retry_count=_retry_count + 1)
 
     return result
 
@@ -311,10 +358,25 @@ def call_claude_batch(
     ordered = [results_map.get(f"chunk-{i:04d}", []) for i in range(len(chunks))]
 
     print(f"\n  Chunk results summary:", flush=True)
+    total_validation_errors = 0
     for i, entries in enumerate(ordered):
         cid = f"chunk-{i:04d}"
         flag = "  ← EMPTY — check debug files" if not entries else ""
+        # Validate entries
+        if entries:
+            errors = validate_entries(entries, cid)
+            if errors:
+                flag = f"  ← {len(errors)} validation error(s)"
+                total_validation_errors += len(errors)
+                if debug_dir:
+                    (debug_dir / f"{cid}-validation-errors.txt").write_text(
+                        "\n".join(errors), encoding="utf-8"
+                    )
         print(f"    {cid}: {len(entries)} entries{flag}", flush=True)
+    if total_validation_errors:
+        print(f"\n  [VALIDATE] {total_validation_errors} total validation error(s) across "
+              f"batch results. Re-run without --batch to enable automatic retry.",
+              flush=True)
     print(flush=True)
 
     return ordered
