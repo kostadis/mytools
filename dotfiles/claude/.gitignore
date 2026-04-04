@@ -1,0 +1,13 @@
+# Credentials
+.credentials.json
+
+# Runtime / ephemeral data
+backups/
+cache/
+file-history/
+history.jsonl
+paste-cache/
+projects/
+sessions/
+shell-snapshots/
+plans/

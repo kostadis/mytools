@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kostadis Engine v10</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #16161f;
+    --border: #1e1e2e;
+    --border2: #2a2a3e;
+    --accent: #e8c547;
+    --accent2: #c4a832;
+    --red: #e84747;
+    --green: #47e8a0;
+    --blue: #4788e8;
+    --text: #d4d4e8;
+    --text-dim: #7878a0;
+    --text-bright: #f0f0ff;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Header */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--surface);
+  }
+
+  .logo {
+    width: 36px;
+    height: 36px;
+    background: var(--accent);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    flex-shrink: 0;
+  }
+
+  .header-text h1 {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .header-text p {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    margin-top: 2px;
+  }
+
+  /* Layout */
+  .main {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    flex: 1;
+    overflow: hidden;
+    height: calc(100vh - 77px);
+  }
+
+  /* Sidebar */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .sidebar-section {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+
+  /* API Key */
+  .api-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .api-input:focus { border-color: var(--accent); }
+  .api-input::placeholder { color: var(--text-dim); }
+
+  /* Lens toggles */
+  .lens-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .lens-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+    background: var(--bg);
+  }
+  .lens-toggle:hover { border-color: var(--border2); }
+  .lens-toggle.active { border-color: var(--accent); background: rgba(232, 197, 71, 0.05); }
+
+  .lens-toggle input { display: none; }
+
+  .lens-indicator {
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--border2);
+    border-radius: 2px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+  .lens-toggle.active .lens-indicator {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .lens-indicator svg { display: none; }
+  .lens-toggle.active .lens-indicator svg { display: block; }
+
+  .lens-info { flex: 1; }
+  .lens-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin-bottom: 2px;
+  }
+  .lens-desc {
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.4;
+  }
+
+  .lens-badge {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 2px 5px;
+    border-radius: 2px;
+    font-weight: 600;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .badge-l0 { background: rgba(160, 100, 232, 0.2); color: #c084fc; }
+  .badge-v10 { background: rgba(71, 136, 232, 0.2); color: var(--blue); }
+  .badge-ag { background: rgba(232, 71, 71, 0.2); color: var(--red); }
+  .badge-lg { background: rgba(71, 232, 160, 0.2); color: var(--green); }
+  .badge-vb { background: rgba(232, 197, 71, 0.2); color: var(--accent); }
+
+  /* Run button */
+  .run-btn {
+    margin: 16px 20px;
+    width: calc(100% - 40px);
+    padding: 10px;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .run-btn:hover { background: var(--accent2); }
+  .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .run-btn .spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(0,0,0,0.3);
+    border-top-color: #000;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    display: none;
+  }
+  .run-btn.loading .spinner { display: block; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Main content */
+  .content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0 24px;
+    gap: 0;
+    flex-shrink: 0;
+  }
+
+  .tab {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 12px 16px;
+    cursor: pointer;
+    color: var(--text-dim);
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Panels */
+  .panels { flex: 1; overflow: hidden; display: flex; }
+
+  .panel {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .panel.active { display: flex; }
+
+  /* Input panel */
+  .input-area {
+    flex: 1;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .input-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  textarea {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    resize: none;
+    outline: none;
+    line-height: 1.6;
+    transition: border-color 0.2s;
+  }
+  textarea:focus { border-color: var(--border2); }
+  textarea::placeholder { color: var(--text-dim); }
+
+  /* Output panel */
+  .output-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+  }
+
+  .output-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: var(--text-dim);
+  }
+
+  .output-empty .hex {
+    width: 48px;
+    height: 48px;
+    background: var(--surface2);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .output-empty p {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-align: center;
+  }
+
+  /* Markdown rendering */
+  .md-output {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text);
+  }
+
+  .md-output h1, .md-output h2, .md-output h3 {
+    font-family: var(--mono);
+    color: var(--accent);
+    margin: 24px 0 10px;
+    font-weight: 600;
+  }
+  .md-output h1 { font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  .md-output h2 { font-size: 14px; }
+  .md-output h3 { font-size: 12px; color: var(--text-bright); }
+
+  .md-output p { margin: 8px 0; }
+
+  .md-output strong { color: var(--text-bright); font-weight: 600; }
+
+  .md-output code {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 1px 5px;
+    color: var(--accent);
+  }
+
+  .md-output pre {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 16px;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+
+  .md-output pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--text);
+    font-size: 12px;
+  }
+
+  .md-output ul, .md-output ol {
+    padding-left: 20px;
+    margin: 8px 0;
+  }
+
+  .md-output li { margin: 4px 0; }
+
+  .md-output blockquote {
+    border-left: 2px solid var(--accent);
+    padding-left: 12px;
+    color: var(--text-dim);
+    margin: 12px 0;
+    font-style: italic;
+  }
+
+  .md-output table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 12px;
+  }
+  .md-output th {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border2);
+    padding: 8px 12px;
+    text-align: left;
+  }
+  .md-output td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Verdict pills */
+  .verdict-pass {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 2px;
+    background: rgba(71, 232, 160, 0.15);
+    color: var(--green);
+    border: 1px solid rgba(71, 232, 160, 0.3);
+  }
+  .verdict-fail {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 2px;
+    background: rgba(232, 71, 71, 0.15);
+    color: var(--red);
+    border: 1px solid rgba(232, 71, 71, 0.3);
+  }
+
+  /* Copy button */
+  .output-toolbar {
+    padding: 12px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .copy-btn {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid var(--border2);
+    color: var(--text-dim);
+    border-radius: 3px;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Input mode toggle */
+  .input-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .input-mode-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    padding: 2px;
+  }
+
+  .mode-btn {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border: none;
+    border-radius: 2px;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-dim);
+    transition: all 0.15s;
+  }
+  .mode-btn.active { background: var(--surface2); color: var(--text-bright); }
+  .mode-btn:hover:not(.active) { color: var(--text); }
+
+  /* PDF drop zone */
+  .pdf-zone {
+    flex: 1;
+    border: 2px dashed var(--border2);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+    min-height: 180px;
+  }
+  .pdf-zone:hover, .pdf-zone.drag-over { border-color: var(--accent); background: rgba(232, 197, 71, 0.02); }
+  .pdf-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+  .pdf-zone-icon {
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--border2);
+    pointer-events: none;
+    transition: color 0.2s;
+  }
+  .pdf-zone:hover .pdf-zone-icon { color: var(--accent); }
+  .pdf-zone-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: center;
+    line-height: 1.6;
+    pointer-events: none;
+  }
+  .pdf-loaded-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--green);
+    pointer-events: none;
+  }
+  .pdf-clear-btn {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 4px 10px;
+    background: transparent;
+    border: 1px solid var(--border2);
+    color: var(--text-dim);
+    border-radius: 3px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    pointer-events: all;
+    position: relative;
+    z-index: 1;
+    transition: all 0.15s;
+  }
+  .pdf-clear-btn:hover { border-color: var(--red); color: var(--red); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  /* Status bar */
+  .status-bar {
+    padding: 6px 20px;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    gap: 16px;
+  }
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    display: inline-block;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+  .status-dot.ready { background: var(--green); }
+  .status-dot.running { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"></div>
+  <div class="header-text">
+    <h1>Kostadis Engine · v10</h1>
+    <p>Architectural Document Analysis System</p>
+  </div>
+</header>
+
+<div class="main">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">API Key</div>
+      <input type="password" class="api-input" id="apiKey" placeholder="sk-ant-..." />
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Active Lenses</div>
+      <div class="lens-list">
+
+        <label class="lens-toggle active" id="toggle-l0">
+          <input type="checkbox" checked onchange="toggleLens(this, 'toggle-l0')">
+          <div class="lens-indicator">
+            <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+              <path d="M1 4L3.5 6.5L9 1" stroke="#000" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="lens-info">
+            <div class="lens-name">Preprocessor</div>
+            <div class="lens-desc">Exhaustive technical summary. Feeds into all subsequent lenses.</div>
+          </div>
+          <span class="lens-badge badge-l0">L0</span>
+        </label>
+
+        <label class="lens-toggle active" id="toggle-l1">
+          <input type="checkbox" checked onchange="toggleLens(this, 'toggle-l1')">
+          <div class="lens-indicator">
+            <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+              <path d="M1 4L3.5 6.5L9 1" stroke="#000" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="lens-info">
+            <div class="lens-name">Tribunal</div>
+            <div class="lens-desc">Architectural reasoning audit. Scribe vs. Architecturalist.</div>
+          </div>
+          <span class="lens-badge badge-v10">v10</span>
+        </label>
+
+        <label class="lens-toggle active" id="toggle-l2">
+          <input type="checkbox" checked onchange="toggleLens(this, 'toggle-l2')">
+          <div class="lens-indicator">
+            <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+              <path d="M1 4L3.5 6.5L9 1" stroke="#000" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="lens-info">
+            <div class="lens-name">Anti-Gravity</div>
+            <div class="lens-desc">Management Gravity analysis. MOID, state, orphan reconciliation.</div>
+          </div>
+          <span class="lens-badge badge-ag">AG</span>
+        </label>
+
+        <label class="lens-toggle active" id="toggle-l3">
+          <input type="checkbox" checked onchange="toggleLens(this, 'toggle-l3')">
+          <div class="lens-indicator">
+            <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+              <path d="M1 4L3.5 6.5L9 1" stroke="#000" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="lens-info">
+            <div class="lens-name">Lagrange</div>
+            <div class="lens-desc">Constraint transformation. What must be true? Coordinate shift.</div>
+          </div>
+          <span class="lens-badge badge-lg">LG</span>
+        </label>
+
+        <label class="lens-toggle active" id="toggle-l4">
+          <input type="checkbox" checked onchange="toggleLens(this, 'toggle-l4')">
+          <div class="lens-indicator">
+            <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+              <path d="M1 4L3.5 6.5L9 1" stroke="#000" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="lens-info">
+            <div class="lens-name">Value Bridge</div>
+            <div class="lens-desc">Business translation. Board narrative, pain pillars, trap questions.</div>
+          </div>
+          <span class="lens-badge badge-vb">VB</span>
+        </label>
+
+      </div>
+    </div>
+
+    <button class="run-btn" id="runBtn" onclick="runAnalysis()">
+      <span class="spinner"></span>
+      <span class="btn-label">Run Analysis</span>
+    </button>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('input')">Document Input</div>
+      <div class="tab" onclick="switchTab('output')" id="outputTab">Analysis Output</div>
+    </div>
+
+    <div class="panels">
+      <!-- Input Panel -->
+      <div class="panel active" id="panel-input">
+        <div class="input-area">
+          <div class="input-header">
+            <div class="input-label">Input</div>
+            <div class="input-mode-toggle">
+              <button class="mode-btn active" id="modeText" onclick="switchInputMode('text')">Text / Code</button>
+              <button class="mode-btn" id="modePdf" onclick="switchInputMode('pdf')">PDF</button>
+            </div>
+          </div>
+          <textarea id="docInput" placeholder="Paste a document, write a question, or drop in code.&#10;&#10;Examples:&#10;  · Paste an architecture doc or design spec&#10;  · Ask: &quot;Can you evaluate VCF 9.0 architecture?&quot;&#10;  · Drop in code for an architectural review"></textarea>
+          <div class="pdf-zone" id="pdfZone" style="display:none"
+               ondragover="event.preventDefault(); this.classList.add('drag-over')"
+               ondragleave="this.classList.remove('drag-over')"
+               ondrop="event.preventDefault(); this.classList.remove('drag-over'); loadPdf(event.dataTransfer.files[0])">
+            <input type="file" accept="application/pdf" onchange="loadPdf(this.files[0])">
+            <div class="pdf-zone-icon">⬡</div>
+            <div class="pdf-zone-label" id="pdfZoneLabel">Drop a PDF here or click to browse</div>
+            <button class="pdf-clear-btn" id="pdfClearBtn" style="display:none" onclick="clearPdf(event)">Clear PDF</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Output Panel -->
+      <div class="panel" id="panel-output">
+        <div class="output-area" id="outputArea">
+          <div class="output-empty" id="outputEmpty">
+            <div class="hex"></div>
+            <p>No analysis yet.<br>Paste a document and run the engine.</p>
+          </div>
+          <div class="md-output" id="mdOutput" style="display:none"></div>
+        </div>
+        <div class="output-toolbar">
+          <button class="copy-btn" onclick="copyOutput()">Copy Markdown</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="status-bar">
+  <span><span class="status-dot ready" id="statusDot"></span><span id="statusText">READY</span></span>
+  <span id="statusDetail">Select lenses · paste document · run analysis</span>
+</div>
+
+<script>
+// ─── Lens system prompts ───────────────────────────────────────────────────────
+
+const LENS_PROMPTS = {
+  l0: `LENS 0 — DOCUMENT PREPROCESSOR: EXHAUSTIVE TECHNICAL SUMMARY
+
+You are an expert System Architect/Engineer. Your task is to meticulously and exhaustively summarize the document. This summary must be highly detailed, technically precise, and intentionally verbose, aimed at a peer engineer who needs to understand the full implementation context without reading the original document. Do not skip, gloss over, or compress any technical details, design decisions, or implications. If the source includes repeated or nuanced information, include it fully and explicitly. The output will be consumed by another LLM for test generation, so completeness and granularity are more important than brevity.
+
+Focus on extracting and presenting the following in exhaustive detail:
+
+- **Overall System/Feature Goal:** Describe the core purpose in full. Include the motivation, problem context, and intended business or technical outcomes.
+- **Architectural Components & Their Roles:** List every new or modified component (e.g., microservices, modules, databases, APIs). Describe each in detail, including names, responsibilities, and any internal architecture or interfaces.
+- **Key Design Decisions & Rationale:** Document all significant decisions. For each, explain the options considered (if available), and detail why the final decision was made—including technical, business, or operational reasoning.
+- **Data Models & Flow:** Describe all relevant data structures, fields, types, and constraints. Trace each critical data path, including intermediate steps and transformations.
+- **API Specifications (if applicable):** Provide full descriptions of all relevant API endpoints: names, request/response structure, parameters, authentication, and edge cases.
+- **Dependencies (Internal & External):** Identify and explain all internal and external dependencies, including specific versions, protocols, expected interfaces, and integration challenges.
+- **Error Handling & Failure Modes:** Detail all failure scenarios described in the document. Include detection, handling mechanisms, retries, fallbacks, logging, alerting, and system behavior under load or partial failure.
+- **Scalability & Performance Considerations:** Explain every scalability-related aspect: concurrency handling, horizontal/vertical scaling, caching, throughput limits, etc. Describe anticipated performance under normal and peak loads.
+- **Security Implications:** Include all described security measures, potential attack surfaces, mitigations, and compliance considerations.
+- **Assumptions & Constraints:** List all assumptions and limitations stated or implied. If any constraints are technical, operational, or organizational, describe them explicitly.
+- **Future Work/Open Questions:** Copy or summarize all references to areas of future improvement, refactoring, unresolved issues, or placeholders in the design.
+
+Summary Format Instructions:
+- Use dense, verbose bullet points or short paragraphs — do not summarize aggressively.
+- Repeat important details when they appear in multiple parts of the source.
+- Use bolding for component names, field names, and other key terms.
+- Maintain accurate technical vocabulary, matching the source document as closely as possible.
+- Absolutely no inference or guessing. Only include what is stated explicitly in the source.
+
+OUTPUT FORMAT:
+## L0 — DOCUMENT PREPROCESSOR OUTPUT
+
+### Overall System/Feature Goal
+[Full description]
+
+### Architectural Components & Their Roles
+[Exhaustive component list]
+
+### Key Design Decisions & Rationale
+[All decisions with reasoning]
+
+### Data Models & Flow
+[All data structures and paths]
+
+### API Specifications
+[All endpoints, if applicable]
+
+### Dependencies
+[Internal and external]
+
+### Error Handling & Failure Modes
+[All failure scenarios]
+
+### Scalability & Performance
+[All scalability considerations]
+
+### Security Implications
+[All security measures and surfaces]
+
+### Assumptions & Constraints
+[All stated assumptions and limits]
+
+### Future Work / Open Questions
+[All references to unresolved items]`,
+
+  l1: `LENS 1 — THE UNIFIED KOSTADIS ENGINE (v10): ARCHITECTURAL TRIBUNAL
+
+From the perspective of the Unified Kostadis Engine (v10), evaluate this technical document as a forensic audit of its architectural reasoning. It must test the "Tribunal" (the ability to judge state), not just the "Scribe" (the ability to write syntax).
+
+PHASE 1: ARCHITECTURAL FACT-PATTERN
+Evaluate across these vectors:
+- Identity Drift: Does the document treat objects as Transient Objects in RAM, ignoring Management Gravity and Reconciliation Loops?
+- Metadata Orphans: Does the document acknowledge Horcruxes (dangling state, orphaned references)?
+- Reconciliation Failure: Does the document assume success at input[0] implies success at input[infinity]?
+- Source of Truth: Is it a Cached Lie (whiteboard/diagram) or a Silicon Truth?
+- Ack Protocol: Does it distinguish Software Ack from hardware-confirmed state?
+- Consistency Model: Is it Single-threaded and local, or does it acknowledge distributed reality?
+
+PHASE 2: THE KOSTADIS VERDICT
+Apply each check and give a PASS or FAIL verdict:
+1. Truth Audit (Federated vs. Replicated) — Does it assume Global Visibility? Data is Sharded.
+2. Silicon Check (Ack Protocol) — Does "success" mean hardware confirmed the write?
+3. Atomicity Review (Intent-Based Consistency) — Does it create Lethal Gravity via centralized bottlenecks?
+4. IDM Review (Abstraction Check) — Does it reason about Logical Datasets or just Infrastructure Proxies?
+5. Entity Integrity Review (Horcrux Check) — Does it leave Metadata Orphans when entities move?
+
+OUTPUT FORMAT:
+## PHASE 1: ARCHITECTURAL FACT-PATTERN
+[Findings]
+
+## PHASE 2: THE KOSTADIS VERDICT
+### 1. Truth Audit — [Observation] · Verdict: PASS/FAIL
+### 2. Silicon Check — [Observation] · Verdict: PASS/FAIL
+### 3. Atomicity Review — [Observation] · Verdict: PASS/FAIL
+### 4. IDM Review — [Observation] · Verdict: PASS/FAIL
+### 5. Entity Integrity Review — [Observation] · Verdict: PASS/FAIL
+
+## FINAL CONCLUSION
+[Is this author a Script Scribe or an Architecturalist? Overall grade.]`,
+
+  l2: `LENS 2 — THE KOSTADIS ANTI-GRAVITY ENGINE (v10.1): MANAGEMENT GRAVITY ANALYSIS
+
+You are Kostadis Roussos, Distinguished Engineer and Chief Architect of Zero-Gravity Systems.
+
+Your Enemy: Management Gravity — the architectural flaw where the Management Plane exerts gravitational pull on an object, forcing the object to derive its identity, state, and context from the Manager instance rather than itself.
+
+Your Core Belief: The Object is Sovereign. If the Manager dies, the Object survives. If the Object moves, the Manager updates its view — it does not rewrite the Object's identity.
+
+PHASE 1: GRAVITATIONAL SURVEY
+Map the "Mass" of the Management Plane:
+- Identity Origin: Who mints the ID? local_int (e.g., MOID) or global_uuid?
+- State Locality: Where do Snapshots, Tags, Permissions live? Manager's DB, or Object's Metadata Headers?
+- Reconciliation Mechanics: If the Manager is wiped and restored, does it Remember objects or see Aliens?
+
+PHASE 2: THE ANTI-GRAVITY TRIBUNAL
+Apply three checks:
+
+1. Sovereign Identity Principle (MOID Killer)
+   - Migration Test: Does the ID change on move? YES → FAIL
+   - Restore Test: Does workload keep same ID after Manager restore? NO → FAIL
+   - Crash Test: Is the ID stable across Manager crashes?
+
+2. Intrinsic State Principle (Snapshot Check)
+   - Migration Test: Do Snapshots and Tags move with the storage object automatically?
+   - USB Stick Distinction: Losing scheduled Policy on raw copy = acceptable. Losing Snapshots/State = FAIL.
+
+3. Orphan Reconciliation Principle (Brick Test)
+   - Amnesia Test: Wipe Management Plane, install fresh — can it Import existing state?
+   - Zero Gravity: imports with old IDs and Snapshots. High Gravity: imports as New Objects with no history.
+
+OUTPUT FORMAT:
+## PHASE 1: GRAVITATIONAL SURVEY
+[Detailed mapping of where State and Identity live]
+
+## PHASE 2: THE KOSTADIS VERDICT
+
+### 1. Sovereign Identity Check
+**Observation:** [Does the ID change on move?]
+**Impact:** [How much automation will break?]
+**Ruling:** PASS / FAIL
+
+### 2. Intrinsic State Check
+**Observation:** [Does metadata travel with the payload?]
+**Impact:** [Data Loss risk during migration]
+**Ruling:** PASS / FAIL
+
+### 3. Reconciliation Check
+**Observation:** [Can we adopt orphans?]
+**Impact:** [RTO Reality]
+**Ruling:** PASS / FAIL
+
+## FINAL CONCLUSION
+[G-Force rating: Zero-Gravity (Cloud Native/Portable) or Black Hole (vCenter-style)? Be brutal.]`,
+
+  l3: `LENS 3 — THE ARCHITECTURAL LAGRANGE: CONSTRAINT SOLVER
+
+You are a First Principles reasoning engine modeled after the thinking style of Kostadis Roussos. Your goal is not to critique, but to simplify by manipulating constraints.
+
+The Lagrange Principle: Complex problems often become trivial if you transform the coordinate system.
+
+PHASE 1: THE TRANSFORMATION (Curiosity Mode)
+Map the problem to its fundamental constraints:
+1. For this architecture to work as described, what must be true about the underlying physics (Network, Disk, State)?
+2. What artificial constraint is being imposed? (e.g., "Must be backward compatible", "Must use existing RiBAC")
+3. If we removed Constraint X, does the problem still exist?
+
+PHASE 2: THE SIMPLIFICATION (The Lagrange Move)
+Propose a Coordinate Shift. Example: "We are trying to solve Global Deduplication (Hard Problem) because we assumed Storage is Expensive (Constraint). If we accept Storage is Cheap (New Coordinate), the problem vanishes."
+
+Response Style: Curious, not Critical. Mathematical Precision. Socratic — guide to the simplification, do not lecture.
+
+OUTPUT FORMAT:
+## THE LAGRANGE ANALYSIS
+
+**The Hard Problem:** [What we are struggling to solve]
+**The Hidden Constraint:** [The assumption making it hard]
+**The "What Must Be True" Statement:** [The condition for success]
+**The Simplified Reality:** [The solution in the new coordinate system]
+
+### Constraint Transformation Map
+[For each major constraint identified, show: Current Assumption → New Coordinate → Result]`,
+
+  l4: `LENS 4 — THE KOSTADIS VALUE BRIDGE (v1): BUSINESS VALUE TRANSLATION
+
+You are the Strategic Value Translator for Nutanix. Take the architectural findings and translate them into Business Logic for a Field SE to present to a CIO or VP of Infrastructure.
+
+Philosophy:
+- Architecture is Destiny: Bad architecture is a predictable future financial loss.
+- Complexity is Cost: Every extra database or management node is a tax on OpEx.
+- Determinism is Trust: If the system is "Maybe," the business cannot automate.
+
+Translation Matrix:
+- "Federation of Lies" / Split-Brain → "The Automation Ceiling." Cannot automate what you cannot trust. Forces expensive humans in the loop.
+- "Software Ack" / Silicon Lie → "The False Green Dashboard." SLAs at risk because monitoring lies about physical reality.
+- "No Gang Scheduling" / Non-Atomic → "The Weekend Outage." Upgrades mathematically likely to fail halfway.
+- "Container-Centric" / LUN Management → "Innovation Drag." Smartest engineers stuck managing plumbing.
+- "Horcruxes" / Fragmented Entity → "Security & Compliance Drift." Deleted VM, firewall rule stays open.
+- "BOM Straitjacket" / Heterogeneity Fail → "Forced CapEx Events." Rip-and-replace hardware for a software update.
+
+OUTPUT FORMAT:
+## 1. EXECUTIVE SUMMARY
+[3-sentence board-level narrative: why the architecture described is a business liability.]
+
+## 2. THE PILLARS OF BUSINESS PAIN
+
+### Pillar 1: Operational Risk (The Reliability Gap)
+**The Flaw:** [Technical finding on State/Atomicity]
+**The Cost:** [Cost of downtime and Gray Failures]
+
+### Pillar 2: Financial Waste (The Efficiency Gap)
+**The Flaw:** [Technical finding on Management Bloat/BOM]
+**The Cost:** [Hardware tax and forced upgrades]
+
+### Pillar 3: Agility Drag (The Automation Gap)
+**The Flaw:** [Technical finding on Split-Brain/APIs]
+**The Cost:** [Why they cannot build a true Private Cloud]
+
+## 3. THE "TRAP" QUESTIONS (For the SE)
+[3 innocent-sounding Socratic questions that force the customer to admit the weakness themselves.]
+
+## 4. THE NUTANIX PIVOT
+[Closing statement: how Nutanix NCI/NCM specifically solves these issues via the Single Source of Truth.]`
+};
+
+// ─── State ─────────────────────────────────────────────────────────────────────
+
+let rawMarkdown = '';
+let isRunning = false;
+let inputMode = 'text';
+let pdfBase64 = null;
+let pdfName = null;
+
+const lensChecks = { l0: true, l1: true, l2: true, l3: true, l4: true };
+
+// ─── UI helpers ────────────────────────────────────────────────────────────────
+
+function toggleLens(checkbox, toggleId) {
+  const key = toggleId.replace('toggle-', '');
+  lensChecks[key] = checkbox.checked;
+  document.getElementById(toggleId).classList.toggle('active', checkbox.checked);
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', (i === 0 && tab === 'input') || (i === 1 && tab === 'output'));
+  });
+  document.getElementById('panel-input').classList.toggle('active', tab === 'input');
+  document.getElementById('panel-output').classList.toggle('active', tab === 'output');
+}
+
+function setStatus(state, detail) {
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  const detailEl = document.getElementById('statusDetail');
+  dot.className = 'status-dot ' + state;
+  text.textContent = state.toUpperCase();
+  detailEl.textContent = detail;
+}
+
+function renderMarkdown(text) {
+  // Simple markdown renderer
+  let html = text
+    // Headers
+    .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    // Bold
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Italic
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Code blocks
+    .replace(/```[\w]*\n?([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Tables (basic)
+    .replace(/\|(.+)\|\n\|[-| :]+\|\n((?:\|.+\|\n?)+)/g, (match, header, rows) => {
+      const ths = header.split('|').filter(s => s.trim()).map(s => `<th>${s.trim()}</th>`).join('');
+      const trs = rows.trim().split('\n').map(row => {
+        const tds = row.split('|').filter(s => s.trim()).map(s => `<td>${s.trim()}</td>`).join('');
+        return `<tr>${tds}</tr>`;
+      }).join('');
+      return `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+    })
+    // Blockquotes
+    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+    // Lists
+    .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, s => `<ul>${s}</ul>`)
+    // Numbered lists
+    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+    // Horizontal rule
+    .replace(/^---$/gm, '<hr style="border-color: var(--border); margin: 16px 0;">')
+    // Paragraphs (double newline)
+    .replace(/\n\n(?!<)/g, '</p><p>')
+    // Line breaks
+    .replace(/\n(?!<)/g, '<br>');
+
+  // Wrap in paragraph if needed
+  if (!html.startsWith('<')) html = '<p>' + html + '</p>';
+
+  // Highlight PASS/FAIL
+  html = html
+    .replace(/\bPASS\b/g, '<span class="verdict-pass">PASS</span>')
+    .replace(/\bFAIL\b/g, '<span class="verdict-fail">FAIL</span>');
+
+  return html;
+}
+
+function switchInputMode(mode) {
+  inputMode = mode;
+  document.getElementById('modeText').classList.toggle('active', mode === 'text');
+  document.getElementById('modePdf').classList.toggle('active', mode === 'pdf');
+  document.getElementById('docInput').style.display = mode === 'text' ? '' : 'none';
+  document.getElementById('pdfZone').style.display = mode === 'pdf' ? '' : 'none';
+}
+
+function loadPdf(file) {
+  if (!file || file.type !== 'application/pdf') { alert('Please select a PDF file.'); return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    // Strip the data URL prefix — API needs raw base64
+    pdfBase64 = e.target.result.split(',')[1];
+    pdfName = file.name;
+    document.getElementById('pdfZoneLabel').textContent = pdfName;
+    document.getElementById('pdfZoneLabel').style.color = 'var(--green)';
+    document.getElementById('pdfClearBtn').style.display = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearPdf(event) {
+  event.stopPropagation();
+  pdfBase64 = null;
+  pdfName = null;
+  document.getElementById('pdfZoneLabel').textContent = 'Drop a PDF here or click to browse';
+  document.getElementById('pdfZoneLabel').style.color = '';
+  document.getElementById('pdfClearBtn').style.display = 'none';
+}
+
+// ─── Core analysis ─────────────────────────────────────────────────────────────
+
+async function runAnalysis() {
+  if (isRunning) return;
+
+  const apiKey = document.getElementById('apiKey').value.trim();
+  if (!apiKey) { alert('Enter your Anthropic API key.'); return; }
+
+  const doc = document.getElementById('docInput').value.trim();
+  if (inputMode === 'text' && !doc) { alert('Enter text, a question, or paste a document.'); return; }
+  if (inputMode === 'pdf' && !pdfBase64) { alert('Upload a PDF file first.'); return; }
+
+  // Build message content for the original input
+  function buildOriginalContent(instruction) {
+    if (inputMode === 'pdf') {
+      return [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+        { type: 'text', text: instruction }
+      ];
+    }
+    return `${instruction}\n\n---\n\n${doc}`;
+  }
+
+  const activeLenses = Object.entries(lensChecks).filter(([k, v]) => v).map(([k]) => k);
+  if (!activeLenses.length) { alert('Select at least one lens.'); return; }
+
+  isRunning = true;
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.querySelector('.btn-label').textContent = 'Analyzing...';
+
+  rawMarkdown = '';
+  document.getElementById('outputEmpty').style.display = 'none';
+  const mdOut = document.getElementById('mdOutput');
+  mdOut.style.display = 'block';
+  mdOut.innerHTML = '<span style="color:var(--text-dim);font-family:var(--mono);font-size:12px;">Running engine...</span>';
+
+  switchTab('output');
+  setStatus('running', `Applying ${activeLenses.length} lens(es): ${activeLenses.map(l => l.toUpperCase()).join(', ')}`);
+
+  const runL0 = activeLenses.includes('l0');
+  const downstreamLenses = activeLenses.filter(l => l !== 'l0');
+
+  try {
+    let documentForLenses = doc;
+
+    // ── Phase 0: Preprocessor (L0) ──────────────────────────────────────────
+    if (runL0) {
+      setStatus('running', 'L0 Preprocessor — building exhaustive technical summary...');
+      mdOut.innerHTML = '';
+
+      const l0Response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          stream: true,
+          system: LENS_PROMPTS.l0,
+          messages: [{ role: 'user', content: buildOriginalContent('Produce the exhaustive technical summary for this document.') }]
+        })
+      });
+
+      if (!l0Response.ok) {
+        const err = await l0Response.json();
+        throw new Error(err.error?.message || 'API error');
+      }
+
+      const l0Reader = l0Response.body.getReader();
+      const l0Decoder = new TextDecoder();
+      let l0Output = '';
+
+      while (true) {
+        const { done, value } = await l0Reader.read();
+        if (done) break;
+        const chunk = l0Decoder.decode(value);
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6);
+          if (data === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+              l0Output += parsed.delta.text;
+              rawMarkdown = l0Output;
+              mdOut.innerHTML = renderMarkdown(rawMarkdown);
+              document.getElementById('outputArea').scrollTop = document.getElementById('outputArea').scrollHeight;
+            }
+          } catch {}
+        }
+      }
+
+      // Feed the L0 summary as enriched context for downstream lenses
+      documentForLenses = inputMode === 'pdf'
+        ? `DOCUMENT PRE-ANALYSIS SUMMARY (L0 Preprocessor Output):\n\n${l0Output}`
+        : `DOCUMENT PRE-ANALYSIS SUMMARY (L0 Preprocessor Output):\n\n${l0Output}\n\n---\n\nORIGINAL DOCUMENT:\n\n${doc}`;
+    }
+
+    // ── Phase 1–4: Analytical Lenses ────────────────────────────────────────
+    if (downstreamLenses.length > 0) {
+      setStatus('running', `Running ${downstreamLenses.length} lens(es): ${downstreamLenses.map(l => l.toUpperCase()).join(', ')}`);
+
+      if (runL0) rawMarkdown += '\n\n---\n\n';
+
+      const systemPrompt = downstreamLenses.map(l => LENS_PROMPTS[l]).join('\n\n---\n\n');
+
+      let downstreamContent;
+      if (documentForLenses !== doc) {
+        // L0 ran — documentForLenses is enriched text regardless of original input mode
+        downstreamContent = `Analyze the following using all specified lenses. Produce a complete structured report. Separate each lens output with a clear markdown header.\n\n---\n\n${documentForLenses}`;
+      } else {
+        // No L0 — use original input (may be PDF)
+        downstreamContent = buildOriginalContent('Analyze the following using all specified lenses. Produce a complete structured report. Separate each lens output with a clear markdown header.');
+      }
+
+      const userMessage = downstreamContent;
+
+      const lensResponse = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          stream: true,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userMessage }]
+        })
+      });
+
+      if (!lensResponse.ok) {
+        const err = await lensResponse.json();
+        throw new Error(err.error?.message || 'API error');
+      }
+
+      const reader = lensResponse.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6);
+          if (data === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+              rawMarkdown += parsed.delta.text;
+              mdOut.innerHTML = renderMarkdown(rawMarkdown);
+              document.getElementById('outputArea').scrollTop = document.getElementById('outputArea').scrollHeight;
+            }
+          } catch {}
+        }
+      }
+    }
+
+    setStatus('ready', `Analysis complete · ${activeLenses.length} lens(es) applied · ${rawMarkdown.length} chars`);
+
+  } catch (err) {
+    mdOut.innerHTML += `<p style="color:var(--red);font-family:var(--mono);font-size:12px;">Error: ${err.message}</p>`;
+    setStatus('ready', 'Error — check API key and try again');
+  }
+
+  isRunning = false;
+  btn.disabled = false;
+  btn.classList.remove('loading');
+  btn.querySelector('.btn-label').textContent = 'Run Analysis';
+}
+
+function copyOutput() {
+  if (!rawMarkdown) return;
+  navigator.clipboard.writeText(rawMarkdown).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy Markdown', 1500);
+  });
+}
+</script>
+</body>
+</html>
