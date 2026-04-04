@@ -1,6 +1,6 @@
 ---
 description: Kostadis Engine — parallel analysis. L0 runs first to build ground truth, then L1/L2/L3/L4 all run simultaneously as independent agents on the same L0 output. Use this when you want uncontaminated per-lens verdicts.
-allowed-tools: Agent
+allowed-tools: Agent, Bash, Write
 argument-hint: [document, question, code, or architecture description]
 ---
 
@@ -12,6 +12,16 @@ The pipeline:
 3. Collect all outputs and present them under clear headers.
 
 Each lens must be independent. Do not pass one lens's output to another. Do not run multiple lenses in one agent call.
+
+**Console output:** Do NOT display lens output to the console. All output goes to disk only. After each lens completes and is written to disk, respond only with the file path and a one-line status (e.g., "✓ L1 written to ~/kostadis-output/vcf9/l1-tribunal.md").
+
+**Disk output (required):** Write each lens output to disk as it completes:
+- Derive a short slug from the input topic (e.g. `vcf9-supervisor`, `aws-iam-design`) — lowercase, hyphenated, no spaces.
+- Output directory: `~/kostadis-output/<slug>/`
+- Per-lens files: `l0.md`, `l1-tribunal.md`, `l2-anti-gravity.md`, `l3-lagrange.md`, `l4-value-bridge.md`
+- After all four parallel lenses complete, assemble all five into `full-report.md` with a header per section. The report must open with a Table of Contents using Markdown anchor links to each section heading (e.g. `[L0 — Ground Truth](#l0--ground-truth)`).
+- **Do NOT delete intermediate files.** Keep all five per-lens files. The full report is an additional artifact, not a replacement.
+- Use the Bash tool to create the directory (`mkdir -p`) and write files — write L0 immediately after it returns, then write L1–L4 as each parallel agent completes.
 
 ---
 

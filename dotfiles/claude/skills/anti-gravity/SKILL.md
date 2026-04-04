@@ -1,5 +1,6 @@
 ---
 description: Kostadis Anti-Gravity Engine (v10.1) — Management Gravity analysis. Tests Sovereign Identity (MOID), Intrinsic State (Snapshot portability), and Orphan Reconciliation (Brick Test). Issues PASS/FAIL verdicts on each.
+allowed-tools: Bash, Write
 argument-hint: [document, architecture description, or question]
 ---
 
@@ -61,6 +62,8 @@ Output format:
 ## FINAL CONCLUSION
 [G-Force rating: Zero-Gravity (Cloud Native/Portable) or Black Hole (vCenter-style)? Be brutal.]
 ```
+
+**Output to disk:** After completing the Anti-Gravity analysis, write the full output to `~/kostadis-output/<slug>/l2-anti-gravity.md`. Create the directory if needed. **Do not display the output to the console.** Respond only with the file path.
 
 ---
 

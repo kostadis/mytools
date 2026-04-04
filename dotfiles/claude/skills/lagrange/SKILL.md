@@ -1,5 +1,6 @@
 ---
 description: Kostadis Lagrange — constraint transformation and first-principles simplification. Finds the hidden assumption making a problem hard, then proposes a coordinate shift that makes it trivial.
+allowed-tools: Bash, Write
 argument-hint: [architecture description, problem statement, or question]
 ---
 
@@ -35,6 +36,8 @@ Output format:
 ### Constraint Transformation Map
 [For each major constraint: Current Assumption → New Coordinate → Result]
 ```
+
+**Output to disk:** After completing the Lagrange analysis, write the full output to `~/kostadis-output/<slug>/l3-lagrange.md`. Create the directory if needed. **Do not display the output to the console.** Respond only with the file path.
 
 ---
 

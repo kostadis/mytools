@@ -1,5 +1,6 @@
 ---
 description: Kostadis Tribunal (v10) — forensic architectural audit. Tests whether the author thinks in systems (Architecturalist) or syntax (Script Scribe). Issues PASS/FAIL verdicts on Truth, Silicon, Atomicity, IDM, and Entity Integrity.
+allowed-tools: Bash, Write
 argument-hint: [document, architecture description, or question]
 ---
 
@@ -60,6 +61,8 @@ Output format:
 ## FINAL CONCLUSION
 [Is this author a Script Scribe or an Architecturalist? Overall grade.]
 ```
+
+**Output to disk:** After completing the Tribunal analysis, write the full output to `~/kostadis-output/<slug>/l1-tribunal.md`. Create the directory if needed. **Do not display the output to the console.** Respond only with the file path.
 
 ---
 

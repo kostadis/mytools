@@ -1,5 +1,6 @@
 ---
 description: Kostadis L0 — exhaustive technical summary of a document, design spec, or architecture. Produces a verbose structured breakdown for downstream analysis.
+allowed-tools: Bash, Write, WebSearch, WebFetch
 argument-hint: [document, question, or paste content below]
 ---
 
@@ -25,6 +26,8 @@ Format rules:
 - **Bold** component names, field names, and key terms
 - Match the source's technical vocabulary exactly
 - **No inference or guessing** — only what is explicitly stated
+
+**Output to disk:** After producing the summary, write the full output to a file. Create a slug from the input topic (lowercase, hyphenated). Use `~/kostadis-output/<slug>/l0.md` as the path. **Do not display the output to the console.** Respond only with the file path where the summary was written.
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 description: Kostadis Engine — sequential pipeline. L0 runs first, then L1→L2→L3→L4 in a chain. Each lens receives L0 ground truth plus the previous lens output. Use this when you want each lens to build on the last.
-allowed-tools: Agent
+allowed-tools: Agent, Bash, Write
 argument-hint: [document, question, code, or architecture description]
 ---
 
@@ -13,7 +13,17 @@ The pipeline:
 4. L3 receives: L0 output + L2 output
 5. L4 receives: L0 output + L3 output
 
-Wait for each agent to complete before starting the next. Present each output as it arrives, under a clear header.
+Wait for each agent to complete before starting the next.
+
+**Console output:** Do NOT display lens output to the console. All output goes to disk only. After each lens completes and is written to disk, respond only with the file path and a one-line status (e.g., "✓ L0 written to ~/kostadis-output/vcf9/l0.md").
+
+**Disk output (required):** After every lens completes, immediately write its full output to disk:
+- Derive a short slug from the input topic (e.g. `vcf9-supervisor`, `aws-iam-design`) — lowercase, hyphenated, no spaces.
+- Output directory: `~/kostadis-output/<slug>/`
+- Per-lens files: `l0.md`, `l1-tribunal.md`, `l2-anti-gravity.md`, `l3-lagrange.md`, `l4-value-bridge.md`
+- After L4 completes, assemble all five into `full-report.md` with a header per section. The report must open with a Table of Contents using Markdown anchor links to each section heading (e.g. `[L0 — Ground Truth](#l0--ground-truth)`).
+- **Do NOT delete intermediate files.** Keep all five per-lens files. The full report is an additional artifact, not a replacement.
+- Use the Bash tool to create the directory (`mkdir -p`) and write each file immediately after the lens returns — do not batch writes to the end.
 
 ---
 

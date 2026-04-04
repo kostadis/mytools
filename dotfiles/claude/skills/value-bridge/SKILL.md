@@ -1,5 +1,6 @@
 ---
 description: Kostadis Value Bridge (v1) — translates architectural findings into board-level business language. Produces executive summary, pain pillars, SE trap questions, and Nutanix pivot.
+allowed-tools: Bash, Write
 argument-hint: [architecture description, technical findings, or question]
 ---
 
@@ -48,6 +49,8 @@ Example: "When you restore a VM from backup, how do you ensure the NSX Security 
 ## 4. THE NUTANIX PIVOT
 [Closing statement: how Nutanix NCI/NCM specifically solves these issues via the Single Source of Truth.]
 ```
+
+**Output to disk:** After completing the Value Bridge translation, write the full output to `~/kostadis-output/<slug>/l4-value-bridge.md`. Create the directory if needed. **Do not display the output to the console.** Respond only with the file path.
 
 ---
 
