@@ -283,7 +283,7 @@ function tagGroups(available: { value: string; count: number }[]) {
                   class="book-row variant-row"
                   @click="goToBook(v.id)"
                 >
-                  <td class="col-title variant-title">{{ v.display_title || v.filename }}</td>
+                  <td class="col-title variant-title">{{ v.filename }}</td>
                   <td></td>
                   <td>{{ v.game_system }}</td>
                   <td><span v-if="v.product_type" class="type-badge">{{ v.product_type }}</span></td>
