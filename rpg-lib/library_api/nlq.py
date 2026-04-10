@@ -31,11 +31,19 @@ Return ONLY valid JSON with no extra text:
   "product_type": "product type or null",
   "tags": ["tag1", "tag2"],
   "keywords": "key search terms as space-separated words (nouns and adjectives only)",
-  "char_level": integer or null
+  "level_min": integer or null,
+  "level_max": integer or null
 }
 
-char_level: the character level the user's party is at or the adventure should target.
-Examples: "for level 5" → 5, "level 3-5 adventure" → 4 (midpoint), "tier 2" → 7, "high level" → null."""
+level_min / level_max: character level range for filtering adventures (1–30). Use null for both when no level is mentioned.
+Examples:
+- "for level 5" → level_min: 5, level_max: 5
+- "tier 1" → level_min: 1, level_max: 4
+- "tier 2" → level_min: 5, level_max: 10
+- "tier 3" → level_min: 11, level_max: 16
+- "tier 4" → level_min: 17, level_max: 20
+- "levels 3-5" or "3rd to 5th level" → level_min: 3, level_max: 5
+- "high level" or no level mentioned → level_min: null, level_max: null"""
 
 _client = None
 
@@ -67,10 +75,13 @@ def parse_query(query: str) -> dict:
         if text.startswith("```"):
             text = re.sub(r"```(?:json)?\n?", "", text).strip()
         parsed = json.loads(text)
-        raw_level = parsed.get("char_level")
-        char_level = None
-        if isinstance(raw_level, (int, float)) and 1 <= int(raw_level) <= 30:
-            char_level = int(raw_level)
+        def _to_level(v) -> int | None:
+            try:
+                i = int(v)
+                return i if 1 <= i <= 30 else None
+            except (TypeError, ValueError):
+                return None
+
         pt = parsed.get("product_type") or None
         if pt:
             pt = pt.lower().replace(" ", "_")
@@ -79,7 +90,8 @@ def parse_query(query: str) -> dict:
             "product_type": pt,
             "tags": [t for t in (parsed.get("tags") or []) if isinstance(t, str)],
             "keywords": _fts_safe(parsed.get("keywords") or query),
-            "char_level": char_level,
+            "level_min": _to_level(parsed.get("level_min")),
+            "level_max": _to_level(parsed.get("level_max")),
         }
     except Exception:
         # Fallback: treat the whole query as keywords
@@ -88,5 +100,6 @@ def parse_query(query: str) -> dict:
             "product_type": None,
             "tags": [],
             "keywords": _fts_safe(query),
-            "char_level": None,
+            "level_min": None,
+            "level_max": None,
         }

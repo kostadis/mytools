@@ -34,6 +34,8 @@ _db_path: str = ""
 
 mcp = fastmcp.FastMCP("RPG Library")
 
+_TIER_LEVELS = {1: (1, 4), 2: (5, 10), 3: (11, 16), 4: (17, 20)}
+
 
 def _conn():
     return libdb.get_db(_db_path)
@@ -50,6 +52,7 @@ def search_books(
     publisher: str = "",
     series: str = "",
     tags: str = "",
+    tier: int = 0,
     char_level: int = 0,
     sort: str = "",
     sort_dir: str = "asc",
@@ -67,7 +70,9 @@ def search_books(
         publisher: Filter to exact publisher name.
         series: Filter to exact series name.
         tags: Comma-separated tags to filter by (e.g. "horror,undead").
-        char_level: Filter adventures to those covering this character level (1–30; 0 = no filter).
+        tier: D&D/Pathfinder tier (1–4). Finds adventures whose level range overlaps the tier.
+              Tier 1=levels 1–4, Tier 2=5–10, Tier 3=11–16, Tier 4=17–20. Takes precedence over char_level.
+        char_level: Specific character level (1–30). Finds adventures covering exactly this level.
         sort: Sort field — one of: title, publisher, game_system, page_count, series.
         sort_dir: "asc" or "desc".
         include_old: Include superseded old versions.
@@ -75,6 +80,12 @@ def search_books(
         per_page: Results per page (max 100).
     """
     per_page = min(per_page, 100)
+    if tier and tier in _TIER_LEVELS:
+        lmin, lmax = _TIER_LEVELS[tier]
+    elif char_level:
+        lmin = lmax = char_level
+    else:
+        lmin = lmax = None
     conn = _conn()
     try:
         result = libdb.search_books(
@@ -86,7 +97,8 @@ def search_books(
             publisher=publisher or None,
             series=series or None,
             tags=tags or None,
-            char_level=char_level or None,
+            level_min=lmin,
+            level_max=lmax,
             sort=sort or None,
             sort_dir=sort_dir,
             include_old=include_old,

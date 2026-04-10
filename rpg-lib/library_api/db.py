@@ -67,7 +67,8 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
                  series: str | None = None,
                  source: str | None = None,
                  tags: str | None = None,
-                 char_level: int | None = None,
+                 level_min: int | None = None,
+                 level_max: int | None = None,
                  sort: str | None = None,
                  sort_dir: str | None = None,
                  include_old: bool = False,
@@ -121,12 +122,13 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
             if tag:
                 conditions.append("tags LIKE ?")
                 params.append(f'%"{tag}"%')
-    if char_level is not None:
+    if level_min is not None or level_max is not None:
         conditions.append(
             "min_level IS NOT NULL AND max_level IS NOT NULL "
             "AND min_level <= ? AND max_level >= ?"
         )
-        params.extend([char_level, char_level])
+        params.extend([level_max if level_max is not None else level_min,
+                        level_min if level_min is not None else level_max])
 
     where = " AND ".join(conditions) if conditions else "1=1"
 
@@ -336,7 +338,8 @@ def nlq_search(
     game_system: str | None = None,
     product_type: str | None = None,
     tags: list[str] | None = None,
-    char_level: int | None = None,
+    level_min: int | None = None,
+    level_max: int | None = None,
     limit: int = 30,
 ) -> list[dict]:
     """
@@ -359,12 +362,13 @@ def nlq_search(
     for tag in (tags or []):
         conditions.append("b.tags LIKE ?")
         params.append(f'%"{tag}"%')
-    if char_level is not None:
+    if level_min is not None or level_max is not None:
         conditions.append(
             "b.min_level IS NOT NULL AND b.max_level IS NOT NULL "
             "AND b.min_level <= ? AND b.max_level >= ?"
         )
-        params.extend([char_level, char_level])
+        params.extend([level_max if level_max is not None else level_min,
+                        level_min if level_min is not None else level_max])
 
     where = " AND ".join(conditions)
 

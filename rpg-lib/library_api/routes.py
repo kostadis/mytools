@@ -56,7 +56,8 @@ def search(
             conn, q=q, q_name=q_name,
             game_system=game_system, product_type=product_type,
             publisher=publisher, series=series, source=source, tags=tags,
-            char_level=char_level,
+            level_min=char_level,
+            level_max=char_level,
             sort=sort, sort_dir=sort_dir,
             include_old=include_old, include_drafts=include_drafts,
             include_duplicates=include_duplicates,
@@ -179,7 +180,8 @@ def nlq_search(body: NlqRequest):
             game_system=query_parsed["game_system"],
             product_type=query_parsed["product_type"],
             tags=query_parsed["tags"],
-            char_level=query_parsed.get("char_level"),
+            level_min=query_parsed.get("level_min"),
+            level_max=query_parsed.get("level_max"),
         )
         return {"query_parsed": query_parsed, "results": results, "total": len(results)}
     finally:

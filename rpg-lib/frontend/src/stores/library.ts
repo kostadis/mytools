@@ -64,7 +64,8 @@ export interface NlqQueryParsed {
   product_type: string | null
   tags: string[]
   keywords: string
-  char_level: number | null
+  level_min: number | null
+  level_max: number | null
 }
 
 export interface NlqResponse {
