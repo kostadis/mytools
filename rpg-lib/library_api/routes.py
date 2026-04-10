@@ -9,7 +9,8 @@ from fastapi.responses import FileResponse
 
 from . import db
 from .models import (
-    BookDetail, BookSummary, BookText, FilterOptions, SearchResponse, StatsResponse,
+    BookDetail, BookSummary, BookText, FilterOptions, GraphResponse, NlqRequest,
+    NlqResponse, SearchResponse, StatsResponse, TopicResponse,
 )
 
 router = APIRouter(prefix="/api/library", tags=["library"])
@@ -39,6 +40,7 @@ def search(
     series: str | None = None,
     source: str | None = None,
     tags: str | None = Query(None, description="Comma-separated tag list"),
+    char_level: int | None = Query(None, description="Character level — finds adventures covering this level", ge=1, le=30),
     sort: str | None = Query(None, description="Sort field (e.g. publisher, game_system, page_count)"),
     sort_dir: str | None = Query(None, description="asc or desc"),
     include_old: bool = Query(False, description="Include old versions"),
@@ -54,6 +56,7 @@ def search(
             conn, q=q, q_name=q_name,
             game_system=game_system, product_type=product_type,
             publisher=publisher, series=series, source=source, tags=tags,
+            char_level=char_level,
             sort=sort, sort_dir=sort_dir,
             include_old=include_old, include_drafts=include_drafts,
             include_duplicates=include_duplicates,
@@ -159,6 +162,69 @@ def open_pdf(book_id: int):
         return {"status": "ok", "filepath": filepath}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to open: {e}")
+
+
+# ── Wiki / NLQ endpoints ──────────────────────────────────────────────────────
+
+@router.post("/nlq", response_model=NlqResponse)
+def nlq_search(body: NlqRequest):
+    """Natural language query: parse via Claude Haiku, then run FTS5 + structured search."""
+    from .nlq import parse_query
+    query_parsed = parse_query(body.query)
+    conn = _conn()
+    try:
+        results = db.nlq_search(
+            conn,
+            keywords=query_parsed["keywords"],
+            game_system=query_parsed["game_system"],
+            product_type=query_parsed["product_type"],
+            tags=query_parsed["tags"],
+            char_level=query_parsed.get("char_level"),
+        )
+        return {"query_parsed": query_parsed, "results": results, "total": len(results)}
+    finally:
+        conn.close()
+
+
+@router.get("/topic/{topic_type}/{topic_name}", response_model=TopicResponse)
+def get_topic(topic_type: str, topic_name: str):
+    """Get topic hub page: overview + books for a game_system, tag, series, or publisher."""
+    valid_types = {"game_system", "tag", "series", "publisher"}
+    if topic_type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"topic_type must be one of {valid_types}")
+    conn = _conn()
+    try:
+        data = db.get_topic(conn, topic_type, topic_name)
+        if data is None:
+            raise HTTPException(status_code=404, detail="Topic not found")
+        return data
+    finally:
+        conn.close()
+
+
+
+@router.get("/book/{book_id}/related", response_model=list[BookSummary])
+def get_related_books(book_id: int, limit: int = Query(6, ge=1, le=20)):
+    """Get related books by tag similarity (uses book_relations if populated)."""
+    conn = _conn()
+    try:
+        return db.get_related_books(conn, book_id, limit)
+    finally:
+        conn.close()
+
+
+@router.get("/graph", response_model=GraphResponse)
+def get_graph(
+    min_score: float = Query(0.25, ge=0.0, le=1.0),
+    limit: int = Query(300, ge=10, le=1000),
+    game_system: str | None = None,
+):
+    """Get graph data (nodes + edges) for the D3 force visualization."""
+    conn = _conn()
+    try:
+        return db.get_graph(conn, min_score=min_score, limit=limit, game_system=game_system)
+    finally:
+        conn.close()
 
 
 @router.get("/book/{book_id}/pdf")

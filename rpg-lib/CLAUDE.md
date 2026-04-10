@@ -15,9 +15,10 @@ A full-stack RPG PDF library: Python scripts index PDFs from disk into SQLite, t
 
 ### Backend
 ```bash
-# Start server (from rpg-lib/)
+# Start/stop server (from rpg-lib/)
 python library_server.py --db rpg_library.db --port 8000
-./start_library.sh                          # same, with defaults
+./service.sh start|stop|restart|status|logs|tail  # service manager
+DB=rpg_library.db PORT=8000 ./service.sh start    # with env overrides
 
 # Index PDFs
 ./index_rpgs.sh /path/to/pdfs rpg_library.db drivethrurpg
@@ -27,6 +28,12 @@ python library_server.py --db rpg_library.db --port 8000
 python pdf_enricher.py rpg_library.db --dry-run --limit 10  # preview only
 python pdf_enricher.py rpg_library.db --series-pass         # detect series groupings
 python pdf_enricher.py rpg_library.db --normalize-tags      # normalize tag vocabulary
+
+# Generate Obsidian vault
+python generate_obsidian.py rpg_library.db /path/to/vault
+python generate_obsidian.py rpg_library.db /path/to/vault \
+  --api-url http://localhost:8000 \
+  --min-tag-books 30 --min-series-books 3 --min-publisher-books 10
 ```
 
 ### Frontend
@@ -45,15 +52,31 @@ library_server.py          # FastAPI app; mounts /assets from frontend/dist/;
                            # catch-all serves index.html (no-cache headers)
 library_api/
   routes.py                # All API endpoints, grouped under /api/library/
+                           # Includes: search, NLQ (POST /nlq), topic hub, book detail
   db.py                    # All DB queries; search_books() builds WHERE clauses
-                           # dynamically and groups results by collection
+                           # dynamically and groups results by collection;
+                           # nlq_search() combines FTS5 + structured filters
   models.py                # Pydantic models (BookSummary has variant_count/variant_ids)
+  nlq.py                   # NLQ engine: calls Claude Haiku to parse free-text queries
+                           # into {game_system, product_type, tags, keywords};
+                           # falls back to keyword-only search on any error
+library_mcp.py             # MCP server (fastmcp); exposes library tools to Claude
+generate_obsidian.py       # Generates an Obsidian vault from the DB; creates pages
+                           # for game systems, tags, series, publishers with wikilinks
+                           # and embedded DataviewJS blocks that call the live API
+service.sh                 # Start/stop/restart/logs for library_server.py
 frontend/src/
   stores/library.ts        # Pinia store — single source of truth for search state,
                            # filters, pagination, expanded variant groups
   views/LibraryBrowse.vue  # Sidebar filters + table/card results; variant expansion
   views/BookDetail.vue     # Full book detail, bookmarks, PDF open/preview
 ```
+
+### Key design decisions — NLQ
+
+**NLQ pipeline (`POST /api/library/nlq`):** Free-text query → Claude Haiku extracts `{game_system, product_type, tags[], keywords}` → `db.nlq_search()` runs FTS5 + structured WHERE clauses. Response includes `query_parsed` so the caller can see how the query was interpreted. Haiku is used (not Sonnet) for speed and cost. Any parsing failure falls back to treating the full query as keywords. Keywords are sanitized for FTS5 (max 12 words, alphanumeric only).
+
+**NLQ limitations:** `game_system` and `product_type` must be exact matches from a hardcoded list in `nlq.py`. Tags must be exact snake_case strings from the canonical vocabulary. Level/CR range is not a filterable field — it only appears in description text and cannot be reliably extracted.
 
 ### Key design decisions
 
@@ -66,6 +89,14 @@ frontend/src/
 **Store actions vs. direct assignment:** Always use store actions (`setFilter`, `setQuery`, `toggleGroup`) to mutate state — direct assignment to store properties from components can silently fail to update the ref inside the closure.
 
 **`lib/claudelib.py`** lives in the parent `mytools/lib/` directory (shared across projects). `pdf_enricher.py` adds `..` to `sys.path` to import it.
+
+### Obsidian vault (`generate_obsidian.py`)
+
+Creates a static vault with pages for game systems, tags, series, and publishers. Books are NOT given individual pages — clicking a book title in Obsidian opens the web UI instead. Each topic page embeds a `dataviewjs` block that calls `GET /api/library/topic/{type}/{name}` for live data. Uses `[[wikilinks]]` for cross-references. Minimum book thresholds (`--min-tag-books`, etc.) suppress low-relevance pages. Filename sanitization handles Windows-invalid characters (for Google Drive on Windows).
+
+### MCP server (`library_mcp.py`)
+
+Exposes the library to Claude via fastmcp. Tools: `search_books`, `get_book`, `get_topic`, `get_related_books`, `list_filters`, `get_stats`, `find_books_by_tag`. All read from the DB directly (not via the HTTP API). Tag values must be exact snake_case strings; game_system and product_type must be exact matches. `list_filters` returns all valid values with book counts — use it to discover valid filter values before searching. Descriptions are truncated to 300 chars in search results; use `get_book` for full detail.
 
 ## Database
 

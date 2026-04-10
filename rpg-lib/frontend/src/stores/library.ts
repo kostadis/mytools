@@ -17,6 +17,8 @@ export interface BookSummary {
   page_count: number | null
   has_bookmarks: boolean
   description: string | null
+  min_level: number | null
+  max_level: number | null
   variant_count: number
   variant_ids: number[]
 }
@@ -57,6 +59,54 @@ export interface Filters {
   tags: FilterValue[]
 }
 
+export interface NlqQueryParsed {
+  game_system: string | null
+  product_type: string | null
+  tags: string[]
+  keywords: string
+  char_level: number | null
+}
+
+export interface NlqResponse {
+  query_parsed: NlqQueryParsed
+  results: BookSummary[]
+  total: number
+}
+
+export interface TopicStats {
+  total: number
+  enriched: number
+  by_product_type: { value: string; count: number }[]
+  top_publishers: { value: string; count: number }[]
+  top_tags: { value: string; count: number }[]
+  top_series: { value: string; count: number }[]
+  top_game_systems: { value: string; count: number }[]
+}
+
+export interface TopicResponse {
+  topic_type: string
+  topic_name: string
+  stats: TopicStats
+  books: BookSummary[]
+}
+
+export interface GraphNode {
+  id: number
+  label: string
+  group: string | null
+}
+
+export interface GraphEdge {
+  source: number
+  target: number
+  score: number
+}
+
+export interface GraphResponse {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
+
 export const useLibraryStore = defineStore('library', () => {
   // State — three separate search fields
   const queryAll = ref('')
@@ -77,6 +127,7 @@ export const useLibraryStore = defineStore('library', () => {
   const includeDuplicates = ref(false)
   const expandedGroups = ref<Set<string>>(new Set())
   const groupVariants = ref<Map<string, BookSummary[]>>(new Map())
+  const charLevel = ref<number | null>(null)
 
   const title = computed(() => {
     return (book: BookSummary) => book.display_title || book.filename
@@ -102,6 +153,7 @@ export const useLibraryStore = defineStore('library', () => {
       for (const [key, val] of Object.entries(activeFilters.value)) {
         if (val) params.set(key, val)
       }
+      if (charLevel.value !== null) params.set('char_level', String(charLevel.value))
 
       const res = await fetch(`${API}/search?${params}`)
       const data = await res.json()
@@ -161,8 +213,9 @@ export const useLibraryStore = defineStore('library', () => {
     }
   }
 
-  function previewUrl(id: number): string {
-    return `${API}/book/${id}/pdf`
+  function previewUrl(id: number, page?: number): string {
+    const base = `${API}/book/${id}/pdf`
+    return page ? `${base}#page=${page}` : base
   }
 
   function setFilter(key: string, value: string) {
@@ -182,10 +235,17 @@ export const useLibraryStore = defineStore('library', () => {
     search()
   }
 
+  function setCharLevel(level: number | null) {
+    charLevel.value = level
+    page.value = 1
+    search()
+  }
+
   function clearFilters() {
     activeFilters.value = {}
     queryAll.value = ''
     queryName.value = ''
+    charLevel.value = null
     page.value = 1
     search()
   }
@@ -221,12 +281,50 @@ export const useLibraryStore = defineStore('library', () => {
     return groupVariants.value.get(variantIds.join(',')) ?? []
   }
 
+  // ── Wiki / NLQ actions ──────────────────────────────────────────────────────
+
+  async function nlqSearch(query: string): Promise<NlqResponse> {
+    const res = await fetch(`${API}/nlq`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    })
+    if (!res.ok) throw new Error('NLQ search failed')
+    return await res.json()
+  }
+
+  async function getTopic(type: string, name: string): Promise<TopicResponse> {
+    const res = await fetch(`${API}/topic/${encodeURIComponent(type)}/${encodeURIComponent(name)}`)
+    if (!res.ok) throw new Error('Topic not found')
+    return await res.json()
+  }
+
+  async function getRelatedBooks(id: number): Promise<BookSummary[]> {
+    const res = await fetch(`${API}/book/${id}/related`)
+    if (!res.ok) return []
+    return await res.json()
+  }
+
+  async function getGraph(
+    minScore: number = 0.25,
+    limit: number = 300,
+    gameSystem?: string,
+  ): Promise<GraphResponse> {
+    const params = new URLSearchParams({ min_score: String(minScore), limit: String(limit) })
+    if (gameSystem) params.set('game_system', gameSystem)
+    const res = await fetch(`${API}/graph?${params}`)
+    if (!res.ok) throw new Error('Graph fetch failed')
+    return await res.json()
+  }
+
   return {
     activeFilters, results, total, page, perPage, totalPages, loading, filters,
     viewMode, queryAll, queryName, sortField, sortDir, includeOld, includeDrafts, includeDuplicates,
+    charLevel,
     title, search, loadFilters, getBook, openInApp, previewUrl,
-    setQuery, setFilter, clearFilters, setPage, toggleSort,
+    setQuery, setFilter, clearFilters, setPage, toggleSort, setCharLevel,
     toggleIncludeOld, toggleIncludeDrafts, toggleIncludeDuplicates,
     toggleGroup, isExpanded, getVariants,
+    nlqSearch, getTopic, getRelatedBooks, getGraph,
   }
 })

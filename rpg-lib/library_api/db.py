@@ -37,6 +37,8 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
         "page_count": row["page_count"],
         "has_bookmarks": bool(row["has_bookmarks"]),
         "description": row["description"],
+        "min_level": row["min_level"],
+        "max_level": row["max_level"],
     }
 
 
@@ -65,6 +67,7 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
                  series: str | None = None,
                  source: str | None = None,
                  tags: str | None = None,
+                 char_level: int | None = None,
                  sort: str | None = None,
                  sort_dir: str | None = None,
                  include_old: bool = False,
@@ -118,6 +121,12 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
             if tag:
                 conditions.append("tags LIKE ?")
                 params.append(f'%"{tag}"%')
+    if char_level is not None:
+        conditions.append(
+            "min_level IS NOT NULL AND max_level IS NOT NULL "
+            "AND min_level <= ? AND max_level >= ?"
+        )
+        params.extend([char_level, char_level])
 
     where = " AND ".join(conditions) if conditions else "1=1"
 
@@ -163,7 +172,7 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
         rep_rows = conn.execute(
             f"""SELECT id, display_title, filename, publisher, collection,
                        game_system, product_type, tags, series, source,
-                       page_count, has_bookmarks, description
+                       page_count, has_bookmarks, description, min_level, max_level
                 FROM books WHERE id IN ({placeholders})""",
             rep_ids,
         ).fetchall()
@@ -319,6 +328,334 @@ def get_filters(conn: sqlite3.Connection) -> dict:
     )
 
     return result
+
+
+def nlq_search(
+    conn: sqlite3.Connection,
+    keywords: str,
+    game_system: str | None = None,
+    product_type: str | None = None,
+    tags: list[str] | None = None,
+    char_level: int | None = None,
+    limit: int = 30,
+) -> list[dict]:
+    """
+    Full-text search using the books_fts FTS5 table, plus optional structured filters.
+    Falls back to LIKE-based search if books_fts doesn't exist.
+    """
+    conditions = [
+        "b.is_old_version = 0",
+        "b.is_draft = 0",
+        "b.is_duplicate = 0",
+    ]
+    params: list = []
+
+    if game_system:
+        conditions.append("b.game_system = ?")
+        params.append(game_system)
+    if product_type:
+        conditions.append("b.product_type = ?")
+        params.append(product_type)
+    for tag in (tags or []):
+        conditions.append("b.tags LIKE ?")
+        params.append(f'%"{tag}"%')
+    if char_level is not None:
+        conditions.append(
+            "b.min_level IS NOT NULL AND b.max_level IS NOT NULL "
+            "AND b.min_level <= ? AND b.max_level >= ?"
+        )
+        params.extend([char_level, char_level])
+
+    where = " AND ".join(conditions)
+
+    # Try FTS5 first
+    try:
+        fts_params = [keywords] + params
+        rows = conn.execute(
+            f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
+                       b.game_system, b.product_type, b.tags, b.series, b.source,
+                       b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level
+                FROM books_fts
+                JOIN books b ON books_fts.rowid = b.id
+                WHERE books_fts MATCH ? AND {where}
+                ORDER BY bm25(books_fts)
+                LIMIT ?""",
+            fts_params + [limit],
+        ).fetchall()
+        return [_row_to_summary(r) for r in rows]
+    except Exception:
+        pass
+
+    # Fallback: LIKE search on display_title and description
+    kw_like = f"%{keywords}%"
+    conditions.append("(b.display_title LIKE ? OR b.description LIKE ? OR b.tags LIKE ?)")
+    params.extend([kw_like, kw_like, kw_like])
+    where = " AND ".join(conditions)
+    rows = conn.execute(
+        f"""SELECT id, display_title, filename, publisher, collection,
+                   game_system, product_type, tags, series, source,
+                   page_count, has_bookmarks, description
+            FROM books b WHERE {where}
+            ORDER BY COALESCE(display_title, filename)
+            LIMIT ?""",
+        params + [limit],
+    ).fetchall()
+    return [_row_to_summary(r) for r in rows]
+
+
+def _topic_where(topic_type: str, topic_name: str) -> tuple[str, list]:
+    """Return (WHERE clause, params) for a given topic type/name."""
+    base = "is_old_version = 0 AND is_draft = 0 AND is_duplicate = 0"
+    if topic_type == "tag":
+        return f"{base} AND tags LIKE ?", [f'%"{topic_name}"%']
+    elif topic_type == "game_system":
+        return f"{base} AND game_system = ?", [topic_name]
+    elif topic_type == "series":
+        return f"{base} AND series = ?", [topic_name]
+    elif topic_type == "publisher":
+        return f"{base} AND publisher = ?", [topic_name]
+    return base, []
+
+
+def _topic_stats(conn: sqlite3.Connection, topic_type: str, where: str,
+                 params: list) -> dict:
+    """Compute stats for a topic: counts, breakdowns by type/publisher/tags/series."""
+    total = conn.execute(f"SELECT COUNT(*) FROM books WHERE {where}", params).fetchone()[0]
+    enriched = conn.execute(
+        f"SELECT COUNT(*) FROM books WHERE {where} AND date_enriched IS NOT NULL", params
+    ).fetchone()[0]
+
+    def breakdown(col: str, limit: int = 10) -> list[dict]:
+        rows = conn.execute(
+            f"""SELECT {col} as value, COUNT(*) as count FROM books
+                WHERE {where} AND {col} IS NOT NULL AND {col} != ''
+                GROUP BY {col} ORDER BY count DESC LIMIT {limit}""",
+            params,
+        ).fetchall()
+        return [{"value": r["value"], "count": r["count"]} for r in rows]
+
+    # Tags need JSON parsing
+    def tag_breakdown(limit: int = 15) -> list[dict]:
+        tag_rows = conn.execute(
+            f"SELECT tags FROM books WHERE {where} AND tags IS NOT NULL", params
+        ).fetchall()
+        counts: dict[str, int] = {}
+        for (raw,) in tag_rows:
+            try:
+                for t in json.loads(raw):
+                    counts[t] = counts.get(t, 0) + 1
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return sorted(
+            [{"value": t, "count": c} for t, c in counts.items()],
+            key=lambda x: -x["count"],
+        )[:limit]
+
+    return {
+        "total": total,
+        "enriched": enriched,
+        "by_product_type": breakdown("product_type"),
+        "top_publishers": [] if topic_type == "publisher" else breakdown("publisher"),
+        "top_tags": [] if topic_type == "tag" else tag_breakdown(),
+        "top_series": [] if topic_type == "series" else breakdown("series"),
+        "top_game_systems": [] if topic_type == "game_system" else breakdown("game_system"),
+    }
+
+
+def get_topic(conn: sqlite3.Connection, topic_type: str, topic_name: str) -> dict | None:
+    """Get topic stats and books for a topic hub page."""
+    if topic_type not in {"tag", "game_system", "series", "publisher"}:
+        return None
+
+    where, params = _topic_where(topic_type, topic_name)
+    stats = _topic_stats(conn, topic_type, where, params)
+
+    if stats["total"] == 0:
+        return None
+
+    rows = conn.execute(
+        f"""SELECT id, display_title, filename, publisher, collection,
+                   game_system, product_type, tags, series, source,
+                   page_count, has_bookmarks, description
+            FROM books WHERE {where}
+            ORDER BY COALESCE(display_title, filename)""",
+        params,
+    ).fetchall()
+
+    return {
+        "topic_type": topic_type,
+        "topic_name": topic_name,
+        "stats": stats,
+        "books": [_row_to_summary(r) for r in rows],
+    }
+
+
+def generate_topic_overview(conn: sqlite3.Connection, topic_type: str, topic_name: str) -> str:
+    """
+    Generate and store a topic overview via Claude. Returns the overview text.
+    Imports topic_generator lazily to avoid circular imports.
+    """
+    import sys
+    import os
+    # topic_generator is at rpg-lib/ level; db.py is at rpg-lib/library_api/
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    import topic_generator as tg
+
+    client = tg.make_client()
+    books = tg.get_topic_books(conn, topic_type, topic_name)
+    book_count = len(conn.execute(
+        "SELECT COUNT(*) FROM books WHERE is_old_version=0 AND is_draft=0 AND is_duplicate=0"
+    ).fetchone())
+    overview = tg.generate_overview(client, topic_type, topic_name, book_count, books)
+    tg.save_overview(conn, topic_type, topic_name, overview, len(books))
+    return overview
+
+
+def get_related_books(conn: sqlite3.Connection, book_id: int, limit: int = 6) -> list[dict]:
+    """
+    Get related books for a given book.
+    Uses book_relations table if populated; falls back to tag overlap.
+    """
+    # Try book_relations first
+    rows = conn.execute(
+        """SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
+                  b.game_system, b.product_type, b.tags, b.series, b.source,
+                  b.page_count, b.has_bookmarks, b.description
+           FROM book_relations r
+           JOIN books b ON b.id = r.book_id_b
+           WHERE r.book_id_a = ?
+             AND b.is_old_version = 0 AND b.is_draft = 0 AND b.is_duplicate = 0
+           ORDER BY r.score DESC
+           LIMIT ?""",
+        (book_id, limit),
+    ).fetchall()
+
+    if rows:
+        return [_row_to_summary(r) for r in rows]
+
+    # Fallback: tag overlap (fetch book's tags, then find books sharing them)
+    book_row = conn.execute("SELECT tags, series FROM books WHERE id = ?", (book_id,)).fetchone()
+    if not book_row:
+        return []
+
+    try:
+        book_tags = json.loads(book_row["tags"] or "[]")
+    except (json.JSONDecodeError, TypeError):
+        book_tags = []
+
+    if not book_tags and not book_row["series"]:
+        return []
+
+    tag_counts: dict[int, int] = {}
+
+    # Count shared tags
+    for tag in book_tags:
+        tag_rows = conn.execute(
+            """SELECT id FROM books WHERE tags LIKE ?
+               AND is_old_version = 0 AND is_draft = 0 AND is_duplicate = 0
+               AND id != ?""",
+            (f'%"{tag}"%', book_id),
+        ).fetchall()
+        for r in tag_rows:
+            tag_counts[r["id"]] = tag_counts.get(r["id"], 0) + 1
+
+    # Boost books in the same series
+    if book_row["series"]:
+        series_rows = conn.execute(
+            """SELECT id FROM books WHERE series = ?
+               AND is_old_version = 0 AND is_draft = 0 AND is_duplicate = 0
+               AND id != ?""",
+            (book_row["series"], book_id),
+        ).fetchall()
+        for r in series_rows:
+            tag_counts[r["id"]] = tag_counts.get(r["id"], 0) + 10
+
+    top_ids = sorted(tag_counts, key=lambda x: -tag_counts[x])[:limit]
+    if not top_ids:
+        return []
+
+    placeholders = ",".join("?" * len(top_ids))
+    rows = conn.execute(
+        f"""SELECT id, display_title, filename, publisher, collection,
+                   game_system, product_type, tags, series, source,
+                   page_count, has_bookmarks, description
+            FROM books WHERE id IN ({placeholders})""",
+        top_ids,
+    ).fetchall()
+    id_to_row = {r["id"]: _row_to_summary(r) for r in rows}
+    return [id_to_row[i] for i in top_ids if i in id_to_row]
+
+
+def get_graph(
+    conn: sqlite3.Connection,
+    min_score: float = 0.25,
+    limit: int = 300,
+    game_system: str | None = None,
+) -> dict:
+    """Get graph nodes and edges for the D3 visualization."""
+    # Get edges above threshold
+    edge_params: list = [min_score]
+    edge_filter = ""
+    if game_system:
+        edge_filter = """
+            AND r.book_id_a IN (SELECT id FROM books WHERE game_system = ? AND is_old_version=0)
+            AND r.book_id_b IN (SELECT id FROM books WHERE game_system = ? AND is_old_version=0)
+        """
+        edge_params = [min_score, game_system, game_system]
+
+    edge_rows = conn.execute(
+        f"""SELECT r.book_id_a, r.book_id_b, r.score
+            FROM book_relations r
+            WHERE r.score >= ? {edge_filter}
+              AND r.book_id_a < r.book_id_b
+            ORDER BY r.score DESC
+            LIMIT {limit * 3}""",
+        edge_params,
+    ).fetchall()
+
+    # Collect node IDs (limit to top nodes by edge count)
+    node_edge_count: dict[int, int] = {}
+    edges_to_use = []
+    for r in edge_rows:
+        node_edge_count[r["book_id_a"]] = node_edge_count.get(r["book_id_a"], 0) + 1
+        node_edge_count[r["book_id_b"]] = node_edge_count.get(r["book_id_b"], 0) + 1
+        edges_to_use.append(r)
+
+    # Take top-N nodes by connectivity
+    top_node_ids = sorted(node_edge_count, key=lambda x: -node_edge_count[x])[:limit]
+    top_node_set = set(top_node_ids)
+
+    # Filter edges to only those between included nodes
+    final_edges = [
+        r for r in edges_to_use
+        if r["book_id_a"] in top_node_set and r["book_id_b"] in top_node_set
+    ]
+
+    if not top_node_ids:
+        return {"nodes": [], "edges": []}
+
+    # Fetch node details
+    placeholders = ",".join("?" * len(top_node_ids))
+    node_rows = conn.execute(
+        f"""SELECT id, display_title, filename, game_system
+            FROM books WHERE id IN ({placeholders})""",
+        top_node_ids,
+    ).fetchall()
+
+    nodes = [
+        {
+            "id": r["id"],
+            "label": r["display_title"] or r["filename"],
+            "group": r["game_system"],
+        }
+        for r in node_rows
+    ]
+    edges = [
+        {"source": r["book_id_a"], "target": r["book_id_b"], "score": r["score"]}
+        for r in final_edges
+    ]
+
+    return {"nodes": nodes, "edges": edges}
 
 
 def get_stats(conn: sqlite3.Connection) -> dict:
