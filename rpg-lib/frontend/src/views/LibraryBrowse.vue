@@ -1,12 +1,43 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useLibraryStore } from '../stores/library'
+import { useLibraryStore, type NlqResponse } from '../stores/library'
 
 const store = useLibraryStore()
 const router = useRouter()
 const searchAll = ref('')
 const searchName = ref('')
+
+// NLQ state
+const nlqQuery = ref('')
+const nlqLoading = ref(false)
+const nlqResult = ref<NlqResponse | null>(null)
+const nlqError = ref('')
+
+async function doNlqSearch() {
+  const q = nlqQuery.value.trim()
+  if (!q) {
+    nlqResult.value = null
+    nlqError.value = ''
+    return
+  }
+  nlqLoading.value = true
+  nlqError.value = ''
+  nlqResult.value = null
+  try {
+    nlqResult.value = await store.nlqSearch(q)
+  } catch (e: any) {
+    nlqError.value = 'Search failed. Is the server running?'
+  } finally {
+    nlqLoading.value = false
+  }
+}
+
+function clearNlq() {
+  nlqQuery.value = ''
+  nlqResult.value = null
+  nlqError.value = ''
+}
 
 onMounted(async () => {
   await store.loadFilters()
@@ -48,6 +79,7 @@ const columns = [
   { key: 'publisher', label: 'Publisher' },
   { key: 'game_system', label: 'System' },
   { key: 'product_type', label: 'Type' },
+  { key: 'min_level', label: 'Level' },
   { key: 'series', label: 'Series' },
   { key: 'page_count', label: 'Pages' },
   { key: 'source', label: 'Source' },
@@ -106,6 +138,66 @@ function tagGroups(available: { value: string; count: number }[]) {
 </script>
 
 <template>
+  <div>
+    <!-- NLQ Search Bar -->
+    <div class="nlq-bar">
+      <div class="nlq-inner">
+        <input
+          v-model="nlqQuery"
+          type="text"
+          class="nlq-input"
+          placeholder='Ask your library... e.g. "horror adventures for D&D 5e with undead"'
+          @keyup.enter="doNlqSearch"
+        />
+        <button class="btn-primary nlq-btn" @click="doNlqSearch" :disabled="nlqLoading">
+          {{ nlqLoading ? 'Searching...' : 'Ask' }}
+        </button>
+        <button v-if="nlqQuery" class="btn-secondary nlq-clear" @click="clearNlq">✕</button>
+      </div>
+    </div>
+
+    <!-- NLQ Results Panel -->
+    <div v-if="nlqResult" class="nlq-results-panel">
+      <div class="nlq-parsed">
+        <span class="nlq-label">Understood:</span>
+        <span v-if="nlqResult.query_parsed.game_system" class="nlq-chip">
+          System: {{ nlqResult.query_parsed.game_system }}
+        </span>
+        <span v-if="nlqResult.query_parsed.product_type" class="nlq-chip">
+          Type: {{ nlqResult.query_parsed.product_type }}
+        </span>
+        <span
+          v-for="tag in nlqResult.query_parsed.tags"
+          :key="tag"
+          class="nlq-chip tag-chip"
+        >{{ tag }}</span>
+        <span v-if="nlqResult.query_parsed.keywords" class="nlq-chip keywords-chip">
+          "{{ nlqResult.query_parsed.keywords }}"
+        </span>
+        <span class="nlq-count">{{ nlqResult.total }} results</span>
+      </div>
+      <div class="nlq-book-list">
+        <div
+          v-for="book in nlqResult.results"
+          :key="book.id"
+          class="nlq-book-row"
+          @click="router.push({ name: 'book', params: { id: book.id } })"
+        >
+          <span class="nlq-book-title">{{ book.display_title || book.filename }}</span>
+          <span class="nlq-book-meta">
+            <span v-if="book.game_system">{{ book.game_system }}</span>
+            <span v-if="book.product_type" class="type-badge">{{ book.product_type }}</span>
+            <span v-if="book.series" class="nlq-series">{{ book.series }}</span>
+          </span>
+          <span class="nlq-book-desc" v-if="book.description">{{ book.description.slice(0, 100) }}…</span>
+        </div>
+        <div v-if="nlqResult.results.length === 0" class="nlq-empty">
+          No matching books found. Try rephrasing your query.
+        </div>
+      </div>
+    </div>
+    <div v-if="nlqError" class="nlq-error">{{ nlqError }}</div>
+
   <div class="browse-layout">
     <!-- Sidebar -->
     <aside class="sidebar">
@@ -169,6 +261,16 @@ function tagGroups(available: { value: string; count: number }[]) {
             v-for="f in store.filters.product_type" :key="f.value" :value="f.value"
           >{{ f.value }} ({{ f.count }})</option>
         </select>
+      </div>
+
+      <div class="filter-section">
+        <label>Character Level</label>
+        <input
+          type="number" min="1" max="30" placeholder="e.g. 5"
+          class="level-input"
+          :value="store.charLevel ?? ''"
+          @change="store.setCharLevel(($event.target as HTMLInputElement).valueAsNumber || null)"
+        />
       </div>
 
       <div class="filter-section" v-if="store.filters">
@@ -265,6 +367,9 @@ function tagGroups(available: { value: string; count: number }[]) {
                 <td>{{ book.publisher }}</td>
                 <td>{{ book.game_system }}</td>
                 <td><span v-if="book.product_type" class="type-badge">{{ book.product_type }}</span></td>
+                <td class="col-num">
+                  <span v-if="book.min_level">{{ book.min_level === book.max_level ? book.min_level : `${book.min_level}–${book.max_level}` }}</span>
+                </td>
                 <td>{{ book.series }}</td>
                 <td class="col-num">{{ book.page_count }}</td>
                 <td>{{ book.source }}</td>
@@ -287,6 +392,9 @@ function tagGroups(available: { value: string; count: number }[]) {
                   <td></td>
                   <td>{{ v.game_system }}</td>
                   <td><span v-if="v.product_type" class="type-badge">{{ v.product_type }}</span></td>
+                  <td class="col-num">
+                    <span v-if="v.min_level">{{ v.min_level === v.max_level ? v.min_level : `${v.min_level}–${v.max_level}` }}</span>
+                  </td>
                   <td></td>
                   <td class="col-num">{{ v.page_count }}</td>
                   <td></td>
@@ -349,9 +457,136 @@ function tagGroups(available: { value: string; count: number }[]) {
       </div>
     </div>
   </div>
+  </div>
 </template>
 
 <style scoped>
+/* ── NLQ bar ── */
+.nlq-bar {
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1.5rem;
+}
+
+.nlq-inner {
+  display: flex;
+  gap: 0.5rem;
+  max-width: 900px;
+}
+
+.nlq-input {
+  flex: 1;
+  font-size: 0.95rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.nlq-btn {
+  white-space: nowrap;
+  padding: 0.45rem 1rem;
+}
+
+.nlq-clear {
+  padding: 0.45rem 0.6rem;
+}
+
+.nlq-results-panel {
+  background: var(--bg-card);
+  border-bottom: 2px solid var(--accent);
+  padding: 0.75rem 1.5rem;
+}
+
+.nlq-parsed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.nlq-label {
+  color: var(--text-dim);
+  margin-right: 0.25rem;
+}
+
+.nlq-chip {
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.15rem 0.6rem;
+  color: var(--text);
+}
+
+.tag-chip { border-color: var(--accent); color: var(--accent); }
+.keywords-chip { font-style: italic; }
+
+.nlq-count {
+  margin-left: auto;
+  color: var(--text-dim);
+}
+
+.nlq-book-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.nlq-book-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  grid-template-rows: auto auto;
+  gap: 0 0.75rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.nlq-book-row:hover { background: var(--bg-sidebar); }
+
+.nlq-book-title {
+  grid-column: 1;
+  grid-row: 1;
+  font-weight: 500;
+  color: var(--text-bright);
+  font-size: 0.9rem;
+}
+
+.nlq-book-meta {
+  grid-column: 2 / 4;
+  grid-row: 1;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  justify-content: flex-end;
+}
+
+.nlq-series { font-style: italic; }
+
+.nlq-book-desc {
+  grid-column: 1 / 4;
+  grid-row: 2;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.nlq-empty {
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 0.5rem;
+}
+
+.nlq-error {
+  padding: 0.5rem 1.5rem;
+  color: var(--accent);
+  font-size: 0.875rem;
+}
+
+/* ── Browse layout ── */
 .browse-layout {
   display: flex;
   min-height: calc(100vh - 52px);
@@ -392,7 +627,8 @@ function tagGroups(available: { value: string; count: number }[]) {
 }
 
 .filter-section select,
-.search-input {
+.search-input,
+.level-input {
   width: 100%;
 }
 

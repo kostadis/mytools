@@ -76,20 +76,33 @@ You are classifying tabletop RPG PDF products. For each book, determine:
    Examples: "Dungeon Dressing: Altars 2.0 (5e)", "Zareth's Book of Hidden Ways",
    "Delta Green: Agent's Handbook".
 
+7. **min_level** and **max_level**: For adventures only, the integer character level
+   range this product targets (1–20 for D&D/Pathfinder, 1–10 for DCC, etc.).
+   Set both to the same value for a single level (e.g. "level 5 adventure" → 5, 5).
+   Use null for non-adventures or when the level is not specified.
+
 Respond with ONLY a JSON array. Each element must have these fields:
-  book_id, game_system, product_type, tags, series, description, display_title
+  book_id, game_system, product_type, tags, series, description, display_title,
+  min_level, max_level
 
 Example response:
 [
   {"book_id": 1, "game_system": "D&D 5e", "product_type": "character_options",
    "tags": ["character_options", "subclasses", "5e"], "series": null,
    "description": "A collection of homebrew subclasses for all 12 core classes.",
-   "display_title": "Zareth's Book of Hidden Ways"},
+   "display_title": "Zareth's Book of Hidden Ways",
+   "min_level": null, "max_level": null},
   {"book_id": 2, "game_system": "System Neutral", "product_type": "gm_aid",
    "tags": ["gm_aid", "random_tables", "dungeon", "system_neutral"],
    "series": "Dungeon Dressing",
    "description": "Random tables for dressing dungeon altars with flavor and loot.",
-   "display_title": "Dungeon Dressing: Altars 2.0 (5e)"}
+   "display_title": "Dungeon Dressing: Altars 2.0 (5e)",
+   "min_level": null, "max_level": null},
+  {"book_id": 3, "game_system": "D&D 5e", "product_type": "adventure",
+   "tags": ["adventure", "dungeon", "5e"], "series": null,
+   "description": "A dungeon crawl for 3rd-5th level characters.",
+   "display_title": "Tomb of the Iron Lich",
+   "min_level": 3, "max_level": 5}
 ]
 """
 
@@ -311,6 +324,8 @@ def migrate_enrichment_schema(conn: sqlite3.Connection) -> None:
         "tags": "TEXT",
         "series": "TEXT",
         "display_title": "TEXT",
+        "min_level": "INTEGER",
+        "max_level": "INTEGER",
     }
     for col, typedef in new_columns.items():
         if col not in existing:
@@ -320,7 +335,108 @@ def migrate_enrichment_schema(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_books_game_system ON books(game_system)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_books_product_type ON books(product_type)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_books_series ON books(series)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_books_level ON books(min_level, max_level)")
     conn.commit()
+
+
+# ── Level Extraction ─────────────────────────────────────────────────────────
+
+_ORDINALS = {
+    'first': 1, 'second': 2, 'third': 3, 'fourth': 4, 'fifth': 5,
+    'sixth': 6, 'seventh': 7, 'eighth': 8, 'ninth': 9, 'tenth': 10,
+    'eleventh': 11, 'twelfth': 12,
+}
+
+_TIER_MAP = {1: (1, 4), 2: (5, 10), 3: (11, 16), 4: (17, 20)}
+
+
+def extract_level_range(description: str) -> tuple[int | None, int | None]:
+    """Extract min/max character level from an adventure description.
+
+    Returns (min_level, max_level) or (None, None) if not found.
+    Priority: ordinal words > digit-range-before-level > levels?-N > level-N > tier.
+    """
+    if not description:
+        return None, None
+
+    d = description.lower()
+
+    def _valid(lo: int, hi: int) -> tuple[int, int] | tuple[None, None]:
+        if 1 <= lo <= 30 and 1 <= hi <= 30:
+            return min(lo, hi), max(lo, hi)
+        return None, None
+
+    # 1. Ordinal word range: "third-to-fifth level", "first-level"
+    for w1, v1 in _ORDINALS.items():
+        for w2, v2 in _ORDINALS.items():
+            if w1 == w2:
+                continue
+            pattern = rf'\b{w1}[-\s]*(?:to[-\s]*)?{w2}[-\s]*level'
+            if re.search(pattern, d):
+                return _valid(v1, v2)
+        # Single ordinal: "third-level" or "third level"
+        if re.search(rf'\b{w1}[-\s]level', d):
+            return _valid(v1, v1)
+
+    # 2. "Xth-Yth level" / "X-Y level" (digits before the word "level")
+    m = re.search(r'(\d+)(?:st|nd|rd|th)?\s*[-–]\s*(\d+)(?:st|nd|rd|th)?\s+level', d)
+    if m:
+        return _valid(int(m.group(1)), int(m.group(2)))
+
+    # 3. "levels X-Y" / "levels X"
+    m = re.search(r'levels?\s+(\d+)(?:\s*[-–]\s*(\d+))?', d)
+    if m:
+        lo = int(m.group(1))
+        hi = int(m.group(2)) if m.group(2) else lo
+        return _valid(lo, hi)
+
+    # 4. "level X-Y" / "level X"
+    m = re.search(r'\blevel\s+(\d+)(?:\s*[-–]\s*(\d+))?', d)
+    if m:
+        lo = int(m.group(1))
+        hi = int(m.group(2)) if m.group(2) else lo
+        return _valid(lo, hi)
+
+    # 5. Tier: "tier 2 characters" → (5, 10)
+    m = re.search(r'\btier\s+([1-4])\b', d)
+    if m:
+        lo, hi = _TIER_MAP[int(m.group(1))]
+        return lo, hi
+
+    return None, None
+
+
+def level_pass(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Backfill min_level/max_level for adventures using regex extraction from description."""
+    rows = conn.execute(
+        """SELECT id, display_title, description FROM books
+           WHERE product_type = 'adventure' AND description IS NOT NULL
+             AND min_level IS NULL AND is_old_version = 0"""
+    ).fetchall()
+
+    total = len(rows)
+    updated = 0
+    skipped = 0
+
+    for row in rows:
+        min_lv, max_lv = extract_level_range(row[2])
+        if min_lv is None:
+            skipped += 1
+            continue
+        title = row[1] or f"id:{row[0]}"
+        if dry_run:
+            print(f"  [{row[0]}] {title[:50]}: {min_lv}–{max_lv}")
+        else:
+            conn.execute(
+                "UPDATE books SET min_level = ?, max_level = ? WHERE id = ?",
+                (min_lv, max_lv, row[0]),
+            )
+        updated += 1
+
+    if not dry_run:
+        conn.commit()
+
+    print(f"Level pass: {updated} updated, {skipped} no level found (of {total} adventures)")
 
 
 # ── Data Queries ──────────────────────────────────────────────────────────────
@@ -472,6 +588,21 @@ def validate_enrichment(entry: dict, low_confidence_ids: set[int] | None = None)
     if "display_title" not in entry:
         entry["display_title"] = None
 
+    # min_level/max_level: only valid for adventures, must be integers 1–30
+    raw_min = entry.get("min_level")
+    raw_max = entry.get("max_level")
+    if entry["product_type"] == "adventure" and raw_min is not None:
+        try:
+            lo, hi = int(raw_min), int(raw_max if raw_max is not None else raw_min)
+            entry["min_level"] = lo if 1 <= lo <= 30 else None
+            entry["max_level"] = hi if 1 <= hi <= 30 else None
+        except (TypeError, ValueError):
+            entry["min_level"] = None
+            entry["max_level"] = None
+    else:
+        entry["min_level"] = None
+        entry["max_level"] = None
+
     return entry
 
 
@@ -487,12 +618,15 @@ def save_enrichments(conn: sqlite3.Connection, enrichments: list[dict]) -> int:
             """UPDATE books SET
                 game_system = ?, product_type = ?, tags = ?,
                 series = ?, description = ?, display_title = ?,
+                min_level = ?, max_level = ?,
                 date_enriched = ?
                WHERE id = ?""",
             (
                 entry["game_system"], entry["product_type"], tags_json,
                 entry.get("series"), entry["description"],
-                entry.get("display_title"), now,
+                entry.get("display_title"),
+                entry.get("min_level"), entry.get("max_level"),
+                now,
                 entry["book_id"],
             ),
         )
@@ -656,6 +790,8 @@ def main():
     parser.add_argument("--publisher", help="Only enrich books from this publisher")
     parser.add_argument("--limit", type=int, help="Max books to enrich")
     parser.add_argument("--series-pass", action="store_true", help="Run series detection only")
+    parser.add_argument("--level-pass", action="store_true",
+                        help="Backfill min_level/max_level from descriptions using regex (no API calls)")
     parser.add_argument("--normalize-tags", action="store_true",
                         help="Normalize existing tags to canonical vocabulary (no API calls)")
     parser.add_argument("--min-count", type=int, default=15,
@@ -673,6 +809,11 @@ def main():
 
     if args.normalize_tags:
         normalize_tags_in_db(conn, dry_run=args.dry_run, min_count=args.min_count)
+        conn.close()
+        return
+
+    if args.level_pass:
+        level_pass(conn, dry_run=args.dry_run)
         conn.close()
         return
 

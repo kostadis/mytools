@@ -14,6 +14,17 @@ const router = createRouter({
       component: () => import('../views/BookDetail.vue'),
       props: true,
     },
+    {
+      path: '/topic/:type/:name',
+      name: 'topic',
+      component: () => import('../views/TopicHub.vue'),
+      props: true,
+    },
+    {
+      path: '/graph',
+      name: 'graph',
+      component: () => import('../views/GraphView.vue'),
+    },
   ],
 })
 
