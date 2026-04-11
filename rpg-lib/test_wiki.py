@@ -19,6 +19,7 @@ from library_api.db import (
     get_topic,
     nlq_search,
     search_books,
+    search_facets,
     _row_to_summary,
     _topic_stats,
     _topic_where,
@@ -885,6 +886,169 @@ class TestRowToSummaryContract(unittest.TestCase):
         self.assertGreater(len(rows), 0)
         for row in rows:
             self._assert_summary_shape(row, "nlq_search(LIKE fallback)")
+
+
+# ── search_facets contract tests ──────────────────────────────────────────────
+#
+# search_facets must reflect the SAME WHERE clause as search_books, so the
+# counts in each bucket sum to the same set of books that the regular search
+# would return. These tests verify both the basic aggregation and the
+# search-context narrowing.
+
+class TestSearchFacets(unittest.TestCase):
+    def _populate(self, conn):
+        # 6 horror books across multiple series, publishers, systems, tags
+        add_book(conn, 1, "curse.pdf", display_title="Curse of Strahd",
+                 publisher="WotC", game_system="D&D 5e", product_type="adventure",
+                 series="Ravenloft", tags=["horror", "undead", "5e"],
+                 description="Gothic horror in Barovia.",
+                 date_enriched="2026-01-01")
+        add_book(conn, 2, "vrgr.pdf", display_title="Van Richten's Guide",
+                 publisher="WotC", game_system="D&D 5e", product_type="sourcebook",
+                 series="Ravenloft", tags=["horror", "undead", "5e"],
+                 description="Guide to the domains of dread.",
+                 date_enriched="2026-01-01")
+        add_book(conn, 3, "vathak.pdf", display_title="Shadows over Vathak",
+                 publisher="Fat Goblin", game_system="Pathfinder 1e",
+                 product_type="setting",
+                 series="Vathak", tags=["horror", "dark_fantasy", "pf1e"],
+                 description="Dark setting for PF.",
+                 date_enriched="2026-01-01")
+        add_book(conn, 4, "coc.pdf", display_title="Call of Cthulhu Quickstart",
+                 publisher="Chaosium", game_system="Call of Cthulhu",
+                 product_type="quickstart",
+                 series="Cthulhu Quickstart", tags=["horror", "mystery", "coc"],
+                 description="Investigating cosmic horror.",
+                 date_enriched="2026-01-01")
+        # Non-horror book in Ravenloft (proves filtering works)
+        add_book(conn, 5, "tyranny.pdf", display_title="Tyranny of Dragons",
+                 publisher="WotC", game_system="D&D 5e", product_type="adventure",
+                 series="Tyranny", tags=["dragons", "5e"],
+                 description="Dragon adventure.",
+                 date_enriched="2026-01-01")
+        # Old version that should be excluded by default
+        add_book(conn, 6, "old_strahd.pdf", display_title="Old Strahd",
+                 publisher="WotC", game_system="D&D 5e", product_type="adventure",
+                 series="Ravenloft", tags=["horror", "5e"],
+                 description="Older edition.",
+                 is_old_version=1,
+                 date_enriched="2026-01-01")
+
+    def setUp(self):
+        self.conn = make_db(with_wiki_tables=False)
+        self._populate(self.conn)
+
+    def test_response_shape(self):
+        result = search_facets(self.conn)
+        self.assertIn("total", result)
+        for key in ("series", "publisher", "game_system", "tag"):
+            self.assertIn(key, result)
+            for entry in result[key]:
+                self.assertIn("value", entry)
+                self.assertIn("count", entry)
+
+    def test_unfiltered_total_excludes_old_versions(self):
+        result = search_facets(self.conn)
+        # 5 live books (book 6 is is_old_version=1)
+        self.assertEqual(result["total"], 5)
+
+    def test_unfiltered_includes_old_versions_when_requested(self):
+        result = search_facets(self.conn, include_old=True)
+        self.assertEqual(result["total"], 6)
+
+    def test_q_horror_filters_buckets(self):
+        """Searching 'horror' must narrow every bucket to only horror books."""
+        result = search_facets(self.conn, q="horror")
+        self.assertEqual(result["total"], 4)  # books 1, 2, 3, 4
+
+        # Check series facet — Ravenloft should have 2, Vathak 1, Cthulhu 1, Tyranny absent
+        series_map = {e["value"]: e["count"] for e in result["series"]}
+        self.assertEqual(series_map.get("Ravenloft"), 2)
+        self.assertEqual(series_map.get("Vathak"), 1)
+        self.assertEqual(series_map.get("Cthulhu Quickstart"), 1)
+        self.assertNotIn("Tyranny", series_map)  # not a horror book
+
+        # Publisher facet
+        pub_map = {e["value"]: e["count"] for e in result["publisher"]}
+        self.assertEqual(pub_map.get("WotC"), 2)
+        self.assertEqual(pub_map.get("Fat Goblin"), 1)
+        self.assertEqual(pub_map.get("Chaosium"), 1)
+
+        # Game system facet
+        gs_map = {e["value"]: e["count"] for e in result["game_system"]}
+        self.assertEqual(gs_map.get("D&D 5e"), 2)
+        self.assertEqual(gs_map.get("Pathfinder 1e"), 1)
+        self.assertEqual(gs_map.get("Call of Cthulhu"), 1)
+
+        # Tag facet — horror appears on all 4 matching books
+        tag_map = {e["value"]: e["count"] for e in result["tag"]}
+        self.assertEqual(tag_map.get("horror"), 4)
+        self.assertEqual(tag_map.get("undead"), 2)  # books 1, 2
+        self.assertEqual(tag_map.get("dark_fantasy"), 1)  # book 3
+        self.assertEqual(tag_map.get("mystery"), 1)  # book 4
+        self.assertNotIn("dragons", tag_map)  # only on the non-horror book
+
+    def test_facet_counts_sum_to_total_for_required_columns(self):
+        """For columns where every matching book has a value, counts must sum
+        to the total. Tags can sum higher because a book has multiple tags."""
+        result = search_facets(self.conn, q="horror")
+        total = result["total"]
+        for key in ("series", "publisher", "game_system"):
+            facet_total = sum(e["count"] for e in result[key])
+            self.assertEqual(facet_total, total,
+                             f"{key} facet sums to {facet_total} but total is {total}")
+
+    def test_facets_sorted_by_count_desc(self):
+        result = search_facets(self.conn, q="horror")
+        for key in ("series", "publisher", "game_system", "tag"):
+            counts = [e["count"] for e in result[key]]
+            self.assertEqual(counts, sorted(counts, reverse=True),
+                             f"{key} not sorted by count desc")
+
+    def test_filter_by_series_narrows_other_facets(self):
+        """Filtering by series='Ravenloft' must narrow publisher/system/tag too."""
+        result = search_facets(self.conn, series="Ravenloft")
+        self.assertEqual(result["total"], 2)  # books 1, 2 (book 6 is old)
+        # Series facet now contains only Ravenloft (the strict interpretation)
+        series_map = {e["value"]: e["count"] for e in result["series"]}
+        self.assertEqual(series_map, {"Ravenloft": 2})
+
+    def test_tag_filter_intersection(self):
+        """tags='horror,undead' must AND the conditions, not OR."""
+        result = search_facets(self.conn, tags="horror,undead")
+        self.assertEqual(result["total"], 2)  # only books 1 and 2 have BOTH
+
+    def test_null_columns_excluded_from_facets(self):
+        """A book with NULL series doesn't pollute the series facet."""
+        add_book(self.conn, 7, "no_series.pdf",
+                 publisher="Solo", game_system="System Neutral",
+                 product_type="gm_aid",
+                 series=None, tags=["gm_aid"],
+                 description="A standalone GM tool.",
+                 date_enriched="2026-01-01")
+        result = search_facets(self.conn)
+        # Series facet should NOT contain a NULL/empty entry
+        for entry in result["series"]:
+            self.assertTrue(entry["value"])
+        # But publisher should include 'Solo'
+        pub_map = {e["value"]: e["count"] for e in result["publisher"]}
+        self.assertEqual(pub_map.get("Solo"), 1)
+
+    def test_empty_search_returns_empty_facets(self):
+        """A query that matches nothing returns total=0 and empty buckets."""
+        result = search_facets(self.conn, q="ZZZNoMatchZZZ")
+        self.assertEqual(result["total"], 0)
+        self.assertEqual(result["series"], [])
+        self.assertEqual(result["publisher"], [])
+        self.assertEqual(result["game_system"], [])
+        self.assertEqual(result["tag"], [])
+
+    def test_facets_match_search_books_total(self):
+        """search_facets total must equal search_books total under the same params."""
+        params = {"q": "horror"}
+        f = search_facets(self.conn, **params)
+        s = search_books(self.conn, grouped=False, per_page=500, **params)
+        self.assertEqual(f["total"], s["total"])
 
 
 if __name__ == "__main__":

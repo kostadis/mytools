@@ -1,7 +1,41 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { useLibraryStore } from '../stores/library'
+import { useLibraryStore, type GroupByMode } from '../stores/library'
+
+// Human-readable labels for the sidebar filter keys, so chips read
+// "System: D&D 5e" instead of "game_system: D&D 5e".
+const FILTER_LABELS: Record<string, string> = {
+  game_system: 'System',
+  product_type: 'Type',
+  publisher: 'Publisher',
+  series: 'Series',
+  source: 'Source',
+  tags: 'Tag',
+}
+
+interface FilterChip {
+  key: string  // unique id for :key
+  label: string
+  value: string
+  remove: () => void
+}
+
+const GROUP_OPTIONS: { value: GroupByMode; label: string }[] = [
+  { value: 'books',       label: 'Books' },
+  { value: 'series',      label: 'Series' },
+  { value: 'publisher',   label: 'Publishers' },
+  { value: 'game_system', label: 'Systems' },
+  { value: 'tag',         label: 'Tags' },
+]
+
+const GROUP_LABELS: Record<GroupByMode, string> = {
+  books:       'books',
+  series:      'series',
+  publisher:   'publishers',
+  game_system: 'systems',
+  tag:         'tags',
+}
 
 const store = useLibraryStore()
 const router = useRouter()
@@ -38,6 +72,57 @@ function doSearch() {
 function onFilterChange(key: string, event: Event) {
   const val = (event.target as HTMLSelectElement).value
   store.setFilter(key, val)
+}
+
+const activeFilterChips = computed<FilterChip[]>(() => {
+  const chips: FilterChip[] = []
+
+  if (store.queryAll) {
+    chips.push({
+      key: 'q',
+      label: 'Search',
+      value: store.queryAll,
+      remove: () => {
+        searchAll.value = ''
+        store.setQuery('', store.queryName)
+      },
+    })
+  }
+  if (store.queryName) {
+    chips.push({
+      key: 'q_name',
+      label: 'Title',
+      value: store.queryName,
+      remove: () => {
+        searchName.value = ''
+        store.setQuery(store.queryAll, '')
+      },
+    })
+  }
+  for (const [k, v] of Object.entries(store.activeFilters)) {
+    if (!v) continue
+    chips.push({
+      key: `filter:${k}`,
+      label: FILTER_LABELS[k] || k,
+      value: v,
+      remove: () => store.setFilter(k, ''),
+    })
+  }
+  if (store.charLevel !== null) {
+    chips.push({
+      key: 'char_level',
+      label: 'Level',
+      value: String(store.charLevel),
+      remove: () => store.setCharLevel(null),
+    })
+  }
+  return chips
+})
+
+function clearAllChips() {
+  searchAll.value = ''
+  searchName.value = ''
+  store.clearFilters()
 }
 
 function onTagClick(tag: string) {
@@ -313,13 +398,55 @@ function tagGroups(available: { value: string; count: number }[]) {
         <button class="nlq-clear-applied" aria-label="Clear NLQ filters" @click="clearNlqBanner">✕ Clear</button>
       </div>
 
+      <!-- Active filters banner — visible whenever ANY filter / query / level
+           is applied. Each chip has a ✕ to remove just that filter, plus a
+           Clear all at the end. Makes the faceted drill-in flow legible:
+           after clicking Group by Publisher → Chaosium, the chip "Publisher:
+           Chaosium" sits here so the user can back out individually without
+           losing their search query. -->
+      <div v-if="activeFilterChips.length" class="active-filters">
+        <span class="active-filters-label">Filters:</span>
+        <span
+          v-for="chip in activeFilterChips"
+          :key="chip.key"
+          class="filter-chip"
+        >
+          <span class="chip-label">{{ chip.label }}:</span>
+          <span class="chip-value">{{ chip.value }}</span>
+          <button
+            type="button"
+            class="chip-remove"
+            :aria-label="`Remove ${chip.label} filter`"
+            @click="chip.remove"
+          >✕</button>
+        </span>
+        <button
+          type="button"
+          class="filters-clear-all"
+          @click="clearAllChips"
+        >Clear all</button>
+      </div>
+
       <div class="results-header">
         <span class="result-count">
-          <span v-if="store.loading" class="loading">Loading…</span>
-          <template v-else>{{ store.total.toLocaleString() }} books</template>
+          <span v-if="store.loading || store.facetsLoading" class="loading">Loading…</span>
+          <template v-else-if="store.groupBy === 'books'">{{ store.total.toLocaleString() }} books</template>
+          <template v-else-if="store.facets">
+            {{ store.facets[store.groupBy].length.toLocaleString() }} {{ GROUP_LABELS[store.groupBy] }}
+            across {{ store.facets.total.toLocaleString() }} books
+          </template>
         </span>
         <div class="header-controls">
-          <div class="view-toggle">
+          <div class="view-toggle group-by-toggle">
+            <span class="toggle-label">Group by:</span>
+            <button
+              v-for="opt in GROUP_OPTIONS"
+              :key="opt.value"
+              :class="['btn-secondary btn-sm', { active: store.groupBy === opt.value }]"
+              @click="store.setGroupBy(opt.value)"
+            >{{ opt.label }}</button>
+          </div>
+          <div v-if="store.groupBy === 'books'" class="view-toggle">
             <button
               :class="['btn-secondary btn-sm', { active: store.viewMode === 'table' }]"
               @click="store.setViewMode('table')"
@@ -335,8 +462,36 @@ function tagGroups(available: { value: string; count: number }[]) {
       <!-- Error banner -->
       <div v-if="store.searchError" class="search-error-banner">{{ store.searchError }}</div>
 
+      <!-- Group-by dimension grid (alternative to the books table/cards view).
+           Lets the user see "which series/publishers/systems/tags contain
+           books that match my current search" and click in to drill. -->
+      <template v-if="store.groupBy !== 'books'">
+        <div v-if="store.facetsLoading && !store.facets" class="status-msg">Loading…</div>
+        <div
+          v-else-if="store.facets && store.facets[store.groupBy].length === 0"
+          class="empty-state"
+        >
+          <div class="empty-icon">⊘</div>
+          <div class="empty-msg">No {{ GROUP_LABELS[store.groupBy] }} match these filters</div>
+          <button class="btn-secondary" @click="searchAll = ''; searchName = ''; store.clearFilters()">Clear filters</button>
+        </div>
+        <div v-else-if="store.facets" class="facet-grid">
+          <button
+            v-for="entry in store.facets[store.groupBy]"
+            :key="entry.value"
+            type="button"
+            class="facet-row"
+            :aria-label="`Drill into ${entry.value} (${entry.count} books)`"
+            @click="store.drillInFacet(store.groupBy, entry.value)"
+          >
+            <span class="facet-name">{{ entry.value }}</span>
+            <span class="facet-count">{{ entry.count.toLocaleString() }}</span>
+          </button>
+        </div>
+      </template>
+
       <!-- Table View -->
-      <div v-if="store.viewMode === 'table'" class="table-wrapper">
+      <div v-else-if="store.viewMode === 'table'" class="table-wrapper">
         <table class="book-table">
           <thead>
             <tr>
@@ -472,8 +627,8 @@ function tagGroups(available: { value: string; count: number }[]) {
         </div>
       </div>
 
-      <!-- Pagination -->
-      <div class="pagination" v-if="store.totalPages > 1">
+      <!-- Pagination (books view only — facet grids show everything) -->
+      <div class="pagination" v-if="store.groupBy === 'books' && store.totalPages > 1">
         <button
           class="btn-secondary"
           :disabled="store.page <= 1"
@@ -753,6 +908,156 @@ function tagGroups(available: { value: string; count: number }[]) {
   background: var(--accent);
   color: white;
   border-color: var(--accent);
+}
+
+/* Active filters banner */
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.75rem;
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-card));
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.active-filters-label {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+  margin-right: 0.1rem;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.4rem 0.2rem 0.55rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.chip-label {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.chip-value {
+  color: var(--text-bright);
+  font-weight: 500;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 0.15rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  border-radius: 3px;
+}
+.chip-remove:hover {
+  background: var(--accent);
+  color: white;
+}
+
+.filters-clear-all {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 0.25rem 0.55rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  margin-left: auto;
+}
+.filters-clear-all:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.group-by-toggle .toggle-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 0.4rem;
+  align-self: center;
+}
+
+/* Facet grid (group-by view) */
+.facet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.5rem;
+}
+
+.facet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.facet-row:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.facet-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.facet-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.facet-count {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.facet-row:hover .facet-count {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.status-msg {
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-dim);
 }
 
 /* Table View */

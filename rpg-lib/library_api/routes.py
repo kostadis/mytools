@@ -9,8 +9,9 @@ from fastapi.responses import FileResponse
 
 from . import db
 from .models import (
-    BookDetail, BookSummary, BookText, FilterOptions, GraphResponse, NlqRequest,
-    NlqResponse, SearchResponse, StatsResponse, TopicResponse,
+    BookDetail, BookSummary, BookText, FacetsResponse, FilterOptions,
+    GraphResponse, NlqRequest, NlqResponse, SearchResponse, StatsResponse,
+    TopicResponse,
 )
 
 router = APIRouter(prefix="/api/library", tags=["library"])
@@ -63,6 +64,41 @@ def search(
             include_duplicates=include_duplicates,
             grouped=grouped,
             page=page, per_page=per_page,
+        )
+    finally:
+        conn.close()
+
+
+@router.get("/search/facets", response_model=FacetsResponse)
+def search_facets(
+    q: str | None = Query(None, description="Search all fields"),
+    q_name: str | None = Query(None, description="Search title/filename only"),
+    game_system: str | None = None,
+    product_type: str | None = None,
+    publisher: str | None = None,
+    series: str | None = None,
+    source: str | None = None,
+    tags: str | None = Query(None, description="Comma-separated tag list"),
+    char_level: int | None = Query(None, ge=1, le=30),
+    include_old: bool = Query(False),
+    include_drafts: bool = Query(False),
+    include_duplicates: bool = Query(False),
+):
+    """Aggregate the books matching a search by series / publisher / game_system / tag.
+
+    Takes the same query parameters as /search (minus pagination, sort, and
+    grouping) and returns a count of matching books per dimension. Used by the
+    UI's "Group by" toggle so the user can see "which series contain horror
+    books?" without leaving their search context."""
+    conn = _conn()
+    try:
+        return db.search_facets(
+            conn, q=q, q_name=q_name,
+            game_system=game_system, product_type=product_type,
+            publisher=publisher, series=series, source=source, tags=tags,
+            level_min=char_level, level_max=char_level,
+            include_old=include_old, include_drafts=include_drafts,
+            include_duplicates=include_duplicates,
         )
     finally:
         conn.close()
