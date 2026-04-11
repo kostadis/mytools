@@ -59,32 +59,33 @@ def _collection_group_key(publisher: str | None, collection: str | None, book_id
     return f"{pub}||{norm}"
 
 
-def search_books(conn: sqlite3.Connection, q: str | None = None,
-                 q_name: str | None = None,
-                 game_system: str | None = None,
-                 product_type: str | None = None,
-                 publisher: str | None = None,
-                 series: str | None = None,
-                 source: str | None = None,
-                 tags: str | None = None,
-                 level_min: int | None = None,
-                 level_max: int | None = None,
-                 sort: str | None = None,
-                 sort_dir: str | None = None,
-                 include_old: bool = False,
-                 include_drafts: bool = False,
-                 include_duplicates: bool = False,
-                 grouped: bool = True,
-                 page: int = 1, per_page: int = 50) -> dict:
-    """Search and filter books. Returns dict with results, total, pagination info."""
-    conditions = []
+def _build_search_where(
+    q: str | None = None,
+    q_name: str | None = None,
+    game_system: str | None = None,
+    product_type: str | None = None,
+    publisher: str | None = None,
+    series: str | None = None,
+    source: str | None = None,
+    tags: str | None = None,
+    level_min: int | None = None,
+    level_max: int | None = None,
+    include_old: bool = False,
+    include_drafts: bool = False,
+    include_duplicates: bool = False,
+) -> tuple[str, list]:
+    """Build the WHERE clause + parameter list shared by search_books and
+    search_facets, so a faceted search reflects exactly the same set of books
+    that the regular search would return."""
+    conditions: list[str] = []
+    params: list = []
+
     if not include_old:
         conditions.append("is_old_version = 0")
     if not include_drafts:
         conditions.append("is_draft = 0")
     if not include_duplicates:
         conditions.append("is_duplicate = 0")
-    params = []
 
     if q:
         conditions.append(
@@ -127,10 +128,41 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
             "min_level IS NOT NULL AND max_level IS NOT NULL "
             "AND min_level <= ? AND max_level >= ?"
         )
-        params.extend([level_max if level_max is not None else level_min,
-                        level_min if level_min is not None else level_max])
+        params.extend([
+            level_max if level_max is not None else level_min,
+            level_min if level_min is not None else level_max,
+        ])
 
     where = " AND ".join(conditions) if conditions else "1=1"
+    return where, params
+
+
+def search_books(conn: sqlite3.Connection, q: str | None = None,
+                 q_name: str | None = None,
+                 game_system: str | None = None,
+                 product_type: str | None = None,
+                 publisher: str | None = None,
+                 series: str | None = None,
+                 source: str | None = None,
+                 tags: str | None = None,
+                 level_min: int | None = None,
+                 level_max: int | None = None,
+                 sort: str | None = None,
+                 sort_dir: str | None = None,
+                 include_old: bool = False,
+                 include_drafts: bool = False,
+                 include_duplicates: bool = False,
+                 grouped: bool = True,
+                 page: int = 1, per_page: int = 50) -> dict:
+    """Search and filter books. Returns dict with results, total, pagination info."""
+    where, params = _build_search_where(
+        q=q, q_name=q_name,
+        game_system=game_system, product_type=product_type,
+        publisher=publisher, series=series, source=source, tags=tags,
+        level_min=level_min, level_max=level_max,
+        include_old=include_old, include_drafts=include_drafts,
+        include_duplicates=include_duplicates,
+    )
 
     # Sort
     direction = "DESC" if sort_dir == "desc" else "ASC"
@@ -216,6 +248,94 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
         "page": page,
         "per_page": per_page,
         "total_pages": total_pages,
+    }
+
+
+def search_facets(
+    conn: sqlite3.Connection,
+    q: str | None = None,
+    q_name: str | None = None,
+    game_system: str | None = None,
+    product_type: str | None = None,
+    publisher: str | None = None,
+    series: str | None = None,
+    source: str | None = None,
+    tags: str | None = None,
+    level_min: int | None = None,
+    level_max: int | None = None,
+    include_old: bool = False,
+    include_drafts: bool = False,
+    include_duplicates: bool = False,
+) -> dict:
+    """Aggregate the books matching a search by series / publisher / game_system / tag.
+
+    Uses exactly the same WHERE clause as ``search_books``, so the counts here
+    sum to the same set of books that the regular search would return. The
+    return shape is::
+
+        {
+            "total": <int>,
+            "series":      [{"value": "Ravenloft", "count": 8}, ...],
+            "publisher":   [{"value": "WotC",      "count": 24}, ...],
+            "game_system": [{"value": "D&D 5e",    "count": 87}, ...],
+            "tag":         [{"value": "horror",    "count": 14}, ...],
+        }
+
+    Each list is sorted by descending count. Tags are decoded from the JSON
+    array column. Empty/NULL values are excluded from the buckets.
+    """
+    where, params = _build_search_where(
+        q=q, q_name=q_name,
+        game_system=game_system, product_type=product_type,
+        publisher=publisher, series=series, source=source, tags=tags,
+        level_min=level_min, level_max=level_max,
+        include_old=include_old, include_drafts=include_drafts,
+        include_duplicates=include_duplicates,
+    )
+
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM books WHERE {where}", params
+    ).fetchone()[0]
+
+    def _column_facet(col: str) -> list[dict]:
+        rows = conn.execute(
+            f"""SELECT {col} AS value, COUNT(*) AS count
+                FROM books
+                WHERE {where} AND {col} IS NOT NULL AND {col} != ''
+                GROUP BY {col}
+                ORDER BY count DESC, {col} ASC""",
+            params,
+        ).fetchall()
+        return [{"value": r["value"], "count": r["count"]} for r in rows]
+
+    series_facet = _column_facet("series")
+    publisher_facet = _column_facet("publisher")
+    game_system_facet = _column_facet("game_system")
+
+    # Tags live in a JSON-array column — decode in Python.
+    tag_rows = conn.execute(
+        f"SELECT tags FROM books WHERE {where} AND tags IS NOT NULL",
+        params,
+    ).fetchall()
+    tag_counts: dict[str, int] = {}
+    for (raw,) in tag_rows:
+        try:
+            for t in json.loads(raw):
+                if t:
+                    tag_counts[t] = tag_counts.get(t, 0) + 1
+        except (json.JSONDecodeError, TypeError):
+            pass
+    tag_facet = sorted(
+        [{"value": t, "count": c} for t, c in tag_counts.items()],
+        key=lambda x: (-x["count"], x["value"]),
+    )
+
+    return {
+        "total": total,
+        "series": series_facet,
+        "publisher": publisher_facet,
+        "game_system": game_system_facet,
+        "tag": tag_facet,
     }
 
 
