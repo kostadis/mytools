@@ -193,6 +193,42 @@ AL_DDEX_CODE_RE = re.compile(r"\bDDEX[-_ ]?0?(\d)[-_ ]?\d", re.IGNORECASE)
 AL_DDAL_CODE_RE = re.compile(r"\bDDAL[-_ ]?(\d{2})[-_ ]?\d", re.IGNORECASE)
 
 
+# Filename patterns that indicate a Pathfinder conversion of a D&D book.
+# Bloodied & Bruised, Monster Loot, and the D&D Adventurers League DDAL-DRW
+# line all ship D&D-to-Pathfinder conversions with a "-PF" or "_PF" filename
+# suffix. The LLM sometimes misses this and leaves the D&D 5e classification
+# on the 5e base title. Override post-hoc using the filename, which is ground
+# truth from disk.
+#
+# The regex deliberately requires a '-' or '_' separator before 'PF' so it
+# only matches the conversion-suffix convention — not any filename that happens
+# to end in "PF" (e.g. "APGDMG002PF.pdf", rare and not worth the false-positive
+# risk). It also only matches when "PF" is followed by ".pdf" or another
+# underscore, so "_PrintFriendly.pdf" and similar English substrings don't
+# get picked up.
+PATHFINDER_CONVERSION_FILENAME_RE = re.compile(
+    r"[-_]PF(?:\.pdf|_)",
+    re.IGNORECASE,
+)
+
+# The override only fires when the current game_system is in this set. This
+# self-protects against filenames like "dune_digital_pf_*.pdf" (Dune RPG uses
+# "_pf_" as a version marker) or "VoS-SQ-SunderedSisters_PF_V1.0.pdf" (Vampire:
+# the Masquerade product code) — they already have the right non-D&D system
+# classified by the LLM, and we leave them alone. Only the ~29 D&D-family
+# matches in the current library actually need fixing.
+PF_CONVERSION_OVERRIDABLE_SYSTEMS: set[str] = {
+    "D&D 5e", "D&D 5e 2024", "D&D 3.5e", "D&D 4e", "AD&D", "OD&D",
+}
+
+# D&D system tags that must be stripped from the tag list when we override
+# game_system to Pathfinder 1e, to keep tag-based search consistent with the
+# game_system column.
+PF_CONVERSION_SUPERSEDED_TAGS: set[str] = {
+    "5e", "5e_2024", "3_5e", "4e", "ad_d", "od_d",
+}
+
+
 # Series/collection patterns that deterministically imply a canonical tag.
 # Applied after the LLM returns tags, so a model that forgets to tag an
 # obvious campaign-line book still gets the right tag. Matches against the
@@ -767,6 +803,37 @@ def parse_json_response(text: str) -> list | dict:
     return json.loads(text)
 
 
+def apply_pathfinder_conversion_rule(entry: dict, book_meta: dict | None) -> None:
+    """Override game_system to Pathfinder 1e for D&D-to-PF conversions.
+
+    Filenames ending in ``-PF.pdf`` or ``_PF.pdf`` are the standard convention
+    for the Pathfinder conversion of a 5e product (Bloodied & Bruised, Monster
+    Loot, DDAL-DRW, etc.). The LLM sometimes misses this and leaves the D&D 5e
+    classification on the 5e base title.
+
+    The rule only fires when the current ``game_system`` is in
+    ``PF_CONVERSION_OVERRIDABLE_SYSTEMS``. This self-protects against
+    non-D&D-family filenames that happen to contain ``_PF`` (Dune, Vampire,
+    Historia, etc. — the suffix means version markers in those publishers,
+    not Pathfinder).
+
+    Mutates ``entry['game_system']`` and ``entry['tags']`` in place.
+    """
+    if not book_meta:
+        return
+    filename = book_meta.get("filename") or ""
+    if not PATHFINDER_CONVERSION_FILENAME_RE.search(filename):
+        return
+    if entry.get("game_system") not in PF_CONVERSION_OVERRIDABLE_SYSTEMS:
+        return
+    entry["game_system"] = "Pathfinder 1e"
+    tags = list(entry.get("tags") or [])
+    tags = [t for t in tags if t not in PF_CONVERSION_SUPERSEDED_TAGS]
+    if "pf1e" not in tags:
+        tags.append("pf1e")
+    entry["tags"] = tags
+
+
 def apply_series_implied_tags(entry: dict, book_meta: dict | None) -> None:
     """Add any canonical tags implied by the book's series/collection/filename.
 
@@ -845,8 +912,10 @@ def validate_enrichment(entry: dict, low_confidence_ids: set[int] | None = None,
         entry["min_level"] = None
         entry["max_level"] = None
 
-    # Deterministic post-LLM rules: tags implied by the book's on-disk
-    # series/collection/filename that the model may have missed.
+    # Deterministic post-LLM rules: filename-based overrides first (because
+    # they may rewrite game_system + system tags), then tag-injection rules
+    # that read the corrected entry.
+    apply_pathfinder_conversion_rule(entry, book_meta)
     apply_series_implied_tags(entry, book_meta)
 
     return entry

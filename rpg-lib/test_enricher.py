@@ -6,10 +6,12 @@ import sqlite3
 import unittest
 
 from pdf_enricher import (
+    PATHFINDER_CONVERSION_FILENAME_RE,
     SERIES_ALIASES,
     UNQUALIFIED_AL_SERIES,
     al_season_canonical_series,
     al_season_from_filename,
+    apply_pathfinder_conversion_rule,
     apply_series_implied_tags,
     build_book_summary,
     build_series_prompt,
@@ -462,6 +464,163 @@ class TestSeriesImpliedTags(unittest.TestCase):
             "collection": "EB-01 The Night Land",
         })
         self.assertIn("organized_play", entry["tags"])
+
+
+class TestPathfinderConversionFilenameRegex(unittest.TestCase):
+    """Pure-regex coverage for the PF-suffix detector."""
+
+    def _matches(self, filename: str) -> bool:
+        return bool(PATHFINDER_CONVERSION_FILENAME_RE.search(filename))
+
+    # Positive cases — must match
+    def test_dash_pf_pdf(self):
+        self.assertTrue(self._matches("925821-DDAL-DRW06_Thimblerigging-PF.pdf"))
+
+    def test_underscore_pf_pdf(self):
+        self.assertTrue(self._matches(
+            "1315435-Bloodied__Bruised_-_Volos_Guide_to_Monsters_PF.pdf"))
+
+    def test_dash_pf_versioned(self):
+        self.assertTrue(self._matches("925821-DDAL-DRW05_Uncertain_Scrutiny-PF_v1.2.pdf"))
+
+    def test_underscore_pf_versioned(self):
+        self.assertTrue(self._matches(
+            "1315435-Bloodied__Bruised_-_Strixhaven_v1_PF_v2.pdf"))
+
+    def test_lowercase_pf(self):
+        """Some filenames use lowercase _pf — case-insensitive match."""
+        self.assertTrue(self._matches("2133295-Lost_Dragon_Egg_pf.pdf"))
+
+    # Negative cases — must NOT match
+    def test_print_friendly_does_not_match(self):
+        """'_PrintFriendly.pdf' is a different convention (B&W layout, not PF)."""
+        self.assertFalse(self._matches(
+            "193137-Icewind_Dale_Travel_Cheatsheet_(printer_friendly).pdf"))
+        self.assertFalse(self._matches(
+            "Icewind_Dale_Rime_of_the_Frostmaiden_PrintFriendly.pdf"))
+
+    def test_bare_pf_no_separator_does_not_match(self):
+        """'APGDMG002PF.pdf' has no separator before PF — too risky to auto-match."""
+        self.assertFalse(self._matches("APGDMG002PF.pdf"))
+
+    def test_unrelated_filename(self):
+        self.assertFalse(self._matches("Curse_of_Strahd.pdf"))
+        self.assertFalse(self._matches("DDAL05-08_Durlags_Tower_v1.0.pdf"))
+
+    def test_player_guide_pg_does_not_match(self):
+        """'_PG' must not be confused with '_PF'."""
+        self.assertFalse(self._matches("Oracle_of_War_PG_v1.3.pdf"))
+
+
+class TestApplyPathfinderConversionRule(unittest.TestCase):
+    """End-to-end behaviour of the post-LLM PF override."""
+
+    def _entry(self, *, game_system="D&D 5e", tags=None):
+        return {
+            "book_id": 1, "game_system": game_system, "product_type": "adventure",
+            "tags": list(tags) if tags is not None else ["adventure", "5e", "horror"],
+            "description": "An adventure.",
+        }
+
+    def test_dnd_5e_with_pf_filename_overrides(self):
+        entry = self._entry()
+        apply_pathfinder_conversion_rule(entry, {
+            "filename": "925821-DDAL-DRW06_Thimblerigging-PF.pdf",
+        })
+        self.assertEqual(entry["game_system"], "Pathfinder 1e")
+
+    def test_drops_5e_tag_and_adds_pf1e(self):
+        entry = self._entry(tags=["adventure", "5e", "horror"])
+        apply_pathfinder_conversion_rule(entry, {
+            "filename": "1315435-Monster_Loot_-_Out_of_the_Abyss_PF.pdf",
+        })
+        self.assertNotIn("5e", entry["tags"])
+        self.assertIn("pf1e", entry["tags"])
+        self.assertIn("adventure", entry["tags"])
+        self.assertIn("horror", entry["tags"])
+
+    def test_drops_all_dnd_system_tags(self):
+        """If multiple D&D system tags slipped in, all are removed."""
+        entry = self._entry(tags=["5e", "5e_2024", "3_5e", "ad_d", "adventure"])
+        apply_pathfinder_conversion_rule(entry, {"filename": "foo-PF.pdf"})
+        self.assertEqual(set(entry["tags"]), {"adventure", "pf1e"})
+
+    def test_idempotent_on_already_pf1e(self):
+        entry = self._entry(game_system="Pathfinder 1e", tags=["pf1e", "adventure"])
+        apply_pathfinder_conversion_rule(entry, {"filename": "foo-PF.pdf"})
+        self.assertEqual(entry["game_system"], "Pathfinder 1e")
+        self.assertEqual(entry["tags"].count("pf1e"), 1)
+
+    def test_does_not_touch_pf2e(self):
+        """A book the LLM correctly classified as PF2e is left alone."""
+        entry = self._entry(game_system="Pathfinder 2e", tags=["pf2e", "adventure"])
+        apply_pathfinder_conversion_rule(entry, {"filename": "foo-PF.pdf"})
+        self.assertEqual(entry["game_system"], "Pathfinder 2e")
+        self.assertNotIn("pf1e", entry["tags"])
+
+    def test_does_not_touch_dune(self):
+        """Dune RPG uses '_pf_' as a version marker — must not override."""
+        entry = self._entry(
+            game_system="Other: Dune Adventures in the Imperium",
+            tags=["adventure"],
+        )
+        apply_pathfinder_conversion_rule(entry, {
+            "filename": "dune_digital_pf_20-1-22.pdf",
+        })
+        self.assertEqual(entry["game_system"],
+                         "Other: Dune Adventures in the Imperium")
+
+    def test_does_not_touch_vampire(self):
+        """Vampire: The Masquerade product code uses _PF for version, not Pathfinder."""
+        entry = self._entry(
+            game_system="Other: Vampire: The Masquerade",
+            tags=["adventure"],
+        )
+        apply_pathfinder_conversion_rule(entry, {
+            "filename": "387228-VoS-SQ-SunderedSisters_PF_V1.0.pdf",
+        })
+        self.assertEqual(entry["game_system"], "Other: Vampire: The Masquerade")
+
+    def test_does_not_touch_savage_worlds(self):
+        entry = self._entry(game_system="Savage Worlds", tags=["adventure"])
+        apply_pathfinder_conversion_rule(entry, {"filename": "MIS7092-PF.pdf"})
+        self.assertEqual(entry["game_system"], "Savage Worlds")
+
+    def test_no_change_when_filename_does_not_match(self):
+        entry = self._entry()
+        apply_pathfinder_conversion_rule(entry, {
+            "filename": "Curse_of_Strahd.pdf",
+        })
+        self.assertEqual(entry["game_system"], "D&D 5e")
+        self.assertIn("5e", entry["tags"])
+
+    def test_no_book_meta_is_noop(self):
+        entry = self._entry()
+        apply_pathfinder_conversion_rule(entry, None)
+        self.assertEqual(entry["game_system"], "D&D 5e")
+
+    def test_preserves_unrelated_tags(self):
+        entry = self._entry(tags=["adventure", "5e", "horror", "dungeon", "undead"])
+        apply_pathfinder_conversion_rule(entry, {"filename": "foo-PF.pdf"})
+        self.assertEqual(set(entry["tags"]),
+                         {"adventure", "horror", "dungeon", "undead", "pf1e"})
+
+    def test_validate_enrichment_applies_rule(self):
+        """Integration: validate_enrichment runs the PF rule when book_meta is present."""
+        entry = {
+            "book_id": 1, "game_system": "D&D 5e", "product_type": "adventure",
+            "tags": ["adventure", "5e"],
+            "description": "...",
+        }
+        result = validate_enrichment(entry, book_meta={
+            "filename": "925821-DDAL-DRW06_Thimblerigging-PF.pdf",
+            "collection": "DDAL-DRW-06 Thimblerigging",
+        })
+        self.assertEqual(result["game_system"], "Pathfinder 1e")
+        self.assertIn("pf1e", result["tags"])
+        self.assertNotIn("5e", result["tags"])
+        # And the AL series-implied-tags rule still fires after the override
+        self.assertIn("organized_play", result["tags"])
 
 
 class TestSeriesAliasesMapShape(unittest.TestCase):
