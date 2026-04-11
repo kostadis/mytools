@@ -15,6 +15,12 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/browse/:type',
+      name: 'browse-index',
+      component: () => import('../views/BrowseIndex.vue'),
+      props: true,
+    },
+    {
       path: '/topic/:type/:name',
       name: 'topic',
       component: () => import('../views/TopicHub.vue'),
