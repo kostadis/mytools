@@ -20,11 +20,10 @@ The authored content (all symlinked live into `~/.claude/`):
 
 ## The Kostadis Engine (skills architecture)
 
-`claude/skills/` currently holds nine proper skill directories plus one flat helper file:
+`claude/skills/` currently holds nine skill directories:
 
 - **Kostadis Engine (7)**: `k-preprocess`, `k-parallel`, `k-sequential`, `tribunal`, `anti-gravity`, `lagrange`, `value-bridge`. Covered in detail below — they form one layered pipeline.
 - **Campaign helpers (2)**: `voice-file` and `style-examples`. These are independent, unrelated to the Kostadis Engine. They produce narration-support artifacts (per-character voice files, style-reference passages) for `session_doc.py` in the user's `CampaignGenerator` project. Edit them on their own terms; they do not share the Kostadis runners' invariants.
-- **`skills/campaign-formats.md`** (flat file, no frontmatter, no enclosing directory): a pointer note that redirects to `~/CampaignGenerator/docs/formats.md`. Because it is a bare `.md` under `skills/` rather than a `campaign-formats/SKILL.md` directory with frontmatter, Claude Code's skill loader does **not** register it as a user-invocable skill — it just sits in the tree as a reference. Preserved as-is; converting it to a proper skill directory is an optional cleanup.
 
 The Kostadis Engine skills are not independent — they form one layered architectural-audit pipeline. Understanding the layering is essential before editing any one of them, because the runner skills (`k-sequential`, `k-parallel`) duplicate lens prompts inline and must stay in sync with the standalone lens skills.
 
