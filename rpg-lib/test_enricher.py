@@ -424,6 +424,45 @@ class TestSeriesImpliedTags(unittest.TestCase):
         })
         self.assertIn("organized_play", entry["tags"])
 
+    def test_ddexp_prefix_is_not_ddex(self):
+        """Regression: DDEXP_B10_NightsDarkTerror.pdf is an old Basic D&D
+        module (book 13041 in the live DB) whose filename starts with 'DDEXP'
+        — a scanner artifact, not the AL DDEX code. The regex must reject it."""
+        entry = self._entry()
+        apply_series_implied_tags(entry, {
+            "filename": "DDEXP_B10_NightsDarkTerror.pdf",
+            "collection": "B10 Night's Dark Terror (Basic)",
+        })
+        self.assertNotIn("organized_play", entry["tags"])
+
+    def test_ddal_letter_suffix_is_not_match(self):
+        """Synthetic guardrail: any DDAL followed by a letter is rejected."""
+        entry = self._entry()
+        apply_series_implied_tags(entry, {
+            "filename": "DDALOSAURUS_something.pdf",
+            "collection": "",
+        })
+        self.assertNotIn("organized_play", entry["tags"])
+
+    def test_ddal_drw_dash_suffix_still_matches(self):
+        """Dreams of the Red Wizards files use DDAL-DRW##; the dash is not a
+        letter, so these legitimate AL-affiliated DMsGuild books still match."""
+        entry = self._entry()
+        apply_series_implied_tags(entry, {
+            "filename": "DDAL-DRW06_Thimblerigging.pdf",
+            "collection": "DDAL-DRW-06 Thimblerigging",
+        })
+        self.assertIn("organized_play", entry["tags"])
+
+    def test_ddal_eb_dash_suffix_still_matches(self):
+        """Eberron / Oracle of War (Season 9) uses DDAL-EB-##; same rationale."""
+        entry = self._entry()
+        apply_series_implied_tags(entry, {
+            "filename": "925821-DDAL-EB-01_The_Night_Land.pdf",
+            "collection": "EB-01 The Night Land",
+        })
+        self.assertIn("organized_play", entry["tags"])
+
 
 class TestSeriesAliasesMapShape(unittest.TestCase):
     """Structural invariants of the SERIES_ALIASES constant."""

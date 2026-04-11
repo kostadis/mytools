@@ -208,7 +208,15 @@ SERIES_IMPLIED_TAGS: list[tuple[re.Pattern, str]] = [
     # organized-play program). Caught via substring rather than prefix so
     # "CCC-AE" filenames and "D&D Adventurers League: Storm King's Thunder"
     # collections both match.
-    (re.compile(r"adventurers league|\bDDAL|\bDDEX", re.IGNORECASE),
+    #
+    # The negative lookahead (?![A-Za-z]) after DDAL and DDEX prevents false
+    # positives on filenames like "DDEXP_B10_NightsDarkTerror.pdf" — a Basic
+    # D&D module that some scanner prefixed with "DDEXP". Real AL codes are
+    # always followed by a digit or separator, never a letter. This still
+    # accepts legitimate variants like DDAL-DRW06 (Dreams of the Red Wizards)
+    # and DDAL-EB-01 (Eberron / Oracle of War) because '-' is not a letter.
+    (re.compile(r"adventurers league|\bDDAL(?![A-Za-z])|\bDDEX(?![A-Za-z])",
+                re.IGNORECASE),
      "organized_play"),
 ]
 
