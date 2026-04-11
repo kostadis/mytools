@@ -25,7 +25,8 @@ Format rules:
 - Repeat important details when they appear in multiple parts of the source
 - **Bold** component names, field names, and key terms
 - Match the source's technical vocabulary exactly
-- **No inference or guessing** — only what is explicitly stated
+- If the input is a pasted document or spec: **no inference** — only what is explicitly stated
+- If the input is a topic, question, or keyword phrase (not a document): synthesize exhaustively from training knowledge, treating the topic as the scope
 
 **Output to disk:** After producing the summary, write the full output to a file. Create a slug from the input topic (lowercase, hyphenated). Use `~/kostadis-output/<slug>/l0.md` as the path. **Do not display the output to the console.** Respond only with the file path where the summary was written.
 
