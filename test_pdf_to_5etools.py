@@ -1506,8 +1506,8 @@ class TestValidationRetry(unittest.TestCase):
         self.assertEqual(client.messages.create.call_count,
                          1 + _claude_api.MAX_VALIDATION_RETRIES)
 
-    def test_retry_prompt_includes_errors(self):
-        """The correction prompt includes the validation errors."""
+    def test_retry_prompt_is_narrowed(self):
+        """The correction prompt forbids structural changes and ships prior JSON."""
         client = MagicMock()
 
         bad_response = '[{"type":"section","name":"Ch1","entries":["See {@npc Bob}."]}]'
@@ -1523,11 +1523,16 @@ class TestValidationRetry(unittest.TestCase):
             "system prompt", verbose=False, chunk_id="chunk-0000",
         )
 
-        # Check the retry message includes the error text
         retry_call = client.messages.create.call_args_list[1]
         retry_content = retry_call[1]["messages"][0]["content"]
-        self.assertIn("validation errors", retry_content)
-        self.assertIn("npc", retry_content)
+
+        # Narrowed prompt must contain the forbid-list and the prior JSON,
+        # and must NOT contain the raw chunk text (which was the old behaviour).
+        self.assertIn("Do NOT", retry_content)
+        self.assertIn("restructure, reorder, add, remove", retry_content)
+        self.assertIn("Previous JSON:", retry_content)
+        self.assertIn("{@npc Bob}", retry_content)  # prior JSON is included
+        self.assertNotIn("some pdf text", retry_content)  # raw chunk is NOT
 
     def test_no_retry_on_empty_result(self):
         """Empty results don't trigger validation retry."""
@@ -1542,6 +1547,154 @@ class TestValidationRetry(unittest.TestCase):
 
         self.assertEqual(client.messages.create.call_count, 1)
         self.assertEqual(result, [])
+
+    def test_no_retry_on_structural_error(self):
+        """Structural errors surface to the human; no auto-retry fires."""
+        client = MagicMock()
+
+        # `entries` is a string instead of an array — a scope/shape error.
+        bad_response = '[{"type":"section","name":"Ch1","entries":"not-an-array"}]'
+        client.messages.create.return_value = self._make_message(bad_response)
+
+        result = _claude_api.call_claude(
+            client, "some pdf text", "claude-haiku-4-5",
+            "system prompt", verbose=False, chunk_id="chunk-0000",
+        )
+
+        # Exactly one API call — the retry gate blocks structural errors.
+        self.assertEqual(client.messages.create.call_count, 1)
+        # And the original (bad) result is passed through unchanged.
+        self.assertEqual(result[0]["entries"], "not-an-array")
+
+    def test_no_retry_on_mixed_errors(self):
+        """When a response has both tag and structural errors, no retry fires."""
+        client = MagicMock()
+
+        # Entry 0 has an unknown tag; entry 1 has `entries` as a string.
+        bad_response = (
+            '[{"type":"section","name":"Ch1","entries":["See {@scroll X}."]},'
+            ' {"type":"section","name":"Ch2","entries":"not-an-array"}]'
+        )
+        client.messages.create.return_value = self._make_message(bad_response)
+
+        _claude_api.call_claude(
+            client, "some pdf text", "claude-haiku-4-5",
+            "system prompt", verbose=False, chunk_id="chunk-0000",
+        )
+
+        # Structural errors block the retry even though a tag error is present.
+        self.assertEqual(client.messages.create.call_count, 1)
+
+    def test_retry_rejected_if_shape_changed(self):
+        """A retry that modifies entry shape is rejected; original is kept."""
+        client = MagicMock()
+
+        # First response: two entries, one has a bad tag.
+        bad_response = (
+            '[{"type":"section","name":"Ch1","entries":["See {@scroll X}."]},'
+            ' {"type":"section","name":"Ch2","entries":["Hello."]}]'
+        )
+        # Second response: merged into one entry — shape changed.
+        bad_retry = '[{"type":"section","name":"Merged","entries":["See scroll of X.","Hello."]}]'
+
+        client.messages.create.side_effect = [
+            self._make_message(bad_response),
+            self._make_message(bad_retry),
+        ]
+
+        result = _claude_api.call_claude(
+            client, "some pdf text", "claude-haiku-4-5",
+            "system prompt", verbose=False, chunk_id="chunk-0000",
+        )
+
+        # Both calls fired, but the retry was rejected — original is kept.
+        self.assertEqual(client.messages.create.call_count, 2)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["name"], "Ch1")
+        self.assertEqual(result[1]["name"], "Ch2")
+
+    def test_retry_accepted_if_shape_preserved(self):
+        """A retry that preserves entry shape is accepted."""
+        client = MagicMock()
+
+        bad_response = (
+            '[{"type":"section","name":"Ch1","entries":["See {@scroll X}."]},'
+            ' {"type":"section","name":"Ch2","entries":["Hello."]}]'
+        )
+        good_response = (
+            '[{"type":"section","name":"Ch1","entries":["See {@item scroll of X}."]},'
+            ' {"type":"section","name":"Ch2","entries":["Hello."]}]'
+        )
+
+        client.messages.create.side_effect = [
+            self._make_message(bad_response),
+            self._make_message(good_response),
+        ]
+
+        result = _claude_api.call_claude(
+            client, "some pdf text", "claude-haiku-4-5",
+            "system prompt", verbose=False, chunk_id="chunk-0000",
+        )
+
+        self.assertEqual(client.messages.create.call_count, 2)
+        # Retry output replaced the original.
+        self.assertEqual(result[0]["entries"][0], "See {@item scroll of X}.")
+        self.assertEqual(result[1]["entries"][0], "Hello.")
+
+
+class TestValidationHelpers(unittest.TestCase):
+    """Unit tests for the retry-path helpers in claude_api.py."""
+
+    def test_partition_errors_tag_only(self):
+        errs = [
+            "[0].entries[0]: unknown tag '{@scroll}' in: ...{@scroll fireball}...",
+            "[1]: unknown tag '{@npc}' in: ...{@npc Bob}...",
+        ]
+        tag, struct = _claude_api._partition_errors(errs)
+        self.assertEqual(len(tag), 2)
+        self.assertEqual(struct, [])
+
+    def test_partition_errors_structural_only(self):
+        errs = [
+            "[0].entries must be an array",
+            "[1]: null entry",
+            "[2]: image has no href",
+        ]
+        tag, struct = _claude_api._partition_errors(errs)
+        self.assertEqual(tag, [])
+        self.assertEqual(len(struct), 3)
+
+    def test_partition_errors_mixed(self):
+        errs = [
+            "[0]: unknown tag '{@scroll}' in: ...",
+            "[1].entries must be an array",
+        ]
+        tag, struct = _claude_api._partition_errors(errs)
+        self.assertEqual(len(tag), 1)
+        self.assertEqual(len(struct), 1)
+
+    def test_preserves_shape_identical(self):
+        a = [{"type": "section", "name": "A"}, {"type": "entries", "name": "B"}]
+        b = [{"type": "section", "name": "A2"}, {"type": "entries", "name": "B2"}]
+        self.assertTrue(_claude_api._retry_preserves_shape(a, b))
+
+    def test_preserves_shape_different_length(self):
+        a = [{"type": "section"}, {"type": "section"}]
+        b = [{"type": "section"}]
+        self.assertFalse(_claude_api._retry_preserves_shape(a, b))
+
+    def test_preserves_shape_different_types(self):
+        a = [{"type": "section"}, {"type": "entries"}]
+        b = [{"type": "section"}, {"type": "section"}]
+        self.assertFalse(_claude_api._retry_preserves_shape(a, b))
+
+    def test_preserves_shape_string_entries(self):
+        a = ["prose", {"type": "section"}]
+        b = ["different prose", {"type": "section"}]
+        self.assertTrue(_claude_api._retry_preserves_shape(a, b))
+        # But a dict replacing a string is a shape change.
+        c = [{"type": "section"}, {"type": "section"}]
+        self.assertFalse(_claude_api._retry_preserves_shape(a, c))
 
 
 if __name__ == "__main__":

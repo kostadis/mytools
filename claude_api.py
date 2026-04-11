@@ -69,6 +69,49 @@ def validate_entries(entries: list[Any], chunk_id: str = "") -> list[str]:
     return ctx.result.errors
 
 
+def _partition_errors(errors: list[str]) -> tuple[list[str], list[str]]:
+    """Split validator errors into (tag_errors, structural_errors).
+
+    Tag errors are deterministic substitutions ({@scroll} -> {@item scroll of X},
+    {@npc X} -> plain text, etc.) and are safe to auto-fix via a retry prompt.
+    Structural errors (".entries must be an array", "null entry", "image has no
+    href", etc.) are scope/shape decisions and must not trigger an LLM retry —
+    the project's global CLAUDE.md rule requires a human checkpoint for those.
+
+    The marker ``": unknown tag '{@"`` is the exact substring produced by
+    ``adventure_model.validate_tags``; no other error string contains it.
+    """
+    tag_errs: list[str] = []
+    struct_errs: list[str] = []
+    for e in errors:
+        if ": unknown tag '{@" in e:
+            tag_errs.append(e)
+        else:
+            struct_errs.append(e)
+    return tag_errs, struct_errs
+
+
+def _retry_preserves_shape(original: list[Any], retry: list[Any]) -> bool:
+    """Check that a tag-fix retry didn't restructure the entries.
+
+    We require: same length, same top-level entry types in the same order.
+    Bare string entries count as type ``"str"``.  Any other shape change
+    (added/removed/reordered entries, changed type field, non-dict entries)
+    causes the retry to be rejected and the original result kept.
+    """
+    if len(original) != len(retry):
+        return False
+
+    def _shape(e: Any) -> str:
+        if isinstance(e, str):
+            return "str"
+        if isinstance(e, dict):
+            return str(e.get("type", "<no-type>"))
+        return f"<{type(e).__name__}>"
+
+    return [_shape(e) for e in original] == [_shape(e) for e in retry]
+
+
 # ---------------------------------------------------------------------------
 # Response parsing helpers
 # ---------------------------------------------------------------------------
@@ -228,34 +271,98 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
             print("    [TIP]  Re-run with --debug-dir DIR to save full API responses.",
                   flush=True)
 
-    # --- Validation retry: check parsed entries for structural errors --------
+    # --- Validation retry: narrowly auto-fix unknown tags, surface the rest --
+    # See plan: tag errors are deterministic substitutions and safe to delegate
+    # to a second LLM pass; structural errors are scope decisions and require a
+    # human checkpoint (project global CLAUDE.md rule).
     if result and _retry_count < MAX_VALIDATION_RETRIES:
         errors = validate_entries(result, chunk_id)
         if errors:
-            print(f"    [VALIDATE] {chunk_id}: {len(errors)} validation error(s) — "
-                  f"retrying with corrections...", flush=True)
-            for e in errors[:5]:
-                print(f"      {e}", flush=True)
-            if len(errors) > 5:
-                print(f"      ... and {len(errors) - 5} more", flush=True)
+            tag_errs, struct_errs = _partition_errors(errors)
 
-            correction_prompt = (
-                f"{chunk_text}\n\n"
-                f"---\n"
-                f"Your previous response had the following validation errors:\n"
-                + "\n".join(f"- {e}" for e in errors) +
-                f"\n\nPlease fix these errors and return the corrected JSON array."
-            )
-            if debug_dir:
-                (debug_dir / f"{chunk_id}-validation-errors.txt").write_text(
-                    "\n".join(errors), encoding="utf-8"
+            if struct_errs:
+                print(f"    [VALIDATE] {chunk_id}: {len(struct_errs)} "
+                      f"structural error(s) found — NOT auto-retrying "
+                      f"(human review required):", flush=True)
+                for e in struct_errs[:5]:
+                    print(f"      {e}", flush=True)
+                if len(struct_errs) > 5:
+                    print(f"      ... and {len(struct_errs) - 5} more",
+                          flush=True)
+                if debug_dir:
+                    (debug_dir / f"{chunk_id}-structural-errors.txt").write_text(
+                        "\n".join(struct_errs), encoding="utf-8"
+                    )
+                # Fall through: keep ``result`` as-is so the human sees the
+                # issue at assembly/save time rather than a silent rewrite.
+
+            elif tag_errs:
+                result = _retry_tag_fixes(
+                    client, result, tag_errs, model, system_prompt,
+                    verbose, debug_dir, chunk_id, _retry_count,
                 )
-            result = call_claude(client, correction_prompt, model, system_prompt,
-                                  verbose, debug_dir=debug_dir,
-                                  chunk_id=f"{chunk_id}-fix",
-                                  _retry_count=_retry_count + 1)
 
     return result
+
+
+def _retry_tag_fixes(client: anthropic.Anthropic,
+                     original_result: list[Any],
+                     tag_errors: list[str],
+                     model: str, system_prompt: str, verbose: bool,
+                     debug_dir: Path | None, chunk_id: str,
+                     _retry_count: int) -> list[Any]:
+    """Issue a narrowly-scoped retry to fix unknown-tag errors only.
+
+    Hands the model the exact JSON it just produced plus the list of tag
+    errors, with an explicit forbid-list against any other change.  After
+    the retry, verifies the entry shape is preserved; if not, keeps the
+    original result.
+    """
+    print(f"    [VALIDATE] {chunk_id}: {len(tag_errors)} tag error(s) — "
+          f"retrying with narrowed correction prompt...", flush=True)
+    for e in tag_errors[:5]:
+        print(f"      {e}", flush=True)
+    if len(tag_errors) > 5:
+        print(f"      ... and {len(tag_errors) - 5} more", flush=True)
+
+    prior_json = json.dumps(original_result, indent=2, ensure_ascii=False)
+    correction_prompt = (
+        "Your previous response contained unknown {@tag} references.\n"
+        "\n"
+        "Return the SAME JSON array below with ONLY the listed tag "
+        "substitutions applied. Do NOT:\n"
+        "  - restructure, reorder, add, remove, merge, or split entries\n"
+        "  - change any entry's \"type\" field\n"
+        "  - rename sections or headers\n"
+        "  - rewrite, rephrase, or re-translate any prose\n"
+        "  - edit any text that is not inside an unknown {@tag}\n"
+        "\n"
+        "Valid replacements: see the tag rules in the system prompt "
+        "(e.g. {@scroll X} -> {@item scroll of X}; {@npc X} -> plain text "
+        "or {@creature X}).\n"
+        "\n"
+        "Errors to fix:\n"
+        + "\n".join(f"- {e}" for e in tag_errors) +
+        "\n\n"
+        "Previous JSON:\n"
+        f"{prior_json}\n"
+    )
+    if debug_dir:
+        (debug_dir / f"{chunk_id}-tag-errors.txt").write_text(
+            "\n".join(tag_errors), encoding="utf-8"
+        )
+
+    retry_result = call_claude(
+        client, correction_prompt, model, system_prompt, verbose,
+        debug_dir=debug_dir, chunk_id=f"{chunk_id}-fix",
+        _retry_count=_retry_count + 1,
+    )
+
+    if not _retry_preserves_shape(original_result, retry_result):
+        print(f"    [VALIDATE] {chunk_id}: retry changed entry shape — "
+              f"rejecting retry and keeping original result.", flush=True)
+        return original_result
+    return retry_result
 
 
 # ---------------------------------------------------------------------------
