@@ -83,10 +83,12 @@ Fix: `\bDDAL(?![A-Za-z])|\bDDEX(?![A-Za-z])` — negative lookahead rejects lett
 
 ---
 
-## Session artifacts on `main` working tree
+## Live-DB data mutations applied this session
 
-Three rollback TSVs from the live-DB data mutations + this TODO + an unrelated dotfiles change. None are committed yet.
+Three deterministic backfills were applied to `rpg_library.db` and verified before the corresponding PRs were merged. Each was snapshotted to a rollback TSV before the UPDATE; the TSVs were retained until the post-state was verified stable, then deleted on 2026-04-11. The merged enricher rules in PRs #1, #4, and #5 produce the same effect on any future re-enrichment, so the rollback files would be regeneratable from the merged code if ever needed.
 
-- `rollback_organized_play_backfill_20260411_122627.tsv` — 74 rows (task 2)
-- `rollback_normalize_series_20260411_131103.tsv` — 67 rows (PR #3)
-- `rollback_pf_conversion_backfill_20260411_134639.tsv` — 27 rows (PR #5)
+| When | What | Rows | Origin |
+|---|---|---:|---|
+| 2026-04-11 12:26 | `organized_play` tag added on AL books missing it | 74 | Task 2 (one-off SQL backfill, see PR #1 for the durable rule) |
+| 2026-04-11 13:11 | `--normalize-series` applied: structural cleanup, alias map, AL filename-code reassignment | 67 | PR #3 (`pdf_enricher.py --normalize-series`) |
+| 2026-04-11 13:46 | `game_system` flipped `D&D 5e → Pathfinder 1e` for misclassified PF conversions, system tags rewritten | 27 | PR #5 (`apply_pathfinder_conversion_rule`) |
