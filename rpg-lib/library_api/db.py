@@ -203,7 +203,7 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
     rows = conn.execute(
         f"""SELECT id, display_title, filename, publisher, collection,
                    game_system, product_type, tags, series, source,
-                   page_count, has_bookmarks, description
+                   page_count, has_bookmarks, description, min_level, max_level
             FROM books WHERE {where}
             ORDER BY {order_by}
             LIMIT ? OFFSET ?""",
@@ -227,7 +227,7 @@ def get_books_by_ids(conn: sqlite3.Connection, book_ids: list[int]) -> list[dict
     rows = conn.execute(
         f"""SELECT id, display_title, filename, publisher, collection,
                    game_system, product_type, tags, series, source,
-                   page_count, has_bookmarks, description
+                   page_count, has_bookmarks, description, min_level, max_level
             FROM books WHERE id IN ({placeholders})
             ORDER BY filename""",
         book_ids,
@@ -396,11 +396,11 @@ def nlq_search(
     params.extend([kw_like, kw_like, kw_like])
     where = " AND ".join(conditions)
     rows = conn.execute(
-        f"""SELECT id, display_title, filename, publisher, collection,
-                   game_system, product_type, tags, series, source,
-                   page_count, has_bookmarks, description
+        f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
+                   b.game_system, b.product_type, b.tags, b.series, b.source,
+                   b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level
             FROM books b WHERE {where}
-            ORDER BY COALESCE(display_title, filename)
+            ORDER BY COALESCE(b.display_title, b.filename)
             LIMIT ?""",
         params + [limit],
     ).fetchall()
@@ -480,7 +480,7 @@ def get_topic(conn: sqlite3.Connection, topic_type: str, topic_name: str) -> dic
     rows = conn.execute(
         f"""SELECT id, display_title, filename, publisher, collection,
                    game_system, product_type, tags, series, source,
-                   page_count, has_bookmarks, description
+                   page_count, has_bookmarks, description, min_level, max_level
             FROM books WHERE {where}
             ORDER BY COALESCE(display_title, filename)""",
         params,
@@ -524,7 +524,7 @@ def get_related_books(conn: sqlite3.Connection, book_id: int, limit: int = 6) ->
     rows = conn.execute(
         """SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
                   b.game_system, b.product_type, b.tags, b.series, b.source,
-                  b.page_count, b.has_bookmarks, b.description
+                  b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level
            FROM book_relations r
            JOIN books b ON b.id = r.book_id_b
            WHERE r.book_id_a = ?
@@ -582,7 +582,7 @@ def get_related_books(conn: sqlite3.Connection, book_id: int, limit: int = 6) ->
     rows = conn.execute(
         f"""SELECT id, display_title, filename, publisher, collection,
                    game_system, product_type, tags, series, source,
-                   page_count, has_bookmarks, description
+                   page_count, has_bookmarks, description, min_level, max_level
             FROM books WHERE id IN ({placeholders})""",
         top_ids,
     ).fetchall()
