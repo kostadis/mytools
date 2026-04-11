@@ -28,10 +28,6 @@ function goToBook(id: number) {
   router.push({ name: 'book', params: { id } })
 }
 
-function goToTopic(type: string, name: string) {
-  router.push({ name: 'topic', params: { type, name } })
-}
-
 const enrichedPct = computed(() => {
   if (!topic.value) return 0
   const { total, enriched } = topic.value.stats
@@ -91,11 +87,11 @@ watch(() => [props.type, props.name], load)
         <!-- Top Publishers -->
         <div class="breakdown-panel" v-if="topic.stats.top_publishers.length">
           <h3>Top Publishers</h3>
-          <div
+          <router-link
             v-for="item in topic.stats.top_publishers.slice(0, 10)"
             :key="item.value"
             class="bar-row"
-            @click="goToTopic('publisher', item.value)"
+            :to="{ name: 'topic', params: { type: 'publisher', name: item.value } }"
           >
             <span class="bar-label">{{ item.value }}</span>
             <div class="bar-track">
@@ -105,17 +101,17 @@ watch(() => [props.type, props.name], load)
               ></div>
             </div>
             <span class="bar-count">{{ item.count }}</span>
-          </div>
+          </router-link>
         </div>
 
         <!-- Top Game Systems -->
         <div class="breakdown-panel" v-if="topic.stats.top_game_systems.length">
           <h3>Game Systems</h3>
-          <div
+          <router-link
             v-for="item in topic.stats.top_game_systems.slice(0, 10)"
             :key="item.value"
             class="bar-row"
-            @click="goToTopic('game_system', item.value)"
+            :to="{ name: 'topic', params: { type: 'game_system', name: item.value } }"
           >
             <span class="bar-label">{{ item.value }}</span>
             <div class="bar-track">
@@ -125,17 +121,17 @@ watch(() => [props.type, props.name], load)
               ></div>
             </div>
             <span class="bar-count">{{ item.count }}</span>
-          </div>
+          </router-link>
         </div>
 
         <!-- Top Series -->
         <div class="breakdown-panel" v-if="topic.stats.top_series.length">
           <h3>Series</h3>
-          <div
+          <router-link
             v-for="item in topic.stats.top_series.slice(0, 10)"
             :key="item.value"
             class="bar-row"
-            @click="goToTopic('series', item.value)"
+            :to="{ name: 'topic', params: { type: 'series', name: item.value } }"
           >
             <span class="bar-label">{{ item.value }}</span>
             <div class="bar-track">
@@ -145,20 +141,20 @@ watch(() => [props.type, props.name], load)
               ></div>
             </div>
             <span class="bar-count">{{ item.count }}</span>
-          </div>
+          </router-link>
         </div>
 
         <!-- Top Tags -->
         <div class="breakdown-panel" v-if="topic.stats.top_tags.length">
           <h3>Top Tags</h3>
           <div class="tag-cloud">
-            <span
+            <router-link
               v-for="item in topic.stats.top_tags"
               :key="item.value"
               class="tag tag-clickable"
               :style="{ fontSize: (0.7 + (item.count / maxCount(topic.stats.top_tags)) * 0.45) + 'rem' }"
-              @click="goToTopic('tag', item.value)"
-            >{{ item.value }} <span class="tag-count">{{ item.count }}</span></span>
+              :to="{ name: 'topic', params: { type: 'tag', name: item.value } }"
+            >{{ item.value }} <span class="tag-count">{{ item.count }}</span></router-link>
           </div>
         </div>
 
@@ -185,7 +181,12 @@ watch(() => [props.type, props.name], load)
               v-for="book in topic.books"
               :key="book.id"
               class="book-row"
+              tabindex="0"
+              role="link"
+              :aria-label="`Open ${book.display_title || book.filename}`"
               @click="goToBook(book.id)"
+              @keyup.enter="goToBook(book.id)"
+              @keyup.space.prevent="goToBook(book.id)"
             >
               <td class="col-title">{{ book.display_title || book.filename }}</td>
               <td v-if="props.type !== 'publisher'">{{ book.publisher }}</td>
@@ -308,6 +309,8 @@ h1 {
   margin-bottom: 0.35rem;
   cursor: pointer;
   font-size: 0.8rem;
+  color: inherit;
+  text-decoration: none;
 }
 .bar-row:hover .bar-label { color: var(--accent); }
 

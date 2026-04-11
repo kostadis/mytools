@@ -39,25 +39,6 @@ function previewPdf() {
   window.open(store.previewUrl(book.value.id), '_blank')
 }
 
-function goToTag(tag: string) {
-  router.push({ name: 'topic', params: { type: 'tag', name: tag } })
-}
-
-function goToSystem() {
-  if (!book.value?.game_system) return
-  router.push({ name: 'topic', params: { type: 'game_system', name: book.value.game_system } })
-}
-
-function goToSeries() {
-  if (!book.value?.series) return
-  router.push({ name: 'topic', params: { type: 'series', name: book.value.series } })
-}
-
-function goToPublisher() {
-  if (!book.value?.publisher) return
-  router.push({ name: 'topic', params: { type: 'publisher', name: book.value.publisher } })
-}
-
 function bookmarkIndent(bm: Bookmark): string {
   return `${(bm.level - 1) * 1.25}rem`
 }
@@ -80,10 +61,16 @@ function openAtPage(page: number | null) {
         </button>
         <h1>{{ book.display_title || book.filename }}</h1>
         <div class="header-meta">
-          <span v-if="book.publisher" class="meta-link" @click="goToPublisher">
-            {{ book.publisher }}
-          </span>
-          <span v-if="book.game_system" class="meta-link" @click="goToSystem">{{ book.game_system }}</span>
+          <router-link
+            v-if="book.publisher"
+            class="meta-link"
+            :to="{ name: 'topic', params: { type: 'publisher', name: book.publisher } }"
+          >{{ book.publisher }}</router-link>
+          <router-link
+            v-if="book.game_system"
+            class="meta-link"
+            :to="{ name: 'topic', params: { type: 'game_system', name: book.game_system } }"
+          >{{ book.game_system }}</router-link>
           <span v-if="book.product_type" class="type-badge">{{ book.product_type }}</span>
           <span v-if="book.page_count" class="meta-pages">{{ book.page_count }} pages</span>
           <span v-if="book.min_level" class="meta-pages">
@@ -109,30 +96,33 @@ function openAtPage(page: number | null) {
       <div class="section" v-if="book.tags && book.tags.length">
         <h2>Tags</h2>
         <div class="tags-list">
-          <span
+          <router-link
             v-for="tag in book.tags"
             :key="tag"
             class="tag"
-            @click="goToTag(tag)"
-          >{{ tag }}</span>
+            :to="{ name: 'topic', params: { type: 'tag', name: tag } }"
+          >{{ tag }}</router-link>
         </div>
       </div>
 
       <!-- Series -->
       <div class="section" v-if="book.series">
         <h2>Series</h2>
-        <span class="meta-link" @click="goToSeries">{{ book.series }}</span>
+        <router-link
+          class="meta-link"
+          :to="{ name: 'topic', params: { type: 'series', name: book.series } }"
+        >{{ book.series }}</router-link>
       </div>
 
       <!-- Related Books -->
       <div class="section" v-if="related.length">
         <h2>Related Books</h2>
         <div class="related-scroll">
-          <div
+          <router-link
             v-for="r in related"
             :key="r.id"
             class="related-card"
-            @click="router.push({ name: 'book', params: { id: r.id } })"
+            :to="{ name: 'book', params: { id: r.id } }"
           >
             <div class="related-title">{{ r.display_title || r.filename }}</div>
             <div class="related-meta">
@@ -142,7 +132,7 @@ function openAtPage(page: number | null) {
             <div v-if="r.tags && r.tags.length" class="related-tags">
               <span v-for="tag in r.tags.slice(0, 4)" :key="tag" class="tag tag-sm">{{ tag }}</span>
             </div>
-          </div>
+          </router-link>
         </div>
       </div>
 
@@ -339,6 +329,7 @@ h2 {
 }
 
 .related-card {
+  display: block;
   min-width: 180px;
   max-width: 220px;
   flex-shrink: 0;
@@ -348,9 +339,11 @@ h2 {
   padding: 0.6rem;
   cursor: pointer;
   transition: border-color 0.15s;
+  color: inherit;
+  text-decoration: none;
 }
 
-.related-card:hover { border-color: var(--accent); }
+.related-card:hover { border-color: var(--accent); color: inherit; }
 
 .related-title {
   font-size: 0.85rem;

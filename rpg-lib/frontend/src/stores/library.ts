@@ -129,6 +129,8 @@ export const useLibraryStore = defineStore('library', () => {
   const expandedGroups = ref<Set<string>>(new Set())
   const groupVariants = ref<Map<string, BookSummary[]>>(new Map())
   const charLevel = ref<number | null>(null)
+  const searchError = ref<string>('')
+  const nlqApplied = ref<NlqQueryParsed | null>(null)
 
   const title = computed(() => {
     return (book: BookSummary) => book.display_title || book.filename
@@ -136,6 +138,7 @@ export const useLibraryStore = defineStore('library', () => {
 
   async function search() {
     loading.value = true
+    searchError.value = ''
     try {
       const params = new URLSearchParams()
       if (queryAll.value) params.set('q', queryAll.value)
@@ -157,10 +160,26 @@ export const useLibraryStore = defineStore('library', () => {
       if (charLevel.value !== null) params.set('char_level', String(charLevel.value))
 
       const res = await fetch(`${API}/search?${params}`)
+      if (!res.ok) {
+        let msg = `Server error ${res.status}`
+        try {
+          const body = await res.json()
+          if (body?.detail) msg = body.detail
+        } catch {}
+        throw new Error(msg)
+      }
       const data = await res.json()
       results.value = data.results
       total.value = data.total
       totalPages.value = data.total_pages
+    } catch (e) {
+      if (e instanceof TypeError) {
+        searchError.value = 'Network error — cannot reach the server'
+      } else if (e instanceof Error) {
+        searchError.value = e.message
+      } else {
+        searchError.value = 'Search failed'
+      }
     } finally {
       loading.value = false
     }
@@ -247,6 +266,7 @@ export const useLibraryStore = defineStore('library', () => {
     queryAll.value = ''
     queryName.value = ''
     charLevel.value = null
+    nlqApplied.value = null
     page.value = 1
     search()
   }
@@ -294,6 +314,61 @@ export const useLibraryStore = defineStore('library', () => {
     return await res.json()
   }
 
+  /**
+   * Parse a free-text NLQ query and apply the parsed filters as the main search state.
+   * Replaces any current filters / queryAll / charLevel. Results appear in the main table.
+   *
+   * Lossy conversions:
+   *  - NLQ may return multiple tags; the UI tag filter is single-select, so only the first
+   *    is applied. All parsed tags are still shown in the nlqApplied banner so the user
+   *    knows what NLQ understood.
+   *  - NLQ returns level_min/level_max; the UI has a single charLevel — we use level_min.
+   */
+  async function applyNlq(query: string) {
+    searchError.value = ''
+    loading.value = true
+    try {
+      const res = await nlqSearch(query)
+      const parsed = res.query_parsed
+      nlqApplied.value = parsed
+
+      // Reset manual state (mutate keys rather than replace the object so reactive
+      // :value bindings on sidebar selects pick up the change)
+      for (const key of Object.keys(activeFilters.value)) {
+        delete activeFilters.value[key]
+      }
+      queryName.value = ''
+
+      // Map NLQ output into existing filter state
+      queryAll.value = parsed.keywords || ''
+      if (parsed.game_system) activeFilters.value.game_system = parsed.game_system
+      if (parsed.product_type) activeFilters.value.product_type = parsed.product_type
+      if (parsed.tags.length > 0) activeFilters.value.tags = parsed.tags[0]
+      charLevel.value = parsed.level_min ?? null
+
+      page.value = 1
+      await search()
+    } catch (e) {
+      if (e instanceof TypeError) {
+        searchError.value = 'Network error — cannot reach the server'
+      } else if (e instanceof Error) {
+        searchError.value = e.message
+      } else {
+        searchError.value = 'NLQ search failed'
+      }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  function clearNlq() {
+    nlqApplied.value = null
+  }
+
+  function setViewMode(mode: 'cards' | 'table') {
+    viewMode.value = mode
+  }
+
   async function getTopic(type: string, name: string): Promise<TopicResponse> {
     const res = await fetch(`${API}/topic/${encodeURIComponent(type)}/${encodeURIComponent(name)}`)
     if (!res.ok) throw new Error('Topic not found')
@@ -319,13 +394,13 @@ export const useLibraryStore = defineStore('library', () => {
   }
 
   return {
-    activeFilters, results, total, page, perPage, totalPages, loading, filters,
+    activeFilters, results, total, page, perPage, totalPages, loading, searchError, filters,
     viewMode, queryAll, queryName, sortField, sortDir, includeOld, includeDrafts, includeDuplicates,
-    charLevel,
+    charLevel, nlqApplied,
     title, search, loadFilters, getBook, openInApp, previewUrl,
-    setQuery, setFilter, clearFilters, setPage, toggleSort, setCharLevel,
+    setQuery, setFilter, clearFilters, setPage, toggleSort, setCharLevel, setViewMode,
     toggleIncludeOld, toggleIncludeDrafts, toggleIncludeDuplicates,
     toggleGroup, isExpanded, getVariants,
-    nlqSearch, getTopic, getRelatedBooks, getGraph,
+    nlqSearch, applyNlq, clearNlq, getTopic, getRelatedBooks, getGraph,
   }
 })

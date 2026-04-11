@@ -1,42 +1,29 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useLibraryStore, type NlqResponse } from '../stores/library'
+import { useLibraryStore } from '../stores/library'
 
 const store = useLibraryStore()
 const router = useRouter()
 const searchAll = ref('')
 const searchName = ref('')
+const showAdvanced = ref(false)
 
-// NLQ state
+// NLQ input — parsed results now flow into the main search state via store.applyNlq()
 const nlqQuery = ref('')
-const nlqLoading = ref(false)
-const nlqResult = ref<NlqResponse | null>(null)
-const nlqError = ref('')
 
-async function doNlqSearch() {
+function doNlqSearch() {
   const q = nlqQuery.value.trim()
-  if (!q) {
-    nlqResult.value = null
-    nlqError.value = ''
-    return
-  }
-  nlqLoading.value = true
-  nlqError.value = ''
-  nlqResult.value = null
-  try {
-    nlqResult.value = await store.nlqSearch(q)
-  } catch (e: any) {
-    nlqError.value = 'Search failed. Is the server running?'
-  } finally {
-    nlqLoading.value = false
-  }
+  if (!q) return
+  store.applyNlq(q)
 }
 
-function clearNlq() {
+function clearNlqBanner() {
   nlqQuery.value = ''
-  nlqResult.value = null
-  nlqError.value = ''
+  store.clearNlq()
+  searchAll.value = ''
+  searchName.value = ''
+  store.clearFilters()
 }
 
 onMounted(async () => {
@@ -70,8 +57,8 @@ function pageRange(): number[] {
 }
 
 function sortIcon(field: string): string {
-  if (store.sortField !== field) return ''
-  return store.sortDir === 'asc' ? ' \u25B2' : ' \u25BC'
+  if (store.sortField !== field) return '⇅'
+  return store.sortDir === 'asc' ? '▲' : '▼'
 }
 
 const columns = [
@@ -149,58 +136,22 @@ function tagGroups(available: { value: string; count: number }[]) {
           placeholder='Ask your library... e.g. "horror adventures for D&D 5e with undead"'
           @keyup.enter="doNlqSearch"
         />
-        <button class="btn-primary nlq-btn" @click="doNlqSearch" :disabled="nlqLoading">
-          {{ nlqLoading ? 'Searching...' : 'Ask' }}
+        <button class="btn-primary nlq-btn" @click="doNlqSearch" :disabled="store.loading">
+          {{ store.loading ? 'Searching...' : 'Ask' }}
         </button>
-        <button v-if="nlqQuery" class="btn-secondary nlq-clear" @click="clearNlq">✕</button>
+        <button
+          v-if="nlqQuery"
+          class="btn-secondary nlq-clear"
+          aria-label="Clear NLQ query"
+          @click="nlqQuery = ''"
+        >✕</button>
       </div>
     </div>
-
-    <!-- NLQ Results Panel -->
-    <div v-if="nlqResult" class="nlq-results-panel">
-      <div class="nlq-parsed">
-        <span class="nlq-label">Understood:</span>
-        <span v-if="nlqResult.query_parsed.game_system" class="nlq-chip">
-          System: {{ nlqResult.query_parsed.game_system }}
-        </span>
-        <span v-if="nlqResult.query_parsed.product_type" class="nlq-chip">
-          Type: {{ nlqResult.query_parsed.product_type }}
-        </span>
-        <span
-          v-for="tag in nlqResult.query_parsed.tags"
-          :key="tag"
-          class="nlq-chip tag-chip"
-        >{{ tag }}</span>
-        <span v-if="nlqResult.query_parsed.keywords" class="nlq-chip keywords-chip">
-          "{{ nlqResult.query_parsed.keywords }}"
-        </span>
-        <span class="nlq-count">{{ nlqResult.total }} results</span>
-      </div>
-      <div class="nlq-book-list">
-        <div
-          v-for="book in nlqResult.results"
-          :key="book.id"
-          class="nlq-book-row"
-          @click="router.push({ name: 'book', params: { id: book.id } })"
-        >
-          <span class="nlq-book-title">{{ book.display_title || book.filename }}</span>
-          <span class="nlq-book-meta">
-            <span v-if="book.game_system">{{ book.game_system }}</span>
-            <span v-if="book.product_type" class="type-badge">{{ book.product_type }}</span>
-            <span v-if="book.series" class="nlq-series">{{ book.series }}</span>
-          </span>
-          <span class="nlq-book-desc" v-if="book.description">{{ book.description.slice(0, 100) }}…</span>
-        </div>
-        <div v-if="nlqResult.results.length === 0" class="nlq-empty">
-          No matching books found. Try rephrasing your query.
-        </div>
-      </div>
-    </div>
-    <div v-if="nlqError" class="nlq-error">{{ nlqError }}</div>
 
   <div class="browse-layout">
     <!-- Sidebar -->
     <aside class="sidebar">
+      <!-- Search inputs -->
       <div class="filter-section">
         <label>Search All Fields</label>
         <input
@@ -225,9 +176,10 @@ function tagGroups(available: { value: string; count: number }[]) {
 
       <button class="btn-secondary search-btn" @click="doSearch">Search</button>
 
+      <!-- Primary filters -->
       <div class="filter-section" v-if="store.filters">
         <label>Tag</label>
-        <select @change="onFilterChange('tags', $event)">
+        <select @change="onFilterChange('tags', $event)" :value="store.activeFilters['tags'] ?? ''">
           <option value="">All tags</option>
           <optgroup
             v-for="group in tagGroups(store.filters.tags)"
@@ -244,18 +196,27 @@ function tagGroups(available: { value: string; count: number }[]) {
       </div>
 
       <div class="filter-section" v-if="store.filters">
-        <label>Source</label>
-        <select @change="onFilterChange('source', $event)">
-          <option value="">All sources</option>
+        <label>
+          Game System
+          <button
+            type="button"
+            class="filter-hint"
+            title="Full system names (e.g. D&D 5e). Use Tag › System for short codes like 5e, pf1e."
+            aria-label="Game System help: full system names like D&D 5e. Use Tag › System for short codes."
+          >?</button>
+        </label>
+        <select @change="onFilterChange('game_system', $event)" :value="store.activeFilters['game_system'] ?? ''">
+          <option value="">All systems</option>
           <option
-            v-for="f in store.filters.source" :key="f.value" :value="f.value"
+            v-for="f in store.filters.game_system.slice(0, 30)"
+            :key="f.value" :value="f.value"
           >{{ f.value }} ({{ f.count }})</option>
         </select>
       </div>
 
       <div class="filter-section" v-if="store.filters">
         <label>Product Type</label>
-        <select @change="onFilterChange('product_type', $event)">
+        <select @change="onFilterChange('product_type', $event)" :value="store.activeFilters['product_type'] ?? ''">
           <option value="">All types</option>
           <option
             v-for="f in store.filters.product_type" :key="f.value" :value="f.value"
@@ -273,53 +234,61 @@ function tagGroups(available: { value: string; count: number }[]) {
         />
       </div>
 
-      <div class="filter-section" v-if="store.filters">
-        <label>Game System</label>
-        <select @change="onFilterChange('game_system', $event)">
-          <option value="">All systems</option>
-          <option
-            v-for="f in store.filters.game_system.slice(0, 30)"
-            :key="f.value" :value="f.value"
-          >{{ f.value }} ({{ f.count }})</option>
-        </select>
-      </div>
+      <!-- Advanced section -->
+      <div class="advanced-section">
+        <button class="advanced-toggle" @click="showAdvanced = !showAdvanced">
+          <span class="adv-arrow">{{ showAdvanced ? '▾' : '▸' }}</span> Advanced
+        </button>
 
-      <div class="filter-section" v-if="store.filters">
-        <label>Publisher</label>
-        <select @change="onFilterChange('publisher', $event)">
-          <option value="">All publishers</option>
-          <option
-            v-for="f in store.filters.publisher.slice(0, 100)"
-            :key="f.value" :value="f.value"
-          >{{ f.value }} ({{ f.count }})</option>
-        </select>
-      </div>
+        <div v-if="showAdvanced" class="advanced-body">
+          <div class="filter-section" v-if="store.filters">
+            <label>Publisher</label>
+            <select @change="onFilterChange('publisher', $event)" :value="store.activeFilters['publisher'] ?? ''">
+              <option value="">All publishers</option>
+              <option
+                v-for="f in store.filters.publisher.slice(0, 100)"
+                :key="f.value" :value="f.value"
+              >{{ f.value }} ({{ f.count }})</option>
+            </select>
+          </div>
 
-      <div class="filter-section" v-if="store.filters">
-        <label>Series</label>
-        <select @change="onFilterChange('series', $event)">
-          <option value="">All series</option>
-          <option
-            v-for="f in store.filters.series.slice(0, 100)"
-            :key="f.value" :value="f.value"
-          >{{ f.value }} ({{ f.count }})</option>
-        </select>
-      </div>
+          <div class="filter-section" v-if="store.filters">
+            <label>Series</label>
+            <select @change="onFilterChange('series', $event)" :value="store.activeFilters['series'] ?? ''">
+              <option value="">All series</option>
+              <option
+                v-for="f in store.filters.series.slice(0, 100)"
+                :key="f.value" :value="f.value"
+              >{{ f.value }} ({{ f.count }})</option>
+            </select>
+          </div>
 
-      <div class="filter-section">
-        <label class="filter-heading">Show/Hide</label>
-        <label class="checkbox-label">
-          <input type="checkbox" :checked="store.includeDrafts" @change="store.toggleIncludeDrafts()" />
-          Include drafts/WIP
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" :checked="store.includeDuplicates" @change="store.toggleIncludeDuplicates()" />
-          Include duplicates
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" :checked="store.includeOld" @change="store.toggleIncludeOld()" />
-          Include old versions
-        </label>
+          <div class="filter-section" v-if="store.filters">
+            <label>Source</label>
+            <select @change="onFilterChange('source', $event)" :value="store.activeFilters['source'] ?? ''">
+              <option value="">All sources</option>
+              <option
+                v-for="f in store.filters.source" :key="f.value" :value="f.value"
+              >{{ f.value }} ({{ f.count }})</option>
+            </select>
+          </div>
+
+          <div class="filter-section">
+            <label class="filter-heading">Show/Hide</label>
+            <label class="checkbox-label">
+              <input type="checkbox" :checked="store.includeDrafts" @change="store.toggleIncludeDrafts()" />
+              Include drafts/WIP
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" :checked="store.includeDuplicates" @change="store.toggleIncludeDuplicates()" />
+              Include duplicates
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" :checked="store.includeOld" @change="store.toggleIncludeOld()" />
+              Include old versions
+            </label>
+          </div>
+        </div>
       </div>
 
       <button class="btn-secondary clear-btn" @click="searchAll = ''; searchName = ''; store.clearFilters()">
@@ -329,22 +298,42 @@ function tagGroups(available: { value: string; count: number }[]) {
 
     <!-- Results -->
     <div class="results">
+      <!-- NLQ applied banner — shows what NLQ parsed, allows one-click clear -->
+      <div v-if="store.nlqApplied" class="nlq-applied-banner">
+        <span class="banner-label">NLQ:</span>
+        <span v-if="store.nlqApplied.game_system" class="nlq-chip">System: {{ store.nlqApplied.game_system }}</span>
+        <span v-if="store.nlqApplied.product_type" class="nlq-chip">Type: {{ store.nlqApplied.product_type }}</span>
+        <span
+          v-for="tag in store.nlqApplied.tags"
+          :key="tag"
+          class="nlq-chip tag-chip"
+        >{{ tag }}</span>
+        <span v-if="store.nlqApplied.keywords" class="nlq-chip keywords-chip">"{{ store.nlqApplied.keywords }}"</span>
+        <span v-if="store.nlqApplied.level_min" class="nlq-chip">Level {{ store.nlqApplied.level_min }}</span>
+        <button class="nlq-clear-applied" aria-label="Clear NLQ filters" @click="clearNlqBanner">✕ Clear</button>
+      </div>
+
       <div class="results-header">
-        <span class="result-count">{{ store.total.toLocaleString() }} books</span>
+        <span class="result-count">
+          <span v-if="store.loading" class="loading">Loading…</span>
+          <template v-else>{{ store.total.toLocaleString() }} books</template>
+        </span>
         <div class="header-controls">
-          <span v-if="store.loading" class="loading">Loading...</span>
           <div class="view-toggle">
             <button
               :class="['btn-secondary btn-sm', { active: store.viewMode === 'table' }]"
-              @click="store.viewMode = 'table'"
+              @click="store.setViewMode('table')"
             >Table</button>
             <button
               :class="['btn-secondary btn-sm', { active: store.viewMode === 'cards' }]"
-              @click="store.viewMode = 'cards'"
+              @click="store.setViewMode('cards')"
             >Cards</button>
           </div>
         </div>
       </div>
+
+      <!-- Error banner -->
+      <div v-if="store.searchError" class="search-error-banner">{{ store.searchError }}</div>
 
       <!-- Table View -->
       <div v-if="store.viewMode === 'table'" class="table-wrapper">
@@ -354,15 +343,47 @@ function tagGroups(available: { value: string; count: number }[]) {
               <th
                 v-for="col in columns"
                 :key="col.key"
+                :class="['sortable', { 'sort-active': store.sortField === col.key }]"
+                :aria-sort="store.sortField === col.key ? (store.sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+                tabindex="0"
+                role="button"
                 @click="store.toggleSort(col.key)"
-                class="sortable"
-              >{{ col.label }}{{ sortIcon(col.key) }}</th>
+                @keyup.enter="store.toggleSort(col.key)"
+                @keyup.space.prevent="store.toggleSort(col.key)"
+              >{{ col.label }} <span class="sort-icon">{{ sortIcon(col.key) }}</span></th>
               <th></th>
             </tr>
           </thead>
           <tbody>
+            <!-- Skeleton rows while loading -->
+            <template v-if="store.loading">
+              <tr v-for="i in 10" :key="`sk-${i}`" class="skeleton-row">
+                <td v-for="col in columns" :key="col.key"><span class="skeleton-cell"></span></td>
+                <td></td>
+              </tr>
+            </template>
+            <template v-else-if="store.results.length === 0">
+              <tr>
+                <td :colspan="columns.length + 1" class="empty-cell">
+                  <div class="empty-state">
+                    <div class="empty-icon">⊘</div>
+                    <div class="empty-msg">No books match these filters</div>
+                    <button class="btn-secondary" @click="searchAll = ''; searchName = ''; store.clearFilters()">Clear filters</button>
+                  </div>
+                </td>
+              </tr>
+            </template>
+            <template v-else>
             <template v-for="book in store.results" :key="book.id">
-              <tr @click="goToBook(book.id)" class="book-row">
+              <tr
+                class="book-row"
+                tabindex="0"
+                role="link"
+                :aria-label="`Open ${book.display_title || book.filename}`"
+                @click="goToBook(book.id)"
+                @keyup.enter="goToBook(book.id)"
+                @keyup.space.prevent="goToBook(book.id)"
+              >
                 <td class="col-title">{{ book.display_title || book.filename }}</td>
                 <td>{{ book.publisher }}</td>
                 <td>{{ book.game_system }}</td>
@@ -377,6 +398,8 @@ function tagGroups(available: { value: string; count: number }[]) {
                   <button
                     v-if="book.variant_count > 1"
                     class="variant-btn"
+                    :aria-expanded="store.isExpanded(book.variant_ids)"
+                    :aria-label="`${store.isExpanded(book.variant_ids) ? 'Hide' : 'Show'} ${book.variant_count} variant files`"
                     @click.stop="store.toggleGroup(book.variant_ids)"
                   >{{ store.isExpanded(book.variant_ids) ? '▾' : '▸' }} {{ book.variant_count }} files</button>
                 </td>
@@ -386,7 +409,12 @@ function tagGroups(available: { value: string; count: number }[]) {
                   v-for="v in store.getVariants(book.variant_ids)"
                   :key="v.id"
                   class="book-row variant-row"
+                  tabindex="0"
+                  role="link"
+                  :aria-label="`Open ${v.filename}`"
                   @click="goToBook(v.id)"
+                  @keyup.enter="goToBook(v.id)"
+                  @keyup.space.prevent="goToBook(v.id)"
                 >
                   <td class="col-title variant-title">{{ v.filename }}</td>
                   <td></td>
@@ -402,37 +430,45 @@ function tagGroups(available: { value: string; count: number }[]) {
                 </tr>
               </template>
             </template>
+            </template>
           </tbody>
         </table>
       </div>
 
       <!-- Card View -->
-      <div v-else class="book-grid">
-        <div
-          v-for="book in store.results"
-          :key="book.id"
-          class="book-card"
-          @click="goToBook(book.id)"
-        >
-          <div class="card-title">{{ book.display_title || book.filename }}</div>
-          <div class="card-meta">
-            <span v-if="book.publisher" class="meta-publisher">{{ book.publisher }}</span>
-            <span v-if="book.game_system" class="meta-system">{{ book.game_system }}</span>
-          </div>
-          <div class="card-desc" v-if="book.description">{{ book.description }}</div>
-          <div class="card-tags" v-if="book.tags">
-            <span
-              v-for="tag in book.tags.slice(0, 6)"
-              :key="tag"
-              class="tag"
-              @click.stop="onTagClick(tag)"
-            >{{ tag }}</span>
-          </div>
-          <div class="card-footer">
-            <span v-if="book.product_type" class="type-badge">{{ book.product_type }}</span>
-            <span v-if="book.page_count" class="page-count">{{ book.page_count }}p</span>
-            <span v-if="book.series" class="series-name">{{ book.series }}</span>
-          </div>
+      <div v-else>
+        <div class="book-grid">
+          <router-link
+            v-for="book in store.results"
+            :key="book.id"
+            class="book-card"
+            :to="{ name: 'book', params: { id: book.id } }"
+          >
+            <div class="card-title">{{ book.display_title || book.filename }}</div>
+            <div class="card-meta">
+              <span v-if="book.publisher" class="meta-publisher">{{ book.publisher }}</span>
+              <span v-if="book.game_system" class="meta-system">{{ book.game_system }}</span>
+            </div>
+            <div class="card-desc" v-if="book.description">{{ book.description }}</div>
+            <div class="card-tags" v-if="book.tags">
+              <span
+                v-for="tag in book.tags.slice(0, 6)"
+                :key="tag"
+                class="tag"
+                @click.stop.prevent="onTagClick(tag)"
+              >{{ tag }}</span>
+            </div>
+            <div class="card-footer">
+              <span v-if="book.product_type" class="type-badge">{{ book.product_type }}</span>
+              <span v-if="book.page_count" class="page-count">{{ book.page_count }}p</span>
+              <span v-if="book.series" class="series-name">{{ book.series }}</span>
+            </div>
+          </router-link>
+        </div>
+        <div v-if="!store.loading && store.results.length === 0" class="empty-state">
+          <div class="empty-icon">⊘</div>
+          <div class="empty-msg">No books match these filters</div>
+          <button class="btn-secondary" @click="searchAll = ''; searchName = ''; store.clearFilters()">Clear filters</button>
         </div>
       </div>
 
@@ -489,24 +525,27 @@ function tagGroups(available: { value: string; count: number }[]) {
   padding: 0.45rem 0.6rem;
 }
 
-.nlq-results-panel {
-  background: var(--bg-card);
-  border-bottom: 2px solid var(--accent);
-  padding: 0.75rem 1.5rem;
-}
-
-.nlq-parsed {
+/* NLQ applied banner */
+.nlq-applied-banner {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
+  padding: 0.5rem 0.75rem;
   margin-bottom: 0.75rem;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-card));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
   font-size: 0.8rem;
 }
 
-.nlq-label {
+.banner-label {
   color: var(--text-dim);
-  margin-right: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+  font-weight: 600;
 }
 
 .nlq-chip {
@@ -520,71 +559,17 @@ function tagGroups(available: { value: string; count: number }[]) {
 .tag-chip { border-color: var(--accent); color: var(--accent); }
 .keywords-chip { font-style: italic; }
 
-.nlq-count {
+.nlq-clear-applied {
   margin-left: auto;
+  background: none;
+  border: 1px solid var(--border);
   color: var(--text-dim);
-}
-
-.nlq-book-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.nlq-book-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  grid-template-rows: auto auto;
-  gap: 0 0.75rem;
-  padding: 0.4rem 0.5rem;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.nlq-book-row:hover { background: var(--bg-sidebar); }
-
-.nlq-book-title {
-  grid-column: 1;
-  grid-row: 1;
-  font-weight: 500;
-  color: var(--text-bright);
-  font-size: 0.9rem;
-}
-
-.nlq-book-meta {
-  grid-column: 2 / 4;
-  grid-row: 1;
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
   font-size: 0.75rem;
-  color: var(--text-dim);
-  justify-content: flex-end;
+  padding: 0.2rem 0.6rem;
+  border-radius: 3px;
+  cursor: pointer;
 }
-
-.nlq-series { font-style: italic; }
-
-.nlq-book-desc {
-  grid-column: 1 / 4;
-  grid-row: 2;
-  font-size: 0.78rem;
-  color: var(--text-dim);
-}
-
-.nlq-empty {
-  color: var(--text-dim);
-  font-style: italic;
-  padding: 0.5rem;
-}
-
-.nlq-error {
-  padding: 0.5rem 1.5rem;
-  color: var(--accent);
-  font-size: 0.875rem;
-}
+.nlq-clear-applied:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ── Browse layout ── */
 .browse-layout {
@@ -668,6 +653,58 @@ function tagGroups(available: { value: string; count: number }[]) {
   opacity: 0.9;
 }
 
+/* Filter hint badge (button for keyboard + SR access) */
+.filter-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1px solid var(--text-dim);
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  background: transparent;
+  cursor: help;
+  margin-left: 0.25rem;
+  padding: 0;
+  vertical-align: middle;
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: inherit;
+}
+.filter-hint:hover { color: var(--text); border-color: var(--text); }
+
+/* Advanced section */
+.advanced-section {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.advanced-toggle {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.advanced-toggle:hover {
+  color: var(--text);
+}
+
+.adv-arrow {
+  font-size: 0.65rem;
+}
+
 .clear-btn {
   width: 100%;
   margin-top: 0.5rem;
@@ -749,6 +786,20 @@ function tagGroups(available: { value: string; count: number }[]) {
   color: var(--accent);
 }
 
+.book-table th.sort-active {
+  color: var(--accent);
+}
+
+.sort-icon {
+  font-size: 0.65rem;
+  margin-left: 0.2rem;
+  opacity: 0.4;
+}
+
+.sort-active .sort-icon {
+  opacity: 1;
+}
+
 .book-row {
   cursor: pointer;
   transition: background 0.15s;
@@ -756,6 +807,11 @@ function tagGroups(available: { value: string; count: number }[]) {
 
 .book-row:hover {
   background: var(--bg-card);
+}
+
+.book-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .book-row td {
@@ -771,6 +827,69 @@ function tagGroups(available: { value: string; count: number }[]) {
 .col-title {
   color: var(--text-bright) !important;
   font-weight: 500;
+}
+
+.book-row:hover .col-title {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+/* Skeleton rows */
+.skeleton-row td {
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.skeleton-cell {
+  display: block;
+  height: 0.75rem;
+  border-radius: 3px;
+  background: var(--border);
+  width: 70%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%   { opacity: 0.4; }
+  50%  { opacity: 0.8; }
+  100% { opacity: 0.4; }
+}
+
+/* Empty state */
+.empty-cell {
+  padding: 0 !important;
+  border: none !important;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 2.5rem;
+  opacity: 0.4;
+}
+
+.empty-msg {
+  font-size: 0.95rem;
+}
+
+/* Error banner */
+.search-error-banner {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 4px;
+  font-size: 0.875rem;
 }
 
 .col-num {
@@ -824,15 +943,19 @@ function tagGroups(available: { value: string; count: number }[]) {
 }
 
 .book-card {
+  display: block;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 1rem;
   cursor: pointer;
   transition: border-color 0.2s;
+  color: inherit;
+  text-decoration: none;
 }
 .book-card:hover {
   border-color: var(--accent);
+  color: inherit;
 }
 
 .card-title {
