@@ -289,6 +289,63 @@ def parse_draft_status(filename: str) -> tuple[int, int]:
     return is_draft, is_duplicate
 
 
+def flag_content_duplicates(conn: sqlite3.Connection, dry_run: bool = False) -> int:
+    """Flag phantom duplicates by content fingerprint.
+
+    The same PDF dropped into multiple product folders shows up as multiple
+    rows with distinct ``filepath`` values but identical
+    ``(filename, page_count, pdf_title, pdf_author)``. The pre-existing
+    ``_DUPLICATE_SUFFIX`` regex only catches ``book (1).pdf``-style filenames
+    and misses this entire class — typical examples include free-sample PDFs
+    and product catalogues that publishers ship inside every product folder.
+
+    Within each ``(filename, page_count, pdf_title, pdf_author)`` cluster
+    that has more than one row, the row with the lowest ``id`` is the
+    canonical keeper; the rest are flagged ``is_duplicate=1``. Filepath data
+    is preserved on every row, so an audit query for "where does this file
+    live on disk" still works against the flagged rows.
+
+    Idempotent: only considers rows that are not already flagged. Running
+    twice flags zero additional rows.
+
+    Returns the number of rows flagged. With ``dry_run=True``, returns the
+    count without writing.
+    """
+    rows = conn.execute(
+        """SELECT id, filename, page_count,
+                  COALESCE(pdf_title, '') AS t,
+                  COALESCE(pdf_author, '') AS a
+           FROM books
+           WHERE is_duplicate = 0
+           ORDER BY filename, page_count, t, a, id"""
+    ).fetchall()
+
+    to_flag: list[int] = []
+    cur_key: tuple | None = None
+    for row_id, fn, pc, t, a in rows:
+        key = (fn, pc, t, a)
+        if key != cur_key:
+            cur_key = key
+            # First row of this cluster — the keeper
+            continue
+        to_flag.append(row_id)
+
+    if not to_flag or dry_run:
+        return len(to_flag)
+
+    # Batch the UPDATE to avoid an unbounded parameter list
+    batch_size = 500
+    for i in range(0, len(to_flag), batch_size):
+        batch = to_flag[i:i + batch_size]
+        placeholders = ",".join("?" * len(batch))
+        conn.execute(
+            f"UPDATE books SET is_duplicate = 1 WHERE id IN ({placeholders})",
+            batch,
+        )
+    conn.commit()
+    return len(to_flag)
+
+
 def parse_version(filename: str) -> tuple[int, int | None]:
     """Detect old versions and assign a generation number.
 
@@ -421,7 +478,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Index PDF bookmarks and metadata into SQLite"
     )
-    parser.add_argument("scan_folder", help="Root folder to scan for PDFs")
+    parser.add_argument("scan_folder", nargs="?",
+                        help="Root folder to scan for PDFs (omit when using "
+                             "--dedup-content against an existing DB)")
     parser.add_argument("db_path", help="Path to SQLite database file")
     parser.add_argument(
         "--source",
@@ -436,7 +495,34 @@ def main():
         "--workers", type=int, default=4,
         help="Number of parallel workers (default: 4)",
     )
+    parser.add_argument(
+        "--dedup-content",
+        action="store_true",
+        help="Flag phantom duplicates by content fingerprint "
+             "(filename, page_count, pdf_title, pdf_author) and exit. "
+             "Does not scan; runs against the existing DB.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="With --dedup-content: report what would change without writing",
+    )
     args = parser.parse_args()
+
+    if args.dedup_content:
+        if not os.path.exists(args.db_path):
+            print(f"Error: database not found: {args.db_path}", file=sys.stderr)
+            sys.exit(1)
+        conn = sqlite3.connect(args.db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        n = flag_content_duplicates(conn, dry_run=args.dry_run)
+        verb = "Would flag" if args.dry_run else "Flagged"
+        print(f"{verb} {n} content-duplicate rows.")
+        conn.close()
+        return
+
+    if not args.scan_folder:
+        parser.error("scan_folder is required unless --dedup-content is set")
 
     scan_folder = os.path.abspath(args.scan_folder)
     if not os.path.isdir(scan_folder):
