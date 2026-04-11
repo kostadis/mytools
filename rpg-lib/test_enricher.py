@@ -6,6 +6,7 @@ import sqlite3
 import unittest
 
 from pdf_enricher import (
+    apply_series_implied_tags,
     build_book_summary,
     build_series_prompt,
     migrate_enrichment_schema,
@@ -313,6 +314,109 @@ class TestValidateEnrichment(unittest.TestCase):
         }
         result = validate_enrichment(entry, low_confidence_ids={1})
         self.assertEqual(result["tags"].count("low_confidence"), 1)
+
+    def test_series_implied_tag_applied_via_validate(self):
+        """validate_enrichment adds organized_play when book_meta matches AL."""
+        entry = {
+            "book_id": 1, "game_system": "D&D 5e", "product_type": "adventure",
+            "tags": ["adventure", "5e"],
+            "description": "A tier-1 adventure in Neverwinter.",
+        }
+        book_meta = {
+            "id": 1,
+            "filename": "DDAL05-01 Treasure of the Broken Hoard.pdf",
+            "collection": "D&D Adventurers League - Storm King's Thunder",
+        }
+        result = validate_enrichment(entry, book_meta=book_meta)
+        self.assertIn("organized_play", result["tags"])
+
+
+class TestSeriesImpliedTags(unittest.TestCase):
+    """Deterministic post-LLM tag rules keyed on filename/collection/series."""
+
+    def _entry(self, tags=None, series=None):
+        return {
+            "book_id": 1, "game_system": "D&D 5e", "product_type": "adventure",
+            "tags": list(tags) if tags is not None else ["adventure", "5e"],
+            "series": series,
+            "description": "An adventure.",
+        }
+
+    def test_ddal_filename_implies_organized_play(self):
+        """DDAL filename prefix → organized_play, even if LLM missed it."""
+        entry = self._entry()
+        apply_series_implied_tags(entry, {
+            "filename": "DDAL05-01 Treasure of the Broken Hoard.pdf",
+            "collection": "Season 5",
+        })
+        self.assertIn("organized_play", entry["tags"])
+
+    def test_ddex_filename_implies_organized_play(self):
+        entry = self._entry()
+        apply_series_implied_tags(entry, {
+            "filename": "DDEX1-01 Defiance in Phlan.pdf",
+            "collection": "Tyranny of Dragons",
+        })
+        self.assertIn("organized_play", entry["tags"])
+
+    def test_adventurers_league_collection_implies_organized_play(self):
+        """Collection substring alone is enough (handles CCC-* files etc)."""
+        entry = self._entry()
+        apply_series_implied_tags(entry, {
+            "filename": "CCC-AE-01 Frozen Sick.pdf",
+            "collection": "D&D Adventurers League: CCC-AE",
+        })
+        self.assertIn("organized_play", entry["tags"])
+
+    def test_match_is_case_insensitive(self):
+        entry = self._entry()
+        apply_series_implied_tags(entry, {
+            "filename": "ddal05-01.pdf",
+            "collection": "d&d adventurers league - storm king",
+        })
+        self.assertIn("organized_play", entry["tags"])
+
+    def test_non_al_book_unaffected(self):
+        """Tight-radius rule: regular books must not pick up organized_play."""
+        entry = self._entry()
+        apply_series_implied_tags(entry, {
+            "filename": "Curse of Strahd.pdf",
+            "collection": "Ravenloft",
+        })
+        self.assertNotIn("organized_play", entry["tags"])
+
+    def test_basic_dnd_not_matched_by_ddal_false_positive(self):
+        """Sanity check: B10 Night's Dark Terror (Basic D&D) must not match."""
+        entry = self._entry()
+        apply_series_implied_tags(entry, {
+            "filename": "B10 Night's Dark Terror.pdf",
+            "collection": "B10 Night's Dark Terror (Basic)",
+        })
+        self.assertNotIn("organized_play", entry["tags"])
+
+    def test_idempotent_when_tag_already_present(self):
+        """Don't duplicate organized_play if the LLM already produced it."""
+        entry = self._entry(tags=["adventure", "5e", "organized_play"])
+        apply_series_implied_tags(entry, {
+            "filename": "DDAL05-01.pdf",
+            "collection": "D&D Adventurers League - Storm King",
+        })
+        self.assertEqual(entry["tags"].count("organized_play"), 1)
+
+    def test_no_book_meta_is_noop(self):
+        """Callers without DB context (tests, dry runs) should not crash."""
+        entry = self._entry()
+        apply_series_implied_tags(entry, None)
+        self.assertNotIn("organized_play", entry["tags"])
+
+    def test_llm_series_is_bonus_signal(self):
+        """Even if filename/collection miss, LLM-extracted series can trigger."""
+        entry = self._entry(series="D&D Adventurers League - Season 3")
+        apply_series_implied_tags(entry, {
+            "filename": "unknown.pdf",
+            "collection": "",
+        })
+        self.assertIn("organized_play", entry["tags"])
 
 
 class TestSaveEnrichments(unittest.TestCase):
