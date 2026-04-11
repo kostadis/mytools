@@ -128,6 +128,26 @@ VALID_PRODUCT_TYPES = {
     "gm_aid", "map_pack", "character_sheet", "setting", "anthology", "non_rpg",
 }
 
+# Series/collection patterns that deterministically imply a canonical tag.
+# Applied after the LLM returns tags, so a model that forgets to tag an
+# obvious campaign-line book still gets the right tag. Matches against the
+# book's filename + collection (on-disk, authoritative) and the LLM-extracted
+# series (as a bonus signal).
+#
+# Why not just tell the LLM? Empirically, the model tags organized_play on
+# only ~22% of D&D Adventurers League books despite the vocabulary listing
+# it. This is the LLMs-are-renderers-not-architects rule: deterministic
+# structure decisions belong outside the model.
+SERIES_IMPLIED_TAGS: list[tuple[re.Pattern, str]] = [
+    # D&D Adventurers League (DDAL / DDEX / CCC / DDHC all fall under this
+    # organized-play program). Caught via substring rather than prefix so
+    # "CCC-AE" filenames and "D&D Adventurers League: Storm King's Thunder"
+    # collections both match.
+    (re.compile(r"adventurers league|\bDDAL|\bDDEX", re.IGNORECASE),
+     "organized_play"),
+]
+
+
 # Canonical tag vocabulary — all valid tags after normalization
 CANONICAL_TAGS = {
     # product types
@@ -553,8 +573,36 @@ def parse_json_response(text: str) -> list | dict:
     return json.loads(text)
 
 
-def validate_enrichment(entry: dict, low_confidence_ids: set[int] | None = None) -> dict | None:
-    """Validate and normalize a single enrichment entry. Returns None if invalid."""
+def apply_series_implied_tags(entry: dict, book_meta: dict | None) -> None:
+    """Add any canonical tags implied by the book's series/collection/filename.
+
+    Mutates ``entry['tags']`` in place. Idempotent — does nothing if the implied
+    tag is already present. Uses on-disk fields (filename, collection) as the
+    source of truth rather than the LLM-extracted series, which has been
+    observed to be inconsistent for organized-play campaign lines.
+    """
+    if not book_meta:
+        return
+    haystack_parts = [
+        str(book_meta.get("filename") or ""),
+        str(book_meta.get("collection") or ""),
+        str(entry.get("series") or ""),
+    ]
+    haystack = " ".join(haystack_parts)
+    tags = entry["tags"]
+    for pattern, tag in SERIES_IMPLIED_TAGS:
+        if pattern.search(haystack) and tag not in tags:
+            tags.append(tag)
+
+
+def validate_enrichment(entry: dict, low_confidence_ids: set[int] | None = None,
+                        book_meta: dict | None = None) -> dict | None:
+    """Validate and normalize a single enrichment entry. Returns None if invalid.
+
+    ``book_meta`` is the original pre-enrichment book row (filename, collection,
+    publisher, ...) used to apply deterministic rules like ``SERIES_IMPLIED_TAGS``.
+    Optional to keep the function callable from tests without DB context.
+    """
     required = {"book_id", "game_system", "product_type", "tags", "description"}
     if not all(k in entry for k in required):
         return None
@@ -602,6 +650,10 @@ def validate_enrichment(entry: dict, low_confidence_ids: set[int] | None = None)
     else:
         entry["min_level"] = None
         entry["max_level"] = None
+
+    # Deterministic post-LLM rules: tags implied by the book's on-disk
+    # series/collection/filename that the model may have missed.
+    apply_series_implied_tags(entry, book_meta)
 
     return entry
 
@@ -700,6 +752,8 @@ def enrich_books(client, conn: sqlite3.Connection, books: list[dict],
             b["id"] for b in batch
             if not b["bookmarks"] and not b["first_page_text"]
         }
+        # Lookup so validate_enrichment can apply on-disk-derived rules
+        book_meta_by_id = {b["id"]: b for b in batch}
 
         try:
             response_text = call_api(client, SYSTEM_PROMPT, user_msg, model)
@@ -710,7 +764,11 @@ def enrich_books(client, conn: sqlite3.Connection, books: list[dict],
 
             enrichments = []
             for entry in results:
-                validated = validate_enrichment(entry, low_confidence_ids)
+                validated = validate_enrichment(
+                    entry,
+                    low_confidence_ids,
+                    book_meta=book_meta_by_id.get(entry.get("book_id")),
+                )
                 if validated:
                     enrichments.append(validated)
 
