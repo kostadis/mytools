@@ -67,6 +67,19 @@ class FilterOptions(BaseModel):
     source: list[FilterValue]
 
 
+class FacetsResponse(BaseModel):
+    """Aggregations of search results by series / publisher / game_system / tag.
+
+    Counts reflect the same WHERE clause as ``/search`` — i.e. they answer
+    "which series contain books that match my current query?" rather than
+    "which series exist in the whole library?"."""
+    total: int
+    series: list[FilterValue]
+    publisher: list[FilterValue]
+    game_system: list[FilterValue]
+    tag: list[FilterValue]
+
+
 class StatsResponse(BaseModel):
     total_books: int
     enriched_books: int

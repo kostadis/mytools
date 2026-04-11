@@ -59,6 +59,16 @@ export interface Filters {
   tags: FilterValue[]
 }
 
+export interface FacetsResponse {
+  total: number
+  series: FilterValue[]
+  publisher: FilterValue[]
+  game_system: FilterValue[]
+  tag: FilterValue[]
+}
+
+export type GroupByMode = 'books' | 'series' | 'publisher' | 'game_system' | 'tag'
+
 export interface NlqQueryParsed {
   game_system: string | null
   product_type: string | null
@@ -132,32 +142,42 @@ export const useLibraryStore = defineStore('library', () => {
   const searchError = ref<string>('')
   const nlqApplied = ref<NlqQueryParsed | null>(null)
 
+  // Group-by state: when not 'books', the results area shows aggregations of
+  // the current search instead of book rows.
+  const groupBy = ref<GroupByMode>('books')
+  const facets = ref<FacetsResponse | null>(null)
+  const facetsLoading = ref(false)
+
   const title = computed(() => {
     return (book: BookSummary) => book.display_title || book.filename
   })
+
+  /** Build the query-param subset shared by /search and /search/facets. */
+  function buildSearchParams(): URLSearchParams {
+    const params = new URLSearchParams()
+    if (queryAll.value) params.set('q', queryAll.value)
+    if (queryName.value) params.set('q_name', queryName.value)
+    if (includeOld.value) params.set('include_old', 'true')
+    if (includeDrafts.value) params.set('include_drafts', 'true')
+    if (includeDuplicates.value) params.set('include_duplicates', 'true')
+    for (const [key, val] of Object.entries(activeFilters.value)) {
+      if (val) params.set(key, val)
+    }
+    if (charLevel.value !== null) params.set('char_level', String(charLevel.value))
+    return params
+  }
 
   async function search() {
     loading.value = true
     searchError.value = ''
     try {
-      const params = new URLSearchParams()
-      if (queryAll.value) params.set('q', queryAll.value)
-      if (queryName.value) params.set('q_name', queryName.value)
-
+      const params = buildSearchParams()
       params.set('page', String(page.value))
       params.set('per_page', String(perPage.value))
       if (sortField.value) {
         params.set('sort', sortField.value)
         params.set('sort_dir', sortDir.value)
       }
-      if (includeOld.value) params.set('include_old', 'true')
-      if (includeDrafts.value) params.set('include_drafts', 'true')
-      if (includeDuplicates.value) params.set('include_duplicates', 'true')
-
-      for (const [key, val] of Object.entries(activeFilters.value)) {
-        if (val) params.set(key, val)
-      }
-      if (charLevel.value !== null) params.set('char_level', String(charLevel.value))
 
       const res = await fetch(`${API}/search?${params}`)
       if (!res.ok) {
@@ -183,6 +203,88 @@ export const useLibraryStore = defineStore('library', () => {
     } finally {
       loading.value = false
     }
+
+    // Keep facets in sync when the user is in a group-by view, so that
+    // changing filters / queries updates the dimension grid too.
+    if (groupBy.value !== 'books') {
+      await fetchFacets()
+    }
+  }
+
+  async function fetchFacets() {
+    facetsLoading.value = true
+    try {
+      const params = buildSearchParams()
+      const res = await fetch(`${API}/search/facets?${params}`)
+      if (!res.ok) {
+        let msg = `Server error ${res.status}`
+        try {
+          const body = await res.json()
+          if (body?.detail) msg = body.detail
+        } catch {}
+        throw new Error(msg)
+      }
+      facets.value = await res.json()
+    } catch (e) {
+      if (e instanceof TypeError) {
+        searchError.value = 'Network error — cannot reach the server'
+      } else if (e instanceof Error) {
+        searchError.value = e.message
+      } else {
+        searchError.value = 'Facets fetch failed'
+      }
+    } finally {
+      facetsLoading.value = false
+    }
+  }
+
+  async function setGroupBy(mode: GroupByMode) {
+    if (groupBy.value === mode) return
+
+    // When switching to a non-books mode, clear any existing filter on that
+    // same dimension. Otherwise the facet grid would show only the filtered
+    // value (e.g. "Publisher facet with publisher=Chaosium set" returns just
+    // Chaosium, count=N) which is useless as a browse tool and leaves the
+    // user with no way to back out of a previous drill-in.
+    let filterChanged = false
+    if (mode !== 'books') {
+      const filterKey = mode === 'tag' ? 'tags' : mode
+      if (activeFilters.value[filterKey]) {
+        delete activeFilters.value[filterKey]
+        filterChanged = true
+      }
+    }
+
+    groupBy.value = mode
+
+    if (mode === 'books') {
+      return
+    }
+
+    // If we cleared a filter, the books total needs to reflect it too, so
+    // re-run the full search (which also refreshes facets). Otherwise just
+    // fetch facets if we don't have them yet.
+    if (filterChanged) {
+      page.value = 1
+      await search()
+    } else if (!facets.value) {
+      await fetchFacets()
+    }
+  }
+
+  /**
+   * Drill-in: when a user clicks a facet row in a group-by view, apply the
+   * value as a filter on the underlying search and switch back to the
+   * Books view so they see the narrowed result list.
+   */
+  async function drillInFacet(dimension: GroupByMode, value: string) {
+    if (dimension === 'books') return
+    // The store's filter key for tags is plural; everything else matches.
+    const filterKey = dimension === 'tag' ? 'tags' : dimension
+    activeFilters.value[filterKey] = value
+    page.value = 1
+    groupBy.value = 'books'
+    await search()
   }
 
   function toggleSort(field: string) {
@@ -397,10 +499,12 @@ export const useLibraryStore = defineStore('library', () => {
     activeFilters, results, total, page, perPage, totalPages, loading, searchError, filters,
     viewMode, queryAll, queryName, sortField, sortDir, includeOld, includeDrafts, includeDuplicates,
     charLevel, nlqApplied,
+    groupBy, facets, facetsLoading,
     title, search, loadFilters, getBook, openInApp, previewUrl,
     setQuery, setFilter, clearFilters, setPage, toggleSort, setCharLevel, setViewMode,
     toggleIncludeOld, toggleIncludeDrafts, toggleIncludeDuplicates,
     toggleGroup, isExpanded, getVariants,
+    fetchFacets, setGroupBy, drillInFacet,
     nlqSearch, applyNlq, clearNlq, getTopic, getRelatedBooks, getGraph,
   }
 })
