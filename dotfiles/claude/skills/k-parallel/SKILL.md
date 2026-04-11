@@ -42,7 +42,7 @@ Extract and present in full detail:
 - **Assumptions & Constraints:** All stated or implied.
 - **Future Work / Open Questions:** All unresolved items.
 
-Rules: dense bullet points, bold component and field names, exact technical vocabulary from the source, no inference.
+Rules: dense bullet points, bold component and field names, exact technical vocabulary from the source. If the input is a pasted document: no inference, only what is explicitly stated. If the input is a topic or question: synthesize exhaustively from training knowledge.
 
 ---
 
