@@ -6,10 +6,16 @@ import sqlite3
 import unittest
 
 from pdf_enricher import (
+    SERIES_ALIASES,
+    UNQUALIFIED_AL_SERIES,
+    al_season_canonical_series,
+    al_season_from_filename,
     apply_series_implied_tags,
     build_book_summary,
     build_series_prompt,
     migrate_enrichment_schema,
+    normalize_series_in_db,
+    normalize_series_value,
     parse_json_response,
     save_enrichments,
     save_series,
@@ -417,6 +423,257 @@ class TestSeriesImpliedTags(unittest.TestCase):
             "collection": "",
         })
         self.assertIn("organized_play", entry["tags"])
+
+
+class TestSeriesAliasesMapShape(unittest.TestCase):
+    """Structural invariants of the SERIES_ALIASES constant."""
+
+    def test_no_chains(self):
+        """No value is also a key — every entry is one-hop."""
+        overlap = set(SERIES_ALIASES.keys()) & set(SERIES_ALIASES.values())
+        self.assertFalse(overlap, f"Chained aliases: {overlap}")
+
+    def test_values_are_stable_under_renormalization(self):
+        """Every target already matches its own structurally-normalized form."""
+        for target in SERIES_ALIASES.values():
+            self.assertEqual(normalize_series_value(target), target,
+                             f"Target not self-stable: {target!r}")
+
+
+class TestNormalizeSeriesValue(unittest.TestCase):
+    def test_none_passes_through(self):
+        self.assertIsNone(normalize_series_value(None))
+
+    def test_empty_string_becomes_none(self):
+        self.assertIsNone(normalize_series_value(""))
+        self.assertIsNone(normalize_series_value("   "))
+
+    def test_strips_whitespace(self):
+        self.assertEqual(normalize_series_value("  Ravenloft  "), "Ravenloft")
+
+    def test_collapses_internal_whitespace(self):
+        self.assertEqual(normalize_series_value("Rage   of  Demons"),
+                         "Rage of Demons")
+
+    def test_normalizes_em_dash(self):
+        self.assertEqual(normalize_series_value("Foo \u2014 Bar"), "Foo - Bar")
+
+    def test_normalizes_en_dash(self):
+        self.assertEqual(normalize_series_value("Foo \u2013 Bar"), "Foo - Bar")
+
+    def test_strips_trailing_colon(self):
+        self.assertEqual(normalize_series_value("Ravenloft:"), "Ravenloft")
+
+    def test_strips_trailing_dash(self):
+        self.assertEqual(normalize_series_value("Ravenloft -"), "Ravenloft")
+
+    def test_strips_trailing_comma(self):
+        self.assertEqual(normalize_series_value("Ravenloft,"), "Ravenloft")
+
+    def test_applies_alias_colon_variant(self):
+        self.assertEqual(
+            normalize_series_value("D&D Adventurers League: Rage of Demons"),
+            "D&D Adventurers League - Season 3 (Rage of Demons)",
+        )
+
+    def test_applies_alias_no_colon_variant(self):
+        self.assertEqual(
+            normalize_series_value("D&D Adventurers League Rage of Demons"),
+            "D&D Adventurers League - Season 3 (Rage of Demons)",
+        )
+
+    def test_applies_alias_ddex3_shorthand(self):
+        self.assertEqual(
+            normalize_series_value("D&D Adventurers League DDEX3"),
+            "D&D Adventurers League - Season 3 (Rage of Demons)",
+        )
+
+    def test_corrects_wrong_season_3_subtitle(self):
+        """DDEX3 was Rage of Demons, not Elemental Evil — the DB's wrong label is fixed."""
+        self.assertEqual(
+            normalize_series_value("D&D Adventurers League - Season 3 (Elemental Evil)"),
+            "D&D Adventurers League - Season 3 (Rage of Demons)",
+        )
+
+    def test_applies_alias_season_5_variants(self):
+        for variant in ("D&D Adventurers League - Season 5",
+                        "D&D Adventurers League - Storm King's Thunder"):
+            with self.subTest(variant=variant):
+                self.assertEqual(
+                    normalize_series_value(variant),
+                    "D&D Adventurers League - Season 5 (Storm King's Thunder)",
+                )
+
+    def test_applies_alias_frostmaiden_plural(self):
+        self.assertEqual(
+            normalize_series_value("Icewind Dale: Rime of the Frostmaiden DM's Resources"),
+            "Icewind Dale: Rime of the Frostmaiden DM's Resource",
+        )
+
+    def test_untouched_series_passes_through(self):
+        """Series outside the alias map are only structurally normalized."""
+        self.assertEqual(
+            normalize_series_value("Dungeon Crawl Classics"),
+            "Dungeon Crawl Classics",
+        )
+
+
+class TestAlSeasonFromFilename(unittest.TestCase):
+    def test_none_and_empty(self):
+        self.assertIsNone(al_season_from_filename(None))
+        self.assertIsNone(al_season_from_filename(""))
+
+    def test_ddal_with_separator(self):
+        self.assertEqual(al_season_from_filename("DDAL05-08 Durlags Tower.pdf"), 5)
+        self.assertEqual(al_season_from_filename("DDAL_08-13_Vampire.pdf"), 8)
+        self.assertEqual(al_season_from_filename("DDAL04-01_Curse.pdf"), 4)
+
+    def test_ddal_compressed(self):
+        """No separator: DDAL0508 = Season 5."""
+        self.assertEqual(al_season_from_filename("DDAL0508.pdf"), 5)
+
+    def test_ddal_triple_segment_certificate(self):
+        """CERT filenames use DDAL{SS}{AA}{NN} with no separators."""
+        self.assertEqual(al_season_from_filename("CERT - DDAL050801.pdf"), 5)
+
+    def test_ddex_one_digit_season(self):
+        self.assertEqual(al_season_from_filename("DDEX1-10_TyrannyinPhlan.pdf"), 1)
+        self.assertEqual(al_season_from_filename("DDEX3-1_HarriedInHillsfar.pdf"), 3)
+
+    def test_ddex_compressed(self):
+        """No separator: DDEX110 = Season 1 adventure 10."""
+        self.assertEqual(al_season_from_filename("DDEX110_TyrannyinPhlan.pdf"), 1)
+        self.assertEqual(al_season_from_filename("DDEX19_OutlawsIronRoute.pdf"), 1)
+
+    def test_ddex_leading_zero(self):
+        """DDEX03-10 = Season 3 (leading-zero form)."""
+        self.assertEqual(al_season_from_filename("DDEX03-10_Quelling.pdf"), 3)
+
+    def test_ddal_below_season_4_rejected(self):
+        """DDAL was only used Season 4+; DDAL03 is out of range."""
+        self.assertIsNone(al_season_from_filename("DDAL03-01_fake.pdf"))
+
+    def test_ddex_above_season_3_rejected(self):
+        """DDEX was only used Seasons 1-3; DDEX5 is out of range."""
+        self.assertIsNone(al_season_from_filename("DDEX5-01_fake.pdf"))
+
+    def test_non_al_filename(self):
+        self.assertIsNone(al_season_from_filename("Curse_of_Strahd.pdf"))
+        # Basic D&D false positive sanity check from TODO #5
+        self.assertIsNone(al_season_from_filename("B10 Night's Dark Terror.pdf"))
+
+    def test_case_insensitive(self):
+        self.assertEqual(al_season_from_filename("ddal05-08.pdf"), 5)
+        self.assertEqual(al_season_from_filename("ddex1-10.pdf"), 1)
+
+
+class TestAlSeasonCanonicalSeries(unittest.TestCase):
+    def test_known_season_includes_name(self):
+        self.assertEqual(
+            al_season_canonical_series(3),
+            "D&D Adventurers League - Season 3 (Rage of Demons)",
+        )
+        self.assertEqual(
+            al_season_canonical_series(5),
+            "D&D Adventurers League - Season 5 (Storm King's Thunder)",
+        )
+
+    def test_unknown_season_bare_label(self):
+        """Unknown seasons get 'Season N' with no subtitle — still canonical."""
+        self.assertEqual(
+            al_season_canonical_series(7),
+            "D&D Adventurers League - Season 7",
+        )
+
+
+class TestNormalizeSeriesInDb(unittest.TestCase):
+    def setUp(self):
+        self.conn = make_test_db()
+        migrate_enrichment_schema(self.conn)
+
+    def _insert(self, book_id, filename, series):
+        insert_book(self.conn, book_id, filename)
+        self.conn.execute("UPDATE books SET series = ? WHERE id = ?",
+                          (series, book_id))
+        self.conn.commit()
+
+    def _series_of(self, book_id):
+        return self.conn.execute(
+            "SELECT series FROM books WHERE id = ?", (book_id,)
+        ).fetchone()[0]
+
+    def test_alias_rewrites_db_row(self):
+        self._insert(1, "DDEX32_ShacklesBlood.pdf",
+                     "D&D Adventurers League: Rage of Demons")
+        normalize_series_in_db(self.conn)
+        self.assertEqual(
+            self._series_of(1),
+            "D&D Adventurers League - Season 3 (Rage of Demons)",
+        )
+
+    def test_unqualified_al_reassigned_by_filename(self):
+        """Book in the unqualified AL bucket gets promoted to its specific season."""
+        self._insert(1, "DDAL05-08 Durlags Tower v1.0.pdf",
+                     "D&D Adventurers League")
+        normalize_series_in_db(self.conn)
+        self.assertEqual(
+            self._series_of(1),
+            "D&D Adventurers League - Season 5 (Storm King's Thunder)",
+        )
+
+    def test_unqualified_al_without_code_untouched(self):
+        """Generic AL program material stays unqualified."""
+        self._insert(1, "925821-AL_DM_Guide_v9.1.pdf",
+                     "D&D Adventurers League")
+        normalize_series_in_db(self.conn)
+        self.assertEqual(self._series_of(1), "D&D Adventurers League")
+
+    def test_qualified_al_not_touched_by_filename_pass(self):
+        """A book already in a specific season is not overridden by the filename pass,
+        because its series isn't in UNQUALIFIED_AL_SERIES."""
+        # Deliberately mismatched: series says Season 5, filename has DDEX3 code
+        self._insert(1, "DDEX32_ShacklesBlood.pdf",
+                     "D&D Adventurers League - Season 5 (Storm King's Thunder)")
+        normalize_series_in_db(self.conn)
+        self.assertEqual(
+            self._series_of(1),
+            "D&D Adventurers League - Season 5 (Storm King's Thunder)",
+        )
+
+    def test_non_al_book_unaffected(self):
+        self._insert(1, "curse_of_strahd.pdf", "Ravenloft")
+        normalize_series_in_db(self.conn)
+        self.assertEqual(self._series_of(1), "Ravenloft")
+
+    def test_null_series_unaffected(self):
+        insert_book(self.conn, 1, "some.pdf")  # series stays NULL
+        normalize_series_in_db(self.conn)
+        row = self.conn.execute("SELECT series FROM books WHERE id=1").fetchone()
+        self.assertIsNone(row[0])
+
+    def test_dry_run_does_not_write(self):
+        self._insert(1, "DDEX32_ShacklesBlood.pdf",
+                     "D&D Adventurers League: Rage of Demons")
+        normalize_series_in_db(self.conn, dry_run=True)
+        self.assertEqual(
+            self._series_of(1),
+            "D&D Adventurers League: Rage of Demons",
+        )
+
+    def test_frostmaiden_plural_merged(self):
+        self._insert(1, "resource.pdf",
+                     "Icewind Dale: Rime of the Frostmaiden DM's Resources")
+        normalize_series_in_db(self.conn)
+        self.assertEqual(
+            self._series_of(1),
+            "Icewind Dale: Rime of the Frostmaiden DM's Resource",
+        )
+
+    def test_structural_normalization_without_alias(self):
+        """Series not in the alias map still gets structural cleanup."""
+        self._insert(1, "book.pdf", "Dolmenwood  ")  # trailing whitespace
+        normalize_series_in_db(self.conn)
+        self.assertEqual(self._series_of(1), "Dolmenwood")
 
 
 class TestSaveEnrichments(unittest.TestCase):

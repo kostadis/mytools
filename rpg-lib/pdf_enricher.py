@@ -128,6 +128,71 @@ VALID_PRODUCT_TYPES = {
     "gm_aid", "map_pack", "character_sheet", "setting", "anthology", "non_rpg",
 }
 
+# Series-value aliases: map the exact string stored in `books.series` to its
+# canonical form. Applied after structural normalization (whitespace / dash /
+# trailing punctuation), so keys and values here should already be structurally
+# clean. Keep the map flat — no A→B, B→C chains.
+#
+# Canonical form for numbered D&D Adventurers League seasons is
+# "D&D Adventurers League - Season N (Campaign Name)".
+SERIES_ALIASES: dict[str, str] = {
+    # Season 1 (DDEX1) = Tyranny of Dragons
+    "D&D Adventurers League DDEX1":
+        "D&D Adventurers League - Season 1 (Tyranny of Dragons)",
+
+    # Season 3 (DDEX3) = Rage of Demons. The existing
+    # "- Season 3 (Elemental Evil)" label in the DB is factually wrong:
+    # Elemental Evil was Season 2 (DDEX2), not Season 3.
+    "D&D Adventurers League: Rage of Demons":
+        "D&D Adventurers League - Season 3 (Rage of Demons)",
+    "D&D Adventurers League Rage of Demons":
+        "D&D Adventurers League - Season 3 (Rage of Demons)",
+    "D&D Adventurers League DDEX3":
+        "D&D Adventurers League - Season 3 (Rage of Demons)",
+    "D&D Adventurers League - Season 3 (Elemental Evil)":
+        "D&D Adventurers League - Season 3 (Rage of Demons)",
+
+    # Season 5 (DDAL05) = Storm King's Thunder
+    "D&D Adventurers League - Season 5":
+        "D&D Adventurers League - Season 5 (Storm King's Thunder)",
+    "D&D Adventurers League - Storm King's Thunder":
+        "D&D Adventurers League - Season 5 (Storm King's Thunder)",
+
+    # DMsGuild Frostmaiden DM resource line — plural was a typo
+    "Icewind Dale: Rime of the Frostmaiden DM's Resources":
+        "Icewind Dale: Rime of the Frostmaiden DM's Resource",
+}
+
+
+# Series values treated as "unqualified" for the AL filename-code reassignment
+# pass. Any book whose post-alias series is one of these is eligible to be
+# reassigned to a specific season based on its filename product code.
+UNQUALIFIED_AL_SERIES: set[str] = {
+    "D&D Adventurers League",
+}
+
+
+# Known campaign-name suffix per AL season. Only seasons verified from the
+# current library are listed; unknown seasons fall back to "Season N" with
+# no subtitle, which is still a valid canonical form.
+AL_SEASON_NAMES: dict[int, str] = {
+    1: "Tyranny of Dragons",
+    3: "Rage of Demons",
+    5: "Storm King's Thunder",
+    8: "Waterdeep",
+}
+
+
+# Product-code parsers for AL filenames:
+#   DDEX{S}(-{AA})   — Seasons 1-3, one-digit season (optional zero prefix)
+#   DDAL{SS}(-{AA})  — Seasons 4+, two-digit season
+# Examples that must match:
+#   DDEX1-10, DDEX110, DDEX03-10, DDEX31, DDEX3-1, DDEX19
+#   DDAL05-08, DDAL0508, DDAL_08-13, DDAL050801
+AL_DDEX_CODE_RE = re.compile(r"\bDDEX[-_ ]?0?(\d)[-_ ]?\d", re.IGNORECASE)
+AL_DDAL_CODE_RE = re.compile(r"\bDDAL[-_ ]?(\d{2})[-_ ]?\d", re.IGNORECASE)
+
+
 # Series/collection patterns that deterministically imply a canonical tag.
 # Applied after the LLM returns tags, so a model that forgets to tag an
 # obvious campaign-line book still gets the right tag. Matches against the
@@ -331,6 +396,127 @@ def normalize_tags_in_db(conn: sqlite3.Connection, dry_run: bool = False,
         print(f"Dropped {len(dropped_counts)} rare tags. Top:")
         for tag, count in top_dropped:
             print(f"  {count:4d}x  {tag!r}")
+
+
+# ── Series Normalization ─────────────────────────────────────────────────────
+
+_TRAILING_PUNCT_RE = re.compile(r"[\s:,\-]+$")
+_MULTI_WS_RE = re.compile(r"\s+")
+
+
+def normalize_series_value(series: str | None) -> str | None:
+    """Structurally normalize a series string and apply the alias map.
+
+    Applies (in order):
+      * strip leading/trailing whitespace
+      * collapse internal whitespace runs to single spaces
+      * replace em-dash (U+2014) and en-dash (U+2013) with ASCII '-'
+      * strip trailing ':', ',', '-' and any whitespace around them
+      * one-hop lookup in SERIES_ALIASES
+
+    Pure function — does not touch the DB. Returns the original value unchanged
+    if no rule applies. Returns None for None input.
+    """
+    if series is None:
+        return None
+    s = series.replace("\u2014", "-").replace("\u2013", "-")
+    s = _MULTI_WS_RE.sub(" ", s).strip()
+    s = _TRAILING_PUNCT_RE.sub("", s).strip()
+    if not s:
+        return None
+    return SERIES_ALIASES.get(s, s)
+
+
+def al_season_from_filename(filename: str | None) -> int | None:
+    """Parse the D&D Adventurers League season number from a filename.
+
+    Recognises both DDEX (Seasons 1-3) and DDAL (Seasons 4+) product codes,
+    with or without separators and with optional leading zero for DDEX.
+    Returns ``None`` if no valid code is present.
+    """
+    if not filename:
+        return None
+    # Check DDAL first — prefixes are mutually exclusive but DDAL is more
+    # specific (requires two season digits) so checking it first avoids any
+    # chance of ambiguity if both patterns could be extracted.
+    m = AL_DDAL_CODE_RE.search(filename)
+    if m:
+        season = int(m.group(1))
+        if 4 <= season <= 11:
+            return season
+    m = AL_DDEX_CODE_RE.search(filename)
+    if m:
+        season = int(m.group(1))
+        if 1 <= season <= 3:
+            return season
+    return None
+
+
+def al_season_canonical_series(season: int) -> str:
+    """Return the canonical series label for an AL season number."""
+    name = AL_SEASON_NAMES.get(season)
+    if name:
+        return f"D&D Adventurers League - Season {season} ({name})"
+    return f"D&D Adventurers League - Season {season}"
+
+
+def normalize_series_in_db(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Normalize series names in the books table.
+
+    Two passes, applied per book in one sweep:
+      1. Structural cleanup + SERIES_ALIASES lookup.
+      2. For books whose post-pass-1 series is in ``UNQUALIFIED_AL_SERIES``,
+         parse the filename for a DDEX/DDAL product code and reassign to
+         ``D&D Adventurers League - Season N (Campaign)``.
+
+    Prints a summary. With ``dry_run=True``, prints proposed changes and
+    does not write to the database.
+    """
+    rows = conn.execute(
+        "SELECT id, filename, series FROM books "
+        "WHERE series IS NOT NULL AND series != ''"
+    ).fetchall()
+
+    # (id, filename, old, new) for every book whose series value should change
+    changes: list[tuple[int, str, str, str]] = []
+    reassigned_from_filename = 0
+    for book_id, filename, old in rows:
+        new = normalize_series_value(old)
+        if new in UNQUALIFIED_AL_SERIES:
+            season = al_season_from_filename(filename)
+            if season is not None:
+                canonical = al_season_canonical_series(season)
+                if canonical != new:
+                    new = canonical
+                    reassigned_from_filename += 1
+        if new != old:
+            changes.append((book_id, filename or "", old, new))
+
+    # Target histogram for a human-readable summary
+    by_target: dict[str, int] = {}
+    for _, _, _, new in changes:
+        by_target[new] = by_target.get(new, 0) + 1
+
+    if dry_run:
+        print(f"[DRY RUN] Would update {len(changes)} books "
+              f"({reassigned_from_filename} via filename code).")
+        for book_id, fn, old, new in changes[:40]:
+            print(f"  [{book_id}] {fn[:60]}")
+            print(f"    {old!r}")
+            print(f"    → {new!r}")
+        if len(changes) > 40:
+            print(f"  ... and {len(changes) - 40} more")
+    else:
+        for book_id, _, _, new in changes:
+            conn.execute("UPDATE books SET series = ? WHERE id = ?", (new, book_id))
+        conn.commit()
+        print(f"Updated {len(changes)} books "
+              f"({reassigned_from_filename} via filename code).")
+
+    if by_target:
+        print("\nBy target series:")
+        for target, count in sorted(by_target.items(), key=lambda x: -x[1]):
+            print(f"  {count:4d}  {target}")
 
 
 # ── Schema Migration ─────────────────────────────────────────────────────────
@@ -852,6 +1038,10 @@ def main():
                         help="Backfill min_level/max_level from descriptions using regex (no API calls)")
     parser.add_argument("--normalize-tags", action="store_true",
                         help="Normalize existing tags to canonical vocabulary (no API calls)")
+    parser.add_argument("--normalize-series", action="store_true",
+                        help="Normalize existing series values: structural cleanup, "
+                             "alias map, and AL season assignment from filename codes "
+                             "(no API calls)")
     parser.add_argument("--min-count", type=int, default=15,
                         help="Min occurrences for a tag to survive normalization (default: 15)")
     parser.add_argument("--dry-run", action="store_true", help="Print prompts without calling API")
@@ -867,6 +1057,11 @@ def main():
 
     if args.normalize_tags:
         normalize_tags_in_db(conn, dry_run=args.dry_run, min_count=args.min_count)
+        conn.close()
+        return
+
+    if args.normalize_series:
+        normalize_series_in_db(conn, dry_run=args.dry_run)
         conn.close()
         return
 
