@@ -1,16 +1,8 @@
 # rpg-lib — TODO / Bugs
 
-_Last touched 2026-04-12. Thirteen PRs (#1–#13) merged; five live-DB backfills applied._
+_Last touched 2026-04-12. Fifteen PRs (#1–#15) merged; six live-DB backfills applied._
 
 ## Open
-
-### `Rime of the Frostmaiden DM's Resource` cluster
-PR #3 merged the plural-vs-singular variant. Three potentially-mergeable variants remain:
-- `Rime of the Frostmaiden DM's Resource` (19)
-- `Icewind Dale: Rime of the Frostmaiden DM's Resource` (26, post-PR-#3)
-- `Ten-Towns - an Icewind Dale: Rime of the Frostmaiden DM's resource` (8)
-
-All three are `Dungeon Masters Guild` publisher and look structurally similar but might be genuinely distinct product lines from different DM's Guild creators. Needs per-book inspection or a list of product IDs before merging. Not urgent — keyword search still finds them.
 
 ### `APGDMG002PF.pdf` edge case
 One PF conversion in the library (`APGDMG002PF.pdf`, "Journey into the Realms (5e)") doesn't match the PR #5 regex because there's no separator before `PF`. Currently still classified as D&D 5e. Not worth widening the regex (false-positive risk on any filename randomly ending in "PF") — could be hand-corrected if it ever matters.
@@ -36,6 +28,12 @@ PRs #7 and #8 both render a "list of `{value, count}` rows as clickable tiles" g
 ---
 
 ## Closed
+
+### #15 ~~Frostmaiden series merge~~
+**Fixed in kostadis/mytools#15 (merged).** One DMsGuild product (`product_id=193137`) was split across three series names due to inconsistent folder naming. Per-book inspection confirmed all three variants are the same product. Merged into `Icewind Dale: Rime of the Frostmaiden DM's Resource` (47 books). Six books from a separate product (`product_id=1399969`, Notice Board Seeds + Strange Encounters) were incorrectly grouped in the same series — their series field was cleared; collection-based deduplication handles them correctly.
+
+### #14 ~~MCP server user_data.db not attached~~
+**Fixed in kostadis/mytools#14 (merged).** `library_mcp.py` called `get_db(_db_path)` without `user_db_path`, crashing any query that JOINs `user_data.favorites`. Added `--user-db` CLI arg (defaults to `user_data.db` alongside `--db`); silently skipped if file doesn't exist.
 
 ### #13 ~~Campaign & location tags~~
 **Shipped in kostadis/mytools#13 (merged).** 7 campaign tags (`curse_of_strahd`, `rime_of_the_frostmaiden`, `descent_into_avernus`, `waterdeep_adventures`, `out_of_the_abyss`, `tyranny_of_dragons`, `tomb_of_annihilation`) and 5 location tags (`ravenloft`, `icewind_dale`, `underdark`, `waterdeep`, `avernus`) added to `CANONICAL_TAGS`. `SERIES_IMPLIED_TAGS` extended with 12 regex patterns. `CAMPAIGN_IMPLIED_LOCATIONS` dict auto-adds the location tag when a campaign tag is applied. `--backfill-campaign-tags` CLI flag re-runs rules against all enriched books. Backfill applied: 281 books tagged. As a side effect, also tagged 35 DDAL-DRW/DDAL-EB books with `organized_play` (closing the PR #16 backfill item). 47 new tests in `test_campaign_tags.py`.
