@@ -683,7 +683,7 @@ class TestParseQuery(unittest.TestCase):
             with patch("library_api.nlq._get_client", return_value=MagicMock()):
                 result = parse_query("horror adventures for D&D 5e with undead")
         self.assertEqual(result["game_system"], "D&D 5e")
-        self.assertEqual(result["product_type"], "Adventure")
+        self.assertEqual(result["product_type"], "adventure")
         self.assertIn("horror", result["tags"])
         self.assertEqual(result["keywords"], "horror undead dungeon")
 
