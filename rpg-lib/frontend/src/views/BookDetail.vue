@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useLibraryStore, type BookDetail, type BookSummary, type Bookmark } from '../stores/library'
 
@@ -12,14 +12,23 @@ const error = ref('')
 const openStatus = ref('')
 const related = ref<BookSummary[]>([])
 
-onMounted(async () => {
+async function loadBook(id: number) {
+  book.value = null
+  error.value = ''
+  openStatus.value = ''
+  related.value = []
   try {
-    const id = Number(route.params.id)
     book.value = await store.getBook(id)
     related.value = await store.getRelatedBooks(id)
   } catch (e) {
     error.value = 'Book not found'
   }
+}
+
+onMounted(() => loadBook(Number(route.params.id)))
+
+watch(() => route.params.id, (newId) => {
+  if (newId) loadBook(Number(newId))
 })
 
 async function openInApp() {
