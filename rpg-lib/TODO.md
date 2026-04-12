@@ -1,6 +1,6 @@
 # rpg-lib — TODO / Bugs
 
-_Last touched 2026-04-12. Eighteen PRs (#1–#18) merged; seven live-DB backfills applied._
+_Last touched 2026-04-12. Nineteen PRs (#1–#19) merged; eight live-DB backfills applied._
 
 ## Open
 
@@ -24,6 +24,9 @@ Notes from the AL survey on 2026-04-11 — acquisition targets if completeness m
 - 4 → `Dreams of the Red Wizards` (DDAL-DRWEP02 Wings of Death)
 
 Remaining in generic bucket: 4 program-material PDFs (DM Guide v9.1, Player's Guide v9.2, Content Catalogue v9.02, FAQ v9.1).
+
+### #19 ~~`storm_kings_thunder` campaign tag~~
+**Shipped in kostadis/mytools#19 (merged).** Added `storm_kings_thunder` to `CANONICAL_TAGS` and `SERIES_IMPLIED_TAGS` (matching "storm king's thunder" and `\bDDAL05`). No implied location — SKT spans the North broadly with no single iconic setting. Backfill applied: 54 books tagged across 6 series.
 
 ### #17 ~~Extract shared `<DimensionGrid>` component~~
 **Shipped in kostadis/mytools#17 (merged).** `BrowseIndex.vue` and `LibraryBrowse.vue` both rendered `{value, count}` tile grids with ~50 lines of duplicated markup and CSS each. Extracted to `components/DimensionGrid.vue` with two props (`items`, `ariaPrefix`) and one emit (`select`). Both views now import the component. No behaviour change; ~105 lines of duplicate CSS removed.
@@ -108,5 +111,6 @@ Seven deterministic backfills were applied to `rpg_library.db` and verified befo
 | 2026-04-12 | Campaign/location tags backfilled on existing books | 281 | PR #13 (`pdf_enricher.py --backfill-campaign-tags`) |
 | 2026-04-12 | Frostmaiden series fragments merged; misattributed books cleared | 53 | PR #15 (one-off SQL) |
 | 2026-04-12 | AL bucket second-pass: 29 books reclassified into seasons 1/3/4/5/9 and Dreams of the Red Wizards | 29 | PR #18 (one-off SQL) |
+| 2026-04-12 | `storm_kings_thunder` tag backfilled on all SKT content | 54 | PR #19 (`pdf_enricher.py --backfill-campaign-tags`) |
 
-**Total row updates across all backfills:** 1135.
+**Total row updates across all backfills:** 1189.
