@@ -74,6 +74,15 @@ def make_db(with_wiki_tables: bool = True) -> sqlite3.Connection:
             page_number INTEGER
         );
     """)
+    # Attach an in-memory user_data schema so queries that LEFT JOIN
+    # user_data.favorites work in tests (mirrors the ATTACH in get_db).
+    conn.execute("ATTACH DATABASE ':memory:' AS user_data")
+    conn.execute("""
+        CREATE TABLE user_data.favorites (
+            book_id    INTEGER PRIMARY KEY,
+            date_added TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
     if with_wiki_tables:
         setup_topic_overviews(conn)
         setup_book_relations(conn)
