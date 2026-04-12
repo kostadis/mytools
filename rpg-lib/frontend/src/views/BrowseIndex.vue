@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLibraryStore, type Filters } from '../stores/library'
+import DimensionGrid from '../components/DimensionGrid.vue'
 
 const props = defineProps<{ type: string }>()
 const store = useLibraryStore()
@@ -117,19 +118,11 @@ function onItemClick(name: string) {
       <span v-else>No {{ TYPE_LABELS[props.type].toLowerCase() }} in the library.</span>
     </div>
 
-    <div v-else-if="isValid" class="browse-grid">
-      <button
-        v-for="item in filteredAndSorted"
-        :key="item.value"
-        type="button"
-        class="browse-row"
-        @click="onItemClick(item.value)"
-        :aria-label="`View ${item.value} (${item.count} books)`"
-      >
-        <span class="row-name">{{ item.value }}</span>
-        <span class="row-count">{{ item.count.toLocaleString() }}</span>
-      </button>
-    </div>
+    <DimensionGrid
+      v-else-if="isValid"
+      :items="filteredAndSorted"
+      @select="onItemClick"
+    />
   </div>
 </template>
 
@@ -226,56 +219,4 @@ function onItemClick(name: string) {
   color: var(--text-dim);
 }
 
-.browse-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 0.5rem;
-}
-
-.browse-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.6rem 0.85rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  text-align: left;
-  color: var(--text);
-  font-size: 0.85rem;
-  font-family: inherit;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-
-.browse-row:hover {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: white;
-}
-
-.browse-row:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.row-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-}
-
-.row-count {
-  flex-shrink: 0;
-  font-size: 0.78rem;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.browse-row:hover .row-count {
-  color: rgba(255, 255, 255, 0.85);
-}
 </style>

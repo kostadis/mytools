@@ -2,6 +2,7 @@
 import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLibraryStore, type GroupByMode } from '../stores/library'
+import DimensionGrid from '../components/DimensionGrid.vue'
 
 // Human-readable labels for the sidebar filter keys, so chips read
 // "System: D&D 5e" instead of "game_system: D&D 5e".
@@ -509,19 +510,12 @@ function tagGroups(available: { value: string; count: number }[]) {
           <div class="empty-msg">No {{ GROUP_LABELS[store.groupBy] }} match these filters</div>
           <button class="btn-secondary" @click="searchAll = ''; searchName = ''; store.clearFilters()">Clear filters</button>
         </div>
-        <div v-else-if="store.facets" class="facet-grid">
-          <button
-            v-for="entry in store.facets[store.groupBy]"
-            :key="entry.value"
-            type="button"
-            class="facet-row"
-            :aria-label="`Drill into ${entry.value} (${entry.count} books)`"
-            @click="store.drillInFacet(store.groupBy, entry.value)"
-          >
-            <span class="facet-name">{{ entry.value }}</span>
-            <span class="facet-count">{{ entry.count.toLocaleString() }}</span>
-          </button>
-        </div>
+        <DimensionGrid
+          v-else-if="store.facets"
+          :items="store.facets[store.groupBy]"
+          aria-prefix="Drill into"
+          @select="val => store.drillInFacet(store.groupBy, val)"
+        />
       </template>
 
       <!-- Table View -->
@@ -1077,60 +1071,6 @@ function tagGroups(available: { value: string; count: number }[]) {
   letter-spacing: 0.05em;
   margin-right: 0.4rem;
   align-self: center;
-}
-
-/* Facet grid (group-by view) */
-.facet-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 0.5rem;
-}
-
-.facet-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.6rem 0.85rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  text-align: left;
-  color: var(--text);
-  font-size: 0.85rem;
-  font-family: inherit;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-
-.facet-row:hover {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: white;
-}
-
-.facet-row:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.facet-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-}
-
-.facet-count {
-  flex-shrink: 0;
-  font-size: 0.78rem;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.facet-row:hover .facet-count {
-  color: rgba(255, 255, 255, 0.85);
 }
 
 .status-msg {
