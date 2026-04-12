@@ -19,6 +19,7 @@ export interface BookSummary {
   description: string | null
   min_level: number | null
   max_level: number | null
+  is_favorite: boolean
   variant_count: number
   variant_ids: number[]
 }
@@ -141,6 +142,7 @@ export const useLibraryStore = defineStore('library', () => {
   const charLevel = ref<number | null>(null)
   const searchError = ref<string>('')
   const nlqApplied = ref<NlqQueryParsed | null>(null)
+  const favoritesOnly = ref(false)
 
   // Group-by state: when not 'books', the results area shows aggregations of
   // the current search instead of book rows.
@@ -164,6 +166,7 @@ export const useLibraryStore = defineStore('library', () => {
       if (val) params.set(key, val)
     }
     if (charLevel.value !== null) params.set('char_level', String(charLevel.value))
+    if (favoritesOnly.value) params.set('favorites_only', 'true')
     return params
   }
 
@@ -287,6 +290,46 @@ export const useLibraryStore = defineStore('library', () => {
     await search()
   }
 
+  async function toggleFavorite(bookId: number) {
+    // Find the book in results (or detail) to determine current state
+    const book = results.value.find(b => b.id === bookId)
+    // Also check expanded variant groups
+    let variantBook: BookSummary | undefined
+    if (!book) {
+      for (const variants of groupVariants.value.values()) {
+        variantBook = variants.find(b => b.id === bookId)
+        if (variantBook) break
+      }
+    }
+    const target = book || variantBook
+    const isFav = target?.is_favorite ?? false
+    const method = isFav ? 'DELETE' : 'POST'
+
+    try {
+      const res = await fetch(`${API}/book/${bookId}/favorite`, { method })
+      if (!res.ok) return
+      const newState = !isFav
+      // Update in-place in results
+      for (const r of results.value) {
+        if (r.id === bookId) r.is_favorite = newState
+      }
+      // Update in variant groups
+      for (const variants of groupVariants.value.values()) {
+        for (const v of variants) {
+          if (v.id === bookId) v.is_favorite = newState
+        }
+      }
+    } catch {
+      // Silently fail — next search will re-sync
+    }
+  }
+
+  function setFavoritesOnly(val: boolean) {
+    favoritesOnly.value = val
+    page.value = 1
+    search()
+  }
+
   function toggleSort(field: string) {
     if (sortField.value === field) {
       sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
@@ -369,6 +412,7 @@ export const useLibraryStore = defineStore('library', () => {
     queryName.value = ''
     charLevel.value = null
     nlqApplied.value = null
+    favoritesOnly.value = false
     page.value = 1
     search()
   }
@@ -498,11 +542,12 @@ export const useLibraryStore = defineStore('library', () => {
   return {
     activeFilters, results, total, page, perPage, totalPages, loading, searchError, filters,
     viewMode, queryAll, queryName, sortField, sortDir, includeOld, includeDrafts, includeDuplicates,
-    charLevel, nlqApplied,
+    charLevel, nlqApplied, favoritesOnly,
     groupBy, facets, facetsLoading,
     title, search, loadFilters, getBook, openInApp, previewUrl,
     setQuery, setFilter, clearFilters, setPage, toggleSort, setCharLevel, setViewMode,
     toggleIncludeOld, toggleIncludeDrafts, toggleIncludeDuplicates,
+    toggleFavorite, setFavoritesOnly,
     toggleGroup, isExpanded, getVariants,
     fetchFacets, setGroupBy, drillInFacet,
     nlqSearch, applyNlq, clearNlq, getTopic, getRelatedBooks, getGraph,

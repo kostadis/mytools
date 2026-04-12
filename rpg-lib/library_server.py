@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from library_api import routes
+from library_api import db, routes
 
 app = FastAPI(title="RPG Library", version="1.0.0")
 
@@ -64,11 +64,16 @@ def main():
     parser.add_argument("--db", default="./rpg_library.db", help="Path to SQLite database")
     parser.add_argument("--port", type=int, default=8000, help="Server port (default: 8000)")
     parser.add_argument("--host", default="127.0.0.1", help="Server host (default: 127.0.0.1)")
+    parser.add_argument("--user-db", default=None, help="Path to user-data DB (default: alongside --db)")
     parser.add_argument("--dev", action="store_true", help="Development mode (auto-reload)")
     args = parser.parse_args()
 
-    # Set DB path for routes
-    routes.set_db_path(args.db)
+    # Derive user-data DB path and ensure schema exists
+    user_db_path = args.user_db or str(Path(args.db).parent / "user_data.db")
+    db.init_user_db(user_db_path)
+
+    # Set DB paths for routes
+    routes.set_db_path(args.db, user_db_path)
 
     # Set up SPA serving
     frontend_dist = Path(__file__).parent / "frontend" / "dist"
@@ -76,6 +81,7 @@ def main():
 
     print(f"RPG Library Server")
     print(f"  Database: {args.db}")
+    print(f"  User data: {user_db_path}")
     print(f"  API: http://{args.host}:{args.port}/api/library/")
     print(f"  UI:  http://{args.host}:{args.port}/")
 

@@ -16,17 +16,19 @@ from .models import (
 
 router = APIRouter(prefix="/api/library", tags=["library"])
 
-# DB path set by library_server.py at startup
+# DB paths set by library_server.py at startup
 _db_path: str = ""
+_user_db_path: str = ""
 
 
-def set_db_path(path: str) -> None:
-    global _db_path
+def set_db_path(path: str, user_db_path: str = "") -> None:
+    global _db_path, _user_db_path
     _db_path = path
+    _user_db_path = user_db_path
 
 
 def _conn():
-    return db.get_db(_db_path)
+    return db.get_db(_db_path, _user_db_path or None)
 
 
 # ── Search & Browse ───────────────────────────────────────────────────────────
@@ -47,6 +49,7 @@ def search(
     include_old: bool = Query(False, description="Include old versions"),
     include_drafts: bool = Query(False, description="Include drafts/WIP"),
     include_duplicates: bool = Query(False, description="Include download duplicates"),
+    favorites_only: bool = Query(False, description="Show only favorited books"),
     grouped: bool = Query(True, description="Group results by collection/folder"),
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=500),
@@ -62,6 +65,7 @@ def search(
             sort=sort, sort_dir=sort_dir,
             include_old=include_old, include_drafts=include_drafts,
             include_duplicates=include_duplicates,
+            favorites_only=favorites_only,
             grouped=grouped,
             page=page, per_page=per_page,
         )
@@ -83,6 +87,7 @@ def search_facets(
     include_old: bool = Query(False),
     include_drafts: bool = Query(False),
     include_duplicates: bool = Query(False),
+    favorites_only: bool = Query(False),
 ):
     """Aggregate the books matching a search by series / publisher / game_system / tag.
 
@@ -99,6 +104,7 @@ def search_facets(
             level_min=char_level, level_max=char_level,
             include_old=include_old, include_drafts=include_drafts,
             include_duplicates=include_duplicates,
+            favorites_only=favorites_only,
         )
     finally:
         conn.close()
@@ -138,6 +144,30 @@ def get_book_text(book_id: int):
         if not text:
             raise HTTPException(status_code=404, detail="Book not found")
         return text
+    finally:
+        conn.close()
+
+
+# ── Favorites ────────────────────────────────────────────────────────────────
+
+@router.post("/book/{book_id}/favorite")
+def add_favorite(book_id: int):
+    """Mark a book as a favorite."""
+    conn = _conn()
+    try:
+        db.set_favorite(conn, book_id)
+        return {"is_favorite": True}
+    finally:
+        conn.close()
+
+
+@router.delete("/book/{book_id}/favorite")
+def remove_favorite(book_id: int):
+    """Remove a book from favorites."""
+    conn = _conn()
+    try:
+        db.unset_favorite(conn, book_id)
+        return {"is_favorite": False}
     finally:
         conn.close()
 

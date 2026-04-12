@@ -5,11 +5,30 @@ import sqlite3
 from pathlib import Path
 
 
-def get_db(db_path: str) -> sqlite3.Connection:
-    """Open a read-only connection to the library database."""
+def init_user_db(user_db_path: str) -> None:
+    """Create the user-data database and schema if it doesn't exist."""
+    conn = sqlite3.connect(user_db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS favorites (
+            book_id    INTEGER PRIMARY KEY,
+            date_added TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def get_db(db_path: str, user_db_path: str | None = None) -> sqlite3.Connection:
+    """Open a read-only connection to the library database.
+
+    If *user_db_path* is provided, the user-data DB is ATTACHed as
+    ``user_data`` so queries can JOIN against ``user_data.favorites``.
+    """
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    if user_db_path:
+        conn.execute("ATTACH DATABASE ? AS user_data", (user_db_path,))
     return conn
 
 
@@ -23,6 +42,7 @@ def _parse_tags(raw: str | None) -> list[str] | None:
 
 
 def _row_to_summary(row: sqlite3.Row) -> dict:
+    keys = row.keys()
     return {
         "id": row["id"],
         "display_title": row["display_title"],
@@ -39,6 +59,7 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
         "description": row["description"],
         "min_level": row["min_level"],
         "max_level": row["max_level"],
+        "is_favorite": bool(row["is_favorite"]) if "is_favorite" in keys else False,
     }
 
 
@@ -73,6 +94,7 @@ def _build_search_where(
     include_old: bool = False,
     include_drafts: bool = False,
     include_duplicates: bool = False,
+    favorites_only: bool = False,
 ) -> tuple[str, list]:
     """Build the WHERE clause + parameter list shared by search_books and
     search_facets, so a faceted search reflects exactly the same set of books
@@ -132,6 +154,8 @@ def _build_search_where(
             level_max if level_max is not None else level_min,
             level_min if level_min is not None else level_max,
         ])
+    if favorites_only:
+        conditions.append("id IN (SELECT book_id FROM user_data.favorites)")
 
     where = " AND ".join(conditions) if conditions else "1=1"
     return where, params
@@ -152,6 +176,7 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
                  include_old: bool = False,
                  include_drafts: bool = False,
                  include_duplicates: bool = False,
+                 favorites_only: bool = False,
                  grouped: bool = True,
                  page: int = 1, per_page: int = 50) -> dict:
     """Search and filter books. Returns dict with results, total, pagination info."""
@@ -162,6 +187,7 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
         level_min=level_min, level_max=level_max,
         include_old=include_old, include_drafts=include_drafts,
         include_duplicates=include_duplicates,
+        favorites_only=favorites_only,
     )
 
     # Sort
@@ -204,10 +230,13 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
         rep_ids = [seen[k]["rep_id"] for k in page_keys]
         placeholders = ",".join("?" * len(rep_ids))
         rep_rows = conn.execute(
-            f"""SELECT id, display_title, filename, publisher, collection,
-                       game_system, product_type, tags, series, source,
-                       page_count, has_bookmarks, description, min_level, max_level
-                FROM books WHERE id IN ({placeholders})""",
+            f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
+                       b.game_system, b.product_type, b.tags, b.series, b.source,
+                       b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                       (f.book_id IS NOT NULL) AS is_favorite
+                FROM books b
+                LEFT JOIN user_data.favorites f ON f.book_id = b.id
+                WHERE b.id IN ({placeholders})""",
             rep_ids,
         ).fetchall()
         id_to_row = {r["id"]: r for r in rep_rows}
@@ -233,10 +262,13 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
     total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
 
     rows = conn.execute(
-        f"""SELECT id, display_title, filename, publisher, collection,
-                   game_system, product_type, tags, series, source,
-                   page_count, has_bookmarks, description, min_level, max_level
-            FROM books WHERE {where}
+        f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
+                   b.game_system, b.product_type, b.tags, b.series, b.source,
+                   b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                   (f.book_id IS NOT NULL) AS is_favorite
+            FROM books b
+            LEFT JOIN user_data.favorites f ON f.book_id = b.id
+            WHERE {where}
             ORDER BY {order_by}
             LIMIT ? OFFSET ?""",
         params + [per_page, offset],
@@ -266,6 +298,7 @@ def search_facets(
     include_old: bool = False,
     include_drafts: bool = False,
     include_duplicates: bool = False,
+    favorites_only: bool = False,
 ) -> dict:
     """Aggregate the books matching a search by series / publisher / game_system / tag.
 
@@ -291,6 +324,7 @@ def search_facets(
         level_min=level_min, level_max=level_max,
         include_old=include_old, include_drafts=include_drafts,
         include_duplicates=include_duplicates,
+        favorites_only=favorites_only,
     )
 
     total = conn.execute(
@@ -345,11 +379,14 @@ def get_books_by_ids(conn: sqlite3.Connection, book_ids: list[int]) -> list[dict
         return []
     placeholders = ",".join("?" * len(book_ids))
     rows = conn.execute(
-        f"""SELECT id, display_title, filename, publisher, collection,
-                   game_system, product_type, tags, series, source,
-                   page_count, has_bookmarks, description, min_level, max_level
-            FROM books WHERE id IN ({placeholders})
-            ORDER BY filename""",
+        f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
+                   b.game_system, b.product_type, b.tags, b.series, b.source,
+                   b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                   (f.book_id IS NOT NULL) AS is_favorite
+            FROM books b
+            LEFT JOIN user_data.favorites f ON f.book_id = b.id
+            WHERE b.id IN ({placeholders})
+            ORDER BY b.filename""",
         book_ids,
     ).fetchall()
     return [_row_to_summary(r) for r in rows]
@@ -357,7 +394,13 @@ def get_books_by_ids(conn: sqlite3.Connection, book_ids: list[int]) -> list[dict
 
 def get_book(conn: sqlite3.Connection, book_id: int) -> dict | None:
     """Get full book detail including bookmarks."""
-    row = conn.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
+    row = conn.execute(
+        """SELECT b.*, (f.book_id IS NOT NULL) AS is_favorite
+           FROM books b
+           LEFT JOIN user_data.favorites f ON f.book_id = b.id
+           WHERE b.id = ?""",
+        (book_id,),
+    ).fetchone()
     if not row:
         return None
 
@@ -385,6 +428,24 @@ def get_book(conn: sqlite3.Connection, book_id: int) -> dict | None:
             for b in bookmarks
         ],
     }
+
+
+def set_favorite(conn: sqlite3.Connection, book_id: int) -> None:
+    """Mark a book as a favorite."""
+    conn.execute(
+        "INSERT OR IGNORE INTO user_data.favorites (book_id) VALUES (?)",
+        (book_id,),
+    )
+    conn.commit()
+
+
+def unset_favorite(conn: sqlite3.Connection, book_id: int) -> None:
+    """Remove a book from favorites."""
+    conn.execute(
+        "DELETE FROM user_data.favorites WHERE book_id = ?",
+        (book_id,),
+    )
+    conn.commit()
 
 
 def get_bookmarks(conn: sqlite3.Connection, book_id: int) -> list[dict]:
@@ -498,9 +559,11 @@ def nlq_search(
         rows = conn.execute(
             f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
                        b.game_system, b.product_type, b.tags, b.series, b.source,
-                       b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level
+                       b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                       (fav.book_id IS NOT NULL) AS is_favorite
                 FROM books_fts
                 JOIN books b ON books_fts.rowid = b.id
+                LEFT JOIN user_data.favorites fav ON fav.book_id = b.id
                 WHERE books_fts MATCH ? AND {where}
                 ORDER BY bm25(books_fts)
                 LIMIT ?""",
@@ -518,8 +581,11 @@ def nlq_search(
     rows = conn.execute(
         f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
                    b.game_system, b.product_type, b.tags, b.series, b.source,
-                   b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level
-            FROM books b WHERE {where}
+                   b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                   (fav.book_id IS NOT NULL) AS is_favorite
+            FROM books b
+            LEFT JOIN user_data.favorites fav ON fav.book_id = b.id
+            WHERE {where}
             ORDER BY COALESCE(b.display_title, b.filename)
             LIMIT ?""",
         params + [limit],
@@ -598,11 +664,14 @@ def get_topic(conn: sqlite3.Connection, topic_type: str, topic_name: str) -> dic
         return None
 
     rows = conn.execute(
-        f"""SELECT id, display_title, filename, publisher, collection,
-                   game_system, product_type, tags, series, source,
-                   page_count, has_bookmarks, description, min_level, max_level
-            FROM books WHERE {where}
-            ORDER BY COALESCE(display_title, filename)""",
+        f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
+                   b.game_system, b.product_type, b.tags, b.series, b.source,
+                   b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                   (f.book_id IS NOT NULL) AS is_favorite
+            FROM books b
+            LEFT JOIN user_data.favorites f ON f.book_id = b.id
+            WHERE {where}
+            ORDER BY COALESCE(b.display_title, b.filename)""",
         params,
     ).fetchall()
 
@@ -644,9 +713,11 @@ def get_related_books(conn: sqlite3.Connection, book_id: int, limit: int = 6) ->
     rows = conn.execute(
         """SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
                   b.game_system, b.product_type, b.tags, b.series, b.source,
-                  b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level
+                  b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                  (f.book_id IS NOT NULL) AS is_favorite
            FROM book_relations r
            JOIN books b ON b.id = r.book_id_b
+           LEFT JOIN user_data.favorites f ON f.book_id = b.id
            WHERE r.book_id_a = ?
              AND b.is_old_version = 0 AND b.is_draft = 0 AND b.is_duplicate = 0
            ORDER BY r.score DESC
@@ -700,10 +771,13 @@ def get_related_books(conn: sqlite3.Connection, book_id: int, limit: int = 6) ->
 
     placeholders = ",".join("?" * len(top_ids))
     rows = conn.execute(
-        f"""SELECT id, display_title, filename, publisher, collection,
-                   game_system, product_type, tags, series, source,
-                   page_count, has_bookmarks, description, min_level, max_level
-            FROM books WHERE id IN ({placeholders})""",
+        f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
+                   b.game_system, b.product_type, b.tags, b.series, b.source,
+                   b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                   (f.book_id IS NOT NULL) AS is_favorite
+            FROM books b
+            LEFT JOIN user_data.favorites f ON f.book_id = b.id
+            WHERE b.id IN ({placeholders})""",
         top_ids,
     ).fetchall()
     id_to_row = {r["id"]: _row_to_summary(r) for r in rows}

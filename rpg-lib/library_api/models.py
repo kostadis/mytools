@@ -19,6 +19,7 @@ class BookSummary(BaseModel):
     description: str | None
     min_level: int | None = None
     max_level: int | None = None
+    is_favorite: bool = False
     variant_count: int = 1
     variant_ids: list[int] = []
 
