@@ -1,11 +1,8 @@
 # rpg-lib — TODO / Bugs
 
-_Last touched 2026-04-12. Fifteen PRs (#1–#15) merged; six live-DB backfills applied._
+_Last touched 2026-04-12. Eighteen PRs (#1–#18) merged; seven live-DB backfills applied._
 
 ## Open
-
-### `APGDMG002PF.pdf` edge case
-One PF conversion in the library (`APGDMG002PF.pdf`, "Journey into the Realms (5e)") doesn't match the PR #5 regex because there's no separator before `PF`. Currently still classified as D&D 5e. Not worth widening the regex (false-positive risk on any filename randomly ending in "PF") — could be hand-corrected if it ever matters.
 
 ### Catalogue gaps (inventory, not bugs)
 Notes from the AL survey on 2026-04-11 — acquisition targets if completeness matters:
@@ -13,21 +10,23 @@ Notes from the AL survey on 2026-04-11 — acquisition targets if completeness m
 - Season 8 has only one adventure (`DDAL08-13 Vampire of Skullport`)
 - CCC (Convention-Created Content) line is nearly empty (1 book: `CCC-AETHER`)
 
-### Unqualified AL bucket — second-pass classification
-After PR #3, 34 books remain in the unqualified `D&D Adventurers League` series. Mostly AL program materials (DM Guide, Player Guide, FAQ, logsheets, Season 9 Oracle of War) but some are substring-classifiable:
-- `Curse-of-Strahd-Extended-Dark-Gifts*` → Season 4 (Curse of Strahd)
-- `DDALRoD_CharacterSheet*` → Season 3 (Rage of Demons)
-- `ADVLeague_PlayerGuide_TODv1*` → Season 1 (Tyranny of Dragons)
-- `*Oracle_of_War*`, `*S9_AL_*` → Season 9 (Eberron)
-
-A small substring-heuristic pass would shrink this to ~25. Not in any current PR scope.
-
-### Follow-up: extract shared `<DimensionGrid>` component
-PRs #7 and #8 both render a "list of `{value, count}` rows as clickable tiles" grid — `BrowseIndex.vue` for the standalone directory pages and `LibraryBrowse.vue` for the in-search facet view. The markup and styles are duplicated across the two files. A small extract-component PR could pull the grid into `components/DimensionGrid.vue` and have both views use it. Cosmetic refactor, no behaviour change.
-
 ---
 
 ## Closed
+
+### #18 ~~Unqualified AL bucket — second-pass classification~~
+**Shipped in kostadis/mytools#18 (merged).** 29 of the 33 books in the generic `D&D Adventurers League` series were reclassified by collection/filename substring matching:
+- 7 → `D&D Adventurers League - Season 1 (Tyranny of Dragons)` (DDEX1 collections, TOD player guides)
+- 1 → `D&D Adventurers League - Season 3 (Rage of Demons)` (DDALRoD character sheet)
+- 1 → `D&D Adventurers League - Season 4 (Curse of Strahd)` *(new series)* (Expanded Dark Gifts table)
+- 10 → `D&D Adventurers League - Season 5 (Storm King's Thunder)` (DDAL05 certificates + Opal of the Ild Rune)
+- 6 → `D&D Adventurers League - Season 9 (Eberron: Oracle of War)` *(new series)* (Oracle of War guides, Season 9 logsheets)
+- 4 → `Dreams of the Red Wizards` (DDAL-DRWEP02 Wings of Death)
+
+Remaining in generic bucket: 4 program-material PDFs (DM Guide v9.1, Player's Guide v9.2, Content Catalogue v9.02, FAQ v9.1).
+
+### #17 ~~Extract shared `<DimensionGrid>` component~~
+**Shipped in kostadis/mytools#17 (merged).** `BrowseIndex.vue` and `LibraryBrowse.vue` both rendered `{value, count}` tile grids with ~50 lines of duplicated markup and CSS each. Extracted to `components/DimensionGrid.vue` with two props (`items`, `ariaPrefix`) and one emit (`select`). Both views now import the component. No behaviour change; ~105 lines of duplicate CSS removed.
 
 ### #15 ~~Frostmaiden series merge~~
 **Fixed in kostadis/mytools#15 (merged).** One DMsGuild product (`product_id=193137`) was split across three series names due to inconsistent folder naming. Per-book inspection confirmed all three variants are the same product. Merged into `Icewind Dale: Rime of the Frostmaiden DM's Resource` (47 books). Six books from a separate product (`product_id=1399969`, Notice Board Seeds + Strange Encounters) were incorrectly grouped in the same series — their series field was cleared; collection-based deduplication handles them correctly.
@@ -98,7 +97,7 @@ Browser-tested by the user across both drill-in escape paths — this is the rea
 
 ## Live-DB data mutations applied this session
 
-Four deterministic backfills were applied to `rpg_library.db` and verified before the corresponding PRs were merged. Each was snapshotted to a rollback TSV before the UPDATE; the TSVs were retained until the post-state was verified stable, then deleted. The merged enricher rules in PRs #1, #4, #5, and #6 produce the same effect on any future re-indexing / re-enrichment, so the rollback files would be regeneratable from the merged code if ever needed.
+Seven deterministic backfills were applied to `rpg_library.db` and verified before the corresponding PRs were merged. Each was snapshotted to a rollback TSV before the UPDATE; the TSVs were retained until the post-state was verified stable, then deleted.
 
 | When | What | Rows | Origin |
 |---|---|---:|---|
@@ -106,5 +105,8 @@ Four deterministic backfills were applied to `rpg_library.db` and verified befor
 | 2026-04-11 13:11 | `--normalize-series` applied: structural cleanup, alias map, AL filename-code reassignment | 67 | PR #3 (`pdf_enricher.py --normalize-series`) |
 | 2026-04-11 13:46 | `game_system` flipped `D&D 5e → Pathfinder 1e` for misclassified PF conversions, system tags rewritten | 27 | PR #5 (`apply_pathfinder_conversion_rule`) |
 | 2026-04-11 14:32 | Phantom duplicates flagged `is_duplicate=1` by content fingerprint | 604 | PR #6 (`pdf_indexer.py --dedup-content`) |
+| 2026-04-12 | Campaign/location tags backfilled on existing books | 281 | PR #13 (`pdf_enricher.py --backfill-campaign-tags`) |
+| 2026-04-12 | Frostmaiden series fragments merged; misattributed books cleared | 53 | PR #15 (one-off SQL) |
+| 2026-04-12 | AL bucket second-pass: 29 books reclassified into seasons 1/3/4/5/9 and Dreams of the Red Wizards | 29 | PR #18 (one-off SQL) |
 
-**Total row updates across all backfills:** 772.
+**Total row updates across all backfills:** 1135.
