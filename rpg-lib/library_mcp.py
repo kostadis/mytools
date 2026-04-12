@@ -29,8 +29,9 @@ import fastmcp
 sys.path.insert(0, str(Path(__file__).parent))
 from library_api import db as libdb
 
-# ── global DB path (set from CLI args) ───────────────────────────────────────
+# ── global DB paths (set from CLI args) ──────────────────────────────────────
 _db_path: str = ""
+_user_db_path: str = ""
 
 mcp = fastmcp.FastMCP("RPG Library")
 
@@ -38,7 +39,7 @@ _TIER_LEVELS = {1: (1, 4), 2: (5, 10), 3: (11, 16), 4: (17, 20)}
 
 
 def _conn():
-    return libdb.get_db(_db_path)
+    return libdb.get_db(_db_path, _user_db_path or None)
 
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
@@ -277,16 +278,24 @@ def _summarise(book) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="RPG Library MCP Server")
     parser.add_argument("--db", default="./rpg_library.db", help="Path to SQLite database")
+    parser.add_argument("--user-db", default="",
+                        help="Path to user_data.db (default: user_data.db alongside --db)")
     args = parser.parse_args()
 
-    global _db_path
+    global _db_path, _user_db_path
     _db_path = str(Path(args.db).resolve())
 
     if not Path(_db_path).exists():
         print(f"ERROR: Database not found: {_db_path}", file=sys.stderr)
         sys.exit(1)
 
+    # Default user_data.db to same directory as the main DB
+    user_db = args.user_db or str(Path(_db_path).parent / "user_data.db")
+    _user_db_path = user_db if Path(user_db).exists() else ""
+
     print(f"RPG Library MCP: {_db_path}", file=sys.stderr)
+    if _user_db_path:
+        print(f"  user data: {_user_db_path}", file=sys.stderr)
     mcp.run()
 
 
