@@ -1,13 +1,8 @@
 # rpg-lib — TODO / Bugs
 
-_Last touched 2026-04-11. Eight PRs (#1–#8) merged this session; four live-DB backfills applied. All original TODO bugs are closed, plus one indexer bug discovered and fixed mid-session, plus two new UX features (browse-by-views and search-bound group-by)._
+_Last touched 2026-04-12. Thirteen PRs (#1–#13) merged; five live-DB backfills applied._
 
 ## Open
-
-### `DDAL-DRW*` / `DDAL-EB-*` `organized_play` backfill
-35 books in the library are organized-play DMsGuild content (Dreams of the Red Wizards arcs, Eberron / Oracle of War / Season 9) but don't currently have the `organized_play` tag. Task 2's backfill SQL only checked `series LIKE '%DDAL%'`, and these books have `Dreams of the Red Wizards` / `Oracle of War` in their series column with `DDAL-...` only in filename/collection.
-
-**Fix:** small one-off SQL UPDATE — extend the predicate to also check `collection LIKE '%DDAL%'` (or `filename LIKE '%DDAL-DRW%' OR filename LIKE '%DDAL-EB%'`). The merged enricher rule from PR #1 + #4 already handles this correctly for new enrichments; this is purely existing-row catch-up.
 
 ### `Rime of the Frostmaiden DM's Resource` cluster
 PR #3 merged the plural-vs-singular variant. Three potentially-mergeable variants remain:
@@ -16,9 +11,6 @@ PR #3 merged the plural-vs-singular variant. Three potentially-mergeable variant
 - `Ten-Towns - an Icewind Dale: Rime of the Frostmaiden DM's resource` (8)
 
 All three are `Dungeon Masters Guild` publisher and look structurally similar but might be genuinely distinct product lines from different DM's Guild creators. Needs per-book inspection or a list of product IDs before merging. Not urgent — keyword search still finds them.
-
-### Pre-existing NLQ test failure
-`test_wiki.TestParseQuery.test_extracts_all_fields` has been failing since before this session. Expected tag `adventure`, got `Adventure` — case-sensitivity in the mocked `parse_query` path. Not blocking; persistent FAIL line in the test output. Trace: case-preservation in `library_api/nlq.py` between LLM extraction and the test's assertion.
 
 ### `APGDMG002PF.pdf` edge case
 One PF conversion in the library (`APGDMG002PF.pdf`, "Journey into the Realms (5e)") doesn't match the PR #5 regex because there's no separator before `PF`. Currently still classified as D&D 5e. Not worth widening the regex (false-positive risk on any filename randomly ending in "PF") — could be hand-corrected if it ever matters.
@@ -43,7 +35,19 @@ PRs #7 and #8 both render a "list of `{value, count}` rows as clickable tiles" g
 
 ---
 
-## Closed (this session)
+## Closed
+
+### #13 ~~Campaign & location tags~~
+**Shipped in kostadis/mytools#13 (merged).** 7 campaign tags (`curse_of_strahd`, `rime_of_the_frostmaiden`, `descent_into_avernus`, `waterdeep_adventures`, `out_of_the_abyss`, `tyranny_of_dragons`, `tomb_of_annihilation`) and 5 location tags (`ravenloft`, `icewind_dale`, `underdark`, `waterdeep`, `avernus`) added to `CANONICAL_TAGS`. `SERIES_IMPLIED_TAGS` extended with 12 regex patterns. `CAMPAIGN_IMPLIED_LOCATIONS` dict auto-adds the location tag when a campaign tag is applied. `--backfill-campaign-tags` CLI flag re-runs rules against all enriched books. Backfill applied: 281 books tagged. As a side effect, also tagged 35 DDAL-DRW/DDAL-EB books with `organized_play` (closing the PR #16 backfill item). 47 new tests in `test_campaign_tags.py`.
+
+### #12 ~~NLQ test case-sensitivity~~
+**Fixed in kostadis/mytools#12 (merged).** `test_wiki.TestParseQuery.test_extracts_all_fields` was asserting `"Adventure"` but `parse_query` correctly lowercases via `.lower()`. Fixed the expected value in the test to `"adventure"`.
+
+### #10 ~~Related books navigation does nothing~~
+**Fixed in kostadis/mytools#10 (merged).** Clicking a related book on the BookDetail page stayed on the same URL fragment — Vue Router reused the component instance without re-firing `onMounted`. Fixed by adding `watch(() => route.params.id, ...)` and extracting a reusable `loadBook(id)` function called by both `onMounted` and the watcher.
+
+### #9 ~~Favorites (heart toggle)~~
+**Shipped in kostadis/mytools#9 (merged).** Heart toggle on any book in table, card, or detail view. Persisted in a separate `user_data.db` attached to the read-only library connection via `ATTACH DATABASE`, so the library DB stays `?mode=ro`. LEFT JOIN on all summary-producing queries surfaces `is_favorite`. `POST /book/{id}/favorite` / `DELETE /book/{id}/favorite` endpoints. "Favorites only" checkbox in the sidebar composes with keyword search and all other filters.
 
 ### #1 ~~`library_mcp.search_books` crashes on any query containing `&`~~
 **Fixed in kostadis/mytools#2 (merged).** The `&` was a red herring. Real cause: `_row_to_summary` reads `min_level`/`max_level` but six SELECTs in `library_api/db.py` didn't project those columns. `sqlite3.Row[missing]` raises `IndexError: No item with that key`, so any non-empty result through those paths crashed. Plain queries "worked" only because they returned 0 rows. Fixed all six SELECTs. Added `TestRowToSummaryContract` (11 tests) that exercises every `_row_to_summary` call site with non-empty results and asserts the full key set, so future column additions fail loudly.

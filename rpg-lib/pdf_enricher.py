@@ -254,7 +254,70 @@ SERIES_IMPLIED_TAGS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"adventurers league|\bDDAL(?![A-Za-z])|\bDDEX(?![A-Za-z])",
                 re.IGNORECASE),
      "organized_play"),
+
+    # ── Campaign tags ─────────────────────────────────────────────────────────
+    # Each campaign tag also implies a location tag via CAMPAIGN_IMPLIED_LOCATIONS
+    # below — books tagged with e.g. curse_of_strahd automatically get ravenloft.
+
+    # Season 1 AL adventures + core books
+    (re.compile(r"tyranny of dragons|hoard of the dragon queen|rise of tiamat"
+                r"|\bDDEX1(?![A-Za-z])|\bDDAL01(?![A-Za-z])",
+                re.IGNORECASE),
+     "tyranny_of_dragons"),
+
+    # Season 3 AL adventures (Rage of Demons) + core book
+    (re.compile(r"out of the abyss|rage of demons"
+                r"|\bDDEX3(?![A-Za-z])|\bDDAL03(?![A-Za-z])",
+                re.IGNORECASE),
+     "out_of_the_abyss"),
+
+    # Season 4 AL adventures + core campaign
+    (re.compile(r"curse of strahd|\bDDAL04(?![A-Za-z])",
+                re.IGNORECASE),
+     "curse_of_strahd"),
+
+    # Rime of the Frostmaiden + all chapter DM resources
+    (re.compile(r"rime of the frostmaiden|frostmaiden",
+                re.IGNORECASE),
+     "rime_of_the_frostmaiden"),
+
+    # Descent into Avernus
+    (re.compile(r"descent into avernus|baldur.s gate.*descent",
+                re.IGNORECASE),
+     "descent_into_avernus"),
+
+    # Dragon Heist + Dungeon of the Mad Mage (the Waterdeep two-parter)
+    (re.compile(r"dragon heist|dungeon of the mad mage",
+                re.IGNORECASE),
+     "waterdeep_adventures"),
+
+    # Tomb of Annihilation
+    (re.compile(r"tomb of annihilation",
+                re.IGNORECASE),
+     "tomb_of_annihilation"),
+
+    # ── Standalone location tags ──────────────────────────────────────────────
+    # These fire on content explicitly set in a location but not tied to a
+    # specific campaign (e.g. Van Richten's Guide → ravenloft, not curse_of_strahd).
+    # Campaign content also gets the location tag via CAMPAIGN_IMPLIED_LOCATIONS.
+
+    (re.compile(r"\bravenloft\b|\bbarovian?\b", re.IGNORECASE), "ravenloft"),
+    (re.compile(r"icewind dale",              re.IGNORECASE), "icewind_dale"),
+    (re.compile(r"\bunderdark\b",             re.IGNORECASE), "underdark"),
+    (re.compile(r"\bwaterdeep\b",             re.IGNORECASE), "waterdeep"),
+    (re.compile(r"\bavernus\b",               re.IGNORECASE), "avernus"),
 ]
+
+# When a campaign tag is applied, the corresponding location tag is added
+# automatically.  This ensures that searching by location returns all campaign
+# content for that setting without requiring books to be double-tagged manually.
+CAMPAIGN_IMPLIED_LOCATIONS: dict[str, str] = {
+    "curse_of_strahd":       "ravenloft",
+    "rime_of_the_frostmaiden": "icewind_dale",
+    "descent_into_avernus":  "avernus",
+    "waterdeep_adventures":  "waterdeep",
+    "out_of_the_abyss":      "underdark",
+}
 
 
 # Canonical tag vocabulary — all valid tags after normalization
@@ -293,9 +356,14 @@ CANONICAL_TAGS = {
     "castles_and_crusades", "zweihander", "mothership", "alien_rpg",
     "dragonbane", "dungeon_world", "vtm", "2d20", "conan", "iron_kingdoms",
     "tinyd6", "dune",
-    # D&D settings
+    # D&D settings / locations
     "forgotten_realms", "greyhawk", "eberron", "ravenloft", "spelljammer",
     "planescape", "dragonlance", "icewind_dale", "underdark", "waterdeep",
+    "avernus",
+    # D&D campaigns
+    "curse_of_strahd", "rime_of_the_frostmaiden", "descent_into_avernus",
+    "waterdeep_adventures", "out_of_the_abyss", "tyranny_of_dragons",
+    "tomb_of_annihilation",
     # special
     "low_confidence",
 }
@@ -440,6 +508,61 @@ def normalize_tags_in_db(conn: sqlite3.Connection, dry_run: bool = False,
         print(f"Dropped {len(dropped_counts)} rare tags. Top:")
         for tag, count in top_dropped:
             print(f"  {count:4d}x  {tag!r}")
+
+
+def backfill_campaign_tags(conn: sqlite3.Connection, dry_run: bool = False) -> None:
+    """Apply SERIES_IMPLIED_TAGS + CAMPAIGN_IMPLIED_LOCATIONS to all enriched books.
+
+    Iterates every enriched book and re-runs apply_series_implied_tags using
+    the live filename/collection/series data.  Only writes rows where at least
+    one new tag was added — idempotent.
+    """
+    rows = conn.execute(
+        "SELECT id, filename, collection, series, display_title, tags "
+        "FROM books "
+        "WHERE tags IS NOT NULL AND date_enriched IS NOT NULL "
+        "  AND is_old_version=0 AND is_draft=0 AND is_duplicate=0"
+    ).fetchall()
+
+    updated = 0
+    tag_counts: dict[str, int] = {}
+    for book_id, filename, collection, series, display_title, raw_tags in rows:
+        try:
+            tags = json.loads(raw_tags)
+        except (json.JSONDecodeError, TypeError):
+            tags = []
+        original = list(tags)
+
+        book_meta = {
+            "filename": filename,
+            "collection": collection,
+        }
+        entry = {
+            "tags": tags,
+            "series": series,
+            "display_title": display_title,
+        }
+        apply_series_implied_tags(entry, book_meta)
+
+        new_tags = [t for t in entry["tags"] if t not in original]
+        if new_tags:
+            updated += 1
+            for t in new_tags:
+                tag_counts[t] = tag_counts.get(t, 0) + 1
+            if not dry_run:
+                conn.execute(
+                    "UPDATE books SET tags = ? WHERE id = ?",
+                    (json.dumps(entry["tags"], ensure_ascii=False), book_id),
+                )
+
+    if not dry_run:
+        conn.commit()
+
+    prefix = "[dry-run] " if dry_run else ""
+    print(f"{prefix}Backfilled campaign/location tags on {updated} books")
+    if tag_counts:
+        for tag, count in sorted(tag_counts.items(), key=lambda x: -x[1]):
+            print(f"  {count:4d}x  {tag}")
 
 
 # ── Series Normalization ─────────────────────────────────────────────────────
@@ -841,6 +964,10 @@ def apply_series_implied_tags(entry: dict, book_meta: dict | None) -> None:
     tag is already present. Uses on-disk fields (filename, collection) as the
     source of truth rather than the LLM-extracted series, which has been
     observed to be inconsistent for organized-play campaign lines.
+
+    Also applies CAMPAIGN_IMPLIED_LOCATIONS: if a campaign tag is present (or
+    just added), the corresponding location tag is added automatically, so that
+    searching by location returns all campaign content for that setting.
     """
     if not book_meta:
         return
@@ -848,12 +975,17 @@ def apply_series_implied_tags(entry: dict, book_meta: dict | None) -> None:
         str(book_meta.get("filename") or ""),
         str(book_meta.get("collection") or ""),
         str(entry.get("series") or ""),
+        str(entry.get("display_title") or ""),
     ]
     haystack = " ".join(haystack_parts)
     tags = entry["tags"]
     for pattern, tag in SERIES_IMPLIED_TAGS:
         if pattern.search(haystack) and tag not in tags:
             tags.append(tag)
+    # Dual-tag: any campaign tag implies its parent location tag
+    for campaign_tag, location_tag in CAMPAIGN_IMPLIED_LOCATIONS.items():
+        if campaign_tag in tags and location_tag not in tags:
+            tags.append(location_tag)
 
 
 def validate_enrichment(entry: dict, low_confidence_ids: set[int] | None = None,
@@ -1119,6 +1251,9 @@ def main():
                         help="Normalize existing series values: structural cleanup, "
                              "alias map, and AL season assignment from filename codes "
                              "(no API calls)")
+    parser.add_argument("--backfill-campaign-tags", action="store_true",
+                        help="Apply campaign/location tags to all enriched books "
+                             "using SERIES_IMPLIED_TAGS rules (no API calls)")
     parser.add_argument("--min-count", type=int, default=15,
                         help="Min occurrences for a tag to survive normalization (default: 15)")
     parser.add_argument("--dry-run", action="store_true", help="Print prompts without calling API")
@@ -1139,6 +1274,11 @@ def main():
 
     if args.normalize_series:
         normalize_series_in_db(conn, dry_run=args.dry_run)
+        conn.close()
+        return
+
+    if args.backfill_campaign_tags:
+        backfill_campaign_tags(conn, dry_run=args.dry_run)
         conn.close()
         return
 
