@@ -39,6 +39,12 @@ function previewPdf() {
   window.open(store.previewUrl(book.value.id), '_blank')
 }
 
+async function toggleFav() {
+  if (!book.value) return
+  await store.toggleFavorite(book.value.id)
+  book.value.is_favorite = !book.value.is_favorite
+}
+
 function bookmarkIndent(bm: Bookmark): string {
   return `${(bm.level - 1) * 1.25}rem`
 }
@@ -83,6 +89,10 @@ function openAtPage(page: number | null) {
       <div class="actions">
         <button class="btn-primary" @click="openInApp">Open in App</button>
         <button class="btn-secondary" @click="previewPdf">Preview in Browser</button>
+        <button
+          :class="['btn-secondary', 'btn-fav', { 'btn-fav-active': book.is_favorite }]"
+          @click="toggleFav"
+        >{{ book.is_favorite ? '\u2665 Favorited' : '\u2661 Favorite' }}</button>
         <span v-if="openStatus" class="open-status">{{ openStatus }}</span>
       </div>
 
@@ -247,6 +257,16 @@ h2 {
   gap: 0.75rem;
   align-items: center;
   margin-bottom: 1.5rem;
+}
+
+.btn-fav-active {
+  color: #e25555;
+  border-color: #e25555;
+}
+
+.btn-fav:hover {
+  color: #e25555;
+  border-color: #e25555;
 }
 
 .open-status {

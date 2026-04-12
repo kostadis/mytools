@@ -116,6 +116,14 @@ const activeFilterChips = computed<FilterChip[]>(() => {
       remove: () => store.setCharLevel(null),
     })
   }
+  if (store.favoritesOnly) {
+    chips.push({
+      key: 'favorites',
+      label: 'Favorites',
+      value: 'On',
+      remove: () => store.setFavoritesOnly(false),
+    })
+  }
   return chips
 })
 
@@ -361,6 +369,10 @@ function tagGroups(available: { value: string; count: number }[]) {
           <div class="filter-section">
             <label class="filter-heading">Show/Hide</label>
             <label class="checkbox-label">
+              <input type="checkbox" :checked="store.favoritesOnly" @change="store.setFavoritesOnly(!store.favoritesOnly)" />
+              Favorites only
+            </label>
+            <label class="checkbox-label">
               <input type="checkbox" :checked="store.includeDrafts" @change="store.toggleIncludeDrafts()" />
               Include drafts/WIP
             </label>
@@ -495,6 +507,7 @@ function tagGroups(available: { value: string; count: number }[]) {
         <table class="book-table">
           <thead>
             <tr>
+              <th class="col-fav"></th>
               <th
                 v-for="col in columns"
                 :key="col.key"
@@ -513,13 +526,14 @@ function tagGroups(available: { value: string; count: number }[]) {
             <!-- Skeleton rows while loading -->
             <template v-if="store.loading">
               <tr v-for="i in 10" :key="`sk-${i}`" class="skeleton-row">
+                <td></td>
                 <td v-for="col in columns" :key="col.key"><span class="skeleton-cell"></span></td>
                 <td></td>
               </tr>
             </template>
             <template v-else-if="store.results.length === 0">
               <tr>
-                <td :colspan="columns.length + 1" class="empty-cell">
+                <td :colspan="columns.length + 2" class="empty-cell">
                   <div class="empty-state">
                     <div class="empty-icon">⊘</div>
                     <div class="empty-msg">No books match these filters</div>
@@ -539,6 +553,14 @@ function tagGroups(available: { value: string; count: number }[]) {
                 @keyup.enter="goToBook(book.id)"
                 @keyup.space.prevent="goToBook(book.id)"
               >
+                <td class="col-fav" @click.stop>
+                  <button
+                    class="fav-btn"
+                    :class="{ 'is-fav': book.is_favorite }"
+                    :aria-label="book.is_favorite ? 'Remove from favorites' : 'Add to favorites'"
+                    @click="store.toggleFavorite(book.id)"
+                  >{{ book.is_favorite ? '\u2665' : '\u2661' }}</button>
+                </td>
                 <td class="col-title">{{ book.display_title || book.filename }}</td>
                 <td>{{ book.publisher }}</td>
                 <td>{{ book.game_system }}</td>
@@ -571,6 +593,14 @@ function tagGroups(available: { value: string; count: number }[]) {
                   @keyup.enter="goToBook(v.id)"
                   @keyup.space.prevent="goToBook(v.id)"
                 >
+                  <td class="col-fav" @click.stop>
+                    <button
+                      class="fav-btn"
+                      :class="{ 'is-fav': v.is_favorite }"
+                      :aria-label="v.is_favorite ? 'Remove from favorites' : 'Add to favorites'"
+                      @click="store.toggleFavorite(v.id)"
+                    >{{ v.is_favorite ? '\u2665' : '\u2661' }}</button>
+                  </td>
                   <td class="col-title variant-title">{{ v.filename }}</td>
                   <td></td>
                   <td>{{ v.game_system }}</td>
@@ -599,6 +629,12 @@ function tagGroups(available: { value: string; count: number }[]) {
             class="book-card"
             :to="{ name: 'book', params: { id: book.id } }"
           >
+            <button
+              class="card-fav-btn fav-btn"
+              :class="{ 'is-fav': book.is_favorite }"
+              :aria-label="book.is_favorite ? 'Remove from favorites' : 'Add to favorites'"
+              @click.stop.prevent="store.toggleFavorite(book.id)"
+            >{{ book.is_favorite ? '\u2665' : '\u2661' }}</button>
             <div class="card-title">{{ book.display_title || book.filename }}</div>
             <div class="card-meta">
               <span v-if="book.publisher" class="meta-publisher">{{ book.publisher }}</span>
@@ -1197,6 +1233,32 @@ function tagGroups(available: { value: string; count: number }[]) {
   font-size: 0.875rem;
 }
 
+/* Favorite button */
+.col-fav {
+  width: 28px;
+  text-align: center;
+  padding-left: 0.4rem !important;
+  padding-right: 0 !important;
+}
+
+.fav-btn {
+  background: none;
+  border: none;
+  font-size: 1.05rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.fav-btn.is-fav {
+  color: #e25555;
+}
+
+.fav-btn:hover {
+  color: #e25555;
+}
+
 .col-num {
   text-align: right;
 }
@@ -1249,6 +1311,7 @@ function tagGroups(available: { value: string; count: number }[]) {
 
 .book-card {
   display: block;
+  position: relative;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1257,6 +1320,13 @@ function tagGroups(available: { value: string; count: number }[]) {
   transition: border-color 0.2s;
   color: inherit;
   text-decoration: none;
+}
+
+.card-fav-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  font-size: 1.15rem;
 }
 .book-card:hover {
   border-color: var(--accent);
