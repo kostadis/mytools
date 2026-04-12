@@ -296,6 +296,11 @@ SERIES_IMPLIED_TAGS: list[tuple[re.Pattern, str]] = [
                 re.IGNORECASE),
      "tomb_of_annihilation"),
 
+    # Season 5 AL adventures + core campaign (no implied location — SKT spans the North broadly)
+    (re.compile(r"storm king.s thunder|\bDDAL05(?![A-Za-z])",
+                re.IGNORECASE),
+     "storm_kings_thunder"),
+
     # ── Standalone location tags ──────────────────────────────────────────────
     # These fire on content explicitly set in a location but not tied to a
     # specific campaign (e.g. Van Richten's Guide → ravenloft, not curse_of_strahd).
@@ -367,7 +372,7 @@ CANONICAL_TAGS = {
     # D&D campaigns
     "curse_of_strahd", "rime_of_the_frostmaiden", "descent_into_avernus",
     "waterdeep_adventures", "out_of_the_abyss", "tyranny_of_dragons",
-    "tomb_of_annihilation",
+    "tomb_of_annihilation", "storm_kings_thunder",
     # special
     "low_confidence",
 }
