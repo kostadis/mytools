@@ -14,7 +14,7 @@
  *   Row 4+ — Data rows (one Google Doc URL per row in column A)
  *
  *   Columns:
- *     A  Doc URL            Paste Google Doc URLs here
+ *     A  Doc URL            Paste Google Doc or folder URLs here
  *     B  Doc Title          Auto-filled by script
  *     C  Last Modified      Auto-filled: when the source Doc was last changed
  *     D  Last Converted     Auto-filled: when this script last converted it
@@ -22,6 +22,13 @@
  *
  * The output folder is stored in a named range called OUTPUT_FOLDER (cell B1).
  * Sorting the data table (rows 4+) can never affect it.
+ *
+ * MENU ITEMS:
+ *   ▶ Run Conversions        — converts doc rows; skips folder rows entirely
+ *   📂 Expand Folders        — unpacks folder rows into individual doc rows
+ *   Force Reconvert Selected — clears Last Converted for selected rows so they re-convert
+ *   Setup Sheet              — initializes layout (safe to re-run)
+ *   Clear All Statuses       — forces all rows to re-convert on next run
  */
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
@@ -44,6 +51,9 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("ConvertToMarkdown")
     .addItem("▶ Run Conversions", "runConversions")
+    .addItem("📂 Expand Folders", "expandFolders")
+    .addSeparator()
+    .addItem("Force Reconvert Selected", "forceReconvertSelected")
     .addSeparator()
     .addItem("Setup Sheet", "setupSheet")
     .addItem("Clear All Statuses", "clearStatuses")
@@ -120,40 +130,19 @@ function setupSheet() {
 // ─── MAIN RUNNER ─────────────────────────────────────────────────────────────
 
 /**
- * Reads the output folder from the OUTPUT_FOLDER named range (B1),
- * then processes all data rows from row 4 down.
+ * Converts all doc rows. Folder rows are skipped with a reminder status —
+ * use "Expand Folders" to unpack them first.
  */
 function runConversions() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
 
-  // Read B1 directly
-  const b1Cell = sheet.getRange(1, 2);
-  const b1Formula = b1Cell.getFormula();
-  const b1Value = b1Cell.getValue().toString().trim();
-  const b1Display = b1Cell.getDisplayValue().toString().trim();
-
-  // Extract folder ID from HYPERLINK formula if present, otherwise use raw value
-  let folderIdOrName = b1Value;
-  if (b1Formula) {
-    const urlMatch = b1Formula.match(/HYPERLINK\s*\(\s*"([^"]+)"/i);
-    if (urlMatch) {
-      const folderMatch = urlMatch[1].match(/\/folders\/([a-zA-Z0-9_-]{25,})/);
-      if (folderMatch) folderIdOrName = folderMatch[1];
-    }
-  }
-
-  if (!folderIdOrName) {
-    showAlert("Output folder is blank. Enter a folder ID in cell B1.");
-    return;
-  }
-
   let outputFolder, outputFolderRef;
   try {
-    outputFolder = DriveApp.getFolderById(folderIdOrName);
+    outputFolder = getOutputFolder(ss);
     outputFolderRef = outputFolder.getName();
   } catch (e) {
-    showAlert("Could not open folder with ID [" + folderIdOrName + "]:\n" + e.message);
+    showAlert(e.message);
     return;
   }
 
@@ -166,14 +155,6 @@ function runConversions() {
   const numRows = lastRow - DATA_START_ROW + 1;
   const data = sheet.getRange(DATA_START_ROW, 1, numRows, COL_STATUS).getValues();
 
-  // Build a set of all doc URLs already in the sheet so folder expansion
-  // doesn't insert duplicates on re-run.
-  const existingUrls = new Set();
-  for (let i = 0; i < data.length; i++) {
-    const u = data[i][COL_URL - 1].toString().trim();
-    if (u) existingUrls.add(normalizeDocUrl(u));
-  }
-
   let converted = 0, skipped = 0, errors = 0;
 
   for (let i = 0; i < data.length; i++) {
@@ -181,41 +162,9 @@ function runConversions() {
     const url = data[i][COL_URL - 1].toString().trim();
     if (!url) continue;
 
-    // Check if this row is a Drive folder URL — expand it into individual doc rows
-    const sourceFolderId = extractFolderId(url);
-    if (sourceFolderId) {
-      try {
-        const sourceFolder = DriveApp.getFolderById(sourceFolderId);
-        setStatus(sheet, rowIndex, "📂 Expanding folder...", "#e8f0fe");
-        sheet.getRange(rowIndex, COL_TITLE).setValue(sourceFolder.getName());
-        SpreadsheetApp.flush();
-
-        const docs = sourceFolder.getFilesByType(MimeType.GOOGLE_DOCS);
-        const newRows = [];
-        while (docs.hasNext()) {
-          const f = docs.next();
-          const docUrl = f.getUrl();
-          // Only add docs that aren't already in the sheet
-          if (!existingUrls.has(normalizeDocUrl(docUrl))) {
-            newRows.push([docUrl, "", "", "", ""]);
-            existingUrls.add(normalizeDocUrl(docUrl));
-          }
-        }
-
-        if (newRows.length === 0) {
-          setStatus(sheet, rowIndex, "📂 All docs already listed", "#d9ead3");
-        } else {
-          // Insert new rows after current row and populate them
-          sheet.insertRowsAfter(rowIndex, newRows.length);
-          sheet.getRange(rowIndex + 1, 1, newRows.length, 5).setValues(newRows);
-          setStatus(sheet, rowIndex, "📂 Expanded (" + newRows.length + " new docs)", "#d9ead3");
-          // Extend our loop to cover the newly inserted rows
-          data.splice(i + 1, 0, ...newRows);
-        }
-      } catch (e) {
-        setStatus(sheet, rowIndex, "❌ Folder error: " + e.message, "#f4cccc");
-        errors++;
-      }
+    // Folder rows are skipped — use Expand Folders to unpack them
+    if (extractFolderId(url)) {
+      setStatus(sheet, rowIndex, "📂 Folder — use Expand Folders", "#e8f0fe");
       continue;
     }
 
@@ -234,8 +183,9 @@ function runConversions() {
       sheet.getRange(rowIndex, COL_TITLE).setValue(file.getName());
       sheet.getRange(rowIndex, COL_LAST_MODIFIED).setValue(docLastModified);
 
-      // Skip if source hasn't changed since last conversion
-      if (lastConverted && lastConverted instanceof Date && docLastModified <= lastConverted) {
+      // Skip if source hasn't changed since last conversion.
+      // Strict < so equal timestamps still reconvert (handles same-second edits).
+      if (lastConverted && lastConverted instanceof Date && docLastModified < lastConverted) {
         setStatus(sheet, rowIndex, "⏭ Skipped (up to date)", "#d9ead3");
         skipped++;
         continue;
@@ -266,6 +216,113 @@ function runConversions() {
     `Output folder: "${outputFolderRef}"`
   );
 }
+
+// ─── EXPAND FOLDERS ──────────────────────────────────────────────────────────
+
+/**
+ * Scans all data rows for folder URLs and inserts the folder's Google Docs
+ * as individual rows immediately after the folder row. Skips docs already
+ * in the sheet. Does not convert anything — run "Run Conversions" after.
+ */
+function expandFolders() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < DATA_START_ROW) {
+    showAlert("No rows found. Paste Google Doc or folder URLs into column A starting at row 4.");
+    return;
+  }
+
+  const numRows = lastRow - DATA_START_ROW + 1;
+  const data = sheet.getRange(DATA_START_ROW, 1, numRows, COL_STATUS).getValues();
+
+  // Build dedup set from all current URLs
+  const existingUrls = new Set();
+  for (let i = 0; i < data.length; i++) {
+    const u = data[i][COL_URL - 1].toString().trim();
+    if (u) existingUrls.add(normalizeDocUrl(u));
+  }
+
+  let totalAdded = 0, errors = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    const rowIndex = DATA_START_ROW + i;
+    const url = data[i][COL_URL - 1].toString().trim();
+    if (!url) continue;
+
+    const sourceFolderId = extractFolderId(url);
+    if (!sourceFolderId) continue;
+
+    try {
+      const sourceFolder = DriveApp.getFolderById(sourceFolderId);
+      setStatus(sheet, rowIndex, "📂 Expanding...", "#e8f0fe");
+      sheet.getRange(rowIndex, COL_TITLE).setValue(sourceFolder.getName());
+      SpreadsheetApp.flush();
+
+      const docs = sourceFolder.getFilesByType(MimeType.GOOGLE_DOCS);
+      const newRows = [];
+      while (docs.hasNext()) {
+        const f = docs.next();
+        const docUrl = f.getUrl();
+        if (!existingUrls.has(normalizeDocUrl(docUrl))) {
+          newRows.push([docUrl, "", "", "", ""]);
+          existingUrls.add(normalizeDocUrl(docUrl));
+        }
+      }
+
+      if (newRows.length === 0) {
+        setStatus(sheet, rowIndex, "📂 All docs already listed", "#d9ead3");
+      } else {
+        sheet.insertRowsAfter(rowIndex, newRows.length);
+        sheet.getRange(rowIndex + 1, 1, newRows.length, 5).setValues(newRows);
+        setStatus(sheet, rowIndex, "📂 Expanded (" + newRows.length + " docs)", "#d9ead3");
+        data.splice(i + 1, 0, ...newRows);
+        totalAdded += newRows.length;
+      }
+    } catch (e) {
+      setStatus(sheet, rowIndex, "❌ Folder error: " + e.message, "#f4cccc");
+      errors++;
+    }
+  }
+
+  SpreadsheetApp.flush();
+  showAlert(
+    `Expansion complete!\n\n` +
+    `📂 Docs added: ${totalAdded}\n` +
+    `❌ Errors:     ${errors}\n\n` +
+    `Run "▶ Run Conversions" to convert the new rows.`
+  );
+}
+
+// ─── FORCE RECONVERT SELECTED ────────────────────────────────────────────────
+
+/**
+ * Clears Last Converted and Status for the currently selected rows so they
+ * will be re-converted on the next run. Select one or more rows first.
+ */
+function forceReconvertSelected() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const selection = sheet.getActiveRange();
+  if (!selection) {
+    showAlert("Select one or more rows first, then run Force Reconvert Selected.");
+    return;
+  }
+
+  const startRow = Math.max(selection.getRow(), DATA_START_ROW);
+  const endRow = selection.getLastRow();
+  if (startRow > endRow) {
+    showAlert("No data rows selected.");
+    return;
+  }
+
+  const numRows = endRow - startRow + 1;
+  sheet.getRange(startRow, COL_LAST_CONVERTED, numRows, 1).clearContent();
+  sheet.getRange(startRow, COL_STATUS, numRows, 1).clearContent().setBackground(null);
+
+  showAlert(`${numRows} row(s) marked for reconversion on next run.`);
+}
+
+// ─── CLEAR ALL STATUSES ──────────────────────────────────────────────────────
 
 /**
  * Clears Last Converted and Status columns so all rows re-convert on next run.
@@ -395,11 +452,18 @@ function getOutputFolder(ss) {
   return DriveApp.createFolder(ref.value);
 }
 
+/**
+ * Saves markdown content to a file in the output folder.
+ * Updates the file in place if it already exists; creates it if not.
+ */
 function saveMarkdownFile(name, content, folder) {
   const filename = sanitizeFilename(name) + ".md";
   const existing = folder.getFilesByName(filename);
-  while (existing.hasNext()) existing.next().setTrashed(true);
-  folder.createFile(filename, content, MimeType.PLAIN_TEXT);
+  if (existing.hasNext()) {
+    existing.next().setContent(content);
+  } else {
+    folder.createFile(filename, content, MimeType.PLAIN_TEXT);
+  }
 }
 
 function sanitizeFilename(name) {
@@ -433,10 +497,14 @@ function docToMarkdown(doc) {
 }
 
 function convertParagraph(para) {
-  const text = convertInlineElements(para);
+  // Headings strip inline formatting (bold/italic/strike from paste artifacts)
+  // but preserve links and code spans.
+  const heading = para.getHeading();
+  const isHeading = heading !== DocumentApp.ParagraphHeading.NORMAL;
+  const text = convertInlineElements(para, { stripFormatting: isHeading });
   if (!text.trim()) return "";
 
-  switch (para.getHeading()) {
+  switch (heading) {
     case DocumentApp.ParagraphHeading.HEADING1:  return `# ${text}`;
     case DocumentApp.ParagraphHeading.HEADING2:  return `## ${text}`;
     case DocumentApp.ParagraphHeading.HEADING3:  return `### ${text}`;
@@ -481,12 +549,17 @@ function convertTable(table) {
   return rows.join("\n");
 }
 
-function convertInlineElements(element) {
+/**
+ * @param {GoogleAppsScript.Document.Element} element
+ * @param {{ stripFormatting?: boolean }} [opts]
+ */
+function convertInlineElements(element, opts) {
+  opts = opts || {};
   let result = "";
   for (let i = 0; i < element.getNumChildren(); i++) {
     const child = element.getChild(i);
     if (child.getType() === DocumentApp.ElementType.TEXT) {
-      result += convertTextElement(child.asText());
+      result += convertTextElement(child.asText(), opts);
     } else if (child.getType() === DocumentApp.ElementType.INLINE_IMAGE) {
       result += "![image]()";
     }
@@ -494,8 +567,16 @@ function convertInlineElements(element) {
   return result;
 }
 
-function convertTextElement(textEl) {
-  const raw = textEl.getText();
+/**
+ * @param {GoogleAppsScript.Document.Text} textEl
+ * @param {{ stripFormatting?: boolean }} [opts]
+ */
+function convertTextElement(textEl, opts) {
+  opts = opts || {};
+  const stripFormatting = opts.stripFormatting || false;
+
+  // Strip carriage returns that can sneak in via paste or Google Docs internals
+  const raw = textEl.getText().replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   if (!raw) return "";
 
   const indices = textEl.getTextAttributeIndices();
@@ -521,12 +602,14 @@ function convertTextElement(textEl) {
 
     let chunk = run.text;
     if (!isCode) chunk = escapeMarkdown(chunk);
-    if (isCode)             chunk = `\`${chunk}\``;
-    if (isBold && isItalic) chunk = `***${chunk}***`;
-    else if (isBold)        chunk = `**${chunk}**`;
-    else if (isItalic)      chunk = `*${chunk}*`;
-    if (isStrike)           chunk = `~~${chunk}~~`;
-    if (linkUrl)            chunk = `[${chunk}](${linkUrl})`;
+    if (isCode)                              chunk = `\`${chunk}\``;
+    if (!stripFormatting) {
+      if (isBold && isItalic)                chunk = `***${chunk}***`;
+      else if (isBold)                       chunk = `**${chunk}**`;
+      else if (isItalic)                     chunk = `*${chunk}*`;
+      if (isStrike)                          chunk = `~~${chunk}~~`;
+    }
+    if (linkUrl)                             chunk = `[${chunk}](${linkUrl})`;
     result += chunk;
   }
   return result;
