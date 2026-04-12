@@ -89,6 +89,7 @@ def _build_search_where(
     series: str | None = None,
     source: str | None = None,
     tags: str | None = None,
+    exclude_tags: str | None = None,
     level_min: int | None = None,
     level_max: int | None = None,
     include_old: bool = False,
@@ -145,6 +146,12 @@ def _build_search_where(
             if tag:
                 conditions.append("tags LIKE ?")
                 params.append(f'%"{tag}"%')
+    if exclude_tags:
+        for tag in exclude_tags.split(","):
+            tag = tag.strip()
+            if tag:
+                conditions.append("(tags IS NULL OR tags NOT LIKE ?)")
+                params.append(f'%"{tag}"%')
     if level_min is not None or level_max is not None:
         conditions.append(
             "min_level IS NOT NULL AND max_level IS NOT NULL "
@@ -169,6 +176,7 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
                  series: str | None = None,
                  source: str | None = None,
                  tags: str | None = None,
+                 exclude_tags: str | None = None,
                  level_min: int | None = None,
                  level_max: int | None = None,
                  sort: str | None = None,
@@ -184,6 +192,7 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
         q=q, q_name=q_name,
         game_system=game_system, product_type=product_type,
         publisher=publisher, series=series, source=source, tags=tags,
+        exclude_tags=exclude_tags,
         level_min=level_min, level_max=level_max,
         include_old=include_old, include_drafts=include_drafts,
         include_duplicates=include_duplicates,
@@ -293,6 +302,7 @@ def search_facets(
     series: str | None = None,
     source: str | None = None,
     tags: str | None = None,
+    exclude_tags: str | None = None,
     level_min: int | None = None,
     level_max: int | None = None,
     include_old: bool = False,
@@ -321,6 +331,7 @@ def search_facets(
         q=q, q_name=q_name,
         game_system=game_system, product_type=product_type,
         publisher=publisher, series=series, source=source, tags=tags,
+        exclude_tags=exclude_tags,
         level_min=level_min, level_max=level_max,
         include_old=include_old, include_drafts=include_drafts,
         include_duplicates=include_duplicates,

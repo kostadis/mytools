@@ -19,6 +19,8 @@ interface FilterChip {
   label: string
   value: string
   remove: () => void
+  invert?: () => void   // tag chips only: flip to exclude
+  excluded?: boolean    // true when this chip is an exclude chip
 }
 
 const GROUP_OPTIONS: { value: GroupByMode; label: string }[] = [
@@ -101,11 +103,22 @@ const activeFilterChips = computed<FilterChip[]>(() => {
   }
   for (const [k, v] of Object.entries(store.activeFilters)) {
     if (!v) continue
+    const isTag = k === 'tags'
     chips.push({
       key: `filter:${k}`,
       label: FILTER_LABELS[k] || k,
       value: v,
       remove: () => store.setFilter(k, ''),
+      invert: isTag ? () => { store.setFilter(k, ''); store.toggleExcludeTag(v) } : undefined,
+    })
+  }
+  for (const tag of store.excludeTags) {
+    chips.push({
+      key: `exclude:${tag}`,
+      label: 'Not',
+      value: tag,
+      remove: () => store.toggleExcludeTag(tag),
+      excluded: true,
     })
   }
   if (store.charLevel !== null) {
@@ -422,9 +435,18 @@ function tagGroups(available: { value: string; count: number }[]) {
           v-for="chip in activeFilterChips"
           :key="chip.key"
           class="filter-chip"
+          :class="{ 'filter-chip-excluded': chip.excluded }"
         >
           <span class="chip-label">{{ chip.label }}:</span>
-          <span class="chip-value">{{ chip.value }}</span>
+          <span class="chip-value" :class="{ 'chip-value-excluded': chip.excluded }">{{ chip.value }}</span>
+          <button
+            v-if="chip.invert"
+            type="button"
+            class="chip-invert"
+            :aria-label="`Exclude ${chip.value} tag`"
+            title="Exclude this tag"
+            @click="chip.invert()"
+          >≠</button>
           <button
             type="button"
             class="chip-remove"
@@ -996,6 +1018,27 @@ function tagGroups(available: { value: string; count: number }[]) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.filter-chip-excluded {
+  border-color: #c0392b;
+  background: color-mix(in srgb, #c0392b 8%, var(--bg-card));
+}
+
+.chip-value-excluded {
+  text-decoration: line-through;
+  color: #c0392b;
+}
+
+.chip-invert {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 0.15rem;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.chip-invert:hover { color: #c0392b; }
 
 .chip-remove {
   background: transparent;

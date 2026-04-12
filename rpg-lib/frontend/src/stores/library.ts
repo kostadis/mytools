@@ -124,6 +124,7 @@ export const useLibraryStore = defineStore('library', () => {
   const queryAll = ref('')
   const queryName = ref('')
   const activeFilters = ref<Record<string, string>>({})
+  const excludeTags = ref<string[]>([])
   const results = ref<BookSummary[]>([])
   const total = ref(0)
   const page = ref(1)
@@ -167,6 +168,7 @@ export const useLibraryStore = defineStore('library', () => {
     }
     if (charLevel.value !== null) params.set('char_level', String(charLevel.value))
     if (favoritesOnly.value) params.set('favorites_only', 'true')
+    if (excludeTags.value.length) params.set('exclude_tags', excludeTags.value.join(','))
     return params
   }
 
@@ -406,8 +408,20 @@ export const useLibraryStore = defineStore('library', () => {
     search()
   }
 
+  function toggleExcludeTag(tag: string) {
+    const idx = excludeTags.value.indexOf(tag)
+    if (idx === -1) {
+      excludeTags.value = [...excludeTags.value, tag]
+    } else {
+      excludeTags.value = excludeTags.value.filter(t => t !== tag)
+    }
+    page.value = 1
+    search()
+  }
+
   function clearFilters() {
     activeFilters.value = {}
+    excludeTags.value = []
     queryAll.value = ''
     queryName.value = ''
     charLevel.value = null
@@ -542,12 +556,12 @@ export const useLibraryStore = defineStore('library', () => {
   return {
     activeFilters, results, total, page, perPage, totalPages, loading, searchError, filters,
     viewMode, queryAll, queryName, sortField, sortDir, includeOld, includeDrafts, includeDuplicates,
-    charLevel, nlqApplied, favoritesOnly,
+    charLevel, nlqApplied, favoritesOnly, excludeTags,
     groupBy, facets, facetsLoading,
     title, search, loadFilters, getBook, openInApp, previewUrl,
     setQuery, setFilter, clearFilters, setPage, toggleSort, setCharLevel, setViewMode,
     toggleIncludeOld, toggleIncludeDrafts, toggleIncludeDuplicates,
-    toggleFavorite, setFavoritesOnly,
+    toggleFavorite, setFavoritesOnly, toggleExcludeTag,
     toggleGroup, isExpanded, getVariants,
     fetchFacets, setGroupBy, drillInFacet,
     nlqSearch, applyNlq, clearNlq, getTopic, getRelatedBooks, getGraph,
