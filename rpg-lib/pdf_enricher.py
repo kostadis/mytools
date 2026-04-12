@@ -306,6 +306,10 @@ SERIES_IMPLIED_TAGS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bunderdark\b",             re.IGNORECASE), "underdark"),
     (re.compile(r"\bwaterdeep\b",             re.IGNORECASE), "waterdeep"),
     (re.compile(r"\bavernus\b",               re.IGNORECASE), "avernus"),
+    # Eberron — matches series/title/collection names and AL season-9 codes
+    # (Oracle of War is the Season 9 AL campaign; DDAL-EB is the Eberron AL code)
+    (re.compile(r"\beberron\b|oracle of war|\bDDAL-EB(?![A-Za-z])",
+                re.IGNORECASE), "eberron"),
 ]
 
 # When a campaign tag is applied, the corresponding location tag is added
