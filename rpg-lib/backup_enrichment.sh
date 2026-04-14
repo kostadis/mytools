@@ -27,6 +27,10 @@ if ! git diff --quiet "$OUTPUT" 2>/dev/null || ! git ls-files --error-unmatch "$
     git add "$OUTPUT"
     git commit -m "backup: update enrichment snapshot"
     echo "Committed."
+    echo ""
+    echo "=== Pushing to GitHub ==="
+    git push
+    echo "Pushed."
 else
     echo ""
     echo "No changes to enrichment.json — nothing to commit."
