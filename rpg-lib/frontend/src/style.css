@@ -1,65 +1,112 @@
 :root {
-  --bg: #16171d;
-  --bg-card: #1e1f2a;
-  --bg-sidebar: #1a1a2e;
-  --text: #d0d0d0;
-  --text-dim: #8888a0;
-  --text-bright: #f0f0f0;
-  --accent: #e94560;
-  --accent-hover: #ff6b81;
-  --border: #2e303a;
-  --tag-bg: #2a2b3d;
-  --tag-text: #b0b0cc;
-  --input-bg: #22233a;
-  --success: #4caf50;
+  /* Surfaces */
+  --bg:          #fbfaf7;
+  --surface:     #ffffff;
+  --surface-alt: #f6f4ef;
 
-  font-family: system-ui, -apple-system, sans-serif;
-  font-size: 15px;
+  /* Borders */
+  --line:        #ecebe6;
+  --line-hard:   #ddd9d0;
+
+  /* Ink */
+  --text:        #1d1d1b;
+  --text-dim:    #6d6a62;
+  --text-mute:   #9b978c;
+
+  /* Accent — cool blue, low saturation. */
+  --accent:      #3a5bdc;
+  --accent-bg:   #edf1ff;
+  --accent-ink:  #ffffff;
+
+  /* Chips */
+  --chip-bg:     #f3f1ec;
+  --chip-text:   #3a3833;
+
+  /* Semantic */
+  --fav:         #d05555;
+  --danger:      #b43a2e;
+  --success:     #2f8a5f;
+
+  /* Type */
+  --font-sans:  'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+
+  /* Scale */
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-base: 13px;
+  --fs-md:   14px;
+  --fs-lg:   16px;
+  --fs-xl:   20px;
+  --fs-2xl:  26px;
+  --fs-3xl:  34px;
+
+  /* Radius / shadow */
+  --radius-sm: 4px;
+  --radius:    6px;
+  --radius-lg: 8px;
+  --shadow-1:  0 1px 0 rgba(0,0,0,0.02);
+  --shadow-2:  0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.05);
+
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
   line-height: 1.5;
+  letter-spacing: -0.005em;
   color: var(--text);
   background: var(--bg);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-body { margin: 0; }
+body { margin: 0; background: var(--bg); color: var(--text); }
 
-a { color: var(--accent); text-decoration: none; }
-a:hover { color: var(--accent-hover); }
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover { text-decoration: none; }
+a:focus-visible { text-decoration: underline; }
 
 button {
   cursor: pointer;
   border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: var(--fs-sm);
   font-family: inherit;
+  color: var(--text);
 }
 
 .btn-primary {
-  background: var(--accent);
-  color: white;
+  background: var(--text);
+  color: var(--surface);
 }
-.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:hover { background: #000; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-secondary {
-  background: var(--tag-bg);
+  background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line-hard);
 }
-.btn-secondary:hover { background: var(--border); }
+.btn-secondary:hover { background: var(--surface-alt); }
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 input, select {
-  background: var(--input-bg);
+  background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
+  border: 1px solid var(--line-hard);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  font-size: var(--fs-base);
   font-family: inherit;
 }
 input:focus, select:focus {
   border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
 :focus-visible {
@@ -70,12 +117,13 @@ input:focus, select:focus {
 
 .tag {
   display: inline-block;
-  background: var(--tag-bg);
-  color: var(--tag-text);
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  cursor: pointer;
+  background: var(--chip-bg);
+  color: var(--chip-text);
+  border-radius: var(--radius-sm);
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
   text-decoration: none;
+  cursor: pointer;
 }
-.tag:hover { background: var(--border); color: var(--text-bright); }
+.tag:hover { background: var(--line-hard); color: var(--text); }

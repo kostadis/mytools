@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useLibraryStore, type BookDetail, type BookSummary, type Bookmark } from '../stores/library'
 
 const route = useRoute()
-const router = useRouter()
 const store = useLibraryStore()
 
 const book = ref<BookDetail | null>(null)
@@ -33,10 +32,10 @@ watch(() => route.params.id, (newId) => {
 
 async function openInApp() {
   if (!book.value) return
-  openStatus.value = 'Opening...'
+  openStatus.value = 'Opening…'
   try {
     await store.openInApp(book.value.id)
-    openStatus.value = 'Opened!'
+    openStatus.value = 'Opened'
     setTimeout(() => { openStatus.value = '' }, 2000)
   } catch (e: any) {
     openStatus.value = `Error: ${e.message}`
@@ -70,50 +69,58 @@ function openAtPage(page: number | null) {
 
     <div v-if="book" class="detail-layout">
       <!-- Header -->
-      <div class="detail-header">
-        <button class="btn-secondary back-btn" @click="router.push({ name: 'browse' })">
-          &larr; Back
-        </button>
-        <h1>{{ book.display_title || book.filename }}</h1>
-        <div class="header-meta">
-          <router-link
-            v-if="book.publisher"
-            class="meta-link"
-            :to="{ name: 'topic', params: { type: 'publisher', name: book.publisher } }"
-          >{{ book.publisher }}</router-link>
-          <router-link
-            v-if="book.game_system"
-            class="meta-link"
-            :to="{ name: 'topic', params: { type: 'game_system', name: book.game_system } }"
-          >{{ book.game_system }}</router-link>
-          <span v-if="book.product_type" class="type-badge">{{ book.product_type }}</span>
-          <span v-if="book.page_count" class="meta-pages">{{ book.page_count }} pages</span>
-          <span v-if="book.min_level" class="meta-pages">
-            Levels {{ book.min_level === book.max_level ? book.min_level : `${book.min_level}–${book.max_level}` }}
-          </span>
-        </div>
+      <div class="breadcrumb">
+        ←
+        <router-link :to="{ name: 'browse' }">Search</router-link>
+        <template v-if="book.tags && book.tags.length">
+          /
+          <router-link :to="{ name: 'topic', params: { type: 'tag', name: book.tags[0] } }">{{ book.tags[0] }}</router-link>
+        </template>
+        / {{ book.display_title || book.filename }}
+      </div>
+
+      <div class="detail-eyebrow">
+        <template v-if="book.publisher">{{ book.publisher }}</template>
+        <template v-if="book.publisher && book.game_system"> · </template>
+        <template v-if="book.game_system">{{ book.game_system }}</template>
+      </div>
+
+      <h1 class="detail-title">{{ book.display_title || book.filename }}</h1>
+
+      <div class="detail-meta">
+        <span v-if="book.product_type">{{ book.product_type.toLowerCase() }}</span>
+        <span v-if="book.product_type && book.page_count">·</span>
+        <span v-if="book.page_count">{{ book.page_count }} pages</span>
+        <template v-if="book.min_level">
+          <span>·</span>
+          <span>levels {{ book.min_level === book.max_level ? book.min_level : `${book.min_level}–${book.max_level}` }}</span>
+        </template>
+        <template v-if="book.is_favorite">
+          <span>·</span>
+          <span class="is-fav">♥ favorited</span>
+        </template>
       </div>
 
       <!-- Actions -->
-      <div class="actions">
-        <button class="btn-primary" @click="openInApp">Open in App</button>
-        <button class="btn-secondary" @click="previewPdf">Preview in Browser</button>
+      <div class="detail-actions">
+        <button class="btn-primary" @click="openInApp">Open PDF</button>
+        <button class="btn-secondary" @click="previewPdf">Preview in browser</button>
         <button
-          :class="['btn-secondary', 'btn-fav', { 'btn-fav-active': book.is_favorite }]"
+          class="btn-secondary fav-toggle"
+          :class="{ 'is-fav': book.is_favorite }"
           @click="toggleFav"
-        >{{ book.is_favorite ? '\u2665 Favorited' : '\u2661 Favorite' }}</button>
+        >{{ book.is_favorite ? '♥ Favorited' : '♡ Favorite' }}</button>
         <span v-if="openStatus" class="open-status">{{ openStatus }}</span>
       </div>
 
       <!-- Description -->
-      <div class="section" v-if="book.description">
-        <h2>Description</h2>
-        <p>{{ book.description }}</p>
+      <div class="detail-description" v-if="book.description">
+        {{ book.description }}
       </div>
 
       <!-- Tags -->
-      <div class="section" v-if="book.tags && book.tags.length">
-        <h2>Tags</h2>
+      <div class="detail-section" v-if="book.tags && book.tags.length">
+        <div class="detail-section-head">Tags</div>
         <div class="tags-list">
           <router-link
             v-for="tag in book.tags"
@@ -125,29 +132,26 @@ function openAtPage(page: number | null) {
       </div>
 
       <!-- Series -->
-      <div class="section" v-if="book.series">
-        <h2>Series</h2>
+      <div class="detail-section" v-if="book.series">
+        <div class="detail-section-head">Series</div>
         <router-link
-          class="meta-link"
+          class="series-link"
           :to="{ name: 'topic', params: { type: 'series', name: book.series } }"
         >{{ book.series }}</router-link>
       </div>
 
       <!-- Related Books -->
-      <div class="section" v-if="related.length">
-        <h2>Related Books</h2>
-        <div class="related-scroll">
+      <div class="detail-section" v-if="related.length">
+        <div class="detail-section-head">Related Books</div>
+        <div class="related-grid">
           <router-link
             v-for="r in related"
             :key="r.id"
             class="related-card"
             :to="{ name: 'book', params: { id: r.id } }"
           >
+            <div class="related-meta-row" v-if="r.game_system">{{ r.game_system }}</div>
             <div class="related-title">{{ r.display_title || r.filename }}</div>
-            <div class="related-meta">
-              <span v-if="r.game_system" class="related-system">{{ r.game_system }}</span>
-              <span v-if="r.product_type" class="type-badge">{{ r.product_type }}</span>
-            </div>
             <div v-if="r.tags && r.tags.length" class="related-tags">
               <span v-for="tag in r.tags.slice(0, 4)" :key="tag" class="tag tag-sm">{{ tag }}</span>
             </div>
@@ -156,26 +160,26 @@ function openAtPage(page: number | null) {
       </div>
 
       <!-- Bookmarks -->
-      <div class="section" v-if="book.bookmarks.length">
-        <h2>Table of Contents ({{ book.bookmarks.length }})</h2>
-        <div class="bookmark-tree">
+      <div class="detail-section" v-if="book.bookmarks.length">
+        <div class="detail-section-head">Table of Contents ({{ book.bookmarks.length }})</div>
+        <div class="toc-list">
           <div
             v-for="(bm, i) in book.bookmarks"
             :key="i"
-            class="bookmark-item"
-            :class="{ 'bookmark-link': bm.page_number }"
+            class="toc-item"
+            :class="{ 'toc-link': bm.page_number }"
             :style="{ paddingLeft: bookmarkIndent(bm) }"
             @click="openAtPage(bm.page_number)"
           >
-            <span class="bm-title">{{ bm.title }}</span>
-            <span v-if="bm.page_number" class="bm-page">p.{{ bm.page_number }}</span>
+            <span class="toc-title">{{ bm.title }}</span>
+            <span v-if="bm.page_number" class="toc-page">p.{{ bm.page_number }}</span>
           </div>
         </div>
       </div>
 
       <!-- Metadata -->
-      <div class="section">
-        <h2>Metadata</h2>
+      <div class="detail-section">
+        <div class="detail-section-head">Metadata</div>
         <table class="meta-table">
           <tr><td>Filename</td><td>{{ book.filename }}</td></tr>
           <tr v-if="book.pdf_title"><td>PDF Title</td><td>{{ book.pdf_title }}</td></tr>
@@ -195,214 +199,225 @@ function openAtPage(page: number | null) {
 
 <style scoped>
 .detail-page {
-  max-width: 900px;
+  max-width: 780px;
   margin: 0 auto;
-  padding: 1.5rem;
+  padding: 24px 48px;
 }
 
 .error {
-  color: var(--accent);
+  color: var(--danger);
   text-align: center;
   padding: 3rem;
   font-size: 1.2rem;
 }
 
-.detail-header {
-  margin-bottom: 1rem;
+.breadcrumb {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-bottom: 18px;
 }
-
-.back-btn {
-  margin-bottom: 0.75rem;
+.breadcrumb a {
+  color: var(--text-mute);
+  text-decoration: none;
 }
+.breadcrumb a:hover { color: var(--accent); }
 
-h1 {
-  font-size: 1.6rem;
-  color: var(--text-bright);
-  margin-bottom: 0.5rem;
-  line-height: 1.3;
-}
-
-h2 {
-  font-size: 1rem;
-  color: var(--text-dim);
+.detail-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 0.5rem;
+  letter-spacing: 0.08em;
+  color: var(--text-mute);
+  margin-bottom: 6px;
 }
 
-.header-meta {
+.detail-title {
+  font-family: var(--font-serif);
+  font-size: var(--fs-3xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text);
+  margin: 0 0 12px;
+}
+
+.detail-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: center;
-  font-size: 0.875rem;
-}
-
-.meta-link {
-  color: var(--accent);
-  cursor: pointer;
-}
-.meta-link:hover { color: var(--accent-hover); }
-
-.meta-system {
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   color: var(--text-dim);
+  margin-bottom: 20px;
 }
+.detail-meta .is-fav { color: var(--fav); }
 
-.meta-pages {
-  color: var(--text-dim);
-}
-
-.type-badge {
-  background: var(--accent);
-  color: white;
-  padding: 0.1rem 0.5rem;
-  border-radius: 3px;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-}
-
-.actions {
+.detail-actions {
   display: flex;
-  gap: 0.75rem;
+  gap: 8px;
   align-items: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 28px;
 }
 
-.btn-fav-active {
-  color: #e25555;
-  border-color: #e25555;
-}
-
-.btn-fav:hover {
-  color: #e25555;
-  border-color: #e25555;
+.fav-toggle.is-fav {
+  color: var(--fav);
+  border-color: var(--fav);
 }
 
 .open-status {
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   color: var(--success);
+  font-family: var(--font-mono);
 }
 
-.section {
-  margin-bottom: 1.5rem;
+.detail-description {
+  font-family: var(--font-serif);
+  font-size: 15.5px;
+  line-height: 1.65;
+  color: var(--text);
+  max-width: 620px;
+  margin-bottom: 28px;
+}
+
+.detail-section {
+  margin-bottom: 28px;
+}
+
+.detail-section-head {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-mute);
+  margin-bottom: 10px;
 }
 
 .tags-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: 6px;
 }
 
-.bookmark-tree {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.75rem;
+.series-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: var(--fs-md);
+}
+.series-link:hover { text-decoration: underline; }
+
+/* TOC */
+.toc-list {
   max-height: 500px;
   overflow-y: auto;
 }
-
-.bookmark-item {
+.toc-item {
   display: flex;
   justify-content: space-between;
-  padding: 0.2rem 0;
-  font-size: 0.85rem;
-}
-
-.bookmark-link {
-  cursor: pointer;
-}
-.bookmark-link:hover .bm-title {
-  color: var(--accent);
-}
-
-.bm-title {
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 1px dotted var(--line);
+  font-family: var(--font-mono);
+  font-size: 12px;
   color: var(--text);
 }
-
-.bm-page {
-  color: var(--text-dim);
-  font-size: 0.75rem;
+.toc-link { cursor: pointer; }
+.toc-link:hover .toc-title { color: var(--accent); }
+.toc-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 8px;
+}
+.toc-page {
+  color: var(--text-mute);
+  font-size: 11px;
   flex-shrink: 0;
-  margin-left: 1rem;
 }
 
+/* Metadata table */
 .meta-table {
   width: 100%;
   border-collapse: collapse;
 }
-
 .meta-table td {
-  padding: 0.35rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.85rem;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  vertical-align: top;
 }
-
 .meta-table td:first-child {
-  color: var(--text-dim);
+  color: var(--text-mute);
   width: 130px;
   white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
-
 .path-cell {
   word-break: break-all;
-  font-family: monospace;
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
 }
 
-.related-scroll {
-  display: flex;
-  gap: 0.75rem;
-  overflow-x: auto;
-  padding-bottom: 0.5rem;
+/* Related books */
+.related-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
 }
-
 .related-card {
-  display: block;
-  min-width: 180px;
-  max-width: 220px;
-  flex-shrink: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.6rem;
-  cursor: pointer;
-  transition: border-color 0.15s;
-  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
   text-decoration: none;
+  color: inherit;
+  display: block;
+  transition: border-color 120ms;
+}
+.related-card:hover {
+  border-color: var(--line-hard);
+  background: var(--surface-alt);
 }
 
-.related-card:hover { border-color: var(--accent); color: inherit; }
+.related-meta-row {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
 
 .related-title {
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   font-weight: 600;
-  color: var(--text-bright);
-  margin-bottom: 0.3rem;
+  color: var(--text);
+  margin-bottom: 6px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-.related-meta {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-  margin-bottom: 0.3rem;
-  font-size: 0.72rem;
-}
-
-.related-system { color: var(--text-dim); }
-
 .related-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 3px;
 }
 
 .tag-sm {
-  font-size: 0.65rem !important;
-  padding: 0.05rem 0.35rem !important;
+  font-size: 10px !important;
+  padding: 1px 5px !important;
+}
+
+@media (max-width: 700px) {
+  .detail-page {
+    padding: 20px 16px;
+  }
 }
 </style>
