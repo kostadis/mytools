@@ -155,6 +155,12 @@ export const useLibraryStore = defineStore('library', () => {
     return (book: BookSummary) => book.display_title || book.filename
   })
 
+  // Total books in the library (publisher counts sum to one row per book).
+  const totalBooks = computed(() => {
+    if (!filters.value) return 0
+    return filters.value.publisher.reduce((s, f) => s + f.count, 0)
+  })
+
   /** Build the query-param subset shared by /search and /search/facets. */
   function buildSearchParams(): URLSearchParams {
     const params = new URLSearchParams()
@@ -558,7 +564,7 @@ export const useLibraryStore = defineStore('library', () => {
     viewMode, queryAll, queryName, sortField, sortDir, includeOld, includeDrafts, includeDuplicates,
     charLevel, nlqApplied, favoritesOnly, excludeTags,
     groupBy, facets, facetsLoading,
-    title, search, loadFilters, getBook, openInApp, previewUrl,
+    title, totalBooks, search, loadFilters, getBook, openInApp, previewUrl,
     setQuery, setFilter, clearFilters, setPage, toggleSort, setCharLevel, setViewMode,
     toggleIncludeOld, toggleIncludeDrafts, toggleIncludeDuplicates,
     toggleFavorite, setFavoritesOnly, toggleExcludeTag,

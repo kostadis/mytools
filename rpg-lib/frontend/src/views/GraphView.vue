@@ -91,9 +91,9 @@ async function drawGraph(data: GraphResponse) {
     .selectAll('line')
     .data(links)
     .join('line')
-    .attr('stroke', '#444')
+    .attr('stroke', '#9b978c')
     .attr('stroke-width', (d: any) => Math.max(0.5, d.score * 3))
-    .attr('stroke-opacity', 0.5)
+    .attr('stroke-opacity', 0.4)
 
   // Draw nodes
   const node = g.append('g')
@@ -102,8 +102,8 @@ async function drawGraph(data: GraphResponse) {
     .join('circle')
     .attr('r', 5)
     .attr('fill', (d: any) => systemColor(d.group))
-    .attr('stroke', '#222')
-    .attr('stroke-width', 0.5)
+    .attr('stroke', '#ddd9d0')
+    .attr('stroke-width', 0.7)
     .attr('cursor', 'pointer')
     .on('click', (_: any, d: any) => router.push({ name: 'book', params: { id: d.id } }))
     .on('mouseover', (event: MouseEvent, d: any) => {
@@ -239,57 +239,65 @@ onUnmounted(() => { if (simulation) simulation.stop() })
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 0.6rem 1rem;
-  background: var(--bg-sidebar);
-  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
 }
 
 .control-group {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
+  gap: 6px;
+  font-size: var(--fs-sm);
   color: var(--text-dim);
 }
 
 .control-group label {
   white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-mute);
 }
 
 .control-value {
-  font-family: monospace;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   min-width: 2.5rem;
   text-align: right;
   color: var(--text);
 }
 
 .system-filter {
-  width: 120px;
-  font-size: 0.8rem;
-  padding: 0.25rem 0.4rem;
+  width: 140px;
+  font-size: var(--fs-sm);
+  padding: 4px 8px;
 }
 
 .graph-stats {
-  font-size: 0.78rem;
-  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-mute);
   margin-left: auto;
 }
 
 .legend {
   display: flex;
-  gap: 1rem;
-  padding: 0.4rem 1rem;
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border);
+  gap: 14px;
+  padding: 8px 16px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.75rem;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--text-dim);
 }
 
@@ -302,8 +310,8 @@ onUnmounted(() => { if (simulation) simulation.stop() })
 
 .error-msg {
   padding: 1rem;
-  color: var(--accent);
-  font-size: 0.875rem;
+  color: var(--danger);
+  font-size: var(--fs-sm);
 }
 
 .graph-canvas {
@@ -314,23 +322,25 @@ onUnmounted(() => { if (simulation) simulation.stop() })
 
 .tooltip {
   position: fixed;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.4rem 0.7rem;
+  background: var(--surface);
+  border: 1px solid var(--line-hard);
+  border-radius: var(--radius);
+  padding: 6px 10px;
   pointer-events: none;
   z-index: 1000;
   max-width: 300px;
+  box-shadow: var(--shadow-2);
 }
 
 .tooltip-title {
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   font-weight: 600;
-  color: var(--text-bright);
+  color: var(--text);
 }
 
 .tooltip-system {
-  font-size: 0.75rem;
-  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-mute);
 }
 </style>
