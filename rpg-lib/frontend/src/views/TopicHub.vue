@@ -51,20 +51,16 @@ watch(() => [props.type, props.name], load)
 
 <template>
   <div class="topic-page">
-    <!-- Header -->
     <div class="topic-header">
       <button class="btn-secondary back-btn" @click="router.back()">← Back</button>
-      <div class="topic-title-row">
-        <span class="topic-type-badge">{{ TYPE_LABELS[props.type] || props.type }}</span>
-        <h1>{{ props.name }}</h1>
-      </div>
+      <div class="topic-eyebrow">{{ TYPE_LABELS[props.type] || props.type }}</div>
+      <h1>{{ props.name }}</h1>
     </div>
 
-    <div v-if="loading" class="status-msg">Loading...</div>
+    <div v-if="loading" class="status-msg">Loading…</div>
     <div v-else-if="error" class="status-msg error">{{ error }}</div>
 
     <div v-else-if="topic">
-
       <!-- Stat bar -->
       <div class="stat-bar">
         <div class="stat-item">
@@ -81,10 +77,7 @@ watch(() => [props.type, props.name], load)
         </div>
       </div>
 
-      <!-- Breakdown panels -->
       <div class="breakdown-row">
-
-        <!-- Top Publishers -->
         <div class="breakdown-panel" v-if="topic.stats.top_publishers.length">
           <h3>Top Publishers</h3>
           <router-link
@@ -95,16 +88,12 @@ watch(() => [props.type, props.name], load)
           >
             <span class="bar-label">{{ item.value }}</span>
             <div class="bar-track">
-              <div
-                class="bar-fill"
-                :style="{ width: (item.count / maxCount(topic.stats.top_publishers) * 100) + '%' }"
-              ></div>
+              <div class="bar-fill" :style="{ width: (item.count / maxCount(topic.stats.top_publishers) * 100) + '%' }"></div>
             </div>
             <span class="bar-count">{{ item.count }}</span>
           </router-link>
         </div>
 
-        <!-- Top Game Systems -->
         <div class="breakdown-panel" v-if="topic.stats.top_game_systems.length">
           <h3>Game Systems</h3>
           <router-link
@@ -115,16 +104,12 @@ watch(() => [props.type, props.name], load)
           >
             <span class="bar-label">{{ item.value }}</span>
             <div class="bar-track">
-              <div
-                class="bar-fill"
-                :style="{ width: (item.count / maxCount(topic.stats.top_game_systems) * 100) + '%' }"
-              ></div>
+              <div class="bar-fill" :style="{ width: (item.count / maxCount(topic.stats.top_game_systems) * 100) + '%' }"></div>
             </div>
             <span class="bar-count">{{ item.count }}</span>
           </router-link>
         </div>
 
-        <!-- Top Series -->
         <div class="breakdown-panel" v-if="topic.stats.top_series.length">
           <h3>Series</h3>
           <router-link
@@ -135,16 +120,12 @@ watch(() => [props.type, props.name], load)
           >
             <span class="bar-label">{{ item.value }}</span>
             <div class="bar-track">
-              <div
-                class="bar-fill"
-                :style="{ width: (item.count / maxCount(topic.stats.top_series) * 100) + '%' }"
-              ></div>
+              <div class="bar-fill" :style="{ width: (item.count / maxCount(topic.stats.top_series) * 100) + '%' }"></div>
             </div>
             <span class="bar-count">{{ item.count }}</span>
           </router-link>
         </div>
 
-        <!-- Top Tags -->
         <div class="breakdown-panel" v-if="topic.stats.top_tags.length">
           <h3>Top Tags</h3>
           <div class="tag-cloud">
@@ -152,15 +133,12 @@ watch(() => [props.type, props.name], load)
               v-for="item in topic.stats.top_tags"
               :key="item.value"
               class="tag tag-clickable"
-              :style="{ fontSize: (0.7 + (item.count / maxCount(topic.stats.top_tags)) * 0.45) + 'rem' }"
               :to="{ name: 'topic', params: { type: 'tag', name: item.value } }"
             >{{ item.value }} <span class="tag-count">{{ item.count }}</span></router-link>
           </div>
         </div>
-
       </div>
 
-      <!-- Book list -->
       <div class="section-heading">
         <h2>All Books ({{ topic.books.length.toLocaleString() }})</h2>
       </div>
@@ -204,53 +182,48 @@ watch(() => [props.type, props.name], load)
 
 <style scoped>
 .topic-page {
-  max-width: 1200px;
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 1.5rem;
+  padding: 24px 32px;
 }
 
-.back-btn { margin-bottom: 0.75rem; }
+.back-btn { margin-bottom: 12px; }
 
-.topic-title-row {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-}
-
-.topic-type-badge {
-  background: var(--accent);
-  color: white;
-  padding: 0.2rem 0.6rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
+.topic-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  flex-shrink: 0;
+  letter-spacing: 0.08em;
+  color: var(--text-mute);
+  margin-bottom: 4px;
 }
 
 h1 {
-  font-size: 1.6rem;
-  color: var(--text-bright);
-  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin: 0 0 16px;
 }
 
 .status-msg {
   text-align: center;
   padding: 3rem;
-  color: var(--text-dim);
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
 }
-.status-msg.error { color: var(--accent); }
+.status-msg.error { color: var(--danger); }
 
 /* Stat bar */
 .stat-bar {
   display: flex;
-  gap: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  margin-bottom: 1.25rem;
+  margin-bottom: 20px;
+  background: var(--surface);
 }
 
 .stat-item {
@@ -258,24 +231,25 @@ h1 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0.75rem 0.5rem;
-  border-right: 1px solid var(--border);
-  background: var(--bg-card);
+  padding: 12px 8px;
+  border-right: 1px solid var(--line);
 }
 .stat-item:last-child { border-right: none; }
 
 .stat-value {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--text-bright);
+  font-size: 22px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--text);
 }
 
 .stat-label {
-  font-size: 0.7rem;
-  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-mute);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-top: 0.2rem;
+  letter-spacing: 0.06em;
+  margin-top: 4px;
   text-align: center;
 }
 
@@ -283,32 +257,33 @@ h1 {
 .breakdown-row {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  gap: 12px;
+  margin-bottom: 24px;
 }
 
 .breakdown-panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
 }
 
 .breakdown-panel h3 {
-  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-dim);
-  margin-bottom: 0.75rem;
+  letter-spacing: 0.06em;
+  color: var(--text-mute);
+  margin-bottom: 10px;
+  font-weight: 400;
 }
 
 .bar-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.35rem;
-  cursor: pointer;
-  font-size: 0.8rem;
+  gap: 8px;
+  margin-bottom: 5px;
+  font-size: var(--fs-sm);
   color: inherit;
   text-decoration: none;
 }
@@ -325,8 +300,8 @@ h1 {
 
 .bar-track {
   flex: 1;
-  height: 6px;
-  background: var(--border);
+  height: 5px;
+  background: var(--surface-alt);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -339,8 +314,9 @@ h1 {
 }
 
 .bar-count {
-  font-size: 0.72rem;
-  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-mute);
   width: 32px;
   text-align: right;
   flex-shrink: 0;
@@ -350,63 +326,52 @@ h1 {
 .tag-cloud {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  align-items: baseline;
+  gap: 5px;
 }
-
-.tag-clickable {
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.tag-clickable:hover {
-  background: var(--accent);
-  color: white;
-}
-
+.tag-clickable { cursor: pointer; }
 .tag-count {
-  font-size: 0.65em;
-  opacity: 0.7;
+  font-size: 10px;
+  color: var(--text-mute);
 }
 
 /* Book table */
 .section-heading h2 {
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-dim);
-  margin-bottom: 0.5rem;
+  letter-spacing: 0.06em;
+  color: var(--text-mute);
+  margin-bottom: 10px;
+  font-weight: 400;
 }
 
-.book-table-wrapper {
-  overflow-x: auto;
-}
+.book-table-wrapper { overflow-x: auto; }
 
 .book-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.85rem;
+  font-size: var(--fs-base);
 }
 
 .book-table th {
   text-align: left;
-  padding: 0.4rem 0.6rem;
-  border-bottom: 2px solid var(--border);
-  color: var(--text-dim);
-  font-size: 0.72rem;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  color: var(--text-mute);
+  font-weight: 400;
   white-space: nowrap;
 }
 
-.book-row {
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.book-row:hover { background: var(--bg-card); }
+.book-row { cursor: pointer; transition: background 120ms; }
+.book-row:hover { background: var(--surface-alt); }
 
 .book-row td {
-  padding: 0.35rem 0.6rem;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
   color: var(--text);
   max-width: 280px;
   overflow: hidden;
@@ -414,19 +379,24 @@ h1 {
   white-space: nowrap;
 }
 
-.col-title {
-  color: var(--text-bright) !important;
-  font-weight: 500;
+.col-title { font-weight: 500; }
+.col-num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
 }
 
-.col-num { text-align: right; }
-
 .type-badge {
-  background: var(--accent);
-  color: white;
-  padding: 0.1rem 0.4rem;
+  display: inline-block;
+  padding: 1px 5px;
   border-radius: 3px;
-  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  border: 1px solid var(--line);
   text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: transparent;
 }
 </style>
