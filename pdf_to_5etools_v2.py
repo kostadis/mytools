@@ -47,6 +47,7 @@ import fitz  # PyMuPDF
 
 import cli_args as _cli
 import claude_api as _api
+import extract_monsters as _mon
 from adventure_model import (
     BuildContext, SectionEntry, EntriesEntry, parse_entry,
     HomebrewAdventure,
@@ -412,6 +413,108 @@ def assemble_adventure(
 # Main conversion entry point
 # ---------------------------------------------------------------------------
 
+def _bestiary_path(out: Path) -> Path:
+    """`foo.json` -> `foo-bestiary.json`."""
+    return out.with_name(f"{out.stem}-bestiary.json")
+
+
+def write_bestiary(
+    client: anthropic.Anthropic,
+    statblocks: list[dict],
+    *,
+    adventure_name: str,
+    adventure_source: str,
+    author: str,
+    out_path: Path,
+    model: str,
+    use_batch: bool,
+    debug_dir: Path | None,
+    verbose: bool,
+) -> Path:
+    """Run the monster Claude pass and write the bestiary JSON."""
+    bestiary_source, source_meta = _mon.make_bestiary_source_meta(
+        adventure_source, adventure_name, author=author,
+    )
+    print(f"[monsters] extracting {len(statblocks)} stat block(s) → {out_path.name}")
+    if not statblocks:
+        print("[monsters] nothing to extract; skipping bestiary write")
+        return out_path
+    bestiary = _mon.build_bestiary(
+        client, statblocks,
+        source_id=bestiary_source,
+        source_meta=source_meta,
+        model=model,
+        use_batch=use_batch,
+        debug_dir=debug_dir,
+        verbose=verbose,
+    )
+    out_path.write_text(
+        json.dumps(bestiary, indent="\t", ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    print(f"[wrote] {out_path} ({len(bestiary['monster'])} monsters)")
+    return out_path
+
+
+def convert_monsters_only(
+    pdf_path: Path,
+    short_id: str,
+    name: str,
+    author: str,
+    out_path: Path | None,
+    output_dir: Path | None,
+    client: anthropic.Anthropic,
+    model: str,
+    use_batch: bool,
+    debug_dir: Path | None,
+    dry_run_only: bool,
+    verbose: bool,
+) -> Path:
+    """Bestiary-only pipeline: Marker → stat-block slices → Claude.
+
+    Always uses Marker (per decision), ignoring the PyMuPDF fast path, so
+    stat-block detection is uniform across digital and scanned PDFs.
+    """
+    print("[monsters-only] running Marker (no adventure pass)")
+    with tempfile.TemporaryDirectory(prefix="marker-") as tmp:
+        md_path = run_marker(pdf_path, Path(tmp), verbose=verbose)
+        md_text = md_path.read_text()
+
+    statblocks = _mon.extract_markdown_statblocks(md_text)
+    print(f"[monsters-only] found {len(statblocks)} stat-block section(s)")
+    if verbose or dry_run_only:
+        for sb in statblocks[:30]:
+            print(f"  - {sb['name'][:60]}")
+        if len(statblocks) > 30:
+            print(f"  ... and {len(statblocks) - 30} more")
+
+    if dry_run_only:
+        chunks = [(_synth_node(sb["name"]), sb["text"]) for sb in statblocks]
+        _api.dry_run(client, [sb["text"] for sb in statblocks], chunks,
+                     model, _mon.SYSTEM_PROMPT, use_batch, verbose)
+        return pdf_path
+
+    # Output path: <stem>-bestiary.json next to the PDF unless overridden
+    if out_path is not None:
+        bestiary_out = out_path
+    else:
+        target_dir = output_dir or pdf_path.parent
+        target_dir.mkdir(parents=True, exist_ok=True)
+        bestiary_out = target_dir / f"{pdf_path.stem}-bestiary.json"
+
+    return write_bestiary(
+        client, statblocks,
+        adventure_name=name, adventure_source=short_id, author=author,
+        out_path=bestiary_out, model=model, use_batch=use_batch,
+        debug_dir=debug_dir, verbose=verbose,
+    )
+
+
+def _synth_node(title: str) -> TocNode:
+    """Placeholder TocNode for dry-run bookkeeping in monsters-only mode."""
+    return TocNode(level=1, title=title, start_page=1, end_page=1)
+
+
 def convert(
     pdf_path: Path,
     output_type: str,
@@ -426,6 +529,8 @@ def convert(
     dry_run_only: bool,
     verbose: bool,
     force_marker: bool = False,
+    extract_monsters: bool = False,
+    monsters_only: bool = False,
 ) -> Path:
     """Drive the end-to-end v2 conversion. Returns the output JSON path."""
     client = anthropic.Anthropic(api_key=api_key) if api_key \
@@ -435,6 +540,15 @@ def convert(
     if short_id is None:
         short_id = re.sub(r"[^A-Z0-9]", "", pdf_path.stem.upper())[:8] or "HOMEBREW"
     name = pdf_path.stem.replace("_", " ")
+
+    # ---- Bestiary-only fast exit ----
+    if monsters_only:
+        return convert_monsters_only(
+            pdf_path=pdf_path, short_id=short_id, name=name, author=author,
+            out_path=out_path, output_dir=output_dir,
+            client=client, model=model, use_batch=use_batch,
+            debug_dir=debug_dir, dry_run_only=dry_run_only, verbose=verbose,
+        )
 
     # ---- 1. Route ----
     profile = profile_pdf(pdf_path)
@@ -505,7 +619,7 @@ def convert(
         is_book=(output_type == "book"),
     )
 
-    # ---- 6. Write ----
+    # ---- 6. Write adventure ----
     out = out_path
     if out is None:
         target_dir = output_dir or pdf_path.parent
@@ -513,6 +627,31 @@ def convert(
         out = target_dir / f"{pdf_path.stem}.json"
     out.write_text(doc.to_json())
     print(f"[wrote] {out}")
+
+    # ---- 7. Optional monster extraction pass ----
+    if extract_monsters:
+        adv_dict = doc.to_dict() if hasattr(doc, "to_dict") else json.loads(out.read_text())
+        italic_blocks = _mon.extract_italic_statblocks(adv_dict)
+        # Also scan for the legacy table format in case a future prompt
+        # emits structured tables.
+        table_entries = _mon.extract_statblock_entries(adv_dict)
+        table_blocks = [
+            {"name": e.get("name", "Unknown"),
+             "text": _mon.statblock_to_text(e)}
+            for e in table_entries
+        ]
+        all_blocks = italic_blocks + table_blocks
+        if verbose:
+            print(f"[monsters] found italic={len(italic_blocks)} "
+                  f"table={len(table_blocks)}")
+        write_bestiary(
+            client, all_blocks,
+            adventure_name=name, adventure_source=short_id, author=author,
+            out_path=_bestiary_path(out),
+            model=model, use_batch=use_batch,
+            debug_dir=debug_dir, verbose=verbose,
+        )
+
     return out
 
 
@@ -555,6 +694,8 @@ def main(argv: list[str] | None = None) -> int:
             dry_run_only=args.dry_run_only,
             verbose=args.verbose,
             force_marker=args.force_marker,
+            extract_monsters=args.extract_monsters,
+            monsters_only=args.monsters_only,
         )
     except RuntimeError as e:
         print(f"error: {e}")

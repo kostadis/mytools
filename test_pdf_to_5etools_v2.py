@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 import pdf_to_5etools_v2 as v2
+import extract_monsters as _mon
 from pdf_utils import (
     TocNode, is_anchor_bookmark, parse_toc_tree,
 )
@@ -321,3 +323,234 @@ class TestMarkdownBodySlicing:
         assert "line 9" in body
         assert "line 3" not in body
         assert "line 10" not in body
+
+
+# ---------------------------------------------------------------------------
+# extract_monsters — italic-string stat blocks in v2 adventure JSON
+# ---------------------------------------------------------------------------
+
+class TestItalicStatblocks:
+    def _wrap(self, *statlines):
+        """Build an adventure-shaped dict where each statline sits inside an
+        entries[] as a bare string."""
+        return {
+            "adventureData": [{
+                "data": [{
+                    "type": "section",
+                    "name": "Chapter",
+                    "entries": [
+                        {"type": "entries", "name": "101. Armory",
+                         "entries": list(statlines)},
+                    ],
+                }],
+            }],
+        }
+
+    def test_finds_single_statblock(self):
+        doc = self._wrap(
+            "This plain chamber contains racks for weapons.",
+            "{@i Ghasts (2): AC 4, MV 15\", HD 4, hp 23, 20, #AT 3, D 1-4/1-4/1-8}",
+        )
+        blocks = _mon.extract_italic_statblocks(doc)
+        assert len(blocks) == 1
+        assert blocks[0]["name"] == "Ghasts (2)"
+        assert "AC 4" in blocks[0]["text"]
+
+    def test_finds_multiple_deeply_nested(self):
+        doc = {
+            "adventureData": [{
+                "data": [{
+                    "type": "section", "name": "Dungeon",
+                    "entries": [
+                        {"type": "entries", "name": "Room",
+                         "entries": [
+                             {"type": "entries", "name": "Sub",
+                              "entries": [
+                                  "{@i Brigands (6): AC 8, MV 12\", Level 0}",
+                                  "prose",
+                                  "{@i Gnolls (4): AC 5, MV 9\", HD 2, hp 10}",
+                              ]},
+                         ]},
+                    ],
+                }],
+            }],
+        }
+        blocks = _mon.extract_italic_statblocks(doc)
+        names = [b["name"] for b in blocks]
+        assert "Brigands (6)" in names
+        assert "Gnolls (4)" in names
+
+    def test_ignores_non_statblock_italic(self):
+        """Italic strings without the `NAME: AC N` shape are atmospheric, not stats."""
+        doc = self._wrap(
+            "{@i A cold wind blows through the chamber.}",
+            "{@i You hear scratching noises from below.}",
+        )
+        assert _mon.extract_italic_statblocks(doc) == []
+
+    def test_ignores_numbered_room_headings(self):
+        """A string that happens to start with a number shouldn't be matched
+        as a stat block even if it has `: AC` later."""
+        doc = self._wrap(
+            "{@i 101. Armory: AC ruined, full of broken racks}",
+        )
+        # The leading-digit guard in the regex should reject this
+        blocks = _mon.extract_italic_statblocks(doc)
+        names = [b["name"] for b in blocks]
+        assert not any(n.startswith("101") for n in names)
+
+    def test_deduplicates_repeated_statblocks(self):
+        """The same stat line appearing in multiple rooms should be emitted once."""
+        doc = {
+            "adventureData": [{
+                "data": [{
+                    "type": "section", "name": "C",
+                    "entries": [
+                        {"type": "entries", "name": "R1",
+                         "entries": ["{@i Ghouls (2): AC 6, MV 9\", HD 2, hp 10, 9}"]},
+                        {"type": "entries", "name": "R2",
+                         "entries": ["{@i Ghouls (2): AC 6, MV 9\", HD 2, hp 10, 9}"]},
+                    ],
+                }],
+            }],
+        }
+        blocks = _mon.extract_italic_statblocks(doc)
+        assert len(blocks) == 1
+
+    def test_italic_statblock_to_text_formats_for_prompt(self):
+        block = {"name": "Ghasts (2)",
+                 "text": "Ghasts (2): AC 4, MV 15\", HD 4, hp 23"}
+        text = _mon.italic_statblock_to_text(block)
+        assert text.startswith("=== Ghasts (2) ===")
+        assert "AC 4" in text
+
+
+# ---------------------------------------------------------------------------
+# extract_monsters — Marker markdown scanning for --monsters-only
+# ---------------------------------------------------------------------------
+
+class TestMarkdownStatblocks:
+    def test_keeps_section_with_armor_class_prose(self):
+        md = "\n".join([
+            "## 101. Armory",
+            "Two ghouls guard this room.",
+            "Ghouls (2): AC 6, MV 9\", HD 2, hp 10",
+            "",
+            "## 102. Kitchen",
+            "This room smells of old meat. No exits visible.",
+        ])
+        blocks = _mon.extract_markdown_statblocks(md)
+        assert len(blocks) == 1
+        assert blocks[0]["name"] == "101. Armory"
+        assert "AC 6" in blocks[0]["text"]
+
+    def test_keeps_section_with_armor_class_phrase(self):
+        md = "\n".join([
+            "## Ancient Red Dragon",
+            "**Armor Class** 22 (natural armor)",
+            "**Hit Points** 546 (28d20 + 252)",
+        ])
+        blocks = _mon.extract_markdown_statblocks(md)
+        assert len(blocks) == 1
+
+    def test_drops_section_without_ac_hint(self):
+        md = "\n".join([
+            "## Backstory",
+            "Long ago, the temple fell to darkness.",
+            "Adventurers have explored it ever since.",
+        ])
+        assert _mon.extract_markdown_statblocks(md) == []
+
+    def test_only_scans_first_N_body_lines(self):
+        """If AC appears way past the header_scan_lines window, the section
+        is not kept as a stat block."""
+        md = "\n".join([
+            "## Foo",
+            *["prose line"] * 20,
+            "Ghouls: AC 6, HD 2",
+        ])
+        blocks = _mon.extract_markdown_statblocks(md, header_scan_lines=5)
+        assert blocks == []
+
+    def test_strips_bold_from_headings(self):
+        md = "\n".join([
+            "## **Boss Monster**",
+            "AC 18, HP 200",
+        ])
+        blocks = _mon.extract_markdown_statblocks(md)
+        assert len(blocks) == 1
+        assert blocks[0]["name"] == "Boss Monster"
+
+
+# ---------------------------------------------------------------------------
+# Bestiary source-meta helper + output path
+# ---------------------------------------------------------------------------
+
+class TestBestiaryMeta:
+    def test_make_bestiary_source_meta_appends_b(self):
+        src_id, meta = _mon.make_bestiary_source_meta(
+            "TOWORLDS", "To Worlds Unknown", author="Legendary Games",
+        )
+        assert src_id == "TOWORLDSb"
+        assert meta["json"] == "TOWORLDSb"
+        assert "(Bestiary)" in meta["full"]
+        assert meta["authors"] == ["Legendary Games"]
+
+    def test_bestiary_path_sibling_of_adventure(self):
+        assert v2._bestiary_path(Path("/tmp/module.json")) \
+            == Path("/tmp/module-bestiary.json")
+        assert v2._bestiary_path(Path("./foo.json")) \
+            == Path("./foo-bestiary.json")
+
+
+# ---------------------------------------------------------------------------
+# build_bestiary: shape of the output dict, no-op on empty input
+# ---------------------------------------------------------------------------
+
+class TestBuildBestiary:
+    def test_empty_input_returns_empty_bestiary(self):
+        out = _mon.build_bestiary(
+            client=MagicMock(), statblocks=[],
+            source_id="TESTb",
+            source_meta={"json": "TESTb", "abbreviation": "TESTb",
+                         "full": "Test (Bestiary)", "version": "1.0.0",
+                         "authors": [], "convertedBy": []},
+            model="claude-haiku-4-5-20251001",
+        )
+        assert out["monster"] == []
+        assert out["_meta"]["sources"][0]["json"] == "TESTb"
+
+    def test_sets_source_on_each_monster(self):
+        statblocks = [{"name": "A", "text": "A: AC 10"}]
+        with patch("extract_monsters._api.call_claude") as mock_call:
+            mock_call.return_value = [
+                {"name": "A", "source": "PLACEHOLDER", "cr": "1"},
+            ]
+            out = _mon.build_bestiary(
+                client=MagicMock(), statblocks=statblocks,
+                source_id="TESTb",
+                source_meta={"json": "TESTb"},
+                model="claude-haiku-4-5-20251001",
+            )
+        assert out["monster"][0]["source"] == "TESTb"
+
+    def test_deduplicates_monsters_by_name(self):
+        statblocks = [
+            {"name": "A", "text": "A: AC 10"},
+            {"name": "A", "text": "A: AC 10"},
+        ]
+        with patch("extract_monsters._api.call_claude") as mock_call:
+            # Claude returns two different A's; dedup keeps the last one
+            mock_call.side_effect = [
+                [{"name": "A", "cr": "1"}],
+                [{"name": "A", "cr": "2"}],
+            ]
+            out = _mon.build_bestiary(
+                client=MagicMock(), statblocks=statblocks,
+                source_id="TESTb",
+                source_meta={"json": "TESTb"},
+                model="claude-haiku-4-5-20251001",
+                batch_size=1,
+            )
+        assert len(out["monster"]) == 1
+        assert out["monster"][0]["cr"] == "2"

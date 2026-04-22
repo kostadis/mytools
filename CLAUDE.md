@@ -45,7 +45,11 @@ Requires `ANTHROPIC_API_KEY` env var or `--api-key KEY`. Default model: `claude-
 - Anything else (scans, un-bookmarked digital) → **Marker path**. Runs Marker to produce markdown with `#`/`##`/`###` headings; synthesises a `TocNode` tree from those headings (with the keyed-room heuristic flattening numbered rooms to a common level); chunks the same way as the fast path.
 - `--force-marker` bypasses the fast path and always uses Marker. Useful when the PDF has bookmarks but the text layer is unreliable (OCR'd-to-PDF scans, broken embedded fonts).
 
-**Common flags:** `--dry-run` (estimate cost, no API calls), `--batch` (50% cheaper via Batch API, async), `--output-mode server` (two-file permanent install), `--extract-monsters`/`--monsters-only` (bestiary extraction), `--debug-dir DIR` (save raw chunk I/O), `--verbose`. See `cli_args.py` for the full shared argument set.
+**Common flags:** `--dry-run` (estimate cost, no API calls), `--batch` (50% cheaper via Batch API, async), `--output-mode server` (two-file permanent install), `--extract-monsters`/`--monsters-only` (bestiary extraction, see below), `--debug-dir DIR` (save raw chunk I/O), `--verbose`. See `cli_args.py` for the full shared argument set.
+
+**Bestiary extraction:**
+- `--extract-monsters`: after the adventure conversion, run a second Claude pass that pulls stat blocks out of the generated JSON. Writes `<stem>-bestiary.json` next to the adventure file with source ID `{SOURCE}b` (separate so both homebrews can be loaded together without conflicting). Detects both italic-string stat lines (the v2 prompt's default format: `{@i Name: AC X, MV Y, ...}`) and legacy table stat blocks. Inherits `--model` and `--batch` from the main pass.
+- `--monsters-only`: bypass the adventure pipeline entirely. Always runs Marker on the full PDF, splits the markdown on `##` headings, keeps sections whose first ~8 body lines mention "Armor Class" / "AC N", and sends those to Claude. Produces only the bestiary file. Cheapest path if all you need is the stat blocks (~2–3× fewer tokens than a full conversion).
 
 **Marker setup (one-time):**
 ```bash

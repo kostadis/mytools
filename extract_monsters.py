@@ -11,6 +11,7 @@ Usage:
 
 import argparse
 import json
+import re
 import sys
 import textwrap
 import time
@@ -155,6 +156,225 @@ def extract_statblock_entries(obj, parent_name=""):
         for item in obj:
             results.extend(extract_statblock_entries(item, parent_name))
     return results
+
+
+# ---------------------------------------------------------------------------
+# Italic-string stat blocks (v2 adventure format)
+# ---------------------------------------------------------------------------
+# v2's adventure prompt emits 1e/2e stat blocks as italic strings of the form
+# `{@i Name: AC X, MV Y, HD Z, ...}`. We detect these by matching the {@i ...}
+# envelope, then checking that the body starts with a name followed by an AC
+# token. The approach also works for 5e-shape stat lines where AC appears
+# early in the body.
+
+# A stat line starts with a monster name, a colon, then "AC <digit>" within
+# the first ~40 chars of the body. The name may contain commas, parens, or
+# numbers but never `{`, `}`, or a leading digit (which would indicate a
+# numbered room heading like "101. Armory", not a monster).
+_ITALIC_STATBLOCK_RE = re.compile(
+    r"\{@i\s+(?P<name>(?!\d)[^:{}\n]{2,120}?)\s*[:;]\s*(?P<body>AC\b[^{}]{10,2000})\}",
+    re.DOTALL,
+)
+
+
+def iter_strings(obj):
+    """Yield every string value found in a nested JSON structure."""
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            yield from iter_strings(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from iter_strings(v)
+
+
+def extract_italic_statblocks(obj):
+    """Find italic-string stat blocks in a parsed adventure tree.
+
+    Returns a list of ``{"name": str, "text": str}`` dicts where ``text``
+    is the full stat line (without the surrounding ``{@i ...}`` markers),
+    ready to be concatenated into a Claude prompt.
+
+    Deduplicates by name + first 60 chars of body (handles the common
+    case where the same stat line appears verbatim in multiple rooms).
+    """
+    seen: dict[tuple[str, str], dict] = {}
+    for s in iter_strings(obj):
+        for m in _ITALIC_STATBLOCK_RE.finditer(s):
+            name = m.group("name").strip()
+            body = m.group("body").strip()
+            key = (name.lower(), body[:60])
+            if key not in seen:
+                seen[key] = {"name": name, "text": f"{name}: {body}"}
+    return list(seen.values())
+
+
+def italic_statblock_to_text(block):
+    """Match the shape of statblock_to_text() for consistency."""
+    name = block["name"]
+    return f"=== {name} ===\n{block['text']}"
+
+
+# ---------------------------------------------------------------------------
+# Marker-markdown stat block detection (for --monsters-only)
+# ---------------------------------------------------------------------------
+# When running --monsters-only we never produce an adventure JSON; instead we
+# scan Marker's markdown output for `##`-delimited sections whose body mentions
+# "Armor Class" (or AC with a number) within the first handful of lines.
+
+_MD_HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
+_AC_HINT_RE = re.compile(
+    r"\b(?:Armor\s+Class\b|AC\s+\d)",
+    re.IGNORECASE,
+)
+
+
+def extract_markdown_statblocks(md_text: str, header_scan_lines: int = 8):
+    """Split Marker markdown on headings; return sections that look like
+    stat blocks.
+
+    A section is kept if one of its first ``header_scan_lines`` non-empty
+    body lines contains "Armor Class" or "AC <digit>".
+
+    Returns ``[{"name": heading, "text": full_section_markdown}]``.
+    """
+    lines = md_text.splitlines()
+    sections: list[tuple[str, int, int]] = []  # (heading, start_line, end_line)
+    current_heading = None
+    current_start = 0
+    for i, line in enumerate(lines):
+        m = _MD_HEADING_RE.match(line)
+        if m:
+            if current_heading is not None:
+                sections.append((current_heading, current_start, i))
+            current_heading = m.group(1).strip()
+            current_heading = re.sub(r"\*+", "", current_heading).strip()
+            current_start = i
+    if current_heading is not None:
+        sections.append((current_heading, current_start, len(lines)))
+
+    results: list[dict] = []
+    for heading, start, end in sections:
+        # Inspect the first `header_scan_lines` non-empty, non-heading lines
+        body_lines = []
+        for j in range(start + 1, end):
+            stripped = lines[j].strip()
+            if not stripped or _MD_HEADING_RE.match(stripped):
+                continue
+            body_lines.append(stripped)
+            if len(body_lines) >= header_scan_lines:
+                break
+        if any(_AC_HINT_RE.search(bl) for bl in body_lines):
+            body = "\n".join(lines[start:end]).strip()
+            results.append({"name": heading, "text": body})
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Shared monster-pass driver: batches text → Claude → bestiary JSON
+# ---------------------------------------------------------------------------
+
+def build_bestiary(
+    client: anthropic.Anthropic,
+    statblocks: list[dict],
+    *,
+    source_id: str,
+    source_meta: dict,
+    model: str,
+    use_batch: bool = False,
+    batch_size: int = 5,
+    debug_dir: Path | None = None,
+    verbose: bool = False,
+) -> dict:
+    """Run the monster-extraction Claude pass over a list of stat blocks.
+
+    Each ``statblocks`` entry is ``{"name": str, "text": str}`` where
+    ``text`` is the pre-formatted Claude prompt content (typically the
+    output of :func:`italic_statblock_to_text` or a full markdown section
+    from :func:`extract_markdown_statblocks`).
+
+    Returns a bestiary homebrew dict with ``{"_meta": ..., "monster": [...]}``.
+    Caller is responsible for writing the file.
+    """
+    if not statblocks:
+        return {
+            "_meta": {
+                "sources": [source_meta],
+                "dateAdded": int(time.time()),
+                "dateLastModified": int(time.time()),
+            },
+            "monster": [],
+        }
+
+    texts = [sb["text"] for sb in statblocks]
+    batches = [texts[i:i + batch_size] for i in range(0, len(texts), batch_size)]
+    all_monsters: list = []
+
+    if use_batch:
+        # Each Batch API item is one Claude call; we still group statblocks
+        # into batches of `batch_size` per call for context efficiency.
+        prompts = ["\n\n---\n\n".join(b) for b in batches]
+        per_batch_results = _api.call_claude_batch(
+            client, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
+        )
+        for monsters in per_batch_results:
+            if monsters:
+                all_monsters.extend(monsters)
+    else:
+        for batch_idx, batch in enumerate(batches):
+            combined = "\n\n---\n\n".join(batch)
+            if verbose:
+                print(f"  monster batch {batch_idx + 1}/{len(batches)} "
+                      f"({len(batch)} stat blocks)...", flush=True)
+            monsters = _api.call_claude(
+                client, combined, model, SYSTEM_PROMPT,
+                verbose, debug_dir, f"monsters-{batch_idx:04d}",
+            )
+            if monsters:
+                all_monsters.extend(monsters)
+
+    # Set source on every monster
+    for m in all_monsters:
+        if isinstance(m, dict):
+            m["source"] = source_id
+
+    # Deduplicate by name; keep last occurrence (usually the best)
+    seen: dict[str, dict] = {}
+    for m in all_monsters:
+        if isinstance(m, dict):
+            seen[m.get("name", "")] = m
+
+    return {
+        "_meta": {
+            "sources": [source_meta],
+            "dateAdded": int(time.time()),
+            "dateLastModified": int(time.time()),
+        },
+        "monster": list(seen.values()),
+    }
+
+
+def make_bestiary_source_meta(
+    adventure_source: str,
+    adventure_name: str,
+    author: str = "Unknown",
+) -> tuple[str, dict]:
+    """Return ``(bestiary_source_id, source_meta_dict)`` following the
+    ``{SOURCE}b`` convention used by ``monster_editor.py``.
+
+    The separate ID prevents 5etools from conflating the adventure and
+    bestiary homebrews when both are loaded."""
+    bestiary_id = f"{adventure_source}b"
+    meta = {
+        "json": bestiary_id,
+        "abbreviation": bestiary_id[:8],
+        "full": f"{adventure_name} (Bestiary)",
+        "version": "1.0.0",
+        "authors": [author] if author else [],
+        "convertedBy": ["pdf_to_5etools_v2"],
+    }
+    return bestiary_id, meta
 
 
 def statblock_to_text(entry):
