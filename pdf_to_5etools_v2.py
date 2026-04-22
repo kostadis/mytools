@@ -60,6 +60,13 @@ DEFAULT_CHUNK = 1  # one chapter per Claude call; Marker/TOC defines boundaries
 # Treat a PDF as "has selectable text" if sampled pages yield >= this many chars.
 SELECTABLE_TEXT_MIN_CHARS = 100
 
+# Hard cap per chunk body sent to Claude. Above this we split by child
+# TocNodes (or, if the node is a leaf, pass through and let Claude's own
+# max_tokens / retry handling deal with it). 80 KB corresponds to roughly
+# 20k input tokens for English prose, leaving ample headroom inside the
+# 200k-token context window.
+MAX_CHUNK_CHARS = 80_000
+
 MARKER_ENV = Path(__file__).parent / "marker-env"
 MARKER_BIN = MARKER_ENV / "bin" / "marker_single"
 
@@ -161,19 +168,51 @@ def extract_page_text(doc: fitz.Document, page_num: int) -> str:
     return text
 
 
+def _node_body_pymupdf(node: TocNode, doc: fitz.Document) -> str:
+    """Join all page texts for a node's page range."""
+    pages_text = []
+    for p in range(node.start_page, node.end_page + 1):
+        if 1 <= p <= doc.page_count:
+            pages_text.append(f"=== page {p} ===\n{extract_page_text(doc, p)}")
+    return "\n\n".join(pages_text)
+
+
+def _node_body_markdown(node: TocNode, lines: list[str]) -> str:
+    """Slice markdown lines covered by a node's (line-number) range."""
+    start = max(0, node.start_page - 1)
+    end = min(len(lines), node.end_page)
+    return "\n".join(lines[start:end])
+
+
+def split_oversized(
+    nodes: list[TocNode],
+    body_fn,
+    max_chars: int = MAX_CHUNK_CHARS,
+) -> list[tuple[TocNode, str]]:
+    """Emit (node, body) chunks, splitting by children when a node's body
+    exceeds ``max_chars``.
+
+    Recurses into children until each emitted chunk either fits under
+    ``max_chars`` or is a leaf (no children to split by). Leaves exceeding
+    the budget are passed through as-is — Claude's own retry/split logic
+    handles them if they truncate.
+    """
+    chunks: list[tuple[TocNode, str]] = []
+    for node in nodes:
+        body = body_fn(node)
+        if len(body) <= max_chars or not node.children:
+            chunks.append((node, body))
+        else:
+            chunks.extend(split_oversized(node.children, body_fn, max_chars))
+    return chunks
+
+
 def build_chunks_from_toc(
     toc_roots: list[TocNode],
     doc: fitz.Document,
 ) -> list[tuple[TocNode, str]]:
-    """One chunk per top-level section: (node, body_text)."""
-    chunks: list[tuple[TocNode, str]] = []
-    for root in toc_roots:
-        pages_text = []
-        for p in range(root.start_page, root.end_page + 1):
-            if 1 <= p <= doc.page_count:
-                pages_text.append(f"=== page {p} ===\n{extract_page_text(doc, p)}")
-        chunks.append((root, "\n\n".join(pages_text)))
-    return chunks
+    """One chunk per top-level section; oversized sections split by children."""
+    return split_oversized(toc_roots, lambda n: _node_body_pymupdf(n, doc))
 
 
 # ---------------------------------------------------------------------------
@@ -281,15 +320,8 @@ def build_chunks_from_markdown(
     toc_roots: list[TocNode],
     lines: list[str],
 ) -> list[tuple[TocNode, str]]:
-    """One chunk per top-level heading: (node, markdown_body)."""
-    chunks: list[tuple[TocNode, str]] = []
-    for root in toc_roots:
-        # TocNode's start_page/end_page are 1-based line numbers for our purposes.
-        start = max(0, root.start_page - 1)
-        end = min(len(lines), root.end_page)
-        body = "\n".join(lines[start:end])
-        chunks.append((root, body))
-    return chunks
+    """One chunk per top-level heading; oversized sections split by children."""
+    return split_oversized(toc_roots, lambda n: _node_body_markdown(n, lines))
 
 
 # ---------------------------------------------------------------------------

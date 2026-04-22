@@ -124,8 +124,22 @@ class TocNode:
                 f"children={len(self.children)})")
 
 
+def is_anchor_bookmark(title: str) -> bool:
+    """Return True for Microsoft Word / Adobe internal anchor bookmarks.
+
+    Word emits entries like ``_GoBack``, ``_GoBack1``, ``_Toc123456789``,
+    ``_Ref123456789``, ``_Hlk123456789`` when it saves a docx as PDF.
+    These are hyperlink targets, not real sections — convention is that
+    any bookmark whose decoded title starts with ``_`` is a tool-generated
+    anchor.
+    """
+    return title.lstrip().startswith("_")
+
+
 def parse_toc_tree(raw_toc: list[list], total_pages: int,
-                   max_level: int = 99) -> list[TocNode]:
+                   max_level: int = 99,
+                   *,
+                   skip_anchor_bookmarks: bool = True) -> list[TocNode]:
     """Parse PyMuPDF get_toc() output into a tree of TocNode objects.
 
     Parameters
@@ -133,6 +147,9 @@ def parse_toc_tree(raw_toc: list[list], total_pages: int,
     raw_toc : list of [level, title, page] triples from ``doc.get_toc(simple=True)``
     total_pages : total number of pages in the PDF
     max_level : ignore bookmarks deeper than this level
+    skip_anchor_bookmarks : drop entries whose title matches
+        :func:`is_anchor_bookmark` (default True). Set False to keep
+        Word-generated ``_GoBack`` / ``_Toc…`` anchors in the tree.
 
     Returns a list of top-level TocNode objects (the roots of the tree).
     Each node has computed ``end_page`` values and nested ``children``.
@@ -145,9 +162,12 @@ def parse_toc_tree(raw_toc: list[list], total_pages: int,
     for lvl, title, page in raw_toc:
         if lvl > max_level:
             continue
+        decoded = _decode_pdf_string(title)
+        if skip_anchor_bookmarks and is_anchor_bookmark(decoded):
+            continue
         flat.append(TocNode(
             level=lvl,
-            title=_decode_pdf_string(title),
+            title=decoded,
             start_page=max(1, page),  # some PDFs have page=0
         ))
 
@@ -190,7 +210,8 @@ def parse_toc_tree(raw_toc: list[list], total_pages: int,
     return roots
 
 
-def get_toc_tree(pdf_path: Path | str, max_level: int = 99) -> list[TocNode]:
+def get_toc_tree(pdf_path: Path | str, max_level: int = 99,
+                 *, skip_anchor_bookmarks: bool = True) -> list[TocNode]:
     """Extract PDF bookmarks as a structured tree with page ranges.
 
     Convenience wrapper combining ``doc.get_toc()`` + ``parse_toc_tree()``.
@@ -203,4 +224,5 @@ def get_toc_tree(pdf_path: Path | str, max_level: int = 99) -> list[TocNode]:
     finally:
         doc.close()
 
-    return parse_toc_tree(raw, total, max_level=max_level)
+    return parse_toc_tree(raw, total, max_level=max_level,
+                          skip_anchor_bookmarks=skip_anchor_bookmarks)
