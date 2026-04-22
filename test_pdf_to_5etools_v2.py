@@ -430,30 +430,61 @@ class TestItalicStatblocks:
 # ---------------------------------------------------------------------------
 
 class TestMarkdownStatblocks:
-    def test_keeps_section_with_armor_class_prose(self):
+    def test_extracts_1e_stat_line_from_inside_room(self):
+        """The whole point of the rewrite: a room description that merely
+        contains a stat line should NOT be classified as a monster. Only
+        the stat line itself is the monster."""
         md = "\n".join([
             "## 101. Armory",
             "Two ghouls guard this room.",
-            "Ghouls (2): AC 6, MV 9\", HD 2, hp 10",
+            "Ghouls (2): AC 6, MV 9\", HD 2, hp 10, #AT 3, D 1-3/1-3/1-6",
             "",
             "## 102. Kitchen",
             "This room smells of old meat. No exits visible.",
         ])
         blocks = _mon.extract_markdown_statblocks(md)
         assert len(blocks) == 1
-        assert blocks[0]["name"] == "101. Armory"
+        assert blocks[0]["name"] == "Ghouls (2)"
+        # Context should include the stat line
         assert "AC 6" in blocks[0]["text"]
+        # The room heading is NOT the monster name
+        assert "101. Armory" not in blocks[0]["name"]
 
-    def test_keeps_section_with_armor_class_phrase(self):
+    def test_keeps_section_with_5e_stat_block_header(self):
+        """5e bestiary-style: one creature per heading, Armor Class/Hit Points labels."""
         md = "\n".join([
             "## Ancient Red Dragon",
             "**Armor Class** 22 (natural armor)",
             "**Hit Points** 546 (28d20 + 252)",
+            "**Speed** 40 ft., climb 40 ft., fly 80 ft.",
         ])
         blocks = _mon.extract_markdown_statblocks(md)
         assert len(blocks) == 1
+        assert blocks[0]["name"] == "Ancient Red Dragon"
+        assert "Armor Class" in blocks[0]["text"]
 
-    def test_drops_section_without_ac_hint(self):
+    def test_keeps_section_whose_first_body_line_is_1e_stat(self):
+        """Bestiary-style 1e PDFs sometimes put the stat line right under the heading."""
+        md = "\n".join([
+            "## Giant Rat",
+            "Giant Rat: AC 7, MV 12\", HD 1/2, hp 3, #AT 1, D 1-3",
+            "Usually found in groups of 2d8.",
+        ])
+        blocks = _mon.extract_markdown_statblocks(md)
+        assert len(blocks) == 1
+        assert blocks[0]["name"] == "Giant Rat"
+
+    def test_drops_prose_with_isolated_AC_mention(self):
+        """'AC' appearing in prose text (e.g. 'the dog's AC is quite poor')
+        should not trigger stat-block detection — there must be other stat tokens."""
+        md = "\n".join([
+            "## Description",
+            "The armored knight has very good AC against ranged attacks.",
+            "He uses a longsword.",
+        ])
+        assert _mon.extract_markdown_statblocks(md) == []
+
+    def test_drops_section_without_stats(self):
         md = "\n".join([
             "## Backstory",
             "Long ago, the temple fell to darkness.",
@@ -461,25 +492,39 @@ class TestMarkdownStatblocks:
         ])
         assert _mon.extract_markdown_statblocks(md) == []
 
-    def test_only_scans_first_N_body_lines(self):
-        """If AC appears way past the header_scan_lines window, the section
-        is not kept as a stat block."""
-        md = "\n".join([
-            "## Foo",
-            *["prose line"] * 20,
-            "Ghouls: AC 6, HD 2",
-        ])
-        blocks = _mon.extract_markdown_statblocks(md, header_scan_lines=5)
+    def test_ignores_numbered_room_heading_as_stat_name(self):
+        """The pattern '101. Armory: AC ruined' should not be a stat block
+        because the name starts with a digit."""
+        md = "101. Armory: AC ruined, MV 0\", HD 0"
+        blocks = _mon.extract_markdown_statblocks(md)
         assert blocks == []
 
-    def test_strips_bold_from_headings(self):
+    def test_deduplicates_repeated_stat_lines(self):
+        """Same stat line appearing in multiple rooms -> one result.
+
+        Uses a prose first-body-line so section-level detection does NOT
+        fire (otherwise each section is kept wholesale under its heading
+        and they wouldn't dedupe against each other)."""
         md = "\n".join([
-            "## **Boss Monster**",
-            "AC 18, HP 200",
+            "## Room A",
+            "Monsters lurk here.",
+            "Gnolls (2): AC 5, MV 9\", HD 2, hp 10, #AT 1, D 2-8",
+            "## Room B",
+            "More foes.",
+            "Gnolls (2): AC 5, MV 9\", HD 2, hp 10, #AT 1, D 2-8",
         ])
         blocks = _mon.extract_markdown_statblocks(md)
         assert len(blocks) == 1
-        assert blocks[0]["name"] == "Boss Monster"
+        assert blocks[0]["name"] == "Gnolls (2)"
+
+    def test_strips_bold_markers_from_headings_and_names(self):
+        md = "\n".join([
+            "## **Boss Monster**",
+            "**Boss Monster**: AC 18, MV 9\", HD 5, #AT 1, D 1-8",
+        ])
+        blocks = _mon.extract_markdown_statblocks(md)
+        assert len(blocks) == 1
+        assert "Boss Monster" in blocks[0]["name"]
 
 
 # ---------------------------------------------------------------------------

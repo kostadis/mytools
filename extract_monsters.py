@@ -219,56 +219,180 @@ def italic_statblock_to_text(block):
 # ---------------------------------------------------------------------------
 # Marker-markdown stat block detection (for --monsters-only)
 # ---------------------------------------------------------------------------
-# When running --monsters-only we never produce an adventure JSON; instead we
-# scan Marker's markdown output for `##`-delimited sections whose body mentions
-# "Armor Class" (or AC with a number) within the first handful of lines.
+# Adventure modules interleave stat blocks with room descriptions, so a
+# heading-based section scan is too loose — a farmhouse room that happens
+# to contain a "Farm dogs: AC 7" line would be classified as a monster.
+#
+# Instead we find STAT LINES directly and emit one entry per line. A stat
+# line matches ``NAME (optional count): AC N, ...`` or ``NAME AC N`` where:
+#   - NAME is 2–80 chars, starts with a letter (not a digit, to reject
+#     numbered room headings like "101. Armory"), contains no colon
+#   - AC is immediately followed by a digit
+#   - Additional stat tokens (MV / HD / #AT / D / hp) appear nearby
+#
+# Bestiary-style PDFs (one monster per `##` section) are handled as a
+# fallback: if a section's FIRST non-empty body line is itself a stat
+# line, we keep the whole section as context for that monster.
 
 _MD_HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
-_AC_HINT_RE = re.compile(
-    r"\b(?:Armor\s+Class\b|AC\s+\d)",
+
+# Tokens that distinguish a 1e stat line from prose with "AC" in it.
+_STAT_TOKEN_RE = re.compile(
+    r"\b(?:MV\s+\d|HD\s+\d|#AT\b|hp\s+\d|THAC0\b|Hit\s*Points|"
+    r"Speed\s+\d|passive\s+Perception)",
+    re.IGNORECASE,
+)
+
+# 5e-style stat-block header markers. A section whose first few body
+# lines contain any of these is treated as a bestiary entry and kept
+# wholesale. Strip markdown bold (`**`) before matching.
+_5E_HEADER_RE = re.compile(
+    r"\b(?:Armor\s+Class\s+\d|Hit\s+Points\s+\d|Speed\s+\d+\s*ft\.?|"
+    r"Challenge\s+\d|Proficiency\s+Bonus\s+[+−-]?\d)",
     re.IGNORECASE,
 )
 
 
-def extract_markdown_statblocks(md_text: str, header_scan_lines: int = 8):
-    """Split Marker markdown on headings; return sections that look like
-    stat blocks.
+def _is_1e_stat_line(line: str) -> bool:
+    """True if `line` matches the 1e-style NAME: AC N, MV ..., HD ..., ... shape."""
+    m = _INLINE_STAT_RE.match(line)
+    return bool(m and _STAT_TOKEN_RE.search(m.group("body")))
 
-    A section is kept if one of its first ``header_scan_lines`` non-empty
-    body lines contains "Armor Class" or "AC <digit>".
 
-    Returns ``[{"name": heading, "text": full_section_markdown}]``.
+def _is_5e_statblock_start(lines: list[str], start_of_body: int, end: int,
+                          scan: int = 4) -> bool:
+    """True if any of the first `scan` non-empty body lines look like a 5e
+    stat-block header (Armor Class / Hit Points / Speed / Challenge)."""
+    seen = 0
+    for j in range(start_of_body, end):
+        stripped = re.sub(r"\*+", "", lines[j]).strip()
+        if not stripped:
+            continue
+        if _MD_HEADING_RE.match(lines[j]):
+            continue
+        if _5E_HEADER_RE.search(stripped):
+            return True
+        seen += 1
+        if seen >= scan:
+            break
+    return False
+
+# Per-line stat line: NAME: AC <digit>, ...
+# The name must start with a letter (rejects "101. Armory: AC ...")
+# and not contain { } : (so `{@i ...}` envelopes don't match here).
+_INLINE_STAT_RE = re.compile(
+    r"""
+    ^\s*(?:[-*]\s+)?          # optional leading bullet
+    (?:\*\*)?                 # optional leading bold
+    (?P<name>
+        (?![0-9])[^:{}\n]{2,80}?
+    )
+    (?:\*\*)?                 # optional trailing bold on name
+    \s*[:;]\s*
+    (?:\*\*)?                 # optional leading bold on body
+    (?P<body>
+        AC\s+\d[^{}\n]{10,800}
+    )
+    $
+    """,
+    re.MULTILINE | re.VERBOSE,
+)
+
+
+def _gather_context(lines: list[str], line_idx: int,
+                    back: int = 3, forward: int = 3) -> str:
+    """Grab ``back`` preceding non-empty lines, the stat line, and up to
+    ``forward`` following stat-continuation lines (they often wrap)."""
+    start = line_idx
+    collected_back = 0
+    for j in range(line_idx - 1, -1, -1):
+        if lines[j].strip():
+            start = j
+            collected_back += 1
+            if collected_back >= back:
+                break
+        elif collected_back:
+            break
+
+    end = line_idx + 1
+    for j in range(line_idx + 1, min(len(lines), line_idx + 1 + forward)):
+        stripped = lines[j].strip()
+        if not stripped:
+            break
+        if _MD_HEADING_RE.match(stripped):
+            break
+        end = j + 1
+
+    return "\n".join(lines[start:end]).strip()
+
+
+def extract_markdown_statblocks(md_text: str, header_scan_lines: int = 2):
+    """Find stat-line-shaped paragraphs in Marker markdown output.
+
+    For each match, returns ``{"name": creature_name, "text": context}``
+    where the context is the stat line plus a few surrounding lines to
+    anchor the creature for Claude.
+
+    ``header_scan_lines`` is kept as a (narrower now) window for the
+    legacy "whole section is a stat block" detection path, still useful
+    for proper bestiary PDFs where each monster has its own heading.
     """
     lines = md_text.splitlines()
-    sections: list[tuple[str, int, int]] = []  # (heading, start_line, end_line)
+
+    # Per-section fallback: if the FIRST non-empty body line after a
+    # heading is itself a stat line, keep the whole section.
+    heading_indices: list[tuple[str, int, int]] = []
     current_heading = None
     current_start = 0
     for i, line in enumerate(lines):
         m = _MD_HEADING_RE.match(line)
         if m:
             if current_heading is not None:
-                sections.append((current_heading, current_start, i))
-            current_heading = m.group(1).strip()
-            current_heading = re.sub(r"\*+", "", current_heading).strip()
+                heading_indices.append((current_heading, current_start, i))
+            current_heading = re.sub(r"\*+", "", m.group(1)).strip()
             current_start = i
     if current_heading is not None:
-        sections.append((current_heading, current_start, len(lines)))
+        heading_indices.append((current_heading, current_start, len(lines)))
 
-    results: list[dict] = []
-    for heading, start, end in sections:
-        # Inspect the first `header_scan_lines` non-empty, non-heading lines
-        body_lines = []
-        for j in range(start + 1, end):
-            stripped = lines[j].strip()
-            if not stripped or _MD_HEADING_RE.match(stripped):
-                continue
-            body_lines.append(stripped)
-            if len(body_lines) >= header_scan_lines:
-                break
-        if any(_AC_HINT_RE.search(bl) for bl in body_lines):
+    # Section fallback is ONLY for 5e-style stat blocks (one monster per
+    # heading, with "Armor Class"/"Hit Points"/"Speed N ft." labels).
+    # For 1e content we never keep whole sections because Marker groups
+    # "Statistics" / "Details" sections that contain a bulleted list of
+    # stat lines — line-level extraction produces cleaner per-monster
+    # entries than the section wrapper would.
+    section_blocks: list[dict] = []
+    keep_lines_as_covered: set[int] = set()
+    for heading, start, end in heading_indices:
+        if _is_5e_statblock_start(lines, start + 1, end):
             body = "\n".join(lines[start:end]).strip()
-            results.append({"name": heading, "text": body})
-    return results
+            section_blocks.append({"name": heading, "text": body})
+            for j in range(start, end):
+                keep_lines_as_covered.add(j)
+
+    # Line-level: find every stat line not already covered by a section.
+    line_blocks: list[dict] = []
+    seen_keys: set[tuple[str, str]] = set()
+    for i, line in enumerate(lines):
+        if i in keep_lines_as_covered:
+            continue
+        m = _INLINE_STAT_RE.match(line)
+        if not m:
+            continue
+        # Reject prose "AC" matches by requiring another stat token nearby
+        body = m.group("body")
+        if not _STAT_TOKEN_RE.search(body):
+            continue
+        name = re.sub(r"\*+", "", m.group("name")).strip()
+        key = (name.lower(), body[:60])
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        line_blocks.append({
+            "name": name,
+            "text": _gather_context(lines, i),
+        })
+
+    return section_blocks + line_blocks
 
 
 # ---------------------------------------------------------------------------
