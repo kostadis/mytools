@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pdf_to_5etools import assign_ids, reset_ids
+from fix_adventure_json import assign_ids, reset_ids
 
 
 # ---------------------------------------------------------------------------
