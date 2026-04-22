@@ -2,8 +2,10 @@
 """
 app.py
 ======
-Standalone web interface for pdf_to_5etools.py, pdf_to_5etools_ocr.py,
-and pdf_to_5etools_1e.py.
+Standalone web interface for pdf_to_5etools_v2.py. Legacy UI modes
+("standard", "ocr", "1e") are preserved as hints: "ocr" and "1e" now
+force the Marker pipeline via --force-marker; "standard" lets v2 auto-
+route between the PyMuPDF fast path and Marker.
 
 Requirements:
     pip install flask
@@ -1184,13 +1186,10 @@ def convert():
         out_name = pdf_path.stem + "_5etools.json"
     out_path = tmpdir / out_name
 
-    # Pick script
-    if mode == "1e":
-        script = "pdf_to_5etools_1e.py"
-    elif mode == "ocr":
-        script = "pdf_to_5etools_ocr.py"
-    else:
-        script = "pdf_to_5etools.py"
+    # v2 is a single unified script. Legacy `mode` values ("ocr", "1e") now
+    # map to --force-marker, which bypasses the PyMuPDF fast path and routes
+    # the PDF through Marker regardless of whether bookmarks are present.
+    script = "pdf_to_5etools_v2.py"
 
     cmd = [
         sys.executable, str(SCRIPT_DIR / script),
@@ -1217,38 +1216,19 @@ def convert():
 
     if single_page:
         cmd += ["--page", single_page]
-
-    if mode == "standard" and use_batch:
+    if use_batch:
         cmd.append("--batch")
 
-    if mode == "ocr":
-        cmd += ["--dpi", dpi, "--lang", lang]
-        if force_ocr:
-            cmd.append("--force-ocr")
+    if mode in ("ocr", "1e"):
+        cmd.append("--force-marker")
 
+    # 1e-mode page range still honoured; v1-specific flags
+    # (--module-code, --system, --dpi, --force-ocr, --no-cr-adjustment, --no-retry)
+    # no longer apply in v2 and are intentionally dropped.
     if mode == "1e":
-        module_code    = request.form.get("module_code", "").strip()
-        system         = request.form.get("system", "1e")
-        skip_pages     = request.form.get("skip_pages", "").strip()
-        no_cr_adj      = "no_cr_adjustment" in request.form
-        dpi_1e         = request.form.get("dpi_1e", "400")
-        force_ocr_1e   = "force_ocr_1e" in request.form
-
-        page_range   = request.form.get("page_range", "").strip()
-
-        if module_code:
-            cmd += ["--module-code", module_code]
-        cmd += ["--system", system, "--dpi", dpi_1e]
-        if force_ocr_1e:
-            cmd.append("--force-ocr")
-        if no_cr_adj:
-            cmd.append("--no-cr-adjustment")
+        page_range = request.form.get("page_range", "").strip()
         if page_range:
             cmd += ["--pages", page_range]
-        if skip_pages:
-            cmd += ["--skip-pages", skip_pages]
-        if "no_retry" in request.form:
-            cmd.append("--no-retry")
 
     # Create job and launch background thread
     job_id = str(uuid.uuid4())
