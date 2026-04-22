@@ -69,8 +69,39 @@ OPTIONAL (include if present):
   legendary   array    -- legendary actions
   legendaryActions  number -- number of legendary actions per round (default 3)
   spellcasting array   -- see format below
-  isNamedCreature bool -- true if this is a unique NPC with a proper name
-  isNpc       bool     -- true for NPCs
+  isNamedCreature bool -- see NPC classification rules below
+  isNpc       bool     -- see NPC classification rules below
+
+NPC classification (IMPORTANT — many adventure-module stat blocks are NPCs
+rather than monsters; classifying them correctly keeps the default
+5etools bestiary filter clean):
+
+  Set `isNpc: true` when the stat block represents a PERSON filling a
+  human role or trade, rather than a creature type. This applies whether
+  the entry is singular or a group.
+    - Singular named person:      Ostler the Innkeeper, Rannos Davl,
+                                  Elmo, Hedrack -> isNpc: true
+    - Singular role / title:      Farmer, Smith, Woodcutter, Tailor,
+                                  Manservant, Groom -> isNpc: true
+    - Plural group of people:     Sons (2), Apprentices (4), Stablemen (2),
+                                  Guards (6), Men-at-Arms (8) -> isNpc: true
+
+  Set `isNamedCreature: true` (IN ADDITION to `isNpc: true`) when the
+  name is a unique proper noun for a specific individual rather than a
+  generic role:
+    - Ostler the Innkeeper  -> isNpc: true, isNamedCreature: true
+    - Rannos Davl           -> isNpc: true, isNamedCreature: true
+    - Farmer                -> isNpc: true  (no isNamedCreature — it's a role)
+    - Sons (2)              -> isNpc: true  (no isNamedCreature — group)
+
+  Do NOT set `isNpc` when the stat block is a CREATURE TYPE, even if it
+  appears in a group or keeps company with humans:
+    - Farm dogs (2), Cart horses, Rats (giant) -> regular monster, no isNpc
+    - Ghouls, Gnolls, Orcs, Goblins, Dragons   -> regular monster, no isNpc
+    - Demons, Undead, Elementals               -> regular monster, no isNpc
+
+  Rule of thumb: if a five-year-old would say "that's a person" -> isNpc.
+  If they'd say "that's an animal / a monster" -> leave isNpc unset.
 
 Spellcasting format:
 {{
