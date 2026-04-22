@@ -187,7 +187,8 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
                 model: str, system_prompt: str, verbose: bool,
                 debug_dir: Path | None = None,
                 chunk_id: str = "chunk-0000",
-                _retry_count: int = 0) -> list[Any]:
+                _retry_count: int = 0,
+                validate: bool = True) -> list[Any]:
     """Send *chunk_text* to Claude and return a parsed JSON list of entries.
 
     Handles two truncation scenarios automatically:
@@ -199,6 +200,13 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
 
     The ``system_prompt`` parameter lets each converter inject its own prompt
     without duplicating any of this logic.
+
+    ``validate=True`` (default) runs :func:`validate_entries` on the parsed
+    result and issues a narrow tag-fix retry on unknown-tag errors. Pass
+    ``validate=False`` for payloads whose entry schema is not the
+    adventure/entries type — notably bestiary monster objects, which use
+    ``type`` as a dict (e.g. ``{"type": "humanoid", "tags": [...]}``) and
+    would crash the adventure-entry validator.
     """
     if verbose:
         print(f"    Sending {len(chunk_text):,} chars to Claude...", flush=True)
@@ -232,7 +240,8 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
             sub_id = f"{chunk_id}-part{part_idx}"
             print(f"      Retrying {sub_id} ({len(part):,} chars)...", flush=True)
             result.extend(call_claude(client, part, model, system_prompt, verbose,
-                                      debug_dir=debug_dir, chunk_id=sub_id))
+                                      debug_dir=debug_dir, chunk_id=sub_id,
+                                      validate=validate))
 
     if message.stop_reason == 'max_tokens':
         if result:
@@ -242,7 +251,8 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
             tail = chunk_text[split_point:]
             if tail.strip():
                 result.extend(call_claude(client, tail, model, system_prompt, verbose,
-                                          debug_dir=debug_dir, chunk_id=f"{chunk_id}-tail"))
+                                          debug_dir=debug_dir, chunk_id=f"{chunk_id}-tail",
+                                          validate=validate))
         else:
             _split_retry("hit max_tokens with no parseable output")
     elif not parse_ok and not result:
@@ -275,7 +285,7 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
     # See plan: tag errors are deterministic substitutions and safe to delegate
     # to a second LLM pass; structural errors are scope decisions and require a
     # human checkpoint (project global CLAUDE.md rule).
-    if result and _retry_count < MAX_VALIDATION_RETRIES:
+    if validate and result and _retry_count < MAX_VALIDATION_RETRIES:
         errors = validate_entries(result, chunk_id)
         if errors:
             tag_errs, struct_errs = _partition_errors(errors)
@@ -395,10 +405,15 @@ def call_claude_batch(
     system_prompt: str,
     verbose: bool,
     debug_dir: Path | None = None,
+    validate: bool = True,
 ) -> list[list[Any]]:
     """Submit all chunks as a single Batch API request (50% cheaper, async).
 
     Polls until complete, then returns results in chunk order.
+
+    See :func:`call_claude` for the ``validate`` parameter — pass
+    ``validate=False`` for bestiary monster payloads whose ``type`` field
+    is a dict.
     """
     import time as _time
 
@@ -469,8 +484,8 @@ def call_claude_batch(
     for i, entries in enumerate(ordered):
         cid = f"chunk-{i:04d}"
         flag = "  ← EMPTY — check debug files" if not entries else ""
-        # Validate entries
-        if entries:
+        # Validate entries (skipped for non-adventure payloads like bestiary)
+        if validate and entries:
             errors = validate_entries(entries, cid)
             if errors:
                 flag = f"  ← {len(errors)} validation error(s)"

@@ -472,6 +472,7 @@ def build_bestiary(
         prompts = ["\n\n---\n\n".join(b) for b in batches]
         per_batch_results = _api.call_claude_batch(
             client, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
+            validate=False,
         )
         for monsters in per_batch_results:
             if monsters:
@@ -485,6 +486,7 @@ def build_bestiary(
             monsters = _api.call_claude(
                 client, combined, model, SYSTEM_PROMPT,
                 verbose, debug_dir, f"monsters-{batch_idx:04d}",
+                validate=False,
             )
             if monsters:
                 all_monsters.extend(monsters)
