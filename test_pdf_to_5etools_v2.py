@@ -12,6 +12,7 @@ import extract_monsters as _mon
 from pdf_utils import (
     TocNode, is_anchor_bookmark, parse_toc_tree,
     _match_toc_line, build_toc_from_printed,
+    _dedupe_toc_entries, _canonical_toc_title,
 )
 
 
@@ -100,6 +101,63 @@ class TestPrintedTocDetection:
     ])
     def test_match_toc_line(self, line, expected):
         assert _match_toc_line(line) == expected
+
+    @pytest.mark.parametrize("title,expected", [
+        ("26. Valegrave Manor",       "valegrave manor"),
+        ("Valegrave Manor (26)",      "valegrave manor"),
+        ("1. Waterside Hostel",       "waterside hostel"),
+        ("Waterside Hostel (1)",      "waterside hostel"),
+        ("Just A Title",              "just a title"),
+        ("3: Mother Screng",          "mother screng"),
+    ])
+    def test_canonical_toc_title(self, title, expected):
+        assert _canonical_toc_title(title) == expected
+
+    def test_dedupe_drops_xref_when_canonical_exists(self):
+        """Back-reference entries 'Name (N)' that share a canonical name
+        with a numbered 'N. Name' entry should be dropped."""
+        raw = [
+            ("26. Valegrave Manor", 38),      # canonical chapter entry
+            ("3. Mother Screng", 12),
+            ("Valegrave Manor (26)", 78),      # cross-ref — drop
+            ("Mother Screng (3)", 78),         # cross-ref — drop
+        ]
+        out = _dedupe_toc_entries(raw)
+        titles = [t for t, _ in out]
+        assert "Valegrave Manor (26)" not in titles
+        assert "Mother Screng (3)" not in titles
+        assert "26. Valegrave Manor" in titles
+
+    def test_dedupe_collapses_same_page_clusters(self):
+        """When 3+ entries share the same start_page, only the first
+        survives — this catches cross-reference indexes that list many
+        back-references pointing to the same quest page."""
+        raw = [
+            ("Preface", 1),
+            ("1. Waterside", 8),
+            ("Forest Rats", 74),               # first on p74 — KEEP
+            ("Nulb Constable (47)", 74),       # xref to earlier — DROP
+            ("Carpenter's Shop (11)", 74),     # xref — DROP
+            ("The Gallows Table (13)", 74),    # xref — DROP
+            ("The Burnt House (14)", 74),      # xref — DROP
+            ("Missionaries St. Cuthbert (18)", 74),  # xref — DROP
+        ]
+        out = _dedupe_toc_entries(raw)
+        p74_entries = [t for t, p in out if p == 74]
+        assert len(p74_entries) == 1
+        assert p74_entries[0] == "Forest Rats"
+
+    def test_dedupe_preserves_same_page_duplicates_below_threshold(self):
+        """Two entries on one page is plausible (short sections) — keep both."""
+        raw = [
+            ("Intro", 1),
+            ("Chapter A", 5),
+            ("Chapter B", 5),                   # second on p5 — keep
+            ("Chapter C", 10),
+        ]
+        out = _dedupe_toc_entries(raw)
+        p5_titles = sorted(t for t, p in out if p == 5)
+        assert p5_titles == ["Chapter A", "Chapter B"]
 
     def test_build_toc_from_printed_emits_flat_top_level(self):
         entries = [

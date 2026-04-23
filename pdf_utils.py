@@ -371,17 +371,89 @@ def detect_printed_toc(
                 toc_pages.append(page_idx + 1)
                 all_entries.extend(page_entries)
 
-        # Dedupe by (lowercased title, page); keep first occurrence
-        seen: dict[tuple[str, int], tuple[str, int]] = {}
-        for title, page in all_entries:
-            key = (title.lower(), page)
-            if key not in seen:
-                seen[key] = (title, page)
-
-        entries = sorted(seen.values(), key=lambda e: e[1])
+        entries = _dedupe_toc_entries(all_entries)
         return entries, toc_pages
     finally:
         doc.close()
+
+
+_XREF_SUFFIX_RE = re.compile(r"\s*\(\d+\)\s*$")
+_LEADING_NUMBER_RE = re.compile(r"^\s*\d+[.,:]?\s+")
+
+
+def _canonical_toc_title(title: str) -> str:
+    """Normalise a ToC title for duplicate-detection.
+
+    Handles both back-reference suffixes like ``"Valegrave Manor (26)"``
+    and leading chapter numbers like ``"26. Valegrave Manor"`` so that
+    both forms collapse to the same canonical key ``"valegrave manor"``.
+    """
+    t = _XREF_SUFFIX_RE.sub("", title).strip()
+    t = _LEADING_NUMBER_RE.sub("", t).strip()
+    return t.lower()
+
+
+def _dedupe_toc_entries(
+    raw_entries: list[tuple[str, int]],
+) -> list[tuple[str, int]]:
+    """Collapse duplicate ToC entries produced by secondary cross-reference
+    indexes (e.g. a "Local Quests" page that lists ``Nulb Constable (47)``
+    at p74 alongside ``Carpenter's Shop (11)`` at p74 as back-references
+    to earlier-indexed locations).
+
+    Rules, applied in order:
+
+    1. Exact dedupe on ``(lowercased title, page)``.
+    2. Cross-reference dedupe: if a title matches ``<name> (<digits>)`` and
+       we've already seen an entry whose title equals or starts with
+       ``<name>``, drop the cross-reference. The suffix is the tell — a
+       real chapter wouldn't normally print its own number in parentheses
+       after its name in the ToC.
+    3. Same-page clustering: when ≥3 entries share the same start_page in
+       the raw input, keep only the first — the remaining ones are
+       almost certainly cross-references into shared content rather than
+       distinct sections beginning on the same page.
+    """
+    # Step 1: exact dedupe
+    seen: dict[tuple[str, int], tuple[str, int]] = {}
+    for title, page in raw_entries:
+        key = (title.lower(), page)
+        if key not in seen:
+            seen[key] = (title, page)
+    entries = list(seen.values())
+
+    # Step 3 (applied before step 2 so cross-reference dedupe uses the
+    # first-entry-per-page as the canonical name). Count raw-order
+    # occurrences by page using the pre-dedupe list so we pick up
+    # clustering correctly.
+    from collections import Counter
+    page_counts: Counter[int] = Counter(p for _, p in raw_entries)
+
+    # Preserve the first entry per page when clustered
+    clustered_pages = {p for p, c in page_counts.items() if c >= 3}
+    kept: list[tuple[str, int]] = []
+    seen_pages: set[int] = set()
+    for title, page in entries:
+        if page in clustered_pages and page in seen_pages:
+            continue
+        seen_pages.add(page)
+        kept.append((title, page))
+
+    # Step 2: cross-reference dedupe — drop "<name> (<digits>)" entries
+    # when a previously-seen entry names the same location (possibly via
+    # a leading "N. Name" form).
+    canonical_names: set[str] = set()
+    final: list[tuple[str, int]] = []
+    for title, page in kept:
+        canonical = _canonical_toc_title(title)
+        is_xref = bool(_XREF_SUFFIX_RE.search(title))
+        if is_xref and canonical in canonical_names:
+            continue
+        canonical_names.add(canonical)
+        final.append((title, page))
+
+    final.sort(key=lambda e: e[1])
+    return final
 
 
 def build_toc_from_printed(
