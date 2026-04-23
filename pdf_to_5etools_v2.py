@@ -52,7 +52,10 @@ from adventure_model import (
     BuildContext, SectionEntry, EntriesEntry, parse_entry,
     HomebrewAdventure,
 )
-from pdf_utils import TocNode, get_toc_tree, extract_pdf_toc, _decode_pdf_string
+from pdf_utils import (
+    TocNode, get_toc_tree, extract_pdf_toc, _decode_pdf_string,
+    detect_printed_toc, build_toc_from_printed,
+)
 
 
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
@@ -126,14 +129,36 @@ class InputProfile:
     has_bookmarks: bool
     has_selectable_text: bool
     page_count: int
+    printed_toc_entries: list = None
+    printed_toc_pages: list = None
+
+    def __post_init__(self):
+        if self.printed_toc_entries is None:
+            self.printed_toc_entries = []
+        if self.printed_toc_pages is None:
+            self.printed_toc_pages = []
 
     @property
     def use_fast_path(self) -> bool:
         return self.has_bookmarks and self.has_selectable_text
 
+    @property
+    def use_printed_toc_path(self) -> bool:
+        """Bookmark-less PDF with enough text and a printed ToC we parsed."""
+        return (not self.has_bookmarks
+                and self.has_selectable_text
+                and len(self.printed_toc_entries) >= 5)
+
 
 def profile_pdf(pdf_path: Path) -> InputProfile:
-    """Inspect a PDF to decide the pipeline."""
+    """Inspect a PDF to decide the pipeline.
+
+    Order of preference:
+      1. Embedded bookmarks → PyMuPDF fast path (cheapest, most accurate)
+      2. Printed ToC page + selectable text → PyMuPDF + printed-ToC path
+         (near-free, author-provided structure)
+      3. Everything else → Marker path (GPU, slower, more expensive)
+    """
     doc = fitz.open(str(pdf_path))
     try:
         pages = doc.page_count
@@ -152,10 +177,20 @@ def profile_pdf(pdf_path: Path) -> InputProfile:
     finally:
         doc.close()
 
+    # Only scan for a printed ToC when we'd actually use it (no embedded
+    # bookmarks, text is selectable). Saves a few hundred ms on PDFs that
+    # already have bookmarks.
+    printed_entries: list = []
+    printed_pages: list = []
+    if not has_bookmarks and has_selectable_text:
+        printed_entries, printed_pages = detect_printed_toc(pdf_path)
+
     return InputProfile(
         has_bookmarks=has_bookmarks,
         has_selectable_text=has_selectable_text,
         page_count=pages,
+        printed_toc_entries=printed_entries,
+        printed_toc_pages=printed_pages,
     )
 
 
@@ -538,51 +573,41 @@ def _has_any_content(node: TocNode, node_ids_with_entries: set[int]) -> bool:
     return any(_has_any_content(c, node_ids_with_entries) for c in node.children)
 
 
-def _build_section_entries_from_tree(
+def _build_raw_section_entries(
     root: TocNode,
     entries_by_target: dict[int, list],
-    ctx: BuildContext,
-    path_prefix: str,
 ) -> list:
-    """Walk the TocNode subtree under ``root`` and build a nested entries[]
-    list, placing each chunk's entries at the correct depth.
+    """Walk the TocNode subtree under ``root`` and build a nested
+    raw-JSON entries[] list (dicts + strings only — no parsed Entry
+    objects).
 
     ``entries_by_target[id(node)]`` holds the raw JSON entries that Claude
     produced for chunks whose ``target_node`` was ``node``.
+
+    Returning raw JSON (rather than parsed Entry objects) is critical:
+    ``parse_entry`` expects its input to be pure JSON and recurses into
+    nested ``entries`` arrays as JSON. Handing it already-parsed Entry
+    objects leads to ``TypeError: Object of type EntriesEntry is not
+    JSON serializable`` when the top-level document is later written out.
+
+    The caller is responsible for running ``parse_entry`` on each item
+    of the returned list exactly once, at the section boundary.
     """
     node_ids_with_entries = set(entries_by_target.keys())
 
-    def walk(node: TocNode, path: str) -> list:
-        # Direct entries for this node (from a prose-stub or the node itself)
-        result: list = []
-        raw_entries = entries_by_target.get(id(node), [])
-        for i, raw in enumerate(raw_entries):
-            try:
-                result.append(parse_entry(raw, ctx, f"{path}.entries[{i}]"))
-            except Exception as e:
-                print(f"  [warn] {path}[{i}]: {e}")
-                if isinstance(raw, str):
-                    result.append(raw)
-
-        # Wrap each child with content as an entries block under this node
+    def walk(node: TocNode) -> list:
+        result: list = list(entries_by_target.get(id(node), []))
         for child in node.children:
             if not _has_any_content(child, node_ids_with_entries):
                 continue
-            child_path = f"{path}.{child.title}"
-            child_entries = walk(child, child_path)
-            wrapped = {
+            result.append({
                 "type": "entries",
                 "name": child.title,
-                "entries": child_entries,
-            }
-            try:
-                result.append(parse_entry(wrapped, ctx, child_path))
-            except Exception as e:
-                print(f"  [warn] wrap {child_path}: {e}")
-                result.append(wrapped)
+                "entries": walk(child),
+            })
         return result
 
-    return walk(root, path_prefix)
+    return walk(root)
 
 
 def assemble_adventure(
@@ -645,9 +670,17 @@ def assemble_adventure(
                 entries_by_target.setdefault(
                     id(spec.target_node), []
                 ).extend(entries)
-            parsed_entries = _build_section_entries_from_tree(
-                root, entries_by_target, ctx, f"section[{root.title}]",
-            )
+            raw_entries = _build_raw_section_entries(root, entries_by_target)
+            parsed_entries = []
+            for i, raw in enumerate(raw_entries):
+                try:
+                    parsed_entries.append(
+                        parse_entry(raw, ctx, f"section[{root.title}].entries[{i}]")
+                    )
+                except Exception as e:
+                    print(f"  [warn] {root.title}[{i}]: {e}")
+                    if isinstance(raw, str):
+                        parsed_entries.append(raw)
 
         sections.append(SectionEntry(
             name=root.title,
@@ -784,6 +817,7 @@ def convert(
     force_marker: bool = False,
     extract_monsters: bool = False,
     monsters_only: bool = False,
+    resume_batch: str | None = None,
 ) -> Path:
     """Drive the end-to-end v2 conversion. Returns the output JSON path."""
     client = anthropic.Anthropic(api_key=api_key) if api_key \
@@ -793,6 +827,20 @@ def convert(
     if short_id is None:
         short_id = re.sub(r"[^A-Z0-9]", "", pdf_path.stem.upper())[:8] or "HOMEBREW"
     name = pdf_path.stem.replace("_", " ")
+
+    # Always persist raw Claude responses alongside the output so a crash
+    # in later steps (assembly, write, monster pass) doesn't lose the API
+    # work. Default location: <out_stem>-responses/. Respects --debug-dir
+    # if the user passed one.
+    if not dry_run_only and debug_dir is None and not monsters_only:
+        target_dir_for_log = output_dir or (out_path.parent if out_path
+                                             else pdf_path.parent)
+        stem = out_path.stem if out_path else pdf_path.stem
+        debug_dir = target_dir_for_log / f"{stem}-responses"
+    if debug_dir is not None:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        if not dry_run_only:
+            print(f"[responses] saving raw Claude I/O to {debug_dir}")
 
     # ---- Bestiary-only fast exit ----
     if monsters_only:
@@ -806,10 +854,24 @@ def convert(
     # ---- 1. Route ----
     profile = profile_pdf(pdf_path)
     use_fast = profile.use_fast_path and not force_marker
+    use_printed_toc = (
+        not use_fast
+        and profile.use_printed_toc_path
+        and not force_marker
+    )
+    if use_fast:
+        route_label = "fast-path (PyMuPDF + bookmarks)"
+    elif use_printed_toc:
+        route_label = (f"printed-ToC path (PyMuPDF, "
+                       f"{len(profile.printed_toc_entries)} ToC entries from "
+                       f"pages {profile.printed_toc_pages})")
+    else:
+        route_label = "Marker path"
     print(f"[profile] pages={profile.page_count} "
           f"bookmarks={'yes' if profile.has_bookmarks else 'no'} "
           f"digital={'yes' if profile.has_selectable_text else 'no'} "
-          f"-> {'fast-path (PyMuPDF)' if use_fast else 'Marker path'}")
+          f"printed_toc={len(profile.printed_toc_entries) or 'none'} "
+          f"-> {route_label}")
 
     # ---- 2. Build chunks ----
     if use_fast:
@@ -818,6 +880,20 @@ def convert(
             toc_roots = get_toc_tree(pdf_path, max_level=3)
             if not toc_roots:
                 raise RuntimeError("fast path selected but get_toc_tree returned no roots")
+            chunks = build_chunks_from_toc(toc_roots, doc)
+        finally:
+            doc.close()
+    elif use_printed_toc:
+        doc = fitz.open(str(pdf_path))
+        try:
+            toc_roots = build_toc_from_printed(
+                profile.printed_toc_entries,
+                total_pages=profile.page_count,
+            )
+            if not toc_roots:
+                raise RuntimeError(
+                    "printed-ToC path selected but no TocNode tree produced"
+                )
             chunks = build_chunks_from_toc(toc_roots, doc)
         finally:
             doc.close()
@@ -852,7 +928,16 @@ def convert(
 
     # ---- 4. Claude pass ----
     chunk_results: list[tuple[ChunkSpec, list | None]] = []
-    if use_batch:
+    if resume_batch:
+        print(f"[resume] skipping Claude submission — fetching batch "
+              f"{resume_batch}")
+        batch = _api.fetch_claude_batch_results(
+            client, resume_batch, len(chunks),
+            verbose=verbose, debug_dir=debug_dir,
+        )
+        for spec, entries in zip(chunks, batch):
+            chunk_results.append((spec, entries))
+    elif use_batch:
         prompts = [build_prompt(c.target_node, c.body) for c in chunks]
         batch = _api.call_claude_batch(
             client, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
@@ -928,6 +1013,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Bypass the PyMuPDF fast path; always use Marker. Useful when "
              "the PDF has bookmarks but the text layer is unreliable.",
     )
+    parser.add_argument(
+        "--resume-batch", metavar="BATCH_ID", dest="resume_batch", default=None,
+        help="Fetch results from an already-completed Anthropic Batch API run "
+             "(e.g. 'msgbatch_01ABC...') instead of submitting a new batch. "
+             "Skips all Claude billing for the recovered chunks. Still runs "
+             "Marker + chunking to map custom_ids back to chunks; chunking "
+             "must be deterministic for the mapping to be correct.",
+    )
     args = parser.parse_args(argv)
 
     api_key = args.api_key or os.environ.get("ANTHROPIC_API_KEY")
@@ -955,6 +1048,7 @@ def main(argv: list[str] | None = None) -> int:
             force_marker=args.force_marker,
             extract_monsters=args.extract_monsters,
             monsters_only=args.monsters_only,
+            resume_batch=args.resume_batch,
         )
     except RuntimeError as e:
         print(f"error: {e}")

@@ -398,6 +398,61 @@ def _model_tier(model: str) -> str:
 # Batch API
 # ---------------------------------------------------------------------------
 
+def fetch_claude_batch_results(
+    client: anthropic.Anthropic,
+    batch_id: str,
+    num_chunks: int,
+    *,
+    verbose: bool = False,
+    debug_dir: Path | None = None,
+) -> list[list[Any]]:
+    """Fetch results from an already-completed batch by ID.
+
+    Returns results in the same shape as :func:`call_claude_batch` —
+    one list of parsed entries per input chunk, ordered by custom_id
+    ``chunk-NNNN``.
+
+    Use when a batch run completed its API calls but crashed before the
+    caller could consume them (network, post-processing bug, etc.).
+    Anthropic retains batch results for ~29 days, so recovery within
+    that window is free.
+    """
+    print(f"  Fetching results from existing batch {batch_id}...", flush=True)
+    batch = client.messages.batches.retrieve(batch_id)
+    status = batch.processing_status
+    if status != "ended":
+        raise RuntimeError(
+            f"batch {batch_id} is not complete (status={status}); "
+            f"wait for it to finish before resuming"
+        )
+    counts = batch.request_counts
+    print(f"    succeeded={counts.succeeded} errored={counts.errored}",
+          flush=True)
+    if debug_dir:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+
+    results_map: dict[str, list[Any]] = {}
+    for result in client.messages.batches.results(batch_id):
+        cid = result.custom_id
+        if result.result.type == "succeeded":
+            msg = result.result.message
+            if msg.stop_reason == "max_tokens":
+                print(f"    [WARN] {cid} hit max_tokens — response may be truncated.",
+                      flush=True)
+            results_map[cid], _ = _parse_claude_response(
+                msg.content[0].text, verbose, debug_dir=debug_dir, chunk_id=cid
+            )
+        else:
+            print(f"    [WARN] {cid} failed: {result.result.type}", flush=True)
+            if debug_dir:
+                (debug_dir / f"{cid}-api-error.txt").write_text(
+                    str(result.result), encoding="utf-8"
+                )
+            results_map[cid] = []
+
+    return [results_map.get(f"chunk-{i:04d}", []) for i in range(num_chunks)]
+
+
 def call_claude_batch(
     client: anthropic.Anthropic,
     chunks: list[str],

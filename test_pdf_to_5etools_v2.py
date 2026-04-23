@@ -11,6 +11,7 @@ import pdf_to_5etools_v2 as v2
 import extract_monsters as _mon
 from pdf_utils import (
     TocNode, is_anchor_bookmark, parse_toc_tree,
+    _match_toc_line, build_toc_from_printed,
 )
 
 
@@ -78,6 +79,104 @@ class TestAnchorBookmarkFilter:
 # ---------------------------------------------------------------------------
 # v2 markdown heading extraction and TOC synthesis
 # ---------------------------------------------------------------------------
+
+class TestPrintedTocDetection:
+    """Parse printed Contents pages into (title, page) entries."""
+
+    @pytest.mark.parametrize("line,expected", [
+        ("Chapter 1 .................. 5",         ("Chapter 1", 5)),
+        ("Chapter 1 ........... 5",                ("Chapter 1", 5)),
+        ("1. Waterside Hostel ......... 8",        ("1. Waterside Hostel", 8)),
+        ("Waterside Hostel …… 8",                   ("Waterside Hostel", 8)),
+        ("Waterside Hostel       8",               ("Waterside Hostel", 8)),
+        ("  Indented entry ........ 42",           ("Indented entry", 42)),
+        # Not-a-ToC-line cases
+        ("A paragraph of prose.",                  None),
+        ("No page number here",                    None),
+        ("1234",                                   None),
+        ("Just a title",                           None),
+        # "Dog's age is 7" — numeric in prose, no leader dots or 3+ spaces
+        ("The dog is 7 years old",                 None),
+    ])
+    def test_match_toc_line(self, line, expected):
+        assert _match_toc_line(line) == expected
+
+    def test_build_toc_from_printed_emits_flat_top_level(self):
+        entries = [
+            ("Intro", 2),
+            ("1. Waterside Hostel", 8),
+            ("2. Otis's Smithy", 13),
+            ("3. Mother Screng's Herb Shop", 14),
+            ("Appendix", 95),
+        ]
+        roots = build_toc_from_printed(entries, total_pages=100)
+        assert [r.title for r in roots] == [
+            "Intro", "1. Waterside Hostel", "2. Otis's Smithy",
+            "3. Mother Screng's Herb Shop", "Appendix",
+        ]
+        # Page ranges computed: each entry runs until the next one starts
+        assert roots[0].start_page == 2
+        assert roots[0].end_page == 7           # Intro runs 2-7 (before Waterside)
+        assert roots[1].start_page == 8
+        assert roots[1].end_page == 12          # Waterside runs 8-12 (before Otis)
+        assert roots[-1].end_page == 100        # Appendix runs to end of doc
+
+
+class TestProfilePdfPrintedToc:
+    """Profile_pdf should pick the printed-ToC path when applicable."""
+
+    def _mock_doc(self, *, page_count, has_toc, chars_per_page):
+        doc = MagicMock()
+        doc.page_count = page_count
+        doc.get_toc.return_value = [[1, "Ch", 1]] if has_toc else []
+        page = MagicMock()
+        page.get_text.return_value = "x" * chars_per_page
+        doc.load_page.return_value = page
+        return doc
+
+    def test_bookmark_takes_precedence_over_printed_toc(self):
+        """If bookmarks exist, we never bother scanning for a printed ToC."""
+        doc = self._mock_doc(page_count=100, has_toc=True, chars_per_page=5000)
+        with patch("pdf_to_5etools_v2.fitz.open", return_value=doc):
+            with patch("pdf_to_5etools_v2.detect_printed_toc") as m:
+                profile = v2.profile_pdf("fake.pdf")
+        m.assert_not_called()
+        assert profile.use_fast_path
+        assert not profile.use_printed_toc_path
+
+    def test_printed_toc_used_when_no_bookmarks(self):
+        doc = self._mock_doc(page_count=100, has_toc=False, chars_per_page=5000)
+        with patch("pdf_to_5etools_v2.fitz.open", return_value=doc):
+            with patch("pdf_to_5etools_v2.detect_printed_toc") as m:
+                m.return_value = (
+                    [("Ch 1", 5), ("Ch 2", 20), ("Ch 3", 40),
+                     ("Ch 4", 60), ("Ch 5", 80)],
+                    [2, 3],
+                )
+                profile = v2.profile_pdf("fake.pdf")
+        assert profile.use_printed_toc_path
+        assert not profile.use_fast_path
+        assert len(profile.printed_toc_entries) == 5
+
+    def test_marker_fallback_when_no_printed_toc(self):
+        doc = self._mock_doc(page_count=100, has_toc=False, chars_per_page=5000)
+        with patch("pdf_to_5etools_v2.fitz.open", return_value=doc):
+            with patch("pdf_to_5etools_v2.detect_printed_toc") as m:
+                m.return_value = ([], [])
+                profile = v2.profile_pdf("fake.pdf")
+        assert not profile.use_fast_path
+        assert not profile.use_printed_toc_path
+
+    def test_below_threshold_falls_through_to_marker(self):
+        """A handful of accidentally-matching lines shouldn't trip the path."""
+        doc = self._mock_doc(page_count=100, has_toc=False, chars_per_page=5000)
+        with patch("pdf_to_5etools_v2.fitz.open", return_value=doc):
+            with patch("pdf_to_5etools_v2.detect_printed_toc") as m:
+                # Only 3 entries — below the 5-entry minimum in use_printed_toc_path
+                m.return_value = ([("A", 1), ("B", 2), ("C", 3)], [1])
+                profile = v2.profile_pdf("fake.pdf")
+        assert not profile.use_printed_toc_path
+
 
 class TestMarkdownHeadings:
     def test_parses_all_heading_levels(self):

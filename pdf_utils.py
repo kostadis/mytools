@@ -7,6 +7,7 @@ Kept separate from claude_api.py because these functions depend on PyMuPDF
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -226,3 +227,176 @@ def get_toc_tree(pdf_path: Path | str, max_level: int = 99,
 
     return parse_toc_tree(raw, total, max_level=max_level,
                           skip_anchor_bookmarks=skip_anchor_bookmarks)
+
+
+# ---------------------------------------------------------------------------
+# Printed Table of Contents extraction
+# ---------------------------------------------------------------------------
+# Many PDFs from DriveThruRPG / DMsGuild / Legendary Games ship without
+# embedded bookmarks but DO have a printed Contents page listing every
+# section with its page number. That listing is authoritative author-
+# written structure — bookmark-equivalent — and lets us skip Marker
+# entirely for these PDFs.
+
+# Leader-dot style:    "Chapter 1 ........... 5"
+# Numbered w/ period:  "1. Waterside Hostel ........... 8"
+# Unicode ellipsis:    "Chapter 1 …… 5"   or "Chapter 1 ……… 5"
+# Spaced columnar:     "Chapter 1      5"
+#
+# Leader pattern alternatives: 3+ consecutive dots, OR 2+ ellipsis chars,
+# OR 3+ space-dot pairs. All strong enough to distinguish from an in-
+# title period like "1. Waterside" where `.+?` can extend past it.
+_TOC_LEADER = r"(?:\.{3,}|[…]{2,}|(?:\s\.){3,})"
+_TOC_LINE_DOTS_RE = re.compile(
+    rf"^\s*(?P<title>.+?){_TOC_LEADER}\s*(?P<page>\d{{1,4}})\s*$"
+)
+_TOC_LINE_SPACED_RE = re.compile(
+    r"^\s*(?P<title>.+?\S)\s{3,}(?P<page>\d{1,4})\s*$"
+)
+
+
+def _match_toc_line(line: str) -> tuple[str, int] | None:
+    """Try to parse one text line as a ToC entry. Returns (title, page) or None."""
+    for pattern in (_TOC_LINE_DOTS_RE, _TOC_LINE_SPACED_RE):
+        m = pattern.match(line)
+        if m:
+            title = m.group("title").strip(" .…-–—")
+            if not title:
+                return None
+            try:
+                page = int(m.group("page"))
+            except ValueError:
+                return None
+            return title, page
+    return None
+
+
+def _extract_paired_toc_entries(
+    lines: list[str],
+    total_pages: int,
+    *,
+    min_title_len: int = 3,
+) -> list[tuple[str, int]]:
+    """Fallback for PDFs whose ToC renders each entry across two adjacent
+    lines — a title line followed by a bare page-number line. This is
+    what PyMuPDF produces for two-column / right-aligned printed ToCs.
+
+    Example input:
+        "1. Waterside Hostel of Nulb"
+        "6"
+        "2. Otis's Smithy and Stable"
+        "11"
+        ...
+
+    Skips the "Contents" header line itself (no number follows it) and
+    reject pairs where the "title" is another number or implausibly short.
+    """
+    entries: list[tuple[str, int]] = []
+    i = 0
+    while i < len(lines) - 1:
+        title = lines[i].strip()
+        next_line = lines[i + 1].strip()
+        if (title
+                and len(title) >= min_title_len
+                and not title.isdigit()
+                and next_line.isdigit()):
+            try:
+                page = int(next_line)
+            except ValueError:
+                i += 1
+                continue
+            if 1 <= page <= total_pages:
+                entries.append((title, page))
+                i += 2
+                continue
+        i += 1
+    return entries
+
+
+def detect_printed_toc(
+    pdf_path: Path | str,
+    *,
+    max_scan_pages: int = 20,
+    min_entries_per_page: int = 5,
+) -> tuple[list[tuple[str, int]], list[int]]:
+    """Scan the front of the PDF for a printed Table of Contents.
+
+    Walks the first ``max_scan_pages`` pages, trying to parse each line as
+    a ``<title> ... <page_number>`` entry. A page contributes its matches
+    if it yields at least ``min_entries_per_page`` such lines — this
+    filters out pages that happen to contain one or two numeric references
+    in prose.
+
+    Returns ``(entries, toc_page_numbers)`` where ``entries`` is a
+    deduplicated, page-sorted list of ``(title, page_number)`` and
+    ``toc_page_numbers`` is the 1-indexed list of pages recognised as
+    ToC pages (useful for excluding them from the converted output).
+
+    Returns ``([], [])`` if no printed ToC was detected.
+    """
+    doc = fitz.open(str(pdf_path))
+    try:
+        all_entries: list[tuple[str, int]] = []
+        toc_pages: list[int] = []
+        limit = min(max_scan_pages, doc.page_count)
+
+        for page_idx in range(limit):
+            try:
+                text = doc.load_page(page_idx).get_text("text")
+            except Exception:
+                continue
+
+            lines = text.splitlines()
+            page_entries: list[tuple[str, int]] = []
+
+            # Strategy 1: single-line entries like "Chapter 1 ...... 5"
+            for line in lines:
+                parsed = _match_toc_line(line)
+                if parsed is None:
+                    continue
+                title, page = parsed
+                if 1 <= page <= doc.page_count:
+                    page_entries.append((title, page))
+
+            # Strategy 2: paired lines like ["Chapter 1", "5"] — common when
+            # the ToC uses two-column / right-aligned layout. Run as a
+            # fallback only if strategy 1 didn't clear the threshold, to
+            # avoid doubling up when both layouts are present.
+            if len(page_entries) < min_entries_per_page:
+                paired = _extract_paired_toc_entries(lines, doc.page_count)
+                if len(paired) > len(page_entries):
+                    page_entries = paired
+
+            if len(page_entries) >= min_entries_per_page:
+                toc_pages.append(page_idx + 1)
+                all_entries.extend(page_entries)
+
+        # Dedupe by (lowercased title, page); keep first occurrence
+        seen: dict[tuple[str, int], tuple[str, int]] = {}
+        for title, page in all_entries:
+            key = (title.lower(), page)
+            if key not in seen:
+                seen[key] = (title, page)
+
+        entries = sorted(seen.values(), key=lambda e: e[1])
+        return entries, toc_pages
+    finally:
+        doc.close()
+
+
+def build_toc_from_printed(
+    entries: list[tuple[str, int]],
+    total_pages: int,
+) -> list[TocNode]:
+    """Convert printed-ToC ``(title, page)`` entries into a TocNode tree.
+
+    All entries are emitted at level 1 (flat top-level list). Level
+    refinement — inferring hierarchy from indent, numbering patterns,
+    or font metrics — can layer on top later; the current output is
+    already enough to chunk correctly, which is the main goal.
+    """
+    if not entries:
+        return []
+    raw = [[1, title, page] for title, page in entries]
+    return parse_toc_tree(raw, total_pages=total_pages, max_level=99,
+                          skip_anchor_bookmarks=False)
