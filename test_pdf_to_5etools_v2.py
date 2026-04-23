@@ -91,6 +91,12 @@ class TestPrintedTocDetection:
         ("Waterside Hostel …… 8",                   ("Waterside Hostel", 8)),
         ("Waterside Hostel       8",               ("Waterside Hostel", 8)),
         ("  Indented entry ........ 42",           ("Indented entry", 42)),
+        # Numbered-inline: author prints chapter number + title + page on
+        # one line with tight spacing (the "4: Boatman's..." case in Nulb).
+        ("4: Boatman's Tavern and Nulb Market 15",
+         ("4: Boatman's Tavern and Nulb Market", 15)),
+        ("5. Nulb Guardhouse 16",                  ("5. Nulb Guardhouse", 16)),
+        ("12. Fishermen's Shack 22",               ("12. Fishermen's Shack", 22)),
         # Not-a-ToC-line cases
         ("A paragraph of prose.",                  None),
         ("No page number here",                    None),
@@ -98,6 +104,8 @@ class TestPrintedTocDetection:
         ("Just a title",                           None),
         # "Dog's age is 7" — numeric in prose, no leader dots or 3+ spaces
         ("The dog is 7 years old",                 None),
+        # Prose starting with "Chapter 5" — no numbered-entry punctuation
+        ("Chapter 5 has 7 pages of content",       None),
     ])
     def test_match_toc_line(self, line, expected):
         assert _match_toc_line(line) == expected

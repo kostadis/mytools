@@ -253,11 +253,23 @@ _TOC_LINE_DOTS_RE = re.compile(
 _TOC_LINE_SPACED_RE = re.compile(
     r"^\s*(?P<title>.+?\S)\s{3,}(?P<page>\d{1,4})\s*$"
 )
+# Numbered-inline style: the line starts with a chapter number marker
+# like "4:" / "5." / "12." / "GT 1." and the page number follows at the
+# end after any whitespace. The leading marker is strong enough evidence
+# that this is a ToC line that we can accept even a single-space
+# separator before the page number.
+#   "4: Boatman's Tavern and Nulb Market 15"    -> ("4: Boatman's Tavern and Nulb Market", 15)
+#   "5. Nulb Guardhouse 16"                     -> ("5. Nulb Guardhouse", 16)
+# Does NOT match prose like "Chapter 5 has 7 pages" (no leading digit+punct).
+_TOC_LINE_NUMBERED_INLINE_RE = re.compile(
+    r"^\s*(?P<title>\d+[.:;]\s+\S.*?\S)\s+(?P<page>\d{1,4})\s*$"
+)
 
 
 def _match_toc_line(line: str) -> tuple[str, int] | None:
     """Try to parse one text line as a ToC entry. Returns (title, page) or None."""
-    for pattern in (_TOC_LINE_DOTS_RE, _TOC_LINE_SPACED_RE):
+    for pattern in (_TOC_LINE_DOTS_RE, _TOC_LINE_SPACED_RE,
+                    _TOC_LINE_NUMBERED_INLINE_RE):
         m = pattern.match(line)
         if m:
             title = m.group("title").strip(" .…-–—")
@@ -347,25 +359,29 @@ def detect_printed_toc(
                 continue
 
             lines = text.splitlines()
-            page_entries: list[tuple[str, int]] = []
 
             # Strategy 1: single-line entries like "Chapter 1 ...... 5"
+            # or "4: Title 15" (the numbered-inline form).
+            single_line: list[tuple[str, int]] = []
             for line in lines:
                 parsed = _match_toc_line(line)
                 if parsed is None:
                     continue
                 title, page = parsed
                 if 1 <= page <= doc.page_count:
-                    page_entries.append((title, page))
+                    single_line.append((title, page))
 
-            # Strategy 2: paired lines like ["Chapter 1", "5"] — common when
-            # the ToC uses two-column / right-aligned layout. Run as a
-            # fallback only if strategy 1 didn't clear the threshold, to
-            # avoid doubling up when both layouts are present.
-            if len(page_entries) < min_entries_per_page:
-                paired = _extract_paired_toc_entries(lines, doc.page_count)
-                if len(paired) > len(page_entries):
-                    page_entries = paired
+            # Strategy 2: paired lines — "<title>\n<page>\n..." layout
+            # PyMuPDF produces for right-aligned / two-column ToCs.
+            paired = _extract_paired_toc_entries(lines, doc.page_count)
+
+            # Merge both strategies. A ToC page often has ONE stray single-
+            # line entry that uses a different format from the rest (e.g.
+            # Nulb's "4: Boatman's Tavern and Nulb Market 15" where every
+            # other entry is paired). Previously strategy 2 replaced
+            # strategy 1, dropping the single-line outlier. Dedupe
+            # downstream collapses any true duplicates.
+            page_entries = single_line + paired
 
             if len(page_entries) >= min_entries_per_page:
                 toc_pages.append(page_idx + 1)
