@@ -566,6 +566,31 @@ def call_claude_for_chunk(
     )
 
 
+def _unwrap_self_named_wrapper(entries: list, section_name: str) -> list:
+    """If ``entries`` is a single ``{"type":"entries","name":...}`` block whose
+    name matches ``section_name``, return the inner entries instead.
+
+    Claude often wraps its output for a section in one top-level entries
+    block re-stating the section title, which would render as a duplicate
+    visible heading and populate the mini-ToC headers with the chapter's
+    own name.
+    """
+    if len(entries) != 1:
+        return entries
+    outer = entries[0]
+    if not isinstance(outer, dict):
+        return entries
+    if outer.get("type") not in ("entries", "section"):
+        return entries
+    outer_name = (outer.get("name") or "").strip().casefold()
+    if not outer_name or outer_name != (section_name or "").strip().casefold():
+        return entries
+    inner = outer.get("entries")
+    if not isinstance(inner, list):
+        return entries
+    return inner
+
+
 def _has_any_content(node: TocNode, node_ids_with_entries: set[int]) -> bool:
     """True if ``node`` or any descendant has a chunk with entries."""
     if id(node) in node_ids_with_entries:
@@ -653,6 +678,17 @@ def assemble_adventure(
                 and non_none):
             # Unsplit: Claude output covers the whole subtree. Use as-is.
             spec, entries = non_none[0]
+
+            # Unwrap single-entry wrappers that duplicate the section name.
+            # Claude sometimes emits:
+            #   [{"type": "entries", "name": "1. Waterside Hostel",
+            #     "entries": [actual content]}]
+            # If we keep that, the section name appears both as the
+            # SectionEntry's own name AND as an inner entries-block title,
+            # which 5etools renders as a visible title + a mirror of it
+            # inside the chapter's own mini-ToC.
+            entries = _unwrap_self_named_wrapper(entries, root.title)
+
             parsed_entries: list = []
             for i, raw in enumerate(entries):
                 try:

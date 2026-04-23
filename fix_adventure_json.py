@@ -93,10 +93,19 @@ def build_toc(chapters: list[dict]) -> list[dict]:
     for ch in chapters:
         if not isinstance(ch, dict) or ch.get("type") != "section":
             continue
-        item: dict = {"name": ch.get("name", "Untitled"), "headers": []}
+        ch_name = ch.get("name", "Untitled")
+        item: dict = {"name": ch_name, "headers": []}
+        ch_name_norm = (ch_name or "").strip().casefold()
         for sub in ch.get("entries", []):
             if isinstance(sub, dict) and sub.get("type") in ("entries", "section") and sub.get("name"):
-                item["headers"].append(sub["name"])
+                sub_name = sub["name"]
+                # Don't list the chapter's own name in its mini-ToC — the
+                # main sidebar already shows the chapter heading; repeating
+                # it as a header produces a visible title + duplicate
+                # title-as-subheader in 5etools.
+                if (sub_name or "").strip().casefold() == ch_name_norm:
+                    continue
+                item["headers"].append(sub_name)
         toc.append(item)
     return toc
 

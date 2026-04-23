@@ -701,6 +701,87 @@ class TestAssembleAdventure:
         assert adv_data[0]["entries"][1]["name"] == "A"
         assert adv_data[0]["entries"][2]["name"] == "B"
 
+    def test_unwrap_single_entry_with_matching_section_name(self):
+        """Regression: Claude often emits a single entries-block wrapper
+        re-stating the section title. Keeping it produces a duplicate
+        visible heading and a bogus self-name entry in the mini-ToC."""
+        root = TocNode(level=1, title="55. Hunting Cabin - off map",
+                       start_page=1, end_page=5, children=[])
+        spec = self._spec(root=root)
+        # Claude wrapped its output in a redundant entries block
+        entries = [
+            {"type": "entries",
+             "name": "55. Hunting Cabin - off map",
+             "entries": ["prose paragraph", "another paragraph"]},
+        ]
+        doc = v2.assemble_adventure(
+            name="T", source="TST",
+            chunk_results=[(spec, entries)],
+            author="", is_book=False,
+        )
+        adv_data = doc.to_dict()["adventureData"][0]["data"]
+        assert len(adv_data) == 1
+        section = adv_data[0]
+        assert section["name"] == "55. Hunting Cabin - off map"
+        # Wrapper unwrapped — the inner paragraphs sit directly under the section
+        assert section["entries"] == ["prose paragraph", "another paragraph"]
+
+    def test_build_toc_excludes_self_name_from_headers(self):
+        """Regression: a chapter's own name must not appear in its headers[]
+        list — 5etools would render it as a duplicate chapter title."""
+        import fix_adventure_json as _fix
+        chapters = [
+            {"type": "section", "name": "55. Hunting Cabin - off map",
+             "entries": [
+                 {"type": "entries", "name": "55. Hunting Cabin - off map",
+                  "entries": ["prose"]},
+                 {"type": "entries", "name": "Real Sub-Heading",
+                  "entries": ["more prose"]},
+             ]},
+        ]
+        toc = _fix.build_toc(chapters)
+        assert len(toc) == 1
+        headers = toc[0]["headers"]
+        # Self-name filtered
+        assert "55. Hunting Cabin - off map" not in headers
+        # Real sub-heading survives
+        assert "Real Sub-Heading" in headers
+
+    def test_build_toc_is_case_and_whitespace_insensitive(self):
+        import fix_adventure_json as _fix
+        chapters = [
+            {"type": "section", "name": "Chapter One",
+             "entries": [
+                 {"type": "entries", "name": "  chapter one  ",
+                  "entries": []},
+                 {"type": "entries", "name": "Real Sub",
+                  "entries": []},
+             ]},
+        ]
+        toc = _fix.build_toc(chapters)
+        assert toc[0]["headers"] == ["Real Sub"]
+
+    def test_does_not_unwrap_if_inner_name_differs(self):
+        """Only unwrap when the inner name matches the section name —
+        otherwise the inner entries-block is a real sub-section."""
+        root = TocNode(level=1, title="Chapter 1",
+                       start_page=1, end_page=5, children=[])
+        spec = self._spec(root=root)
+        entries = [
+            {"type": "entries",
+             "name": "Sub-section",       # different name
+             "entries": ["prose"]},
+        ]
+        doc = v2.assemble_adventure(
+            name="T", source="TST",
+            chunk_results=[(spec, entries)],
+            author="", is_book=False,
+        )
+        section = doc.to_dict()["adventureData"][0]["data"][0]
+        # Sub-section wrapper preserved
+        assert len(section["entries"]) == 1
+        assert section["entries"][0]["name"] == "Sub-section"
+
     def test_chunk_with_none_entries_is_skipped(self):
         root = TocNode(level=1, title="A", start_page=1, end_page=5, children=[])
         other = TocNode(level=1, title="B", start_page=6, end_page=10, children=[])
