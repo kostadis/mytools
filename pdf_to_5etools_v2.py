@@ -63,10 +63,12 @@ SELECTABLE_TEXT_MIN_CHARS = 100
 
 # Hard cap per chunk body sent to Claude. Above this we split by child
 # TocNodes (or, if the node is a leaf, pass through and let Claude's own
-# max_tokens / retry handling deal with it). 80 KB corresponds to roughly
-# 20k input tokens for English prose, leaving ample headroom inside the
-# 200k-token context window.
-MAX_CHUNK_CHARS = 80_000
+# max_tokens / retry handling deal with it). 150 KB corresponds to roughly
+# 38k input tokens for English prose, leaving ample headroom inside the
+# 200k-token context window. Output of a 150 KB chunk is roughly 50k
+# tokens of structured JSON, which Haiku 4.5 handles inside the raised
+# MAX_OUTPUT_TOKENS ceiling (see claude_api.py).
+MAX_CHUNK_CHARS = 150_000
 
 MARKER_ENV = Path(__file__).parent / "marker-env"
 MARKER_BIN = MARKER_ENV / "bin" / "marker_single"
@@ -193,18 +195,41 @@ def split_oversized(
     """Emit (node, body) chunks, splitting by children when a node's body
     exceeds ``max_chars``.
 
-    Recurses into children until each emitted chunk either fits under
-    ``max_chars`` or is a leaf (no children to split by). Leaves exceeding
-    the budget are passed through as-is — Claude's own retry/split logic
-    handles them if they truncate.
+    When a node exceeds ``max_chars`` and has children, we:
+      1. Emit the PARENT'S OWN PROSE (the text between the parent heading
+         and the first child heading) as a chunk — previously this was
+         silently dropped. A synthetic ``TocNode`` with the parent's title
+         but a trimmed page range labels the prose chunk.
+      2. Recurse into children, which may themselves get split.
+
+    Leaves exceeding the budget are passed through as-is — Claude's own
+    retry/split logic handles them if they truncate.
     """
     chunks: list[tuple[TocNode, str]] = []
     for node in nodes:
         body = body_fn(node)
         if len(body) <= max_chars or not node.children:
             chunks.append((node, body))
-        else:
-            chunks.extend(split_oversized(node.children, body_fn, max_chars))
+            continue
+
+        # Parent's own prose: everything between the node's start and the
+        # first child's start. Preserve it as a labelled chunk so content
+        # isn't lost when we split a container section.
+        first_child = min(node.children, key=lambda c: c.start_page)
+        prose_end = first_child.start_page - 1
+        if prose_end >= node.start_page:
+            prose_node = TocNode(
+                level=node.level,
+                title=node.title,
+                start_page=node.start_page,
+                end_page=prose_end,
+                children=[],
+            )
+            prose_body = body_fn(prose_node)
+            if prose_body.strip():
+                chunks.append((prose_node, prose_body))
+
+        chunks.extend(split_oversized(node.children, body_fn, max_chars))
     return chunks
 
 
@@ -289,6 +314,18 @@ def normalise_numbered_rooms(headings: list[MdHeading]) -> list[MdHeading]:
     Marker's heading-level assignment is noisy on keyed-room dungeons — it
     spreads rooms across multiple `#` levels based on visual font metrics.
     We detect the pattern and collapse to the most common level.
+
+    Importantly, a modern adventure PDF contains MANY numbered sequences
+    (the keyed-room list, numbered patron types inside a tavern, numbered
+    quest hooks inside a quest section, …). We only want to flatten the
+    ONE series that represents top-level locations. Heuristic:
+
+    - Find the most common level among numbered headings.
+    - Only the numbered headings already at (or within ±1 of) that level
+      count as "real" keyed rooms. Numbered items much deeper than the
+      majority are sub-list items (patrons, hooks) and stay put.
+    - After flattening, run :func:`nest_between_keyed_rooms` so generic
+      sub-headings get tucked under the preceding room.
     """
     numbered = [h for h in headings if _NUMBERED_ROOM_RE.match(h.title)]
     if len(numbered) < 5:
@@ -297,8 +334,83 @@ def normalise_numbered_rooms(headings: list[MdHeading]) -> list[MdHeading]:
     from collections import Counter
     common_level = Counter(h.level for h in numbered).most_common(1)[0][0]
 
-    for h in numbered:
+    # Tolerance: accept outliers within ±1 of the majority level. Beyond
+    # that (e.g. a "1. Foo" at level 5 when rooms are at level 2) the item
+    # is almost certainly part of an inner numbered list, not a room.
+    def is_keyed_room(h: MdHeading) -> bool:
+        return (_NUMBERED_ROOM_RE.match(h.title) is not None
+                and abs(h.level - common_level) <= 1)
+
+    # Need at least 5 numbered items in the tight cluster to trust the
+    # pattern; otherwise leave everything alone.
+    keyed = [h for h in numbered if is_keyed_room(h)]
+    if len(keyed) < 5:
+        return headings
+
+    for h in keyed:
         h.level = common_level
+
+    nest_between_keyed_rooms(headings, room_level=common_level,
+                             keyed_predicate=is_keyed_room)
+    return headings
+
+
+def nest_between_keyed_rooms(
+    headings: list[MdHeading],
+    *,
+    room_level: int,
+    keyed_predicate=None,
+) -> list[MdHeading]:
+    """Demote non-keyed-room headings that appear between keyed rooms so
+    they become children of the preceding keyed room.
+
+    ``keyed_predicate(h) -> bool`` identifies which headings are real
+    keyed rooms (default: any ``_NUMBERED_ROOM_RE`` match). Pass a tighter
+    predicate when the PDF contains multiple numbered sequences and only
+    one of them represents top-level locations.
+
+    Context: a published adventure's natural structure is
+        keyed_room
+            Background
+            Creatures
+            Treasure
+            Development
+        next_keyed_room
+            Background
+            Treasure
+            …
+
+    Marker's heading-level assignment is driven by visual font metrics, so
+    these generic sub-headings often land at the same level as — or
+    shallower than — the keyed room itself. That makes them top-level
+    siblings under :func:`parse_toc_tree`, producing an over-fragmented
+    TOC with the room's own sections scattered alongside the rooms.
+
+    This pass walks the heading list and, for every stretch of headings
+    that follows a keyed room, demotes any heading whose level is at or
+    above ``room_level`` to ``room_level + 1`` so it nests inside the
+    preceding keyed room. Headings strictly deeper than ``room_level``
+    (e.g. Marker's own genuine sub-sub-headings, or inner numbered lists
+    rejected by ``keyed_predicate``) are left untouched so existing
+    hierarchy is preserved.
+
+    Headings BEFORE the first keyed room are intro/matter content and are
+    left at their original level. They become proper top-level siblings
+    alongside the keyed rooms.
+    """
+    if keyed_predicate is None:
+        keyed_predicate = lambda h: bool(_NUMBERED_ROOM_RE.match(h.title))
+
+    child_level = room_level + 1
+    inside_run = False
+    for h in headings:
+        if keyed_predicate(h):
+            inside_run = True
+            continue
+        if not inside_run:
+            continue
+        if h.level <= room_level:
+            h.level = child_level
     return headings
 
 

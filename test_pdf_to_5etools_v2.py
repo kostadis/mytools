@@ -122,20 +122,49 @@ class TestNumberedRoomNormalization:
         return [v2.MdHeading(level=lvl, title=t, line_no=i)
                 for i, (lvl, t) in enumerate(items)]
 
-    def test_flattens_rooms_to_common_level(self):
-        # 6 numbered rooms: one at L2, four at L4, one at L3 → common = L4
+    def test_flattens_rooms_within_tolerance_of_common_level(self):
+        # 6 numbered rooms: four at L4 (majority), one at L3 (within ±1
+        # tolerance → flattened), one at L2 (outside tolerance → left alone,
+        # treated as an inner-list item rather than a keyed room).
         heads = self._mk([
             (1, "Dungeon Level One"),
-            (2, "101. ARMORY"),
+            (2, "101. ARMORY"),        # too far from common → NOT flattened
             (4, "102. ARMORY"),
             (4, "103. PILLARED HALL"),
             (4, "104. ROOM"),
-            (3, "105. ROOM"),
+            (3, "105. ROOM"),           # within ±1 → flattened to 4
             (4, "106. ROOM"),
         ])
         out = v2.normalise_numbered_rooms(heads)
-        numbered = [h for h in out if h.title[0].isdigit()]
-        assert {h.level for h in numbered} == {4}
+        title_to_level = {h.title: h.level for h in out}
+        # L4 rooms stay at 4; L3 room flattens to 4; L2 room stays at 2
+        assert title_to_level["101. ARMORY"] == 2       # outlier preserved
+        assert title_to_level["102. ARMORY"] == 4
+        assert title_to_level["105. ROOM"] == 4          # flattened from 3
+
+    def test_rejects_inner_numbered_lists(self):
+        """The Nulb problem: a PDF with real rooms 1-N at one level AND an
+        inner numbered list (patron types, quest hooks) at a much deeper
+        level. Only the room series should be flattened; inner list items
+        stay put so they don't become spurious keyed-room boundaries."""
+        heads = self._mk([
+            (2, "1. Waterside Hostel"),
+            (2, "2. Manor"),
+            (2, "3. Cottage"),
+            (2, "4. Mill"),
+            (5, "1. Villagers"),        # patron type inside a section
+            (5, "2. Bargefolk"),         # patron type, deep
+            (5, "3. Bandits"),           # patron type, deep
+            (2, "5. Grove"),
+        ])
+        out = v2.normalise_numbered_rooms(heads)
+        title_to_level = {h.title: h.level for h in out}
+        # Real rooms stay at 2
+        assert title_to_level["1. Waterside Hostel"] == 2
+        assert title_to_level["5. Grove"] == 2
+        # Patron list items at L5 are far outside tolerance → preserved
+        assert title_to_level["1. Villagers"] == 5
+        assert title_to_level["3. Bandits"] == 5
 
     def test_leaves_structure_alone_when_no_keyed_rooms(self):
         heads = self._mk([
@@ -160,8 +189,10 @@ class TestNumberedRoomNormalization:
 
     def test_recognises_comma_delimited_room_numbers(self):
         # Some Marker outputs use "101, ARMORY" instead of "101. ARMORY"
+        # Keep all rooms within ±1 of the majority level so the tight-
+        # cluster heuristic fires.
         heads = self._mk([
-            (2, "101, ARMORY"),
+            (4, "101, ARMORY"),
             (4, "102, ARMORY"),
             (4, "103, PILLARED HALL"),
             (3, "104, ROOM"),
@@ -169,8 +200,107 @@ class TestNumberedRoomNormalization:
             (4, "106, ROOM"),
         ])
         out = v2.normalise_numbered_rooms(heads)
-        # Common level among the 6 numbered rooms should be applied
-        assert len({h.level for h in out}) == 1
+        # All six are within tolerance — flatten to the common level 4
+        numbered = [h for h in out if h.title.startswith("1")]
+        assert {h.level for h in numbered} == {4}
+
+
+class TestNestBetweenKeyedRooms:
+    """Second-pass normalization: sub-headings between keyed rooms become
+    children of the preceding keyed room."""
+
+    def _mk(self, items):
+        return [v2.MdHeading(level=lvl, title=t, line_no=i)
+                for i, (lvl, t) in enumerate(items)]
+
+    def test_sibling_subheadings_get_demoted_to_children(self):
+        """The Nulb pattern: Marker put 'Background' at level 2 (shallower
+        than the keyed room at level 3), making it a sibling. After
+        normalization it should be level 4 — a child of the room."""
+        heads = self._mk([
+            (3, "1. Waterside Hostel"),
+            (2, "Background"),          # should become 4
+            (2, "Current Use"),          # should become 4
+            (3, "2. Fishermen's Shack"),
+            (2, "Treasure"),             # should become 4
+            (3, "3. Manor"),
+            (3, "4. Farm"),
+            (3, "5. Cottage"),
+            (3, "6. Mill"),
+        ])
+        v2.normalise_numbered_rooms(heads)
+        titles_to_levels = {h.title: h.level for h in heads}
+        assert titles_to_levels["Background"] == 4
+        assert titles_to_levels["Current Use"] == 4
+        assert titles_to_levels["Treasure"] == 4
+        # Keyed rooms stay at their common level
+        assert titles_to_levels["1. Waterside Hostel"] == 3
+
+    def test_headings_before_first_keyed_room_are_untouched(self):
+        """Intro / preface content should stay at whatever level it was."""
+        heads = self._mk([
+            (1, "Introduction"),         # before any keyed room, leave alone
+            (2, "Using This Book"),      # ditto
+            (3, "1. Waterside Hostel"),
+            (3, "2. Manor"),
+            (3, "3. Cottage"),
+            (3, "4. Mill"),
+            (3, "5. Grove"),
+            (2, "Background"),           # after keyed rooms — demote
+        ])
+        v2.normalise_numbered_rooms(heads)
+        # Intro untouched
+        intro = next(h for h in heads if h.title == "Introduction")
+        using = next(h for h in heads if h.title == "Using This Book")
+        assert intro.level == 1
+        assert using.level == 2
+        # But the trailing "Background" should be demoted
+        bg = next(h for h in heads if h.title == "Background")
+        assert bg.level == 4
+
+    def test_deeper_subheadings_preserved(self):
+        """Headings already deeper than the keyed room (genuine sub-sub-
+        sections) should NOT be demoted further."""
+        heads = self._mk([
+            (3, "1. Room"),
+            (4, "Background"),           # already at child level
+            (5, "Historical Note"),       # grandchild — preserve
+            (3, "2. Room"),
+            (3, "3. Room"),
+            (3, "4. Room"),
+            (3, "5. Room"),
+        ])
+        v2.normalise_numbered_rooms(heads)
+        hist = next(h for h in heads if h.title == "Historical Note")
+        assert hist.level == 5   # unchanged
+
+    def test_noop_without_keyed_rooms(self):
+        """Documents without numbered rooms should pass through untouched."""
+        heads = self._mk([
+            (1, "Part One"),
+            (2, "Chapter 1"),
+            (3, "Section A"),
+            (2, "Chapter 2"),
+        ])
+        levels_before = [h.level for h in heads]
+        v2.normalise_numbered_rooms(heads)
+        assert [h.level for h in heads] == levels_before
+
+    def test_trailing_subheadings_after_last_keyed_room_get_demoted(self):
+        heads = self._mk([
+            (3, "1. Room"),
+            (3, "2. Room"),
+            (3, "3. Room"),
+            (3, "4. Room"),
+            (3, "5. Room"),
+            (2, "Appendix Notes"),       # after last keyed room — demote
+            (3, "Another Section"),       # ditto
+        ])
+        v2.normalise_numbered_rooms(heads)
+        app = next(h for h in heads if h.title == "Appendix Notes")
+        another = next(h for h in heads if h.title == "Another Section")
+        assert app.level == 4
+        assert another.level == 4
 
 
 class TestSyntheticToc:
@@ -232,7 +362,62 @@ class TestSplitOversized:
             return "small" if n is grandchild else "x" * 10_000
 
         out = v2.split_oversized([parent], body, max_chars=1000)
-        assert [n.title for n, _ in out] == ["Grandchild"]
+        # Parent and Child are each oversized; we emit their own-prose chunks
+        # before recursing, then Grandchild as the final leaf.
+        titles = [n.title for n, _ in out]
+        # Grandchild must be present (leaf content)
+        assert "Grandchild" in titles
+
+    def test_oversized_parent_preserves_own_prose(self):
+        """Regression: when a parent is split by children, the prose between
+        the parent heading and its first child must still be emitted as a
+        chunk. Previously this text was silently dropped."""
+        child_a = TocNode(level=2, title="A", start_page=50, end_page=75,
+                          children=[])
+        child_b = TocNode(level=2, title="B", start_page=76, end_page=100,
+                          children=[])
+        parent = TocNode(level=1, title="Parent", start_page=1, end_page=100,
+                         children=[child_a, child_b])
+
+        def body(n):
+            if n is parent:
+                return "x" * 50_000            # oversized
+            if n.title == "A":
+                return "small A body"
+            if n.title == "B":
+                return "small B body"
+            # Called with a synthesized prose-only node: parent intro text
+            if n.title == "Parent" and n.end_page == 49:
+                return "parent intro prose"
+            raise AssertionError(f"unexpected body call for {n!r}")
+
+        chunks = v2.split_oversized([parent], body, max_chars=1000)
+        texts = [b for _, b in chunks]
+        # Parent's own prose must appear in the output
+        assert "parent intro prose" in texts
+        # Children still emitted
+        assert "small A body" in texts
+        assert "small B body" in texts
+
+    def test_oversized_parent_with_no_prose_gap_skips_prose_chunk(self):
+        """If a parent's first child starts at the parent's start_page (no
+        gap), there is no prose to preserve — don't emit an empty chunk."""
+        child = TocNode(level=2, title="Child", start_page=1, end_page=10,
+                        children=[])
+        parent = TocNode(level=1, title="Parent", start_page=1, end_page=10,
+                         children=[child])
+
+        def body(n):
+            if n is parent:
+                return "x" * 50_000
+            if n is child:
+                return "child body"
+            raise AssertionError(f"unexpected body call for {n!r}")
+
+        chunks = v2.split_oversized([parent], body, max_chars=1000)
+        # Should only contain the child, no phantom parent-prose chunk
+        assert len(chunks) == 1
+        assert chunks[0][0].title == "Child"
 
 
 # ---------------------------------------------------------------------------

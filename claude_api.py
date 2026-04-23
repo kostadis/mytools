@@ -22,7 +22,7 @@ from adventure_model import BuildContext, ValidationMode, parse_entry
 # Constants
 # ---------------------------------------------------------------------------
 
-MAX_OUTPUT_TOKENS = 20_000
+MAX_OUTPUT_TOKENS = 50_000
 
 # Shared prompt fragment — tag rules injected into every converter's SYSTEM_PROMPT.
 # Update here when the set of supported 5etools inline tags changes.
