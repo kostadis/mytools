@@ -331,7 +331,11 @@ class TestSplitOversized:
     def test_under_threshold_emits_single_chunk(self):
         node = self._node("Small")
         out = v2.split_oversized([node], lambda n: "x" * 100, max_chars=1000)
-        assert out == [(node, "x" * 100)]
+        assert len(out) == 1
+        assert out[0].root is node
+        assert out[0].target_node is node
+        assert out[0].is_prose_stub is False
+        assert out[0].body == "x" * 100
 
     def test_oversized_section_splits_by_children(self):
         child_a = self._node("A")
@@ -343,14 +347,20 @@ class TestSplitOversized:
             return "x" * 10_000 if n is parent else "small"
 
         out = v2.split_oversized([parent], body, max_chars=1000)
-        names = [n.title for n, _ in out]
-        assert names == ["A", "B"]
+        # Every chunk's root is the parent (top-level input node)
+        assert all(c.root is parent for c in out)
+        # Children still emitted
+        target_titles = [c.target_node.title for c in out]
+        assert "A" in target_titles
+        assert "B" in target_titles
 
     def test_oversized_leaf_passes_through(self):
         """A leaf with no children can't be split; pass through as one chunk."""
         leaf = self._node("Big Leaf")
         out = v2.split_oversized([leaf], lambda n: "x" * 10_000, max_chars=1000)
-        assert out == [(leaf, "x" * 10_000)]
+        assert len(out) == 1
+        assert out[0].target_node is leaf
+        assert out[0].is_prose_stub is False
 
     def test_recurses_when_children_also_oversized(self):
         grandchild = self._node("Grandchild")
@@ -362,11 +372,10 @@ class TestSplitOversized:
             return "small" if n is grandchild else "x" * 10_000
 
         out = v2.split_oversized([parent], body, max_chars=1000)
-        # Parent and Child are each oversized; we emit their own-prose chunks
-        # before recursing, then Grandchild as the final leaf.
-        titles = [n.title for n, _ in out]
-        # Grandchild must be present (leaf content)
+        titles = [c.target_node.title for c in out]
         assert "Grandchild" in titles
+        # Root tracking survives recursion
+        assert all(c.root is parent for c in out)
 
     def test_oversized_parent_preserves_own_prose(self):
         """Regression: when a parent is split by children, the prose between
@@ -392,12 +401,17 @@ class TestSplitOversized:
             raise AssertionError(f"unexpected body call for {n!r}")
 
         chunks = v2.split_oversized([parent], body, max_chars=1000)
-        texts = [b for _, b in chunks]
-        # Parent's own prose must appear in the output
+        texts = [c.body for c in chunks]
+        # Parent's own prose must appear
         assert "parent intro prose" in texts
         # Children still emitted
         assert "small A body" in texts
         assert "small B body" in texts
+        # The prose chunk's target_node is the original parent (not a synth)
+        # and its is_prose_stub flag is set
+        prose_specs = [c for c in chunks if c.is_prose_stub]
+        assert len(prose_specs) == 1
+        assert prose_specs[0].target_node is parent
 
     def test_oversized_parent_with_no_prose_gap_skips_prose_chunk(self):
         """If a parent's first child starts at the parent's start_page (no
@@ -417,12 +431,125 @@ class TestSplitOversized:
         chunks = v2.split_oversized([parent], body, max_chars=1000)
         # Should only contain the child, no phantom parent-prose chunk
         assert len(chunks) == 1
-        assert chunks[0][0].title == "Child"
+        assert chunks[0].target_node.title == "Child"
 
 
 # ---------------------------------------------------------------------------
 # v2 prompt assembly
 # ---------------------------------------------------------------------------
+
+class TestAssembleAdventure:
+    """Tree-preserving assembly: split roots get their chunks re-nested."""
+
+    def _spec(self, *, root, target=None, is_stub=False, body="body"):
+        return v2.ChunkSpec(
+            root=root,
+            target_node=target if target is not None else root,
+            is_prose_stub=is_stub,
+            body=body,
+        )
+
+    def test_unsplit_root_uses_claude_entries_as_is(self):
+        """Single chunk for a root that wasn't split: the entries array
+        Claude returned is placed directly inside the SectionEntry."""
+        root = TocNode(level=1, title="Chapter 1",
+                       start_page=1, end_page=10, children=[])
+        spec = self._spec(root=root)
+        entries = [
+            "Opening paragraph.",
+            {"type": "entries", "name": "Sub-section",
+             "entries": ["nested paragraph"]},
+        ]
+        doc = v2.assemble_adventure(
+            name="Test", source="TST",
+            chunk_results=[(spec, entries)],
+            author="Me", is_book=False,
+        )
+        # Top-level section is Chapter 1 with its two entries
+        d = doc.to_dict()
+        adv_data = d["adventureData"][0]["data"]
+        assert len(adv_data) == 1
+        assert adv_data[0]["name"] == "Chapter 1"
+        # Claude's entries are preserved, no double-wrapping
+        assert len(adv_data[0]["entries"]) == 2
+        assert adv_data[0]["entries"][0] == "Opening paragraph."
+
+    def test_split_root_rebuilds_tree_from_chunks(self):
+        """A root that was split into prose-stub + child chunks should
+        produce a SectionEntry with the prose at the top and the child
+        wrapped in its own entries block."""
+        child = TocNode(level=2, title="Hidden Cache",
+                        start_page=4, end_page=10, children=[])
+        root = TocNode(level=1, title="Waterside Hostel",
+                       start_page=1, end_page=10, children=[child])
+        prose_spec = self._spec(root=root, target=root, is_stub=True)
+        child_spec = self._spec(root=root, target=child)
+
+        prose_entries = ["The hostel smells of old ale."]
+        child_entries = ["A loose floorboard hides 50 gp."]
+
+        doc = v2.assemble_adventure(
+            name="Test", source="TST",
+            chunk_results=[(prose_spec, prose_entries),
+                           (child_spec, child_entries)],
+            author="Me", is_book=False,
+        )
+        d = doc.to_dict()
+        adv_data = d["adventureData"][0]["data"]
+        assert len(adv_data) == 1
+        section = adv_data[0]
+        assert section["name"] == "Waterside Hostel"
+        # Prose at top
+        assert section["entries"][0] == "The hostel smells of old ale."
+        # Child wrapped
+        wrapped = section["entries"][1]
+        assert wrapped["type"] == "entries"
+        assert wrapped["name"] == "Hidden Cache"
+        assert wrapped["entries"] == ["A loose floorboard hides 50 gp."]
+
+    def test_one_section_per_root_even_with_many_chunks(self):
+        """Multiple chunks for one root produce ONE SectionEntry, not many."""
+        root = TocNode(level=1, title="Big Section",
+                       start_page=1, end_page=100, children=[
+                           TocNode(level=2, title="A", start_page=5, end_page=50, children=[]),
+                           TocNode(level=2, title="B", start_page=51, end_page=100, children=[]),
+                       ])
+        prose = self._spec(root=root, target=root, is_stub=True)
+        spec_a = self._spec(root=root, target=root.children[0])
+        spec_b = self._spec(root=root, target=root.children[1])
+        doc = v2.assemble_adventure(
+            name="T", source="TST",
+            chunk_results=[
+                (prose, ["intro"]),
+                (spec_a, ["A content"]),
+                (spec_b, ["B content"]),
+            ],
+            author="Me", is_book=False,
+        )
+        adv_data = doc.to_dict()["adventureData"][0]["data"]
+        # ONE section, not three
+        assert len(adv_data) == 1
+        assert adv_data[0]["name"] == "Big Section"
+        # 3 entries: intro + A wrapped + B wrapped
+        assert len(adv_data[0]["entries"]) == 3
+        assert adv_data[0]["entries"][0] == "intro"
+        assert adv_data[0]["entries"][1]["name"] == "A"
+        assert adv_data[0]["entries"][2]["name"] == "B"
+
+    def test_chunk_with_none_entries_is_skipped(self):
+        root = TocNode(level=1, title="A", start_page=1, end_page=5, children=[])
+        other = TocNode(level=1, title="B", start_page=6, end_page=10, children=[])
+        spec_a = self._spec(root=root)
+        spec_b = self._spec(root=other)
+        doc = v2.assemble_adventure(
+            name="T", source="TST",
+            chunk_results=[(spec_a, None), (spec_b, ["B ok"])],
+            author="Me", is_book=False,
+        )
+        adv_data = doc.to_dict()["adventureData"][0]["data"]
+        # Only B survives
+        assert [s["name"] for s in adv_data] == ["B"]
+
 
 class TestPromptBuilding:
     def test_includes_section_name(self):

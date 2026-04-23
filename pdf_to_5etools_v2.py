@@ -187,56 +187,107 @@ def _node_body_markdown(node: TocNode, lines: list[str]) -> str:
     return "\n".join(lines[start:end])
 
 
+@dataclass
+class ChunkSpec:
+    """Descriptor for one chunk emitted by :func:`split_oversized`.
+
+    Attributes
+    ----------
+    root:
+        The top-level ``TocNode`` (from the input ``toc_roots``) this chunk
+        descends from. All chunks sharing a ``root`` are assembled into a
+        single ``SectionEntry`` downstream.
+    target_node:
+        The TocNode whose content this chunk provides. Always an instance
+        from the original tree (never synthesised) so downstream code can
+        walk the tree and match chunks back to their positions.
+    is_prose_stub:
+        When True, ``body`` contains ONLY ``target_node``'s own prose
+        (the text between its heading and its first child's heading).
+        Used when a container node was split because it exceeded
+        ``max_chars``; its prose would otherwise be lost.
+
+        When False, ``body`` covers the full range of ``target_node``
+        (including descendant content). For unsplit subtrees Claude
+        renders the entire hierarchy in a single response, and the
+        assembly step uses that response as-is.
+    body:
+        The text payload sent to Claude.
+    """
+    root: TocNode
+    target_node: TocNode
+    is_prose_stub: bool
+    body: str
+
+
 def split_oversized(
     nodes: list[TocNode],
     body_fn,
     max_chars: int = MAX_CHUNK_CHARS,
-) -> list[tuple[TocNode, str]]:
-    """Emit (node, body) chunks, splitting by children when a node's body
-    exceeds ``max_chars``.
+) -> list[ChunkSpec]:
+    """Emit :class:`ChunkSpec` entries, splitting by children when a node's
+    body exceeds ``max_chars``.
 
     When a node exceeds ``max_chars`` and has children, we:
       1. Emit the PARENT'S OWN PROSE (the text between the parent heading
-         and the first child heading) as a chunk — previously this was
-         silently dropped. A synthetic ``TocNode`` with the parent's title
-         but a trimmed page range labels the prose chunk.
+         and the first child heading) as a chunk with
+         ``is_prose_stub=True`` — previously this was silently dropped.
+         ``target_node`` still points at the original TocNode so the
+         assembly step can merge the prose back into the right section.
       2. Recurse into children, which may themselves get split.
 
     Leaves exceeding the budget are passed through as-is — Claude's own
     retry/split logic handles them if they truncate.
+
+    Each top-level input ``node`` becomes the ``root`` of all chunks it
+    (and its descendants) emit, so grouping chunks by ``.root`` recovers
+    the one-section-per-top-level-root invariant the adventure model
+    requires.
     """
-    chunks: list[tuple[TocNode, str]] = []
-    for node in nodes:
-        body = body_fn(node)
-        if len(body) <= max_chars or not node.children:
-            chunks.append((node, body))
-            continue
+    chunks: list[ChunkSpec] = []
+    for root in nodes:
+        chunks.extend(_split_into_chunks(root, root, body_fn, max_chars))
+    return chunks
 
-        # Parent's own prose: everything between the node's start and the
-        # first child's start. Preserve it as a labelled chunk so content
-        # isn't lost when we split a container section.
-        first_child = min(node.children, key=lambda c: c.start_page)
-        prose_end = first_child.start_page - 1
-        if prose_end >= node.start_page:
-            prose_node = TocNode(
-                level=node.level,
-                title=node.title,
-                start_page=node.start_page,
-                end_page=prose_end,
-                children=[],
-            )
-            prose_body = body_fn(prose_node)
-            if prose_body.strip():
-                chunks.append((prose_node, prose_body))
 
-        chunks.extend(split_oversized(node.children, body_fn, max_chars))
+def _split_into_chunks(
+    root: TocNode,
+    node: TocNode,
+    body_fn,
+    max_chars: int,
+) -> list[ChunkSpec]:
+    """Recursive helper: emit chunks for ``node`` (descendant of ``root``)."""
+    body = body_fn(node)
+    if len(body) <= max_chars or not node.children:
+        return [ChunkSpec(root=root, target_node=node,
+                          is_prose_stub=False, body=body)]
+
+    chunks: list[ChunkSpec] = []
+    # Parent's own prose: text between node start and first child start.
+    first_child = min(node.children, key=lambda c: c.start_page)
+    prose_end = first_child.start_page - 1
+    if prose_end >= node.start_page:
+        prose_stub = TocNode(
+            level=node.level,
+            title=node.title,
+            start_page=node.start_page,
+            end_page=prose_end,
+            children=[],
+        )
+        prose_body = body_fn(prose_stub)
+        if prose_body.strip():
+            chunks.append(ChunkSpec(root=root, target_node=node,
+                                    is_prose_stub=True, body=prose_body))
+
+    for child in node.children:
+        chunks.extend(_split_into_chunks(root, child, body_fn, max_chars))
     return chunks
 
 
 def build_chunks_from_toc(
     toc_roots: list[TocNode],
     doc: fitz.Document,
-) -> list[tuple[TocNode, str]]:
+) -> list[ChunkSpec]:
     """One chunk per top-level section; oversized sections split by children."""
     return split_oversized(toc_roots, lambda n: _node_body_pymupdf(n, doc))
 
@@ -432,7 +483,7 @@ def build_synthetic_toc(
 def build_chunks_from_markdown(
     toc_roots: list[TocNode],
     lines: list[str],
-) -> list[tuple[TocNode, str]]:
+) -> list[ChunkSpec]:
     """One chunk per top-level heading; oversized sections split by children."""
     return split_oversized(toc_roots, lambda n: _node_body_markdown(n, lines))
 
@@ -480,39 +531,129 @@ def call_claude_for_chunk(
     )
 
 
+def _has_any_content(node: TocNode, node_ids_with_entries: set[int]) -> bool:
+    """True if ``node`` or any descendant has a chunk with entries."""
+    if id(node) in node_ids_with_entries:
+        return True
+    return any(_has_any_content(c, node_ids_with_entries) for c in node.children)
+
+
+def _build_section_entries_from_tree(
+    root: TocNode,
+    entries_by_target: dict[int, list],
+    ctx: BuildContext,
+    path_prefix: str,
+) -> list:
+    """Walk the TocNode subtree under ``root`` and build a nested entries[]
+    list, placing each chunk's entries at the correct depth.
+
+    ``entries_by_target[id(node)]`` holds the raw JSON entries that Claude
+    produced for chunks whose ``target_node`` was ``node``.
+    """
+    node_ids_with_entries = set(entries_by_target.keys())
+
+    def walk(node: TocNode, path: str) -> list:
+        # Direct entries for this node (from a prose-stub or the node itself)
+        result: list = []
+        raw_entries = entries_by_target.get(id(node), [])
+        for i, raw in enumerate(raw_entries):
+            try:
+                result.append(parse_entry(raw, ctx, f"{path}.entries[{i}]"))
+            except Exception as e:
+                print(f"  [warn] {path}[{i}]: {e}")
+                if isinstance(raw, str):
+                    result.append(raw)
+
+        # Wrap each child with content as an entries block under this node
+        for child in node.children:
+            if not _has_any_content(child, node_ids_with_entries):
+                continue
+            child_path = f"{path}.{child.title}"
+            child_entries = walk(child, child_path)
+            wrapped = {
+                "type": "entries",
+                "name": child.title,
+                "entries": child_entries,
+            }
+            try:
+                result.append(parse_entry(wrapped, ctx, child_path))
+            except Exception as e:
+                print(f"  [warn] wrap {child_path}: {e}")
+                result.append(wrapped)
+        return result
+
+    return walk(root, path_prefix)
+
+
 def assemble_adventure(
     name: str,
     source: str,
-    chunk_results: list[tuple[TocNode, list | None]],
+    chunk_results: list[tuple[ChunkSpec, list | None]],
     author: str,
     is_book: bool,
 ) -> HomebrewAdventure:
-    """Wrap each chunk's entries[] in a SectionEntry and build the full doc."""
+    """Group chunks by their ``root`` and build one ``SectionEntry`` per
+    top-level TocNode, preserving the tree structure when a root was split.
+
+    For unsplit roots (single chunk, ``is_prose_stub=False``) Claude's output
+    is used as-is — the system prompt asks Claude to emit the whole
+    subtree structure inside its entries[].
+
+    For split roots (multiple chunks, or any prose stub) the tree is
+    rebuilt by walking the TocNode hierarchy and placing each chunk's
+    entries at the correct depth.
+    """
     ctx = BuildContext()
     sections: list[SectionEntry] = []
 
-    for node, entries in chunk_results:
-        if entries is None:
-            print(f"  [skip] {node.title}: conversion returned None")
+    # Group chunk_results by root
+    by_root: dict[int, tuple[TocNode, list[tuple[ChunkSpec, list | None]]]] = {}
+    for spec, entries in chunk_results:
+        key = id(spec.root)
+        if key not in by_root:
+            by_root[key] = (spec.root, [])
+        by_root[key][1].append((spec, entries))
+
+    for root, group in by_root.values():
+        # Skip roots where every chunk returned None (all Claude calls failed)
+        if all(entries is None for _, entries in group):
+            print(f"  [skip] {root.title}: all chunks returned None")
             continue
 
-        parsed_entries = []
-        for i, raw in enumerate(entries):
-            try:
-                parsed_entries.append(
-                    parse_entry(raw, ctx, f"section[{node.title}].entries[{i}]")
-                )
-            except Exception as e:
-                print(f"  [warn] {node.title}[{i}]: {e}")
-                if isinstance(raw, str):
-                    parsed_entries.append(raw)
+        # Filter Nones to detect unsplit-vs-split case
+        non_none = [(s, e) for s, e in group if e is not None]
 
-        section = SectionEntry(
-            name=node.title,
+        if (len(group) == 1
+                and not group[0][0].is_prose_stub
+                and non_none):
+            # Unsplit: Claude output covers the whole subtree. Use as-is.
+            spec, entries = non_none[0]
+            parsed_entries: list = []
+            for i, raw in enumerate(entries):
+                try:
+                    parsed_entries.append(
+                        parse_entry(raw, ctx, f"section[{root.title}].entries[{i}]")
+                    )
+                except Exception as e:
+                    print(f"  [warn] {root.title}[{i}]: {e}")
+                    if isinstance(raw, str):
+                        parsed_entries.append(raw)
+        else:
+            # Split: rebuild the tree from per-node entries.
+            entries_by_target: dict[int, list] = {}
+            for spec, entries in non_none:
+                entries_by_target.setdefault(
+                    id(spec.target_node), []
+                ).extend(entries)
+            parsed_entries = _build_section_entries_from_tree(
+                root, entries_by_target, ctx, f"section[{root.title}]",
+            )
+
+        sections.append(SectionEntry(
+            name=root.title,
             entries=parsed_entries,
             _ctx=ctx,
-        )
-        sections.append(section)
+        ))
 
     return HomebrewAdventure.build(
         name=name, source=source, sections=sections,
@@ -689,39 +830,45 @@ def convert(
         toc_roots = build_synthetic_toc(headings, total_lines=len(lines))
         chunks = build_chunks_from_markdown(toc_roots, lines)
 
-    print(f"[chunks] {len(chunks)} top-level sections")
-    for node, body in chunks:
-        print(f"  - {node.title} ({len(body)} chars, {len(node.children)} children)")
+    # Count distinct top-level roots for user-visible reporting
+    distinct_roots = {id(c.root) for c in chunks}
+    print(f"[chunks] {len(chunks)} API calls across "
+          f"{len(distinct_roots)} top-level sections")
+    for spec in chunks:
+        tag = " [prose-only]" if spec.is_prose_stub else ""
+        print(f"  - {spec.target_node.title} "
+              f"({len(spec.body)} chars, "
+              f"{len(spec.target_node.children)} children){tag}")
 
     if not chunks:
         raise RuntimeError("no chunks produced; cannot convert")
 
     # ---- 3. Dry run ----
     if dry_run_only:
-        chunk_texts = [build_prompt(n, b) for n, b in chunks]
+        chunk_texts = [build_prompt(c.target_node, c.body) for c in chunks]
         _api.dry_run(client, chunk_texts, chunks, model,
                      SYSTEM_PROMPT, use_batch, verbose)
         return pdf_path  # nothing written
 
     # ---- 4. Claude pass ----
-    chunk_results: list[tuple[TocNode, list | None]] = []
+    chunk_results: list[tuple[ChunkSpec, list | None]] = []
     if use_batch:
-        prompts = [build_prompt(n, b) for n, b in chunks]
+        prompts = [build_prompt(c.target_node, c.body) for c in chunks]
         batch = _api.call_claude_batch(
             client, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
         )
-        for (node, _), entries in zip(chunks, batch):
-            chunk_results.append((node, entries))
+        for spec, entries in zip(chunks, batch):
+            chunk_results.append((spec, entries))
     else:
-        for i, (node, body) in enumerate(chunks):
-            cid = f"{i+1:03d}-{re.sub(r'[^a-z0-9]+', '-', node.title.lower())[:30]}"
+        for i, spec in enumerate(chunks):
+            cid = f"{i+1:03d}-{re.sub(r'[^a-z0-9]+', '-', spec.target_node.title.lower())[:30]}"
             if verbose:
-                print(f"[chunk {cid}] calling Claude ({len(body)} chars)")
-            prompt = build_prompt(node, body)
+                print(f"[chunk {cid}] calling Claude ({len(spec.body)} chars)")
+            prompt = build_prompt(spec.target_node, spec.body)
             entries = call_claude_for_chunk(
                 client, prompt, model, verbose, debug_dir, cid,
             )
-            chunk_results.append((node, entries))
+            chunk_results.append((spec, entries))
 
     # ---- 5. Assemble ----
     doc = assemble_adventure(
