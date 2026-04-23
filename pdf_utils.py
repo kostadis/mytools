@@ -325,6 +325,99 @@ def _extract_paired_toc_entries(
     return entries
 
 
+_LEADING_NUM_PUNCT_RE = re.compile(r"^\s*\d+[.:,;]?\s*")
+
+
+def _normalize_for_title_search(title: str) -> str:
+    """Strip leading chapter number + punctuation, lowercase, collapse
+    whitespace. Produces a substring we can grep for in page text."""
+    t = _LEADING_NUM_PUNCT_RE.sub("", title)
+    t = t.lower().strip()
+    t = re.sub(r"\s+", " ", t)
+    return t
+
+
+def _resolve_toc_pages_via_title_search(
+    doc,
+    entries: list[tuple[str, int]],
+    *,
+    head_chars: int = 800,
+    exclude_pages: set[int] | None = None,
+) -> tuple[list[tuple[str, int]], int]:
+    """Translate printed-page numbers into actual PDF-page indices.
+
+    Printed ToCs use page numbers that often differ from PDF page indices
+    because of front-matter pages (cover, ToC, intros). The offset can
+    also JUMP mid-document when a blank or unnumbered page is inserted,
+    so a single global offset isn't enough.
+
+    For each ToC entry:
+      1. Search the PDF for the entry's title near the top of each page,
+         prioritising pages near the claimed page (ring of increasing
+         radius: 5 → 15 → 30 → 60).
+      2. If found, record (claimed_page, actual_page - claimed_page).
+      3. Titles that fall back on a nearest-neighbour resolved offset
+         when the text on the page doesn't match the ToC title verbatim.
+
+    Returns ``(resolved_entries, num_resolved_directly)``. The integer
+    lets the caller report how many entries were directly title-matched
+    vs. offset-interpolated.
+    """
+    # Pages to skip during title search — typically the ToC pages
+    # themselves, which echo every section title and would cause every
+    # entry to resolve to the ToC page.
+    exclude = set(exclude_pages or set())  # 1-indexed
+
+    # Pre-extract the top N chars of every page once so the inner loop
+    # is a cheap substring check. Excluded pages get empty strings so
+    # they never match.
+    page_heads: list[str] = []
+    for pdf_idx in range(doc.page_count):
+        if (pdf_idx + 1) in exclude:
+            page_heads.append("")
+            continue
+        try:
+            text = doc.load_page(pdf_idx).get_text("text")[:head_chars].lower()
+        except Exception:
+            text = ""
+        page_heads.append(text)
+
+    direct_hits = 0
+    results: list[tuple[str, int, int | None]] = []
+    for title, claimed in entries:
+        clean = _normalize_for_title_search(title)
+        actual: int | None = None
+        if len(clean) >= 6:
+            hinted_idx = claimed - 1  # 0-indexed
+            for radius in (5, 15, 30, 60):
+                lo = max(0, hinted_idx - radius)
+                hi = min(doc.page_count, hinted_idx + radius + 1)
+                for pdf_idx in range(lo, hi):
+                    if clean in page_heads[pdf_idx]:
+                        actual = pdf_idx + 1  # back to 1-indexed
+                        break
+                if actual is not None:
+                    break
+        if actual is not None:
+            direct_hits += 1
+        results.append((title, claimed, actual))
+
+    resolved_offsets = [(c, a - c) for _, c, a in results if a is not None]
+
+    def _offset_for(claimed_page: int) -> int:
+        if not resolved_offsets:
+            return 0
+        return min(resolved_offsets, key=lambda p: abs(p[0] - claimed_page))[1]
+
+    final: list[tuple[str, int]] = []
+    for title, claimed, actual in results:
+        if actual is not None:
+            final.append((title, actual))
+        else:
+            final.append((title, claimed + _offset_for(claimed)))
+    return final, direct_hits
+
+
 def detect_printed_toc(
     pdf_path: Path | str,
     *,
@@ -388,6 +481,24 @@ def detect_printed_toc(
                 all_entries.extend(page_entries)
 
         entries = _dedupe_toc_entries(all_entries)
+
+        # Translate printed page numbers → actual PDF page indices by
+        # title search. Skip silently if no entries survived dedupe.
+        # Exclude the ToC pages themselves (and any preceding pages
+        # which are either cover or front matter, never section content)
+        # so searches don't match titles against the ToC listing.
+        if entries:
+            last_toc_page = max(toc_pages) if toc_pages else 0
+            exclude = set(range(1, last_toc_page + 1))
+            entries, direct_hits = _resolve_toc_pages_via_title_search(
+                doc, entries, exclude_pages=exclude,
+            )
+            # Drop any entries whose resolved page fell outside the doc
+            entries = [(t, p) for (t, p) in entries if 1 <= p <= doc.page_count]
+            print(f"  [printed-toc] resolved {direct_hits}/{len(entries)} "
+                  f"entries directly via title search; "
+                  f"remainder used nearest-neighbour offset")
+
         return entries, toc_pages
     finally:
         doc.close()
