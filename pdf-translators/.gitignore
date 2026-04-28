@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Marker ML dependency (~5 GB of torch + model weights).
+# Setup: python3 -m venv marker-env && source marker-env/bin/activate && pip install marker-pdf
+marker-env/
