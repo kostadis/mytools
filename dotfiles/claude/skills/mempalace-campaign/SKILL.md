@@ -372,6 +372,108 @@ Tell the user:
 - **Palace clearing:** `rm -rf ~/.mempalace/palace/` then re-mine all wings.
   No built-in reset command.
 
+## Ongoing Usage: Session Prep Workflow
+
+After initial setup, the mempalace is used during session design. The key
+pattern is **mine now, chronicle later** — session prep produces two kinds
+of content that go to different places at different times.
+
+### Mine Immediately (canon lore)
+
+Content that is true about the world regardless of what happens at the table:
+
+- **New NPCs** — `mempalace_add_drawer` in `<campaign>/npcs` + KG entries
+  for relationships and traits
+- **Backstory corrections** — `mempalace_kg_add` entries that update facts
+- **World-building canon** — drawers + KG for mythology, faction structure,
+  campaign-wide principles
+- **NPC mechanics** — KG entries for crack conditions, DCs, reachability
+  (these are designed, not emergent)
+- **Strategic positions** — KG entries for who's watching whom on the board
+
+### Do NOT Mine (planning documents)
+
+Content that describes what *might* happen stays as note files, never enters
+the mempalace:
+
+- Session shape, beat structure, outcome branches
+- Momentum/encounter mechanics
+- Read-aloud notecards, DM checklists
+- Arc design documents (custom arcs, level-band designs)
+
+These are planning tools accessed via file reads or campaign MCP tools.
+
+### Mine After the Session (chronicle beats)
+
+After the session runs, add a chronicle entry capturing:
+
+- What actually happened (which branch was taken)
+- How NPCs actually behaved
+- What the party chose and what it costs them
+- Any new facts that emerged from play
+
+This goes in the `chronicle` wing as an adventure beat, sourced from the
+session transcript. Do not add chronicle entries before the session runs —
+this confuses retrieval between planned and actual events.
+
+### KG Predicate Vocabulary for Campaigns
+
+Standard predicates (`member_of`, `killed_by`, `allied_with`) work for
+basic facts. Campaign design needs a richer vocabulary:
+
+**Character design:**
+
+| Predicate | Use |
+|-----------|-----|
+| `cracked_by` | What reaches a character emotionally |
+| `blind_spot` | What the character cannot see about themselves |
+| `reachable_by` | Who can get through, with mechanical conditions |
+| `key_question` | The line an NPC will deliver |
+| `characterized_by` | A specific personal detail that makes them real |
+
+**Strategic:**
+
+| Predicate | Use |
+|-----------|-----|
+| `watching` | Who is tracking whom on the board |
+| `strategic_position` | Board-level awareness |
+| `motive_for_recruiting` | Why one entity uses another |
+| `would_discard` | Disposability in an alliance |
+| `crack_moment` | Designed turning point for a character arc |
+
+**World-building:**
+
+| Predicate | Use |
+|-----------|-----|
+| `believe_themselves_to_be` | Shared species/group belief |
+| `function_as` | Role in the world |
+| `is_actually` | Trope inversion |
+| `maps_onto` | Real-world analogue informing the design |
+
+### NPC Drawer Best Practices
+
+Write full character profiles, not summaries. A future session searching
+for a character needs the complete picture. Include:
+
+- Identity and faction (name, rank, role in the scene)
+- Motivation (why they're doing what they're doing)
+- The crack (what reaches them, mechanical conditions if any)
+- What doesn't work (what the party will try that won't land)
+- After the scene (what happens to them next, how they evolve)
+
+### What Does NOT Go in the Mempalace
+
+| Content | Where It Goes |
+|---------|---------------|
+| Session prep, DM checklists, beat structures | `notes/` directory |
+| Arc design documents | `notes/arc_cleanup/` or `notes/epic_tier/` |
+| Published module tracking | `docs/tracking*.txt` |
+| Outcome branches (speculative) | `notes/` directory |
+| Read-aloud notecards | `notes/` directory |
+
+The mempalace is for retrieval of what IS true. Notes are for what MIGHT
+happen. Tracking files are published ground truth that is never modified.
+
 ## Failure Modes
 
 - **"No mempalace.yaml found"** — running mine from wrong dir or init
