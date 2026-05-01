@@ -60,6 +60,9 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
         "min_level": row["min_level"],
         "max_level": row["max_level"],
         "is_favorite": bool(row["is_favorite"]) if "is_favorite" in keys else False,
+        "filepath": row["filepath"] if "filepath" in keys else None,
+        "relative_path": row["relative_path"] if "relative_path" in keys else None,
+        "product_id": row["product_id"] if "product_id" in keys else None,
     }
 
 
@@ -242,6 +245,7 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
             f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
                        b.game_system, b.product_type, b.tags, b.series, b.source,
                        b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                       b.filepath, b.relative_path, b.product_id,
                        (f.book_id IS NOT NULL) AS is_favorite
                 FROM books b
                 LEFT JOIN user_data.favorites f ON f.book_id = b.id
@@ -274,6 +278,7 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
         f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
                    b.game_system, b.product_type, b.tags, b.series, b.source,
                    b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                   b.filepath, b.relative_path, b.product_id,
                    (f.book_id IS NOT NULL) AS is_favorite
             FROM books b
             LEFT JOIN user_data.favorites f ON f.book_id = b.id
@@ -393,6 +398,7 @@ def get_books_by_ids(conn: sqlite3.Connection, book_ids: list[int]) -> list[dict
         f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
                    b.game_system, b.product_type, b.tags, b.series, b.source,
                    b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                   b.filepath, b.relative_path, b.product_id,
                    (f.book_id IS NOT NULL) AS is_favorite
             FROM books b
             LEFT JOIN user_data.favorites f ON f.book_id = b.id
@@ -571,6 +577,7 @@ def nlq_search(
             f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
                        b.game_system, b.product_type, b.tags, b.series, b.source,
                        b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                       b.filepath, b.relative_path, b.product_id,
                        (fav.book_id IS NOT NULL) AS is_favorite
                 FROM books_fts
                 JOIN books b ON books_fts.rowid = b.id
@@ -593,6 +600,7 @@ def nlq_search(
         f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
                    b.game_system, b.product_type, b.tags, b.series, b.source,
                    b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                   b.filepath, b.relative_path, b.product_id,
                    (fav.book_id IS NOT NULL) AS is_favorite
             FROM books b
             LEFT JOIN user_data.favorites fav ON fav.book_id = b.id
@@ -678,6 +686,7 @@ def get_topic(conn: sqlite3.Connection, topic_type: str, topic_name: str) -> dic
         f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
                    b.game_system, b.product_type, b.tags, b.series, b.source,
                    b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                   b.filepath, b.relative_path, b.product_id,
                    (f.book_id IS NOT NULL) AS is_favorite
             FROM books b
             LEFT JOIN user_data.favorites f ON f.book_id = b.id
@@ -725,6 +734,7 @@ def get_related_books(conn: sqlite3.Connection, book_id: int, limit: int = 6) ->
         """SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
                   b.game_system, b.product_type, b.tags, b.series, b.source,
                   b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                  b.filepath, b.relative_path, b.product_id,
                   (f.book_id IS NOT NULL) AS is_favorite
            FROM book_relations r
            JOIN books b ON b.id = r.book_id_b
@@ -785,6 +795,7 @@ def get_related_books(conn: sqlite3.Connection, book_id: int, limit: int = 6) ->
         f"""SELECT b.id, b.display_title, b.filename, b.publisher, b.collection,
                    b.game_system, b.product_type, b.tags, b.series, b.source,
                    b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
+                   b.filepath, b.relative_path, b.product_id,
                    (f.book_id IS NOT NULL) AS is_favorite
             FROM books b
             LEFT JOIN user_data.favorites f ON f.book_id = b.id
