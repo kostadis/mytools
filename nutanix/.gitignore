@@ -1,0 +1,19 @@
+# Specs are fetched, not vendored — local-only audit
+specs/*.json
+specs/*.yaml
+specs/*.yml
+
+# Generated code and build artifacts
+results/generation/*/
+results/validation/*.txt
+results/diffs/*.md
+
+# Toolchain working files
+node_modules/
+target/
+*.log
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
