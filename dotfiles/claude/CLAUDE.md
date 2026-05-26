@@ -26,3 +26,20 @@ The rough extraction pass is the ceiling, not the floor. If a first-pass LLM out
 **Good pattern:** LLM extracts → human reviews and imposes structure → LLM renders inside that structure.
 
 **Bad pattern:** LLM extracts → LLM structures → LLM renders. Errors compound silently.
+
+## Local AI Hardware Exploration
+
+The user owns a DGX Spark and is actively experimenting with local AI hardware to build intuition for the tradeoffs. **Suboptimal-by-design is the point, not an accident.**
+
+For most tasks, calling the Anthropic API would be faster, smarter, and cheaper than running a local model on the Spark. The user knows this. The user does not care about Anthropic having their data. So "you'd be better off using Anthropic" is not useful pushback — it answers a question the user is not asking.
+
+**What the user is actually trying to learn:** what it feels like to wire up local-LLM and local-GPU components, where the friction is, what breaks, what's surprisingly good, what's surprisingly bad. The exercise is calibration, not optimisation.
+
+**How to engage:**
+
+- When proposing or evaluating a "use the Spark for X" plan, lead with the *learning* tradeoffs (what this teaches, what its limits will reveal) before the *performance* tradeoffs.
+- Don't hide that an Anthropic-API path would dominate on raw quality / speed — name it, then move on. Pretending the local path is optimal is dishonest; harping on the suboptimality is unhelpful.
+- Honest engineering pushback is still welcome — verbatim violations, dimension mismatches, precision-decision risks, architecture failure modes. Those aren't "this is suboptimal," they're "this is broken." Keep flagging them.
+- Treat exploratory implementations as legitimate work product even when they're a detour from the most efficient path.
+
+@RTK.md
