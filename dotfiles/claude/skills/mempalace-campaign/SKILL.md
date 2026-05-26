@@ -1,6 +1,6 @@
 ---
 name: mempalace-campaign
-description: Set up MemPalace (semantic search palace) for a D&D campaign workspace. Detects the campaign's folder structure, identifies document layers (narrative bible, extractions, grounding docs, pipeline inputs), proposes a wing/room architecture, handles exclusions, mines the docs, registers the MCP server, and writes a usage guide. Supports single-wing (simple campaigns) and three-wing (CampaignGenerator pipelines) architectures. Use when the user wants to add mempalace to a new campaign or asks to "set up mempalace" for a campaign directory.
+description: Set up MemPalace semantic search for a D&D campaign workspace. Use when the user asks to set up mempalace, add mempalace to a campaign, or wants to make a campaign searchable.
 tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 

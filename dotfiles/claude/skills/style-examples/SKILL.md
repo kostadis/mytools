@@ -1,6 +1,6 @@
 ---
 name: style-examples
-description: Create style example files for session_doc.py narration by extracting representative passages from the user's campaign summaries. Use when user asks to create examples, style references, or writing samples for a campaign.
+description: Create style example files for session_doc.py narration from the user's campaign summaries. Use when the user asks to create examples or style references for a campaign.
 tools: Read, Glob, Grep, Bash, Agent, Write
 ---
 
