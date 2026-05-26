@@ -1,6 +1,6 @@
 ---
 name: dossier-merge
-description: Deduplicate NPC dossier files produced by CampaignGenerator's `planning.py --build-dossiers`. Auto-clusters filenames by similarity heuristics, surfaces unclustered files and garbage/compound filenames, reads and auto-classifies each cluster (strict subset / merge / different NPCs), confirms with the user in batches of 3–5 grouped by heuristic type, writes canonical files with aliases recorded in BOTH YAML frontmatter (for `planning.py --synthesize`) and the body Identity section (for human readers), tars up the originals as a safety net before any destructive operation, and persists state so restarts remember past "keep both" decisions. Use when the user asks to "dedupe dossiers", "merge NPCs", "clean up docs/npcs/", or has just run `--build-dossiers`. Invoke as /dossier-merge [dossier-dir].
+description: Deduplicate NPC dossier files in docs/npcs/ produced by CampaignGenerator's `planning.py --build-dossiers`. Use when the user asks to dedupe dossiers, merge NPCs, or clean up docs/npcs/. Invoke as /dossier-merge [dossier-dir].
 tools: Read, Glob, Grep, Edit, Write, Bash, AskUserQuestion
 ---
 

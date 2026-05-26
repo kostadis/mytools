@@ -1,6 +1,6 @@
 ---
 name: voice-file
-description: Create a per-character voice file for session_doc.py narration. Reads session summaries and VTT transcripts to extract a character's personality, speech patterns, and player table behavior. Use when user asks to create a voice file, character voice notes, or narration guide. Invoke as /voice-file <character_name>.
+description: Create a per-character voice file for session_doc.py narration. Use when the user asks to create a voice file or character voice notes. Invoke as /voice-file <character_name>.
 tools: Read, Glob, Grep, Bash, Agent, Write
 ---
 

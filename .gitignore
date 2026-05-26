@@ -7,3 +7,27 @@ entities.json
 *.jsonl
 gdrive/drive.jsonl
 gdrive/onedrive.jsonl
+
+# Python build artifacts
+__pycache__/
+*.pyc
+
+# rpg-lib rollback TSVs (per-run, not history)
+rpg-lib/rollback_*.tsv
+
+# vtt-to-tts working artifacts (audio output, chunk cache, transcript inputs, run log)
+vtt-to-tts/*.mp3
+vtt-to-tts/*.chunks/
+vtt-to-tts/meeting_saved_closed_caption*.txt
+vtt-to-tts/tts-run.log
+vtt-to-tts/Nikhil-Kosadis.md
+vtt-to-tts/Nikhil-Kostadis.chunks/
+
+# pdf-translators per-run response cache and outputs
+pdf-translators/*-responses/
+pdf-translators/728848-*.json
+
+# Scratch / one-off files at repo root
+testfile.py
+replace_in_files.py
+pdf-translators/count_r_in_strawberry.py
