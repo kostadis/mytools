@@ -22,9 +22,11 @@ from datetime import datetime, timezone
 
 # lib/ lives in the parent mytools/ directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from lib.claudelib import make_client, call_api
 
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+# Default model for the Claude provider only. The DGX provider auto-discovers
+# the currently-served model from /v1/models — see lib/dgxlib.py.
+CLAUDE_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_PROVIDER = "dgx"
 
 SYSTEM_PROMPT = """\
 You are classifying tabletop RPG PDF products. For each book, determine:
@@ -1118,7 +1120,7 @@ def log_error(conn: sqlite3.Connection, context: str, error: str) -> None:
 
 # ── Main Logic ────────────────────────────────────────────────────────────────
 
-def enrich_books(client, conn: sqlite3.Connection, books: list[dict],
+def enrich_books(call_api, client, conn: sqlite3.Connection, books: list[dict],
                  model: str, batch_size: int, dry_run: bool) -> None:
     """Run enrichment pass on a list of books."""
     total = len(books)
@@ -1199,7 +1201,7 @@ def enrich_books(client, conn: sqlite3.Connection, books: list[dict],
     print(f"\nEnrichment done in {elapsed:.1f}s — {success} enriched, {failed} failed")
 
 
-def detect_all_series(client, conn: sqlite3.Connection, model: str,
+def detect_all_series(call_api, client, conn: sqlite3.Connection, model: str,
                       dry_run: bool) -> None:
     """Run series detection pass across all publishers."""
     publishers = get_books_for_series(conn)
@@ -1247,7 +1249,16 @@ def main():
         description="Enrich RPG PDF database with Claude API classification"
     )
     parser.add_argument("db_path", help="Path to SQLite database file")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Model (default: {DEFAULT_MODEL})")
+    parser.add_argument("--provider", choices=["dgx", "claude"], default=DEFAULT_PROVIDER,
+                        help=f"LLM backend (default: {DEFAULT_PROVIDER}). "
+                             "'dgx' calls the OpenAI-compatible vLLM endpoint on the DGX Spark; "
+                             "'claude' calls the Anthropic API.")
+    parser.add_argument("--endpoint", default=None,
+                        help="DGX OpenAI-compatible base URL (dgx provider only). "
+                             "Default: http://192.168.1.147:8001/v1")
+    parser.add_argument("--model", default=None,
+                        help="Model id. For dgx, auto-discovered from /v1/models if omitted. "
+                             f"For claude, defaults to {CLAUDE_DEFAULT_MODEL}.")
     parser.add_argument("--batch-size", type=int, default=10, help="Books per API call (default: 10)")
     parser.add_argument("--publisher", help="Only enrich books from this publisher")
     parser.add_argument("--limit", type=int, help="Max books to enrich")
@@ -1296,9 +1307,25 @@ def main():
         conn.close()
         return
 
+    # Provider dispatch: pick the LLM module and resolve the model id.
+    if args.provider == "dgx":
+        from lib import dgxlib as llm
+        endpoint = args.endpoint or llm.DEFAULT_ENDPOINT
+        if args.model:
+            model = args.model
+        elif args.dry_run:
+            model = "<auto-discover-at-runtime>"
+        else:
+            model = llm.discover_model(endpoint)
+            print(f"DGX auto-discovered model: {model}")
+        client = None if args.dry_run else llm.make_client(endpoint)
+    else:
+        from lib import claudelib as llm
+        model = args.model or CLAUDE_DEFAULT_MODEL
+        client = None if args.dry_run else llm.make_client()
+
     if args.series_pass:
-        client = None if args.dry_run else make_client()
-        detect_all_series(client, conn, args.model, args.dry_run)
+        detect_all_series(llm.call_api, client, conn, model, args.dry_run)
     else:
         books = get_unenriched_books(conn, args.publisher, args.limit, args.force)
         print(f"Books to enrich: {len(books)}")
@@ -1307,8 +1334,8 @@ def main():
             conn.close()
             return
 
-        client = None if args.dry_run else make_client()
-        enrich_books(client, conn, books, args.model, args.batch_size, args.dry_run)
+        enrich_books(llm.call_api, client, conn, books, model,
+                     args.batch_size, args.dry_run)
 
     # Summary
     total = conn.execute("SELECT COUNT(*) FROM books WHERE is_old_version=0").fetchone()[0]
