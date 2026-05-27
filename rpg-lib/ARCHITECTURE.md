@@ -72,6 +72,15 @@ DB paths are wired in `library_server.py:73-76`: the main DB is opened
 **read-only** (`?mode=ro` in `library_api/db.py:27`); a sibling `user_data.db`
 is opened read-write and ATTACHed as `user_data` for favorites.
 
+**`RPG_LIBRARY_ROOT` (optional env var)** — the directory the indexer
+scanned (`SCAN_DIR` from `index_rpgs.sh`). The DB stores each book by its
+path *relative to* this root (`books.relative_path`), so the value is
+machine-local and not embedded in the data. Required only by sidecar
+endpoints that read artifacts living next to the indexed PDFs (e.g.
+`/api/library/book/{id}/fivetools`); when unset those endpoints return 503
+and unrelated functionality is unaffected. Resolution lives in
+`library_api/sidecar.py`.
+
 ## 3. The HTTP API
 
 All endpoints are mounted under `/api/library` (router defined at
@@ -92,6 +101,7 @@ browser tools, Obsidian, and local agents can call directly.
 | DELETE | `/api/library/book/{id}/favorite` | `routes.py:168` | `{is_favorite: false}` |
 | POST | `/api/library/book/{id}/open` | `routes.py:201` | Launches PDF in OS app |
 | GET | `/api/library/book/{id}/pdf` | `routes.py:302` | Streams PDF (`inline`) |
+| GET | `/api/library/book/{id}/fivetools` | `routes.py` | Streams 5etools-format JSON sidecar (503 if `RPG_LIBRARY_ROOT` unset, 404 if absent) |
 | GET | `/api/library/filters` | `routes.py:181` | `FilterOptions` |
 | GET | `/api/library/stats` | `routes.py:190` | `StatsResponse` |
 | GET | `/api/library/topic/{type}/{name}` | `routes.py:261` | `TopicResponse` |
@@ -368,6 +378,7 @@ directly (`library_mcp.py:30`).
 | `list_filters` | `library_mcp.py:197` | Same as `GET /filters`. |
 | `get_stats` | `library_mcp.py:211` | Same as `GET /stats`. |
 | `find_books_by_tag` | `library_mcp.py:223` | Convenience around `search_books(tags=...)`. |
+| `get_book_fivetools` | `library_mcp.py` | Locates the 5etools-format JSON sibling for a book; returns `{configured, exists, path, content?}`. Requires `RPG_LIBRARY_ROOT`. |
 
 The MCP server has **no** `nlq`, `facets`, `graph`, `pdf` streaming, or
 favorites tools. If you need those, use HTTP.

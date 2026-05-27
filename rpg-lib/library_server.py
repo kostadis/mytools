@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from library_api import db, routes
+from library_api import db, routes, sidecar
 
 app = FastAPI(title="RPG Library", version="1.0.0")
 
@@ -75,6 +75,12 @@ def main():
     # Set DB paths for routes
     routes.set_db_path(args.db, user_db_path)
 
+    # Optional library root for sidecar artifacts (e.g. 5etools-format JSON
+    # produced next to the indexed PDF). Unset is fine — the corresponding
+    # endpoints will return 503.
+    library_root = sidecar.get_library_root()
+    routes.set_library_root(library_root)
+
     # Set up SPA serving
     frontend_dist = Path(__file__).parent / "frontend" / "dist"
     setup_spa(frontend_dist)
@@ -82,6 +88,7 @@ def main():
     print(f"RPG Library Server")
     print(f"  Database: {args.db}")
     print(f"  User data: {user_db_path}")
+    print(f"  Library root: {library_root or '(unset — sidecar endpoints disabled)'}")
     print(f"  API: http://{args.host}:{args.port}/api/library/")
     print(f"  UI:  http://{args.host}:{args.port}/")
 
