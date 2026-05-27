@@ -22,6 +22,9 @@ class BookSummary(BaseModel):
     is_favorite: bool = False
     variant_count: int = 1
     variant_ids: list[int] = []
+    filepath: str | None = None
+    relative_path: str | None = None
+    product_id: str | None = None
 
 
 class Bookmark(BaseModel):
@@ -39,7 +42,6 @@ class BookDetail(BookSummary):
     first_page_text: str | None
     is_old_version: bool
     version_generation: int | None
-    product_id: str | None
     product_version: str | None
     date_indexed: str | None
     date_enriched: str | None
