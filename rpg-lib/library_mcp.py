@@ -28,10 +28,12 @@ import fastmcp
 # ── locate the library_api package ───────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent))
 from library_api import db as libdb
+from library_api import sidecar
 
 # ── global DB paths (set from CLI args) ──────────────────────────────────────
 _db_path: str = ""
 _user_db_path: str = ""
+_library_root: Path | None = None
 
 mcp = fastmcp.FastMCP("RPG Library")
 
@@ -221,6 +223,49 @@ def get_stats() -> dict:
 
 
 @mcp.tool()
+def get_book_fivetools(book_id: int, include_content: bool = False) -> dict:
+    """Locate the 5etools-format JSON sidecar for a book.
+
+    The indexer pipeline produces a ``<stem>.json`` next to each PDF; this
+    tool resolves it via ``RPG_LIBRARY_ROOT + relative_path``.
+
+    Returns ``{configured, exists, path, content?}``:
+        - ``configured`` is False when ``RPG_LIBRARY_ROOT`` is not set.
+        - ``exists`` is True only when the JSON file is present on disk.
+        - ``path`` is the resolved absolute path (or null).
+        - ``content`` is the parsed JSON, included only when
+          ``include_content`` is True and the file exists.
+
+    Args:
+        book_id: rpg-lib book ID.
+        include_content: When True, parse and return the JSON body.
+            Default False (path-only) — JSON files can be large.
+    """
+    if _library_root is None:
+        return {"configured": False, "exists": False, "path": None}
+    conn = _conn()
+    try:
+        book = libdb.get_book(conn, book_id)
+        if not book:
+            return {"configured": True, "exists": False, "path": None,
+                    "error": f"Book {book_id} not found"}
+    finally:
+        conn.close()
+
+    json_path = sidecar.resolve_fivetools_json(book, _library_root)
+    if json_path is None:
+        return {"configured": True, "exists": False, "path": None}
+
+    out = {"configured": True, "exists": True, "path": str(json_path)}
+    if include_content:
+        try:
+            out["content"] = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            out["error"] = f"Failed to read JSON: {exc}"
+    return out
+
+
+@mcp.tool()
 def find_books_by_tag(tag: str, limit: int = 30) -> list[dict]:
     """Find all books that have a specific tag.
 
@@ -282,7 +327,7 @@ def main():
                         help="Path to user_data.db (default: user_data.db alongside --db)")
     args = parser.parse_args()
 
-    global _db_path, _user_db_path
+    global _db_path, _user_db_path, _library_root
     _db_path = str(Path(args.db).resolve())
 
     if not Path(_db_path).exists():
@@ -293,9 +338,15 @@ def main():
     user_db = args.user_db or str(Path(_db_path).parent / "user_data.db")
     _user_db_path = user_db if Path(user_db).exists() else ""
 
+    _library_root = sidecar.get_library_root()
+
     print(f"RPG Library MCP: {_db_path}", file=sys.stderr)
     if _user_db_path:
         print(f"  user data: {_user_db_path}", file=sys.stderr)
+    print(
+        f"  library root: {_library_root or '(unset — sidecar tools disabled)'}",
+        file=sys.stderr,
+    )
     mcp.run()
 
 
