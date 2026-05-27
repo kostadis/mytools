@@ -3,11 +3,12 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from . import db
+from . import db, sidecar
 from .models import (
     BookDetail, BookSummary, BookText, FacetsResponse, FilterOptions,
     GraphResponse, NlqRequest, NlqResponse, SearchResponse, StatsResponse,
@@ -19,12 +20,18 @@ router = APIRouter(prefix="/api/library", tags=["library"])
 # DB paths set by library_server.py at startup
 _db_path: str = ""
 _user_db_path: str = ""
+_library_root: Path | None = None
 
 
 def set_db_path(path: str, user_db_path: str = "") -> None:
     global _db_path, _user_db_path
     _db_path = path
     _user_db_path = user_db_path
+
+
+def set_library_root(root: Path | None) -> None:
+    global _library_root
+    _library_root = root
 
 
 def _conn():
@@ -297,6 +304,38 @@ def get_graph(
         return db.get_graph(conn, min_score=min_score, limit=limit, game_system=game_system)
     finally:
         conn.close()
+
+
+@router.get("/book/{book_id}/fivetools")
+def stream_fivetools_json(book_id: int):
+    """Stream the 5etools-format JSON sibling for a book, if one exists.
+
+    Resolves ``RPG_LIBRARY_ROOT / relative_path`` and looks for a
+    ``<stem>.json`` next to the PDF. Returns 503 if the library root is
+    unconfigured, 404 if no sibling JSON is present.
+    """
+    if _library_root is None:
+        raise HTTPException(
+            status_code=503,
+            detail="RPG_LIBRARY_ROOT not set — sibling-JSON lookup unavailable",
+        )
+    conn = _conn()
+    try:
+        book = db.get_book(conn, book_id)
+        if not book:
+            raise HTTPException(status_code=404, detail="Book not found")
+    finally:
+        conn.close()
+
+    json_path = sidecar.resolve_fivetools_json(book, _library_root)
+    if json_path is None:
+        raise HTTPException(status_code=404, detail="No 5etools JSON sidecar for this book")
+
+    return FileResponse(
+        str(json_path),
+        media_type="application/json",
+        headers={"Content-Disposition": "inline"},
+    )
 
 
 @router.get("/book/{book_id}/pdf")
