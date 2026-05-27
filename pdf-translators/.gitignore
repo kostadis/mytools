@@ -10,3 +10,6 @@ marker-env/
 # Editor/converter working state (backups + persistent undo logs).
 *.bak
 *.undolog.json
+
+# Local secrets — ANTHROPIC_API_KEY etc.
+.env
