@@ -13,9 +13,9 @@ That is the only dependency. Python 3.9+. (Plain `pip install edge-tts` works to
 
 ## 2. Get a transcript
 
-Two input formats parse natively — the script auto-detects which one you have.
+Three input formats parse natively — the script auto-detects which one you have (by extension and content).
 
-**Zoom** (Save Closed Caption → `.txt`):
+**Zoom closed caption** (Save Closed Caption → `.txt`):
 
 ```
 [Speaker Name] HH:MM:SS
@@ -24,6 +24,22 @@ What they said.
 [Other Speaker] HH:MM:SS
 What they said.
 ```
+
+**Zoom recording transcript** (`.vtt`, WebVTT — the speaker prefix lives inside each cue body):
+
+```
+WEBVTT
+
+1
+00:00:00.170 --> 00:00:05.150
+Speaker Name: What they said.
+
+2
+00:00:13.200 --> 00:00:14.459
+Other Speaker: What they said.
+```
+
+Cue bodies without a `Speaker:` prefix (wrapped continuations) are attributed to the previous speaker. Timestamps are ignored — utterances play back in document order with a fixed gap between them.
 
 **Otter** (markdown export):
 
@@ -67,7 +83,7 @@ Useful en-US voices: `GuyNeural`, `ChristopherNeural`, `RogerNeural`, `EricNeura
 ## 4. Run
 
 ```bash
-.venv/bin/python transcript_to_mp3.py <transcript> <output.mp3>
+.venv/bin/python transcript_to_mp3.py <transcript> [<transcript> ...] <output.mp3>
 ```
 
 Example:
@@ -76,7 +92,15 @@ Example:
 .venv/bin/python transcript_to_mp3.py meeting_saved_closed_caption.txt session.mp3
 ```
 
-The transcript file can be `.txt` (Zoom) or `.md` (Otter) — same command either way.
+The transcript file can be `.txt` (Zoom), `.vtt` (WebVTT), or `.md` (Otter) — same command either way.
+
+**Combining a split session** — when one session was recorded as multiple files (e.g. Zoom dropped and you restarted), pass them in order before the output name. They're concatenated into a single MP3:
+
+```bash
+.venv/bin/python transcript_to_mp3.py part1.vtt part2.vtt session.mp3
+```
+
+Each transcript's timestamps are local to its own recording; ordering follows the argument order, not the clocks, so a restarted second half lands after the first.
 
 You'll see per-utterance progress:
 
