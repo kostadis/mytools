@@ -1,0 +1,129 @@
+# GitHub Actions workflow for gdrive-cli
+#
+# This workflow:
+# 1. Runs on push to main and pull requests
+# 2. Tests on Linux, macOS, and Windows
+# 3. Builds binaries for all platforms
+# 4. Creates GitHub releases with checksums
+
+name: CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+    
+    - name: Build project
+      run: |
+        cargo build --release
+    
+    - name: Run tests
+      run: |
+        cargo test
+    
+    - name: Run clippy
+      run: |
+        cargo clippy -- -D warnings
+    
+    - name: Format code
+      run: |
+        cargo fmt --check
+    
+  release:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+    
+    - name: Get version
+      id: version
+      run: |
+        VERSION=$(grep '^version =' Cargo.toml | sed 's/.*= "\(.*\)"/\1/')
+        echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+    
+    - name: Build binaries
+      run: |
+        # Build for Linux
+        cargo build --release --target x86_64-unknown-linux-gnu
+        mv target/x86_64-unknown-linux-gnu/release/gdrive-cli gdrive-cli-linux
+        
+        # Build for macOS
+        cargo build --release --target x86_64-apple-darwin
+        mv target/x86_64-apple-darwin/release/gdrive-cli gdrive-cli-macos
+        
+        # Build for Windows
+        cargo build --release --target x86_64-pc-windows-gnu
+        mv target/x86_64-pc-windows-gnu/release/gdrive-cli.exe gdrive-cli-windows.exe
+        
+        # Create checksums
+        sha256sum gdrive-cli-linux > gdrive-cli-linux.sha256
+        sha256sum gdrive-cli-macos > gdrive-cli-macos.sha256
+        sha256sum gdrive-cli-windows.exe > gdrive-cli-windows.exe.sha256
+    
+    - name: Create release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ env.VERSION }}
+        name: v${{ env.VERSION }}
+        body: |
+          ## Changes
+          - Updated to version ${{ env.VERSION }}
+          
+          ## Installation
+          
+          ### Linux
+          ```bash
+          curl -L -O https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/gdrive-cli-linux
+          chmod +x gdrive-cli-linux
+          ./gdrive-cli-linux --version
+          ```
+          
+          ### macOS
+          ```bash
+          curl -L -O https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/gdrive-cli-macos
+          chmod +x gdrive-cli-macos
+          ./gdrive-cli-macos --version
+          ```
+          
+          ### Windows
+          ```powershell
+          curl -L -O https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/gdrive-cli-windows.exe
+          .\gdrive-cli-windows.exe --version
+          ```
+        files: |
+          gdrive-cli-linux
+          gdrive-cli-linux.sha256
+          gdrive-cli-macos
+          gdrive-cli-macos.sha256
+          gdrive-cli-windows.exe
+          gdrive-cli-windows.exe.sha256
