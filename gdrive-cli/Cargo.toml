@@ -1,6 +1,6 @@
 [package]
 name = "gdrive-cli"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 
 [dependencies]
@@ -31,3 +31,5 @@ urlencoding = "2"
 
 [dev-dependencies]
 tempfile = "3"
+mockito = "1.0"
+serde_json = "1"
