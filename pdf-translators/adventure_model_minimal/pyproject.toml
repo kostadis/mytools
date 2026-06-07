@@ -1,0 +1,19 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"}
+
+[project]
+name = "adventure-model-minimal"
+version = "0.1.0"
+description = "Rust parser for 5etools adventure JSON format"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+
+[project.optional-dependencies]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+
+[project.urls]
+Homepage = "https://github.com/kroussos/mytools"
