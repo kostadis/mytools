@@ -20,6 +20,8 @@ vtt-to-tts/*.mp3
 vtt-to-tts/*.chunks/
 vtt-to-tts/meeting_saved_closed_caption*.txt
 vtt-to-tts/tts-run.log
+vtt-to-tts/*.run.log
+vtt-to-tts/*.transcript.vtt
 vtt-to-tts/Nikhil-Kosadis.md
 vtt-to-tts/Nikhil-Kostadis.chunks/
 

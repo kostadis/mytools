@@ -41,6 +41,43 @@ _OTTER_PATTERN = re.compile(
     r"\*\*([^*\n]+?)\*\*\s*\d{2}:\d{2}:\d{2}\s*\n(.*?)(?=\n\*\*[^*\n]+?\*\*\s*\d{2}:\d{2}:\d{2}|\Z)",
     re.DOTALL,
 )
+# WebVTT cue timestamp: HH:MM:SS.mmm --> HH:MM:SS.mmm
+_VTT_TIMESTAMP = re.compile(r"\d{2}:\d{2}:\d{2}\.\d{3}\s*-->")
+# Speaker prefix inside a cue body: "Speaker Name: what they said"
+_VTT_SPEAKER = re.compile(r"^([^:\n]+?):\s*(.*)$", re.DOTALL)
+
+
+def parse_webvtt(text: str) -> list[tuple[str, str]]:
+    """Parse a WebVTT (.vtt) transcript, e.g. Zoom's recording transcript export.
+
+    Each cue is a blank-line-separated block of:
+        <index>
+        HH:MM:SS.mmm --> HH:MM:SS.mmm
+        Speaker Name: utterance text
+    The speaker prefix sits inside the cue body. Cue bodies without a
+    "Speaker:" prefix (wrapped continuations) are attributed to the previous
+    speaker. Timestamps are ignored — ordering is document order.
+    """
+    utterances: list[tuple[str, str]] = []
+    for block in re.split(r"\n\s*\n", text):
+        lines = [ln for ln in block.splitlines() if ln.strip()]
+        ts_idx = next((i for i, ln in enumerate(lines) if "-->" in ln), None)
+        if ts_idx is None or not _VTT_TIMESTAMP.search(lines[ts_idx]):
+            continue
+        body = " ".join(ln.strip() for ln in lines[ts_idx + 1:]).strip()
+        if not body:
+            continue
+        m = _VTT_SPEAKER.match(body)
+        if m:
+            speaker = m.group(1).strip()
+            content = m.group(2).strip()
+            if content:
+                utterances.append((speaker, content))
+        elif utterances:
+            # Continuation of the previous cue's speaker.
+            prev_speaker, prev_text = utterances[-1]
+            utterances[-1] = (prev_speaker, f"{prev_text} {body}".strip())
+    return utterances
 
 
 def _clean_utterance(text: str) -> str:
@@ -50,6 +87,12 @@ def _clean_utterance(text: str) -> str:
 
 def parse_transcript(path: Path) -> list[tuple[str, str]]:
     text = path.read_text(encoding="utf-8", errors="replace")
+    # WebVTT (.vtt) has its speaker prefix inside the cue body, so it needs a
+    # dedicated parser rather than a single regex.
+    if path.suffix.lower() == ".vtt" or text.lstrip().startswith("WEBVTT"):
+        utterances = parse_webvtt(text)
+        if utterances:
+            return utterances
     # Try Zoom first; fall back to Otter markdown.
     for pattern in (_ZOOM_PATTERN, _OTTER_PATTERN):
         utterances = []
@@ -99,25 +142,32 @@ async def tts_to_bytes(speaker: str, text: str, retries: int = 3) -> bytes:
     return b""
 
 
-async def main(transcript_path: str, output_mp3: str) -> None:
+async def main(transcript_paths: list[str], output_mp3: str) -> None:
     try:
         import edge_tts  # noqa: F401
     except ImportError:
         print("ERROR: edge-tts not installed. Run: pip install edge-tts")
         sys.exit(1)
 
-    path = Path(transcript_path)
-    if not path.exists():
-        print(f"ERROR: File not found: {transcript_path}")
-        sys.exit(1)
+    paths = [Path(p) for p in transcript_paths]
+    for path in paths:
+        if not path.exists():
+            print(f"ERROR: File not found: {path}")
+            sys.exit(1)
 
     out_path = Path(output_mp3)
     cache_dir = out_path.with_suffix("") .with_name(out_path.stem + ".chunks")
     cache_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = cache_dir / "manifest.json"
 
-    print(f"Parsing transcript: {path.name}")
-    utterances = parse_transcript(path)
+    # Parse each transcript and concatenate in the order given. Useful when one
+    # session was split across multiple recordings (e.g. a Zoom restart).
+    utterances: list[tuple[str, str]] = []
+    for path in paths:
+        print(f"Parsing transcript: {path.name}")
+        part = parse_transcript(path)
+        print(f"  {len(part)} utterances")
+        utterances.extend(part)
     utterances = group_consecutive(utterances)
     print(f"  {len(utterances)} utterances after grouping")
 
@@ -177,7 +227,12 @@ async def main(transcript_path: str, output_mp3: str) -> None:
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print(f"Usage: python3 {sys.argv[0]} <transcript.txt> <output.mp3>")
+        print(
+            f"Usage: python3 {sys.argv[0]} <transcript> [<transcript> ...] <output.mp3>\n"
+            f"  Transcripts may be Zoom .txt, Otter .md, or WebVTT .vtt.\n"
+            f"  Multiple transcripts are concatenated in order into one MP3."
+        )
         sys.exit(1)
 
-    asyncio.run(main(sys.argv[1], sys.argv[2]))
+    *transcripts, output = sys.argv[1:]
+    asyncio.run(main(transcripts, output))
