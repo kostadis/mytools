@@ -6,12 +6,19 @@ Reads the JSON output of `find_unknowns.py` (passed on stdin or via --in)
 plus the same glossary + npcs-dir, then groups unknowns into clusters:
 
 1. **Bound to known canonical**: every unknown that's "close enough" to a
-   known canonical (edit distance ≤ 3, OR phonetic key match) is bucketed
-   under that canonical. One question per canonical replaces N questions.
+   known canonical (edit distance ≤ 3, OR Double Metaphone code match, OR
+   crude phonetic-key match) is bucketed under that canonical. One question
+   per canonical replaces N questions.
 
 2. **Cross-unknown cluster**: remaining unknowns are clustered by edit
-   distance ≤ 2 to each other, OR matching phonetic key (devowel + dedup
-   consecutive consonants). User answers once per cluster.
+   distance ≤ 2 to each other, OR shared Double Metaphone code, OR matching
+   crude phonetic key (devowel + dedup consonants). User answers once per
+   cluster.
+
+Phonetic matching prefers vendored Double Metaphone (`dmetaphone.py`) —
+it models pronunciation and links variants that cross the first letter
+(Elvara↔Ilvara). The crude `phonetic_key` is kept as a fallback signal
+and is the only phonetic signal if the module is unavailable.
 
 3. **Singletons**: leftovers each get their own one-member cluster.
 
@@ -54,6 +61,26 @@ from find_unknowns import (  # type: ignore
     parse_npc_dossiers,
     load_extra,
 )
+
+try:
+    from dmetaphone import codes as _dm_codes  # vendored Double Metaphone
+except Exception:  # pragma: no cover - fallback if module ever absent
+    _dm_codes = None
+
+
+def _dm_match(a: str, b: str) -> bool:
+    """True when a and b share a non-empty Double Metaphone code.
+
+    Stronger than `phonetic_key`: it models pronunciation (ph→f, silent
+    letters, soft/hard c, b/p folding) and correctly links variants that
+    cross the first letter (Elvara↔Ilvara, Aldath↔Eldeth). Falls back to
+    False if the vendored module is unavailable, leaving `phonetic_key`
+    and edit-distance as the only signals.
+    """
+    if _dm_codes is None:
+        return False
+    ca, cb = _dm_codes(a), _dm_codes(b)
+    return bool(ca and cb and (ca & cb))
 
 
 def levenshtein(a: str, b: str) -> int:
@@ -136,17 +163,33 @@ def best_known_match(token: str, knowns: list[str]) -> tuple[str | None, int, st
         if shorter >= 5:
             if tok_lc in k_lc or k_lc in tok_lc:
                 return k, 1, "substring"
-        # Edit distance, length-scaled
+        # Edit distance, length-scaled. The first-letter guard only blocks
+        # the edit-distance *assignment* — it must NOT `continue`, or the
+        # metaphone check below (whose whole job is first-letter-crossing
+        # matches like Elvara↔Ilvara) would never run for this k.
         d = levenshtein(tok_lc, k_lc)
         ed_limit = min(max_ed, _max_ed_for_length(len(k_lc)))
-        if d <= ed_limit and d < best[1]:
-            # First-letter must match when either side is short
-            if short_tok or len(k_lc) <= 6:
-                if tok_lc[:1] != k_lc[:1]:
-                    continue
+        first_letter_ok = not (
+            (short_tok or len(k_lc) <= 6) and tok_lc[:1] != k_lc[:1]
+        )
+        if d <= ed_limit and d < best[1] and first_letter_ok:
             best = (k, d, "edit_distance")
-        # Phonetic — require first-letter match and similar length
-        if tok_phon and tok_phon == phonetic_key(k):
+        # Double Metaphone — models pronunciation, so NO first-letter guard
+        # (its wins, e.g. Elvara↔Ilvara, come from crossing the first letter).
+        # BUT short tokens collapse to short codes that collide on noise
+        # (Thor↔Drow, Word↔Vareth); those are edit-distance's job. Gate DM
+        # to ≥5 chars on both sides. Sentinel 3 → medium confidence: a
+        # phonetic-only hit is less certain than an edit-distance one.
+        if (
+            min(len(tok_lc), len(k_lc)) >= 5
+            and abs(len(tok_lc) - len(k_lc)) <= 3
+            and best[1] > 2
+            and _dm_match(tok, k)
+        ):
+            best = (k, 3, "metaphone")
+        # Crude phonetic key — fallback signal; catches a few DM misses
+        # (e.g. Loth↔Lolth). Keeps the original first-letter guard.
+        elif tok_phon and tok_phon == phonetic_key(k):
             if (
                 tok_lc[:1] == k_lc[:1]
                 and abs(len(tok_lc) - len(k_lc)) <= 3
@@ -176,12 +219,28 @@ def cross_cluster(tokens: list[str]) -> list[list[str]]:
         if ra != rb:
             parent[ra] = rb
 
+    # Double Metaphone buckets — union any tokens sharing a phonetic code.
+    # A token can carry two codes (primary + secondary); index under each.
+    # Only ≥5-char tokens: short ones collide on short codes (edit-distance
+    # below handles those, with its own first-letter guard).
+    if _dm_codes is not None:
+        dm_buckets: dict[str, list[str]] = {}
+        for t in tokens:
+            if len(t) < 5:
+                continue
+            for code in _dm_codes(t):
+                dm_buckets.setdefault(code, []).append(t)
+        for code, group in dm_buckets.items():
+            first = group[0]
+            for other in group[1:]:
+                union(first, other)
+
     phon_buckets: dict[str, list[str]] = {}
     for t in tokens:
         k = phonetic_key(t)
         phon_buckets.setdefault(k, []).append(t)
 
-    # Phonetic-key matches (skip empty key)
+    # Crude phonetic-key matches (skip empty key) — fallback signal.
     for k, group in phon_buckets.items():
         if not k or len(group) < 2:
             continue

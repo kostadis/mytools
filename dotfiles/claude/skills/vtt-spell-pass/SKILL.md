@@ -67,8 +67,11 @@ contexts. `cluster_unknowns.py` then:
 - **Singletons** — leftovers each get a one-member cluster.
 
 Each cluster carries a confidence (high/medium/low) and a reason
-(`exact` / `substring` / `edit_distance` / `phonetic` / `cross-unknown`
-/ `singleton`).
+(`exact` / `substring` / `edit_distance` / `metaphone` / `phonetic` /
+`cross-unknown` / `singleton`). `metaphone` = a vendored Double Metaphone
+code match (models pronunciation, links variants that cross the first
+letter like Elvara↔Ilvara); `phonetic` = the crude devowel fallback key,
+used when Double Metaphone finds nothing or its module is unavailable.
 
 Also run the state filter:
 
