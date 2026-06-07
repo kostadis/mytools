@@ -4,7 +4,7 @@ pub mod move_file;
 pub mod trash;
 
 use anyhow::Result;
-use crate::GoogleCommands;
+use super::GoogleCommands;
 
 pub async fn handle(command: GoogleCommands) -> Result<()> {
     match command {

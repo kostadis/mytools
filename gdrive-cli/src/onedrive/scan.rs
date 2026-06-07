@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde::Serialize;
+use serde_json;
 use std::fs::File;
 use std::io::Write;
 use std::time::Instant;
@@ -106,7 +107,9 @@ fn normalize_record(rec: DriveRecord) -> serde_json::Value {
         shared,
     } = rec;
 
-    let mime_type = file.as_ref().and_then(|f| f.mime_type.clone());
+    let mime_type = file.as_ref().and_then(|f| f.mime_type.clone()).unwrap_or_else(|| {
+        if folder.is_some() { "application/vnd.google-apps.folder".to_string() } else { "".to_string() }
+    });
     let sha1 = file.as_ref().and_then(|f| f.hashes.as_ref().and_then(|h| h.sha1.clone()));
     let quickxor = file.as_ref().and_then(|f| f.hashes.as_ref().and_then(|h| h.quickxor.clone()));
     let child_count = folder.and_then(|f| f.child_count);
@@ -116,28 +119,36 @@ fn normalize_record(rec: DriveRecord) -> serde_json::Value {
     let modifier = modified_by.and_then(|m| m.user).and_then(|u| {
         u.display_name.or(u.email)
     });
-    let parent_id = parent.as_ref().and_then(|p| p.id.clone());
-    let parent_path = parent.as_ref().and_then(|p| p.path.clone());
-    let drive_id = parent.as_ref().and_then(|p| p.drive_id.clone());
-
+    let _parent = parent.as_ref();
+    let _id_str = id.to_string();
+    let _name_str = name.to_string();
+    let _mime_type_str = mime_type.to_string();
+    let _sha1_str = sha1.as_deref().unwrap_or("");
+    let _quickxor_str = quickxor.as_deref().unwrap_or("");
+    let _owner_str = owner.as_deref().unwrap_or("");
+    let _modifier_str = modifier.as_deref().unwrap_or("");
+    let _created_time_str = created_time.as_deref().unwrap_or("");
+    let _modified_time_str = modified_time.as_deref().unwrap_or("");
+    let _web_url_str = web_url.as_deref().unwrap_or("");
+    
     serde_json::json!({
-        "id": id,
-        "name": name,
-        "mime_type": mime_type,
-        "sha1": sha1,
-        "quickxor": quickxor,
+        "id": id.to_string(),
+        "name": name.to_string(),
+        "mime_type": mime_type.to_string(),
+        "sha1": sha1.as_deref().unwrap_or("").to_string(),
+        "quickxor": quickxor.as_deref().unwrap_or("").to_string(),
         "child_count": child_count,
-        "parents": if let Some(pid) = parent_id { vec![pid] } else { vec![] },
-        "parent_path": parent_path,
-        "drive_id": drive_id,
-        "owner": owner,
-        "modifier": modifier,
-        "created_time": created_time,
-        "modified_time": modified_time,
+        "owner": owner.as_deref().unwrap_or("").to_string(),
+        "modifier": modifier.as_deref().unwrap_or("").to_string(),
+        "created_time": created_time.as_deref().unwrap_or("").to_string(),
+        "modified_time": modified_time.as_deref().unwrap_or("").to_string(),
         "deleted": deleted,
         "size": size,
-        "web_url": web_url,
+        "web_url": web_url.as_deref().unwrap_or("").to_string(),
         "shared": shared,
+        "trashed": deleted.unwrap_or(false),
+        "web_view_link": web_url.as_deref().unwrap_or("").to_string(),
+        "md5_checksum": serde_json::Value::Null
     })
 }
 
@@ -145,7 +156,7 @@ pub async fn run(out_path: &str, include_trashed: bool) -> Result<()> {
     let token = get_credentials().await?;
     let t0 = Instant::now();
 
-    let _filter = if include_trashed {
+    let _filter: Option<String> = if include_trashed {
         None
     } else {
         Some("deleted eq null".to_string())

@@ -12,7 +12,7 @@ const AUTHORITY: &str = "https://login.microsoftonline.com/consumers";
 pub const READ_SCOPE: &str = "https://graph.microsoft.com/Files.Read";
 pub const WRITE_SCOPE: &str = "https://graph.microsoft.com/Files.ReadWrite";
 
-pub const CONFIG_DIR: &str = ".config/onedrive-cli";
+pub const CONFIG_DIR: &str = ".config/gdrive-cli";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Token {
@@ -46,7 +46,7 @@ pub fn credentials_path() -> Result<PathBuf> {
 }
 
 fn token_path() -> Result<PathBuf> {
-    Ok(config_dir()?.join("token.json"))
+    Ok(config_dir()?.join("onedrive-token.json"))
 }
 
 async fn exchange_code(client_id: &str, client_secret: &str, code: &str) -> Result<Token> {
@@ -190,4 +190,10 @@ pub async fn graph_get(url: &str, token: &str) -> Result<reqwest::Response> {
     }
 
     unreachable!()
+}
+
+/// Get a client and access token for making Graph API requests
+pub async fn graph_client() -> Result<(reqwest::Client, String)> {
+    let token = get_credentials().await?;
+    Ok((reqwest::Client::new(), token.access_token))
 }
