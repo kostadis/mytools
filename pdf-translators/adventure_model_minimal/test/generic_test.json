@@ -1,0 +1,40 @@
+{
+	"_meta": {
+		"sources": [
+			{
+				"json": "TEST9",
+				"abbreviation": "TEST9",
+				"full": "Test9"
+			}
+		]
+	},
+	"adventure": [
+		{
+			"name": "Test9",
+			"id": "TEST9",
+			"source": "TEST9",
+			"contents": [
+				{
+					"name": "Generic Section",
+					"headers": []
+				}
+			]
+		}
+	],
+	"adventureData": [
+		{
+			"id": "TEST9",
+			"source": "TEST9",
+			"data": [
+				{
+					"type": "section",
+					"name": "Generic Section",
+					"id": "000",
+					"entries": [
+						{}
+					]
+				}
+			]
+		}
+	]
+}
