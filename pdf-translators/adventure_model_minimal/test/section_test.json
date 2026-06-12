@@ -1,0 +1,40 @@
+{
+	"_meta": {
+		"sources": [
+			{
+				"json": "TEST2",
+				"abbreviation": "TEST2",
+				"full": "Test2"
+			}
+		]
+	},
+	"adventure": [
+		{
+			"name": "Test2",
+			"id": "TEST2",
+			"source": "TEST2",
+			"contents": [
+				{
+					"name": "Section2",
+					"headers": []
+				}
+			]
+		}
+	],
+	"adventureData": [
+		{
+			"id": "TEST2",
+			"source": "TEST2",
+			"data": [
+				{
+					"type": "section",
+					"name": "Section2",
+					"id": "000",
+					"entries": [
+						"Text"
+					]
+				}
+			]
+		}
+	]
+}

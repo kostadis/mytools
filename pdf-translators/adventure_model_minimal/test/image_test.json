@@ -1,0 +1,47 @@
+{
+	"_meta": {
+		"sources": [
+			{
+				"json": "TEST4",
+				"abbreviation": "TEST4",
+				"full": "Test4"
+			}
+		]
+	},
+	"adventure": [
+		{
+			"name": "Test4",
+			"id": "TEST4",
+			"source": "TEST4",
+			"contents": [
+				{
+					"name": "Image Section",
+					"headers": []
+				}
+			]
+		}
+	],
+	"adventureData": [
+		{
+			"id": "TEST4",
+			"source": "TEST4",
+			"data": [
+				{
+					"type": "section",
+					"name": "Image Section",
+					"id": "000",
+					"entries": [
+						{
+							"type": "image",
+							"href": {
+								"type": "internal",
+								"path": "img.png"
+							},
+							"title": "Image"
+						}
+					]
+				}
+			]
+		}
+	]
+}

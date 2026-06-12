@@ -1,0 +1,52 @@
+{
+	"_meta": {
+		"sources": [
+			{
+				"json": "TEST3",
+				"abbreviation": "TEST3",
+				"full": "Test3"
+			}
+		]
+	},
+	"adventure": [
+		{
+			"name": "Test3",
+			"id": "TEST3",
+			"source": "TEST3",
+			"contents": [
+				{
+					"name": "Table Section",
+					"headers": []
+				}
+			]
+		}
+	],
+	"adventureData": [
+		{
+			"id": "TEST3",
+			"source": "TEST3",
+			"data": [
+				{
+					"type": "section",
+					"name": "Table Section",
+					"id": "000",
+					"entries": [
+						{
+							"type": "table",
+							"colLabels": [
+								"Col1",
+								"Col2"
+							],
+							"rows": [
+								[
+									"a",
+									"b"
+								]
+							]
+						}
+					]
+				}
+			]
+		}
+	]
+}

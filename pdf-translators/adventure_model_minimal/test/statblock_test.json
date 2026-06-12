@@ -1,0 +1,45 @@
+{
+	"_meta": {
+		"sources": [
+			{
+				"json": "TEST7",
+				"abbreviation": "TEST7",
+				"full": "Test7"
+			}
+		]
+	},
+	"adventure": [
+		{
+			"name": "Test7",
+			"id": "TEST7",
+			"source": "TEST7",
+			"contents": [
+				{
+					"name": "Statblock Section",
+					"headers": []
+				}
+			]
+		}
+	],
+	"adventureData": [
+		{
+			"id": "TEST7",
+			"source": "TEST7",
+			"data": [
+				{
+					"type": "section",
+					"name": "Statblock Section",
+					"id": "000",
+					"entries": [
+						{
+							"type": "statblock",
+							"name": "Goblin",
+							"tag": "creature",
+							"source": "Monster Manual"
+						}
+					]
+				}
+			]
+		}
+	]
+}

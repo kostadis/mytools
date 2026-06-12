@@ -1,0 +1,42 @@
+{
+	"_meta": {
+		"sources": [
+			{
+				"json": "TEST6",
+				"abbreviation": "TEST6",
+				"full": "Test6"
+			}
+		]
+	},
+	"adventure": [
+		{
+			"name": "Test6",
+			"id": "TEST6",
+			"source": "TEST6",
+			"contents": [
+				{
+					"name": "HR Section",
+					"headers": []
+				}
+			]
+		}
+	],
+	"adventureData": [
+		{
+			"id": "TEST6",
+			"source": "TEST6",
+			"data": [
+				{
+					"type": "section",
+					"name": "HR Section",
+					"id": "000",
+					"entries": [
+						{
+							"type": "hr"
+						}
+					]
+				}
+			]
+		}
+	]
+}
