@@ -1,0 +1,47 @@
+{
+	"_meta": {
+		"sources": [
+			{
+				"json": "TEST",
+				"abbreviation": "TEST",
+				"full": "Test"
+			}
+		]
+	},
+	"adventure": [
+		{
+			"name": "Test",
+			"id": "TEST",
+			"source": "TEST",
+			"contents": [
+				{
+					"name": "Ch1",
+					"headers": []
+				}
+			]
+		}
+	],
+	"adventureData": [
+		{
+			"id": "TEST",
+			"source": "TEST",
+			"data": [
+				{
+					"type": "section",
+					"name": "Ch1",
+					"id": "000",
+					"entries": [
+						{
+							"type": "quote",
+							"entries": [
+								"Test quote"
+							],
+							"by": "Author",
+							"from": "Source"
+						}
+					]
+				}
+			]
+		}
+	]
+}

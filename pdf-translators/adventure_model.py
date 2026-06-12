@@ -25,6 +25,10 @@ Usage (load existing JSON):
     doc = parse_document(raw, ctx)
     print(ctx.result.summary())
     print(doc.to_json())
+
+Rust backend:
+    When available, the Rust implementation is used via adventure_model_rust.py.
+    The Python implementation serves as a fallback.
 """
 
 from __future__ import annotations
@@ -36,6 +40,26 @@ from enum import Enum
 from typing import Any, Union
 
 from validate_adventure import VALID_ENTRY_TYPES, KNOWN_TAGS, TAG_RE
+
+# Try to use Rust backend when available
+try:
+    from adventure_model_rust import (
+        BuildContext as _RustBuildContext,
+        HomebrewAdventure as _RustHomebrewAdventure,
+        OfficialAdventureData as _RustOfficialAdventureData,
+        ValidationMode as _RustValidationMode,
+        ValidationResult as _RustValidationResult,
+        parse_document as _rust_parse_document,
+    )
+    _RUST_AVAILABLE = True
+except ImportError:
+    _RUST_AVAILABLE = False
+    _RustValidationMode = None
+    _RustValidationResult = None
+    _RustBuildContext = None
+    _RustHomebrewAdventure = None
+    _RustOfficialAdventureData = None
+    _rust_parse_document = None
 
 
 # ---------------------------------------------------------------------------
@@ -813,16 +837,12 @@ class MetaSource:
 
     def to_dict(self) -> dict:
         d: dict[str, Any] = {"json": self.json}
-        if self.abbreviation:
-            d["abbreviation"] = self.abbreviation
-        if self.full:
-            d["full"] = self.full
+        d["abbreviation"] = self.abbreviation
+        d["full"] = self.full
         if self.version is not None:
             d["version"] = self.version
-        if self.authors:
-            d["authors"] = list(self.authors)
-        if self.convertedBy:
-            d["convertedBy"] = list(self.convertedBy)
+        d["authors"] = list(self.authors)
+        d["convertedBy"] = list(self.convertedBy)
         if self.url is not None:
             d["url"] = self.url
         if self.color is not None:
@@ -1217,3 +1237,20 @@ def _assign_ids_recursive(entry: EntryBase, counter: list[int]) -> None:
         for child in entry.items:
             if isinstance(child, EntryBase):
                 _assign_ids_recursive(child, counter)
+
+
+# ---------------------------------------------------------------------------
+# Rust backend delegation (when available)
+# ---------------------------------------------------------------------------
+# Note: The Rust implementation is in adventure_model_rust.py.
+# When available, we use the Rust types directly. Otherwise, the Python
+# implementation below is used.
+
+if _RUST_AVAILABLE:
+    # Re-export Rust types for direct use
+    BuildContextRust = _RustBuildContext
+    HomebrewAdventureRust = _RustHomebrewAdventure
+    OfficialAdventureDataRust = _RustOfficialAdventureData
+    ValidationModeRust = _RustValidationMode
+    ValidationResultRust = _RustValidationResult
+    parse_document_rust = _rust_parse_document
