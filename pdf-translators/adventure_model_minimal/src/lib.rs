@@ -1,14 +1,13 @@
-use pyo3::prelude::*;
+pub mod entry;
+pub mod homebrew;
+pub mod validation;
+pub mod tags;
 
-pub mod model;
-pub mod parser;
+// Re-export main types for Python bindings
+pub use entry::Entry;
+pub use homebrew::{HomebrewAdventure, OfficialAdventureData, parse_document, ParseResult};
+pub use validation::{BuildContext, ValidationResult, ValidationMode};
 
-pub use model::{Entry, SectionEntry, Meta, ParseError, HomebrewAdventure, TocEntry, TocHeader};
-pub use parser::{parse_entry, parse_document};
-
-#[pymodule]
-fn adventure_model_minimal(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(parse_entry, m)?)?;
-    m.add_function(wrap_pyfunction!(parse_document, m)?)?;
-    Ok(())
-}
+// Python bindings via PyO3
+#[cfg(feature = "python")]
+pub mod pybindings;

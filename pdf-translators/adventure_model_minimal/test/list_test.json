@@ -1,0 +1,46 @@
+{
+	"_meta": {
+		"sources": [
+			{
+				"json": "TEST5",
+				"abbreviation": "TEST5",
+				"full": "Test5"
+			}
+		]
+	},
+	"adventure": [
+		{
+			"name": "Test5",
+			"id": "TEST5",
+			"source": "TEST5",
+			"contents": [
+				{
+					"name": "List Section",
+					"headers": []
+				}
+			]
+		}
+	],
+	"adventureData": [
+		{
+			"id": "TEST5",
+			"source": "TEST5",
+			"data": [
+				{
+					"type": "section",
+					"name": "List Section",
+					"id": "000",
+					"entries": [
+						{
+							"type": "list",
+							"items": [
+								"Item1",
+								"Item2"
+							]
+						}
+					]
+				}
+			]
+		}
+	]
+}

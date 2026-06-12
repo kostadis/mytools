@@ -1,0 +1,42 @@
+{
+	"_meta": {
+		"sources": [
+			{
+				"json": "TEST8",
+				"abbreviation": "TEST8",
+				"full": "Test8"
+			}
+		]
+	},
+	"adventure": [
+		{
+			"name": "Test8",
+			"id": "TEST8",
+			"source": "TEST8",
+			"contents": [
+				{
+					"name": "Spellcasting Section",
+					"headers": []
+				}
+			]
+		}
+	],
+	"adventureData": [
+		{
+			"id": "TEST8",
+			"source": "TEST8",
+			"data": [
+				{
+					"type": "section",
+					"name": "Spellcasting Section",
+					"id": "000",
+					"entries": [
+						{
+							"type": "spellcasting"
+						}
+					]
+				}
+			]
+		}
+	]
+}
