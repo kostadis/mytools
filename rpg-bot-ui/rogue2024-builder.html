@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rogue Builder · D&D 2024</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg:   #0a0c10;
+  --s1:   #11141b;
+  --s2:   #181c26;
+  --s3:   #1f2330;
+  --bd:   #232737;
+  --bd2:  #313749;
+  --tx:   #ddd3bc;
+  --tx2:  #8a8070;
+  --tx3:  #4e4a41;
+  --gold: #c4973a;
+  --gold2:#7a5c1e;
+  --acc:  #7c3aed;
+
+  --rb:#1e40af; --rb-bg:#0c1a35; --rb-t:#93c5fd;
+  --rg:#15803d; --rg-bg:#0a2416; --rg-t:#86efac;
+  --ro:#c2410c; --ro-bg:#2c1005; --ro-t:#fdba74;
+  --rr:#b91c1c; --rr-bg:#280606; --rr-t:#fca5a5;
+
+  --sel-bg:#0d1b33; --sel-bd:#2563eb;
+  --e1-bg:#160e30;  --e1-bd:#7c3aed;
+  --e2-bg:#0c2016;  --e2-bd:#059669;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Crimson Pro',Georgia,serif;background:var(--bg);color:var(--tx);min-height:100vh;font-size:16px;line-height:1.5}
+
+header{background:var(--s1);border-bottom:1px solid var(--bd);padding:12px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100}
+.hicon{font-size:1.4rem;line-height:1}
+header h1{font-family:'Cinzel',serif;font-size:1.05rem;font-weight:700;letter-spacing:.12em;color:var(--gold)}
+header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
+.hlegend{margin-left:auto;display:flex;gap:6px;align-items:center;flex-shrink:0}
+
+.tabs{background:var(--s1);border-bottom:1px solid var(--bd);display:flex;padding:0 24px;overflow-x:auto;gap:0;-webkit-overflow-scrolling:touch}
+.tab{padding:9px 16px;cursor:pointer;border-bottom:2px solid transparent;color:var(--tx2);font-family:'Cinzel',serif;font-size:.7rem;letter-spacing:.09em;white-space:nowrap;transition:all .2s;display:flex;align-items:center;gap:5px}
+.tab:hover{color:var(--tx)}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.tbadge{background:var(--gold2);color:var(--gold);font-size:.6rem;padding:1px 5px;border-radius:3px;font-family:'JetBrains Mono',monospace}
+
+.content{padding:22px 24px 74px;max-width:1280px;margin:0 auto}
+.pane{display:none}
+.pane.active{display:block;animation:fi .18s ease}
+@keyframes fi{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+.sh{margin-bottom:18px}
+.sh h2{font-family:'Cinzel',serif;font-size:.95rem;font-weight:600;letter-spacing:.07em;margin-bottom:3px;color:var(--gold)}
+.sh p{font-size:.85rem;color:var(--tx2);font-style:italic}
+
+.badge{display:inline-flex;align-items:center;font-family:'JetBrains Mono',monospace;font-size:.6rem;font-weight:500;padding:2px 7px;border-radius:3px;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.badge-blue  {background:var(--rb-bg);color:var(--rb-t);border:1px solid var(--rb)}
+.badge-green {background:var(--rg-bg);color:var(--rg-t);border:1px solid var(--rg)}
+.badge-orange{background:var(--ro-bg);color:var(--ro-t);border:1px solid var(--ro)}
+.badge-red   {background:var(--rr-bg);color:var(--rr-t);border:1px solid var(--rr)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.grid-sm{grid-template-columns:repeat(auto-fill,minmax(205px,1fr))}
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:12px 14px;cursor:pointer;transition:border-color .15s,background .15s,transform .1s;user-select:none}
+.card:hover{border-color:var(--bd2);background:var(--s2);transform:translateY(-1px)}
+.card.sel {border-color:var(--sel-bd);background:var(--sel-bg)}
+.card.e1  {border-color:var(--e1-bd); background:var(--e1-bg)}
+.card.e2  {border-color:var(--e2-bd); background:var(--e2-bg)}
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.card-name{font-family:'Cinzel',serif;font-size:.8rem;font-weight:600;letter-spacing:.04em}
+.card-cat{font-size:.58rem;color:var(--tx3);font-family:'Cinzel',serif;letter-spacing:.07em;text-transform:uppercase;margin-top:1px}
+.card-stat{font-family:'JetBrains Mono',monospace;font-size:.65rem;color:var(--tx3);background:var(--s2);padding:1px 5px;border-radius:3px;margin-top:2px}
+.card-note{font-size:.8125rem;color:var(--tx2);line-height:1.5}
+.card-state{margin-top:6px;font-size:.68rem}
+.card-state.s-prof{color:var(--rb-t)}
+.card-state.s-e1  {color:#c4b5fd}
+.card-state.s-e2  {color:var(--rg-t)}
+
+.cbar{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:10px 18px;margin-bottom:14px;display:flex;gap:28px;align-items:center;flex-wrap:wrap}
+.citem{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:72px}
+.cnum{font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:500;color:var(--tx3);transition:color .2s}
+.cnum.ok  {color:var(--rg-t)}
+.cnum.done{color:var(--gold)}
+.clabel{font-size:.6rem;color:var(--tx3);text-transform:uppercase;letter-spacing:.09em;font-family:'Cinzel',serif}
+
+.apicker{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+.abtn{padding:6px 13px;border-radius:5px;border:1px solid var(--bd);background:var(--s1);color:var(--tx2);cursor:pointer;font-size:.8125rem;font-family:'Crimson Pro',serif;transition:all .15s}
+.abtn:hover{color:var(--tx);border-color:var(--bd2)}
+.abtn.active{color:var(--gold);border-color:var(--gold2);background:#181408}
+.agrid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:18px}
+.acell{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:10px 6px;text-align:center}
+.acell.rb{border-color:var(--rb)}.acell.rg{border-color:var(--rg)}.acell.ro{border-color:var(--ro)}.acell.rr{border-color:var(--rr)}
+.alabel{font-family:'Cinzel',serif;font-size:.62rem;color:var(--tx2);letter-spacing:.1em;margin-bottom:4px}
+.aval{font-family:'JetBrains Mono',monospace;font-size:1.35rem;font-weight:500}
+.amod{font-size:.72rem;color:var(--tx2);font-family:'JetBrains Mono',monospace}
+.anotes{display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:8px}
+
+.aslots{display:flex;flex-direction:column;gap:10px;margin-bottom:26px}
+.aslot{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:13px 15px}
+.aslot.has-ch{border-color:var(--bd2)}
+.aslot-hdr{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.lpill{font-family:'JetBrains Mono',monospace;font-size:.62rem;background:var(--acc);color:#fff;padding:2px 8px;border-radius:9999px}
+.aslot-title{font-family:'Cinzel',serif;font-size:.78rem;color:var(--tx2)}
+.aslot.has-ch .aslot-title{color:var(--gold)}
+.abtns{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.abtn2{padding:5px 12px;border-radius:5px;border:1px solid var(--bd);background:var(--bg);color:var(--tx2);cursor:pointer;font-size:.8125rem;font-family:'Crimson Pro',serif;transition:all .15s}
+.abtn2:hover{color:var(--tx);border-color:var(--bd2)}
+.abtn2.active{color:var(--gold);border-color:var(--gold2);background:#181408}
+.abtn2.clr{margin-left:auto;opacity:.45;font-size:.75rem}
+.abtn2.clr:hover{opacity:1}
+
+.fassign{margin-top:8px;display:flex;gap:5px;flex-wrap:wrap}
+.fassign-btn{font-size:.68rem;padding:2px 8px;border-radius:3px;border:1px solid var(--bd);background:var(--bg);color:var(--tx2);cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all .15s}
+.fassign-btn:hover{border-color:var(--gold2);color:var(--gold)}
+.fassign-btn.asgd{border-color:var(--gold2);color:var(--gold);background:#181408}
+
+.fbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.fbtn{padding:4px 10px;border-radius:9999px;border:1px solid var(--bd);background:var(--s1);color:var(--tx2);cursor:pointer;font-size:.7rem;font-family:'JetBrains Mono',monospace;transition:all .15s}
+.fbtn:hover{color:var(--tx);border-color:var(--bd2)}
+.fbtn.fa.active{border-color:var(--gold2);color:var(--gold);background:#181408}
+.fbtn.fb.active{border-color:var(--rb);color:var(--rb-t);background:var(--rb-bg)}
+.fbtn.fg.active{border-color:var(--rg);color:var(--rg-t);background:var(--rg-bg)}
+.fbtn.fo.active{border-color:var(--ro);color:var(--ro-t);background:var(--ro-bg)}
+.fbtn.fr.active{border-color:var(--rr);color:var(--rr-t);background:var(--rr-bg)}
+.fdiv{color:var(--bd2);margin:0 2px;font-size:.8rem;user-select:none}
+.srch{padding:5px 11px;border-radius:5px;border:1px solid var(--bd);background:var(--s1);color:var(--tx);font-family:'Crimson Pro',serif;font-size:.875rem;flex:1;min-width:140px;max-width:240px;outline:none}
+.srch:focus{border-color:var(--bd2)}
+.srch::placeholder{color:var(--tx3)}
+.feat-ref-hdr{font-family:'Cinzel',serif;font-size:.8rem;color:var(--tx2);letter-spacing:.07em;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--bd)}
+
+.feat-group-hdr{font-family:'Cinzel',serif;font-size:.82rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--gold2)}
+.feat-group-section{margin-bottom:28px}
+.feat-group-sub{font-size:.78rem;color:var(--tx3);font-style:italic;margin-bottom:10px}
+
+.ftable{width:100%;border-collapse:collapse}
+.ftable th{font-family:'Cinzel',serif;font-size:.62rem;letter-spacing:.1em;color:var(--tx2);text-transform:uppercase;padding:6px 11px;border-bottom:1px solid var(--bd);text-align:left}
+.ftable td{padding:8px 11px;font-size:.8125rem;border-bottom:1px solid var(--bd);vertical-align:top}
+.ftable tr:last-child td{border-bottom:none}
+.lchip{font-family:'JetBrains Mono',monospace;font-size:.68rem;color:var(--tx3);background:var(--s2);padding:2px 6px;border-radius:3px}
+.fname{font-family:'Cinzel',serif;font-size:.75rem;letter-spacing:.04em;font-weight:600}
+
+.callout{background:var(--s2);border:1px solid var(--bd);border-left:3px solid var(--rb);border-radius:4px;padding:8px 12px;font-size:.8rem;color:var(--tx2);margin-bottom:14px;font-style:italic}
+
+.sblock{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:16px 20px;margin-bottom:12px}
+.sblock h3{font-family:'Cinzel',serif;font-size:.67rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--bd)}
+.srow{display:flex;gap:10px;padding:4px 0;font-size:.875rem;border-bottom:1px solid var(--bd);align-items:flex-start}
+.srow:last-child{border-bottom:none}
+.skey{color:var(--tx2);min-width:135px;font-style:italic;flex-shrink:0}
+.sval{color:var(--tx)}
+.copybtn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:var(--s2);border:1px solid var(--gold2);color:var(--gold);border-radius:5px;cursor:pointer;font-family:'Cinzel',serif;font-size:.72rem;letter-spacing:.06em;transition:all .15s;margin-top:12px}
+.copybtn:hover{background:#181408}
+
+#sbar{position:fixed;bottom:0;left:0;right:0;background:var(--s1);border-top:1px solid var(--bd);padding:7px 24px;display:flex;gap:18px;align-items:center;font-size:.72rem;z-index:100;overflow-x:auto;white-space:nowrap}
+.si{display:flex;align-items:center;gap:6px}
+.slbl{color:var(--tx3);font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.1em;text-transform:uppercase}
+.sval2{color:var(--tx);font-family:'JetBrains Mono',monospace;font-size:.68rem}
+.sval2.hi{color:var(--gold)}
+.sdiv{color:var(--bd2)}
+
+@media(max-width:640px){
+  .agrid{grid-template-columns:repeat(3,1fr)}
+  .content{padding:14px 14px 74px}
+  .hlegend{display:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="hicon">⚔</span>
+  <div>
+    <h1>ROGUE BUILDER</h1>
+    <div class="hsub">2024 D&amp;D rules · RPGBOT guide</div>
+  </div>
+  <div class="hlegend">
+    <span class="badge badge-blue">Fantastic</span>
+    <span class="badge badge-green">Good</span>
+    <span class="badge badge-orange">Situational</span>
+    <span class="badge badge-red">Avoid</span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <div class="tab active" data-tab="subclass">Subclass</div>
+  <div class="tab" data-tab="species">Species</div>
+  <div class="tab" data-tab="abilities">Ability Scores</div>
+  <div class="tab" data-tab="skills">Skills &amp; Expertise</div>
+  <div class="tab" data-tab="background">Background</div>
+  <div class="tab" data-tab="feats">Feats &amp; ASIs</div>
+  <div class="tab" data-tab="epicboons">Epic Boons</div>
+  <div class="tab" data-tab="weapons">Weapons &amp; Armor</div>
+  <div class="tab" data-tab="multiclass">Multiclassing</div>
+  <div class="tab" data-tab="features">Class Features</div>
+  <div class="tab" data-tab="summary">Summary</div>
+</nav>
+
+<div class="content">
+
+  <div class="pane active" id="pane-subclass">
+    <div class="sh"><h2>Rogue Subclass</h2><p>Chosen at level 3. 2024 D&amp;D has four subclasses. See the RPGBOT Subclasses Guide for detailed ratings.</p></div>
+    <div class="grid" id="subclass-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-species">
+    <div class="sh"><h2>Species</h2><p>In 2024 D&amp;D, Species no longer grant ability score increases — those come from your Background. Choose based on racial traits and playstyle.</p></div>
+    <div class="grid" id="species-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-abilities">
+    <div class="sh"><h2>Ability Scores</h2><p>Values shown are after Background bonuses (+2/+1). Click an array to preview. Cells are color-coded by priority.</p></div>
+    <div class="apicker" id="array-picker"></div>
+    <div class="agrid" id="ability-grid"></div>
+    <div class="sh" style="margin-top:4px"><h2>Score Priorities</h2></div>
+    <div class="anotes" id="ability-notes"></div>
+  </div>
+
+  <div class="pane" id="pane-skills">
+    <div class="sh"><h2>Skills &amp; Expertise</h2><p>Pick 4 class skills. Click a selected skill to cycle: Proficient → L1 Expertise → L6 Expertise → unselected.</p></div>
+    <div class="cbar">
+      <div class="citem"><div class="cnum" id="cnt-s">0<span style="font-size:.65rem;color:var(--tx3)">/4</span></div><div class="clabel">Skills</div></div>
+      <div class="citem"><div class="cnum" id="cnt-e1">0<span style="font-size:.65rem;color:var(--tx3)">/2</span></div><div class="clabel">L1 Expertise</div></div>
+      <div class="citem"><div class="cnum" id="cnt-e2">0<span style="font-size:.65rem;color:var(--tx3)">/2</span></div><div class="clabel">L6 Expertise</div></div>
+    </div>
+    <div class="callout"><strong>2024:</strong> Expertise can apply to any skill you're proficient in — including Background skills. This panel tracks your 4 class picks; assign Expertise freely.</div>
+    <div class="grid grid-sm" id="skills-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-background">
+    <div class="sh"><h2>Background</h2><p>In 2024 D&amp;D, your Background sets ability scores (+2/+1 or +1/+1/+1) and grants an Origin Feat. Dexterity is non-negotiable.</p></div>
+    <div class="callout"><strong>Rule:</strong> Any Background that doesn't increase Dexterity is immediately out. The Origin Feat from your Background is one of your most important choices.</div>
+    <div class="grid" id="background-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-feats">
+    <div class="sh"><h2>Feats &amp; Ability Score Improvements</h2><p>Rogues get 6 ASI slots (levels 4, 8, 10, 12, 16, 19). Origin Feats come from your Background; General Feats fill ASI slots.</p></div>
+    <div class="aslots" id="asi-slots"></div>
+    <div class="feat-ref-hdr">Feat Reference</div>
+    <div class="fbar" id="feat-filters"></div>
+    <div class="feat-group-section">
+      <div class="feat-group-hdr">Origin Feats</div>
+      <div class="grid" id="feats-origin"></div>
+    </div>
+    <div class="feat-group-section">
+      <div class="feat-group-hdr">General Feats</div>
+      <div class="grid" id="feats-general"></div>
+    </div>
+    <div class="feat-group-section">
+      <div class="feat-group-hdr">Dragonmark Feats</div>
+      <div class="feat-group-sub callout" style="font-style:normal"><strong>Eberron only.</strong> Dragonmark Feats are campaign-specific — check with your DM. They replace other Origin Feats and require the appropriate Eberron lineage.</div>
+      <div class="grid" id="feats-dragonmark"></div>
+    </div>
+  </div>
+
+  <div class="pane" id="pane-epicboons">
+    <div class="sh"><h2>Epic Boons</h2><p>Available at level 19 as your final ASI. These are the most powerful feats in 2024 D&amp;D — each offers a build-defining upgrade.</p></div>
+    <div class="callout"><strong>Note:</strong> You get one Epic Boon at level 19. It fills your final ASI slot. Epic Boons are not available as General Feats earlier in the build.</div>
+    <div class="grid" id="epicboons-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-weapons">
+    <div class="sh"><h2>Weapons</h2><p>Rogues get 2 Weapon Mastery slots. Focus on Finesse or Light weapons for Sneak Attack eligibility.</p></div>
+    <div class="grid" id="weapons-grid"></div>
+    <div class="sh" style="margin-top:22px"><h2>Armor</h2><p>Rogues are proficient in light armor only.</p></div>
+    <div class="grid" id="armor-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-multiclass">
+    <div class="sh"><h2>Multiclassing</h2><p>Brief dips for specific features. Don't invest more levels than the feature requires.</p></div>
+    <div class="callout"><strong>Caution:</strong> Every level outside Rogue delays Sneak Attack scaling, Reliable Talent (level 7), and Slippery Mind (level 15). The bar for a dip is high.</div>
+    <div class="grid" id="multiclass-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-features">
+    <div class="sh"><h2>Class Features</h2><p>Key features with RPGBOT ratings. Notable 2024 changes: Reliable Talent moved to level 7, Cunning Strike added at 5, Weapon Mastery at 1.</p></div>
+    <table class="ftable">
+      <thead><tr><th>Lvl</th><th>Feature</th><th>Rating</th><th>Notes</th></tr></thead>
+      <tbody id="features-tbody"></tbody>
+    </table>
+    <div class="sh" style="margin-top:22px"><h2>Cunning Strike &amp; Devious Strikes Options</h2><p>Effects you can apply by trading Sneak Attack dice.</p></div>
+    <div class="grid" id="optional-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-summary">
+    <div class="sh"><h2>Build Summary</h2><p>All your selections at a glance.</p></div>
+    <div id="summary-content"></div>
+    <button class="copybtn" id="copy-btn">◆ Copy to Clipboard</button>
+  </div>
+
+</div>
+
+<div id="sbar">
+  <div class="si"><span class="slbl">Subclass</span><span class="sval2 hi" id="sb-sc">—</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Species</span><span class="sval2 hi" id="sb-sp">—</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Background</span><span class="sval2 hi" id="sb-bg">—</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Skills</span><span class="sval2" id="sb-sk">0/4</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">ASIs</span><span class="sval2" id="sb-asi">0/6</span></div>
+</div>
+
+<script>
+const D = {
+  subclasses:[
+    {name:"Soulknife",      r:"blue",  d:"Use psychic powers to create psychic blades that need no equipment, bypass many resistances, and deal psychic damage. Psi-Bolstered Knack helps with skill checks."},
+    {name:"Arcane Trickster",r:"green",d:"Add wizard spellcasting and excel at using Mage Hand in unique ways. Build around True Strike and Intelligence for an Int-based attack Rogue."},
+    {name:"Assassin",       r:"green", d:"Masters of infiltration and deadly surprise. Devastating Sneak Attacks at the start of combat. Excels when campaigns support preparation time."},
+    {name:"Thief",          r:"green", d:"Move quickly, act quickly, and use magic items better than anyone else. Fast Hands unlocks the Healer feat trick — probably the best use of that feat in the game."},
+  ],
+  species:[
+    {n:"Changeling",        src:"EFotA",r:"blue",  d:"Two extra skills, perpetual Advantage on Charisma checks, and built-in disguises. Excellent for a Face build."},
+    {n:"Halfling",          src:"PHB",  r:"blue",  d:"Tailor-made for the Rogue. Brave covers your weakest defense. Halfling Nimbleness lets you move through enemies' spaces. Naturally Stealthy lets you hide behind allies."},
+    {n:"Human",             src:"PHB",  r:"blue",  d:"An additional skill and an Origin Feat on top of your Background's feat. Easy choice on any build."},
+    {n:"Dhampir",           src:"ABoH", r:"green", d:"Spider Climb and a Bite attack for a bonus Sneak Attack option. Good for a melee Rogue who wants a vampire aesthetic."},
+    {n:"Elf",               src:"PHB",  r:"green", d:"Darkvision, Keen Senses (Perception), and immunity to sleep effects. Wood Elves get extra speed and can hide in light obscurement."},
+    {n:"Gnome",             src:"PHB",  r:"green", d:"Gnomish Cunning grants Advantage on Int/Wis/Cha saves vs. magic — extremely useful. Forest Gnomes add minor illusions."},
+    {n:"Khoravar",          src:"EFotA",r:"green", d:"Extra skill proficiency and a bonus to Charisma checks. Solid if you want to play a half-elf Face Rogue."},
+    {n:"Warforged",         src:"EFotA",r:"green", d:"+1 to AC, no need to eat or breathe, immunity to disease. Durable in a way most Rogues aren't."},
+    {n:"Aasimar",           src:"PHB",  r:"orange",d:"Healing Hands and Darkvision are nice, but the damage forms (Radiant Soul etc.) don't complement a Sneak Attack playstyle well."},
+    {n:"Dragonborn",        src:"PHB",  r:"orange",d:"Breath Weapon and elemental resistances are fine features, but nothing here is specifically useful to the Rogue."},
+    {n:"Dwarf",             src:"PHB",  r:"orange",d:"Dwarven Resilience (poison resistance and advantage on saves) is genuinely good, but speed reduction hurts a mobile Rogue."},
+    {n:"Goliath",           src:"PHB",  r:"orange",d:"Giant's Power adds Str-based options that you won't use, and Stone's Endurance competes with your Bonus Action. Situational."},
+    {n:"Kalashtar",         src:"EFotA",r:"orange",d:"Psychic resistance is useful, but the rest is very campaign-dependent. Good if the DM uses a lot of mind-affecting magic."},
+    {n:"Lorwyn Changeling", src:"LFL",  r:"orange",d:"Shapeshifting is flavorful, but this version lacks the mechanical bite of the EFotA Changeling. Situational."},
+    {n:"Orc",               src:"PHB",  r:"orange",d:"Adrenaline Rush gives extra mobility on a Bonus Action, which competes with Cunning Action. Relentless Endurance is solid insurance."},
+    {n:"Rimekin",           src:"LFL",  r:"orange",d:"Cold-flavored abilities rarely align with a Rogue's core tactics. The slow effect can be useful situationally."},
+    {n:"Shifter",           src:"EFotA",r:"orange",d:"Shifting provides a burst of survivability, but you'd rather use your bonus action. Best for melee builds who need a panic button."},
+    {n:"Tiefling",          src:"PHB",  r:"orange",d:"Hellish Rebuke is a nice reaction and Darkvision is always welcome, but Infernal Legacy doesn't directly improve Rogue tactics."},
+  ],
+  arrays:[
+    {n:"Standard Build — Point Buy",       v:{Str:8, Dex:17, Con:15, Int:10, Wis:14, Cha:8}},
+    {n:"Standard Build — Standard Array",  v:{Str:8, Dex:17, Con:14, Int:12, Wis:14, Cha:10}},
+    {n:"Arcane Trickster — Point Buy",     v:{Str:8, Dex:17, Con:15, Int:14, Wis:10, Cha:8}},
+    {n:"PHB Recommended (AT)",             v:{Str:12,Dex:17, Con:14, Int:14, Wis:10, Cha:8}},
+  ],
+  abilityNotes:[
+    {s:"Str",r:"red",   n:"Dump stat. Nothing a typical Rogue does uses Strength."},
+    {s:"Dex",r:"blue",  n:"Your primary ability. Skills, tools, attacks, damage, AC, and your best save. Your Background must increase this."},
+    {s:"Con",r:"green", n:"Hit points are always important, especially for melee Rogues who draw more attacks."},
+    {s:"Int",r:"orange",n:"Arcane Tricksters need it for spells. Others only need it for Investigation."},
+    {s:"Wis",r:"orange",n:"Helpful for Insight, Perception, and saves. Slippery Mind (level 15) adds Wisdom save proficiency."},
+    {s:"Cha",r:"green", n:"Rogues make a great Face. You can't be effective without Charisma if you plan to fill that role."},
+  ],
+  skills:[
+    {n:"Acrobatics",     s:"Dex",r:"orange",d:"Very situational."},
+    {n:"Athletics",      s:"Str",r:"red",   d:"Functionally useless. Sleight of Hand handles manacles and rope better."},
+    {n:"Deception",      s:"Cha",r:"green", d:"Important for a Face."},
+    {n:"Insight",        s:"Wis",r:"green", d:"Important for a Face."},
+    {n:"Intimidation",   s:"Cha",r:"green", d:"Important for a Face."},
+    {n:"Investigation",  s:"Int",r:"green", d:"Very helpful, but not as important as Perception."},
+    {n:"Perception",     s:"Wis",r:"blue",  d:"Most important skill in the game. Several party members should have it even if you're great at it."},
+    {n:"Performance",    s:"Cha",r:"red",   d:"Functionally useless."},
+    {n:"Persuasion",     s:"Cha",r:"blue",  d:"Essential for a Face. Expertise here is devastating."},
+    {n:"Sleight of Hand",s:"Dex",r:"green", d:"Now used to pick locks. Proficient in both Sleight of Hand and Thieves' Tools: use the higher modifier and roll with Advantage."},
+    {n:"Stealth",        s:"Dex",r:"blue",  d:"A Rogue without Stealth is a very strange Rogue."},
+  ],
+  backgrounds:[
+    {n:"Carouser",           r:"blue",  d:"Good ability scores, great feat, fantastic skills if you're playing Face. (ABoH)"},
+    {n:"Charlatan",          r:"blue",  d:"Absolutely fantastic for the Rogue — especially in a small party or for a Face build. (PHB)"},
+    {n:"Criminal",           r:"blue",  d:"Perfect for a stealthy character. (PHB)"},
+    {n:"Genie Touched",      r:"blue",  d:"Excellent ability scores and skills. Great access to Booming Blade or True Strike for non-AT builds. (FRHoF)"},
+    {n:"Scribe",             r:"blue",  d:"Easy go-to, especially in a small party needing skill coverage. Good stats, good skills, Skilled gives even more. (PHB)"},
+    {n:"Wayfarer",           r:"blue",  d:"Good ability scores, good skills, and Lucky. Tool proficiency is redundant but everything else is excellent. (PHB)"},
+    {n:"Archaeologist",      r:"green", d:"Good skill coverage. Basically Scribe but with different fixed skills. Good for small parties. (EFotA)"},
+    {n:"Guide",              r:"green", d:"Great ability scores, decent skills. Magic Initiate (Druid) can give useful utility options. (PHB)"},
+    {n:"Inquisitive",        r:"green", d:"Works for an Int-based Arcane Trickster. Alert offsets lower Dexterity for initiative. (EFotA)"},
+    {n:"Mulhorandi Tomb Raider",r:"green",d:"Good ability scores for any Rogue with decent Intelligence. (FRHoF)"},
+    {n:"Zhentarim Mercenary",r:"green", d:"Good ability scores and skills for a Cha-investing Rogue. Zhentarim Ruffian is excellent. (FRHoF)"},
+    {n:"Acolyte",            r:"orange",d:"Could build around True Strike for Int-based attacks, but you'll likely get more value from Human + Magic Initiate. (PHB)"},
+    {n:"Artisan",            r:"orange",d:"Good ability scores for an Arcane Trickster, decent skills, but Crafter is not a great feat. (PHB)"},
+    {n:"Entertainer",        r:"orange",d:"Good ability scores and Musician is welcome in any party, but the skills are nearly useless for a Rogue. (PHB)"},
+    {n:"Noble",              r:"orange",d:"Could work for an Int-based Arcane Trickster, but Scribe has better skills. (PHB)"},
+    {n:"Sage",               r:"orange",d:"Int and Con work for Arcane Trickster, but you're still a Rogue first — you really need Dexterity. (PHB)"},
+    {n:"Sailor",             r:"orange",d:"Decent ability scores, one good skill, but Tavern Brawler is useless on a Rogue. (PHB)"},
+    {n:"Soldier",            r:"orange",d:"Good ability scores, but Savage Attacker is wasted on the Rogue and the skills aren't great. (PHB)"},
+    {n:"Dead Magic Dweller", r:"red",   d:"Bad ability scores, bad feat, bad skills. (FRHoF)"},
+    {n:"Farmer",             r:"red",   d:"Bad ability scores, bad skills. (PHB)"},
+    {n:"Guard",              r:"red",   d:"Bad ability scores. If you want Alert, look at Inquisitive. (PHB)"},
+    {n:"Hermit",             r:"red",   d:"Not good enough to justify the lack of a Dexterity increase. (PHB)"},
+  ],
+  feats:[
+    // Origin Feats
+    {n:"Healer",              r:"blue",  cat:"origin",  d:"The Thief Rogue's Fast Hands lets you use Battle Medic as a Bonus Action — probably the best use of Healer in the entire game."},
+    {n:"Lucky",               r:"blue",  cat:"origin",  d:"An easy choice on any character. Three extra d20 rolls per long rest on attacks, checks, or saves."},
+    {n:"Purple Dragon Rook",  r:"blue",  cat:"origin",  d:"Proficiency in Insight or Persuasion, and give Heroic Inspiration to your whole party once per day. Excellent if you don't need something else. (FRHoF)"},
+    {n:"Tireless Reveler",    r:"blue",  cat:"origin",  d:"Heroic Inspiration is always useful. A great choice on literally any character. (ABoH)"},
+    {n:"Zhentarim Ruffian",   r:"blue",  cat:"origin",  d:"Opportunity Attacks can effectively double your damage output. Gives your whole party Advantage on initiative. (FRHoF)"},
+    {n:"Alert",               r:"green", cat:"origin",  d:"Never a bad choice, but less impactful for Assassins who already get Advantage on initiative."},
+    {n:"Magic Initiate",      r:"green", cat:"origin",  d:"Standard builds can use buffs like Guidance or Mage Armor. Arcane Tricksters can build around True Strike for Int-based attacks."},
+    {n:"Musician",            r:"green", cat:"origin",  d:"A great way to contribute to any party."},
+    {n:"Skilled",             r:"green", cat:"origin",  d:"Rogues get more skills than anyone else, but a small party may still need more coverage."},
+    {n:"Vampire's Plaything", r:"green", cat:"origin",  d:"Timely Retreat is really good. (ABoH)"},
+    {n:"Child of the Sun",    r:"orange",cat:"origin",  d:"Faerie Fire may help Arcane Tricksters, but you already have easy Advantage from Cunning Action. (LFL)"},
+    {n:"Crafter",             r:"orange",cat:"origin",  d:"Neat but not especially impactful. Crafting mundane gear stops mattering early and omits the Herbalist Kit."},
+    {n:"Shadowmoor Hexer",    r:"orange",cat:"origin",  d:"1d6 damage isn't worth Concentration, but Hex's debuff on Wisdom ability checks helps you stay hidden. (LFL)"},
+    {n:"Harper Agent",        r:"red",   cat:"origin",  d:"The Help Action isn't useful enough to justify this unless you're a Hobgoblin. (FRHoF)"},
+    {n:"Savage Attacker",     r:"red",   cat:"origin",  d:"Your weapon damage die isn't a big enough part of your output to make this impactful."},
+    {n:"Spellfire Spark",     r:"red",   cat:"origin",  d:"Rogues lean too heavily on Bonus Action to make this an easy choice. (FRHoF)"},
+    {n:"Tavern Brawler",      r:"red",   cat:"origin",  d:"You should literally never make an unarmed strike."},
+    {n:"Tough",               r:"red",   cat:"origin",  d:"If you need this, you need to be using Cunning Action more to stay safely out of reach."},
+    // General Feats
+    {n:"Dual Wielder",        r:"blue",  cat:"general", d:"Grab a weapon with Nick and you roll at least two d20s per turn, dramatically improving Sneak Attack reliability."},
+    {n:"Skulker",             r:"blue",  cat:"general", d:"This feat was made for the Rogue. Absolutely essential if you plan to fight at range — missing doesn't reveal you."},
+    {n:"Athlete",             r:"green", cat:"general", d:"A climb speed is the next best thing to flight. Standing up quickly from prone and reduced jump run-up both help in combat."},
+    {n:"Fey Touched",         r:"green", cat:"general", d:"Helpful for Arcane Tricksters. Misty Step may be redundant with Cunning Action, but more spells and free castings add real utility."},
+    {n:"Inspiring Leader",    r:"green", cat:"general", d:"A massive amount of temporary hit points. Wait until you have 20 Dexterity first since it can't improve Dex."},
+    {n:"Piercer",             r:"green", cat:"general", d:"Nearly all your preferred weapons deal Piercing. The reroll can target any damage die — including Sneak Attack dice."},
+    {n:"Resilient",           r:"green", cat:"general", d:"Never a bad choice. Hard to pick the right ability until you have 20 Dex and all the feats you want."},
+    {n:"Sentinel",            r:"green", cat:"general", d:"Potentially an easy way to get Sneak Attack outside your own turn via Opportunity Attacks."},
+    {n:"Shadow-Touched",      r:"green", cat:"general", d:"You're almost certainly going to learn Invisibility. Free castings are a reliable bonus."},
+    {n:"Sharpshooter",        r:"green", cat:"general", d:"Helpful for ranged builds but not essential."},
+    {n:"Skill Expert",        r:"green", cat:"general", d:"More skills are always nice, especially once you have Reliable Talent at level 7."},
+    {n:"Actor",               r:"orange",cat:"general", d:"Too situational on its own, though it nicely complements Assassin infiltration."},
+    {n:"Charger",             r:"orange",cat:"general", d:"Combine Cunning Action (Dash) with the push to rush into melee, knock target back, then retreat. Niche but functional."},
+    {n:"Chef",                r:"orange",cat:"general", d:"Won't contribute meaningfully to Rogue capabilities, but THP snacks are always welcome."},
+    {n:"Defensive Duelist",   r:"orange",cat:"general", d:"Too much overlap with Uncanny Dodge."},
+    {n:"Keen Mind",           r:"orange",cat:"general", d:"Even for the Arcane Trickster, this is hard to justify."},
+    {n:"Mage Slayer",         r:"orange",cat:"general", d:"Great insurance against mental saves, but hiding keeps you untargetable. High-level Slippery Mind reduces the appeal further."},
+    {n:"Observant",           r:"orange",cat:"general", d:"Competes too much with crucial class features and action economy."},
+    {n:"Poisoner",            r:"orange",cat:"general", d:"Poisoning before combat is less of a hassle for Rogues than multi-attack classes. Damage doesn't scale with level."},
+    {n:"Slasher",             r:"orange",cat:"general", d:"Rogues get very few slashing Sneak Attack weapons, but this can work with whips."},
+    {n:"Telekinetic",         r:"orange",cat:"general", d:"Too situational."},
+    {n:"Telepathic",          r:"orange",cat:"general", d:"Too situational."},
+    {n:"War Caster",          r:"orange",cat:"general", d:"Potentially useful for Arcane Tricksters, but not strictly necessary."},
+    {n:"Crossbow Expert",     r:"red",   cat:"general", d:"Not worth the feat. Use Steady Aim for Advantage while still rolling two d20s to hit."},
+    {n:"Crusher",             r:"red",   cat:"general", d:"Rogues' Sneak Attack weapons almost all deal Piercing. Crusher needs bludgeoning and doesn't give a Dexterity increase."},
+    {n:"Durable",             r:"red",   cat:"general", d:"Bad and conflicts with your crucial Bonus Action class features."},
+    {n:"Grappler",            r:"red",   cat:"general", d:"Rogues should not be grappling."},
+    {n:"Great Weapon Master",  r:"red",  cat:"general", d:"The ability score increase is useless and you'll only get the damage bonus once per round."},
+    {n:"Heavily Armored",     r:"red",   cat:"general", d:"Ruins stealth."},
+    {n:"Martial Weapon Training",r:"red",cat:"general", d:"A 1-level Fighter dip is almost always a better idea unless you expect to reach level 20."},
+    {n:"Medium Armor Master", r:"red",   cat:"general", d:"Borderline worthless. Put +2 into Dexterity and wear light armor."},
+    {n:"Polearm Master",      r:"red",   cat:"general", d:"You should not be using a polearm to attack."},
+    {n:"Ritual Caster",       r:"red",   cat:"general", d:"Not even on an Arcane Trickster."},
+    {n:"Shield Master",       r:"red",   cat:"general", d:"You don't get proficiency with shields."},
+    {n:"Speedy",              r:"red",   cat:"general", d:"You have Cunning Action."},
+    {n:"Spell Sniper",        r:"red",   cat:"general", d:"You cannot use Sneak Attack with spell attacks."},
+    {n:"Weapon Master",       r:"red",   cat:"general", d:"You already get enough Weapon Mastery slots from your class."},
+    // Dragonmark Feats (Eberron only)
+    {n:"Aberrant Dragonmark",   r:"green", cat:"dragonmark",d:"Grants cantrips and a leveled spell (recharges on long rest). The d8 chaos die is a risk, but the free spellcasting is genuinely useful for a Rogue who wants utility without a multiclass dip."},
+    {n:"Mark of Detection",     r:"orange",cat:"dragonmark",d:"Arcane Eye and See Invisibility are excellent, but your spell save DC is Int-based — not a natural fit unless you're an Arcane Trickster. The skill bonuses help an investigation-focused build. (Eberron)"},
+    {n:"Mark of Finding",       r:"orange",cat:"dragonmark",d:"Hunter's Mark and terrain-based advantage are more Ranger-flavored than Rogue. The perception bonus is nice, but this is a heavy investment for situational gains. (Eberron)"},
+    {n:"Mark of Handling",      r:"red",   cat:"dragonmark",d:"Animal-focused abilities rarely see use in a typical dungeon campaign. Almost nothing here benefits the Rogue's core tactics. (Eberron)"},
+    {n:"Mark of Healing",       r:"green", cat:"dragonmark",d:"Cure Wounds spells and a bonus to Medicine checks fit a supportive Rogue in a small party. Pairs well with the Thief's Fast Hands to use Healer as a Bonus Action. (Eberron)"},
+    {n:"Mark of Hospitality",   r:"orange",cat:"dragonmark",d:"Friends and Unseen Servant are flavorful but rarely impactful in combat. Good for roleplay-heavy or social campaigns. (Eberron)"},
+    {n:"Mark of Making",        r:"green", cat:"dragonmark",d:"Fabricate and Identify are highly useful utility spells. The bonus to tool checks improves your Thieves' Tools rolls. Good pick for a Rogue who wants out-of-combat utility. (Eberron)"},
+    {n:"Mark of Passage",       r:"green", cat:"dragonmark",d:"Misty Step and enhanced movement align perfectly with the mobile Rogue's playstyle. Extra escape options for when Cunning Action isn't enough. (Eberron)"},
+    {n:"Mark of Scribing",      r:"orange",cat:"dragonmark",d:"Sending and Comprehend Languages are useful utility but niche in combat. Best in political or intrigue campaigns where communication matters. (Eberron)"},
+    {n:"Mark of Sentinel",      r:"orange",cat:"dragonmark",d:"Alert and Guardian of Faith lean more Fighter/Paladin. The initiative bonus is nice, but most of the spell list doesn't fit the Rogue's action economy. (Eberron)"},
+    {n:"Mark of Shadow",        r:"green", cat:"dragonmark",d:"Invisibility and Darkness are excellent for a stealthy Rogue who wants more sneaking options beyond Cunning Action. Pairs especially well with Skulker. (Eberron)"},
+    {n:"Mark of Storm",         r:"orange",cat:"dragonmark",d:"Gust of Wind and Fog Cloud can help with escape or positioning, but most Rogues already have plenty of mobility. Situational. (Eberron)"},
+    {n:"Mark of Warding",       r:"orange",cat:"dragonmark",d:"Alarm and Arcane Lock are useful utility for dungeon security and infiltration prep, but contribute little in direct combat. (Eberron)"},
+  ],
+  epicBoons:[
+    {n:"Boon of Combat Prowess",r:"blue",  d:"Functionally removes your ability to miss. If you used two-weapon fighting for a second Sneak Attack chance, you can safely stop."},
+    {n:"Boon of Skill",         r:"blue",  d:"Stunningly powerful combined with Reliable Talent. Every proficient skill becomes extraordinary."},
+    {n:"Boon of Energy Resistance",r:"green",d:"Powerful defense on any character."},
+    {n:"Boon of Fortitude",     r:"green", d:"Great on a melee build where you draw many attacks."},
+    {n:"Boon of Fortune's Favor",r:"green",d:"Excellent on literally anyone."},
+    {n:"Boon of Misty Escape",  r:"green", d:"Great insurance for any character."},
+    {n:"Boon of Poison Mastery",r:"green", d:"Immunity to poison is great, and Cunning Strike lets you trade 1d6 damage for 2d6 poison which you can then reroll. (FRHoF)"},
+    {n:"Boon of Speed",         r:"green", d:"Extra movement is nice, but you can already Disengage as a Bonus Action."},
+    {n:"Boon of the Night Spirit",r:"green",d:"Excellent for a stealthy Rogue. Note that Hide, Search, and Study are Actions that break the invisibility."},
+    {n:"Boon of Truesight",     r:"green", d:"Probably your only built-in option for handling invisible enemies at high levels."},
+    {n:"Boon of Fate",          r:"orange",d:"More useful to support allies' save-or-suck spells than for anything you're doing."},
+    {n:"Boon of Irresistible Offense",r:"orange",d:"You don't attack frequently enough for the damage boost to be meaningful. Magic weapon handles resistance."},
+    {n:"Boon of Recovery",      r:"orange",d:"Last Stand is great insurance, but not enough to justify as your first Epic Boon."},
+  ],
+  classFeatures:[
+    {lv:1, n:"Expertise",              r:"blue",  d:"Doubles proficiency on two chosen skills at level 1, two more at level 6. Rogues get Expertise earlier than any other class."},
+    {lv:1, n:"Sneak Attack",           r:"blue",  d:"Central combat mechanic. Once per turn (not per round) — can trigger on reactions too. A 65% hit chance means missing 1-in-3; get Advantage."},
+    {lv:1, n:"Thieves' Cant",          r:"orange",d:"Rarely impactful in play. 2024 update: also grants an extra language proficiency."},
+    {lv:1, n:"Weapon Mastery",         r:"green", d:"New in 2024. Rogues get 2 slots. Vex grants Advantage (qualifies for Sneak Attack); Nick enables a bonus attack for a second d20 roll."},
+    {lv:2, n:"Cunning Action",         r:"blue",  d:"Central to all Rogue tactics. Ranged builds Hide between attacks; melee builds Dash or Disengage to strike and retreat safely."},
+    {lv:3, n:"Steady Aim",             r:"orange",d:"Good backup when other Sneak Attack tactics fail, but prevents movement — leaving you very exposed."},
+    {lv:3, n:"Subclass",               r:"blue",  d:"Defines your specialization."},
+    {lv:5, n:"Cunning Strike",         r:"blue",  d:"Massive expansion of combat options. Trade Sneak Attack dice for rider effects: Poison (Con save), Trip (prone), or Withdraw (free movement)."},
+    {lv:5, n:"Uncanny Dodge",          r:"blue",  d:"Halve damage from one attack per round as a reaction. Huge damage mitigation over the course of a combat."},
+    {lv:6, n:"Expertise (2nd round)",  r:"blue",  d:"Two more Expertise choices. You now have four skills at double proficiency."},
+    {lv:7, n:"Evasion",                r:"blue",  d:"Between Evasion and Uncanny Dodge you are very durable. Half or no damage on Dex-save effects."},
+    {lv:7, n:"Reliable Talent",        r:"blue",  d:"Minimum roll of 10 on any proficient skill check. Especially powerful for Expertise skills. Moved from level 11 in 2024."},
+    {lv:11,n:"Improved Cunning Strike", r:"blue", d:"Use up to two Cunning Strike effects on the same attack. Combining two Con-save effects gives decent odds at least one sticks."},
+    {lv:14,n:"Devious Strikes",        r:"green", d:"More Cunning Strike options. Costlier but more impactful: Daze, Knock Out, Obscure."},
+    {lv:15,n:"Slippery Mind",          r:"blue",  d:"Proficiency in both Wisdom and Charisma saves. With Dex and Int already covered, you now have broad save protection."},
+    {lv:18,n:"Elusive",                r:"green", d:"Not always relevant, but excellent protection when you'd otherwise be very vulnerable."},
+    {lv:20,n:"Stroke of Luck",         r:"blue",  d:"Works on any d20 test — turn a miss into a hit or a failed check into a 20. At least one guaranteed critical hit per rest."},
+  ],
+  optional:[
+    {n:"Cunning Strike: Poison",    r:"orange",d:"Poisoned is a massive debuff, but targets Constitution saves (consistently high). Resistance and immunity to poison are also common."},
+    {n:"Cunning Strike: Trip",      r:"green", d:"Knocking an enemy prone benefits your whole party. Especially useful against flying enemies — prone causes most to fall."},
+    {n:"Cunning Strike: Withdraw",  r:"green", d:"Somewhat redundant with Cunning Action but very useful for melee builds. Combine with Cunning Action Dash for extreme retreat range."},
+    {n:"Devious Strike: Daze",      r:"green", d:"Gamble less Sneak Attack damage than Knock Out but still extremely impactful. Works on targets immune to unconsciousness."},
+    {n:"Devious Strike: Knock Out", r:"orange",d:"A huge gamble — 6d6 Sneak Attack dice to apply Unconscious. Targets Constitution saves (high). Needs Bane or Mind Sliver support to be reliable."},
+    {n:"Devious Strike: Obscure",   r:"green", d:"Most creatures have mediocre Dexterity. Blinded is a significant debuff that will be reliably impactful for your whole career."},
+  ],
+  asiLevels:[4,8,10,12,16,19],
+  weapons:[
+    {n:"Dagger",         mastery:"Nick",  props:"Finesse · Light · Thrown", r:"blue",  d:"The cornerstone of two-weapon fighting. Nick mastery gives a free bonus attack so you roll two d20s per turn, dramatically improving Sneak Attack reliability. Take Piercer to reroll any damage die — including Sneak Attack dice."},
+    {n:"Shortsword",     mastery:"Vex",   props:"Finesse · Light",           r:"blue",  d:"Pair with a dagger. Vex grants Advantage on your next attack after a hit, qualifying for Sneak Attack without spending Cunning Action."},
+    {n:"Light Crossbow", mastery:"Slow",  props:"Ranged · Two-Handed",       r:"blue",  d:"Your best long-range option. If hiding and sniping with Cunning Action is your plan, this is your weapon. Slow mastery can lock down fast enemies."},
+    {n:"Scimitar",       mastery:"Nick",  props:"Finesse · Light",           r:"green", d:"The go-to secondary weapon for two-weapon fighting — largest damage die of any weapon with Nick. Use a dagger instead if you're taking Piercer."},
+    {n:"Rapier",         mastery:"Vex",   props:"Finesse",                   r:"green", d:"Larger damage die than the shortsword, but a dagger secondary gives you a second d20 roll that easily makes up the difference in average damage."},
+    {n:"Shortbow",       mastery:"Vex",   props:"Ranged",                    r:"orange",d:"Perfectly fine, but if you can make sniping work the light crossbow is clearly better for the Slow mastery and the extra range."},
+    {n:"Hand Crossbow",  mastery:"Vex",   props:"Ranged · Light",            r:"red",   d:"Little reason to use for two-weapon fighting — you could use a hand crossbow and a dagger without eating your Bonus Action. Cunning Action is non-negotiable."},
+  ],
+  armor:[
+    {n:"Studded Leather",props:"Light · AC 12 + Dex", r:"blue", d:"You're going to live in this. Maximizing Dexterity makes it competitive with medium or heavy armor — with no stealth penalty."},
+  ],
+  multiclass:[
+    {n:"Wizard",    dip:"1 level",  r:"blue",  d:"Ritual casting plus Booming Blade, True Strike, and Find Familiar. Have your familiar use Help for guaranteed Advantage (and Sneak Attack) on every attack."},
+    {n:"Artificer", dip:"2–3 lvls", r:"green", d:"Booming Blade cantrip plus powerful Infusions (Enhanced Defense, Goggles of Night). Three levels unlocks Armorer's Infiltrator Armor: Advantage on Stealth and a Dex-based ranged attack that qualifies for Sneak Attack."},
+    {n:"Bard",      dip:"2 levels", r:"green", d:"Two more Expertise choices and a splash of spellcasting. Clean, low-investment dip."},
+    {n:"Fighter",   dip:"1 level",  r:"green", d:"Archery Fighting Style is a significant improvement for ranged builds. Two-Weapon Fighting is a trap — the +2–3 damage bonus is irrelevant next to Sneak Attack scaling."},
+    {n:"Ranger",    dip:"1–3 lvls", r:"green", d:"One level for a Fighting Style and Hunter's Mark. Three levels for Gloom Stalker, which makes many dungeon and wilderness campaigns dramatically easier."},
+    {n:"Monk",      dip:"3 levels", r:"orange",d:"Bonus Action attacks can't apply Sneak Attack. Unarmored Defense (Wis-based) won't beat studded leather with high Dexterity. Way of Shadow at 3 levels is decent but a large investment for something you're already built for."},
+    {n:"Barbarian", dip:"2 levels", r:"red",   d:"Reckless Attack only works with Strength-based attacks — never good for a Dexterity Rogue. Unarmored Defense is an AC boost, but the core mechanic is wasted."},
+    {n:"Warlock",   dip:"any",      r:"red",   d:"You can't deliver Sneak Attack with Eldritch Blast, and low-level Invocations aren't especially useful. If you want spellcasting, Wizard is a much easier choice."},
+  ],
+};
+
+// ─── State ───────────────────────────────────
+const S={
+  subclass:null,
+  species:null,
+  abilityArr:null,
+  skills:{},
+  bg:null,
+  asi:{},
+  fFilt:'all',
+  fSearch:'',
+};
+
+// ─── Helpers ─────────────────────────────────
+function badge(r){
+  const L={blue:'★★★★',green:'★★★',orange:'★★',red:'★'};
+  return `<span class="badge badge-${r}">${L[r]}</span>`;
+}
+function mod(v){const m=Math.floor((v-10)/2);return(m>=0?'+':'')+m;}
+function sSt(name){return S.skills[name]||0;}
+function skCount(){return Object.values(S.skills).filter(v=>v>=1).length;}
+function e1Count(){return Object.values(S.skills).filter(v=>v>=2).length;}
+function e2Count(){return Object.values(S.skills).filter(v=>v>=3).length;}
+
+// ─── Tabs ────────────────────────────────────
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('pane-'+t.dataset.tab).classList.add('active');
+    if(t.dataset.tab==='summary')renderSummary();
+  });
+});
+
+// ─── Subclass ────────────────────────────────
+function renderSubclasses(){
+  const g=document.getElementById('subclass-grid');
+  g.innerHTML=D.subclasses.map(s=>`
+    <div class="card ${S.subclass===s.name?'sel':''}" data-sc="${s.name}">
+      <div class="card-top"><div class="card-name">${s.name}</div>${badge(s.r)}</div>
+      <div class="card-note">${s.d}</div>
+    </div>`).join('');
+  g.querySelectorAll('.card').forEach(c=>c.addEventListener('click',()=>{
+    S.subclass=S.subclass===c.dataset.sc?null:c.dataset.sc;
+    renderSubclasses();updateSBar();updateTabBadges();
+  }));
+}
+
+// ─── Species ─────────────────────────────────
+function renderSpecies(){
+  const g=document.getElementById('species-grid');
+  g.innerHTML=D.species.map(sp=>`
+    <div class="card ${S.species===sp.n?'sel':''}" data-sp="${sp.n}">
+      <div class="card-top">
+        <div><div class="card-name">${sp.n}</div><div class="card-stat">${sp.src}</div></div>
+        ${badge(sp.r)}
+      </div>
+      <div class="card-note">${sp.d}</div>
+    </div>`).join('');
+  g.querySelectorAll('.card').forEach(c=>c.addEventListener('click',()=>{
+    S.species=S.species===c.dataset.sp?null:c.dataset.sp;
+    renderSpecies();updateSBar();updateTabBadges();
+  }));
+}
+
+// ─── Ability Scores ───────────────────────────
+function renderAbilities(){
+  const pk=document.getElementById('array-picker');
+  pk.innerHTML=D.arrays.map((a,i)=>
+    `<button class="abtn ${S.abilityArr===i?'active':''}" data-i="${i}">${a.n}</button>`
+  ).join('');
+  pk.querySelectorAll('.abtn').forEach(b=>b.addEventListener('click',()=>{
+    S.abilityArr=S.abilityArr===+b.dataset.i?null:+b.dataset.i;
+    renderAbilities();
+  }));
+
+  const rmap={};D.abilityNotes.forEach(n=>rmap[n.s]=n.r);
+  const vals=S.abilityArr!==null?D.arrays[S.abilityArr].v:null;
+  const stats=['Str','Dex','Con','Int','Wis','Cha'];
+  document.getElementById('ability-grid').innerHTML=stats.map(s=>{
+    const v=vals?vals[s]:'—';
+    return `<div class="acell ${vals?rmap[s]:''}">
+      <div class="alabel">${s}</div>
+      <div class="aval">${v}</div>
+      <div class="amod">${vals?mod(v):'±?'}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('ability-notes').innerHTML=D.abilityNotes.map(n=>`
+    <div class="card" style="cursor:default">
+      <div class="card-top"><div class="card-name">${n.s}</div>${badge(n.r)}</div>
+      <div class="card-note">${n.n}</div>
+    </div>`).join('');
+}
+
+// ─── Skills ──────────────────────────────────
+function renderSkills(){
+  const g=document.getElementById('skills-grid');
+  g.innerHTML=D.skills.map(sk=>{
+    const st=sSt(sk.n);
+    const cls=st===1?'sel':st===2?'e1':st===3?'e2':'';
+    const stLabel=st===1?'<div class="card-state s-prof">✦ Proficient</div>'
+                 :st===2?'<div class="card-state s-e1">★ L1 Expertise</div>'
+                 :st===3?'<div class="card-state s-e2">★★ L6 Expertise</div>':'';
+    return `<div class="card ${cls}" data-sk="${sk.n}">
+      <div class="card-top">
+        <div><div class="card-name">${sk.n}</div><div class="card-stat">${sk.s}</div></div>
+        ${badge(sk.r)}
+      </div>
+      <div class="card-note">${sk.d}</div>
+      ${stLabel}
+    </div>`;
+  }).join('');
+
+  g.querySelectorAll('.card').forEach(c=>c.addEventListener('click',()=>{
+    const nm=c.dataset.sk,cur=sSt(nm);
+    let next=0;
+    if(cur===0){if(skCount()<4)next=1;}
+    else if(cur===1){next=e1Count()<2?2:0;}
+    else if(cur===2){next=e2Count()<2?3:1;}
+    else{next=0;}
+    if(next===0)delete S.skills[nm];else S.skills[nm]=next;
+    renderSkills();updateSBar();updateTabBadges();
+  }));
+
+  const sc=skCount(),e1=e1Count(),e2=e2Count();
+  const el1=document.getElementById('cnt-s'),el2=document.getElementById('cnt-e1'),el3=document.getElementById('cnt-e2');
+  el1.innerHTML=`${sc}<span style="font-size:.65rem;color:var(--tx3)">/4</span>`;
+  el2.innerHTML=`${e1}<span style="font-size:.65rem;color:var(--tx3)">/2</span>`;
+  el3.innerHTML=`${e2}<span style="font-size:.65rem;color:var(--tx3)">/2</span>`;
+  el1.className='cnum '+(sc===4?'done':sc>0?'ok':'');
+  el2.className='cnum '+(e1===2?'done':e1>0?'ok':'');
+  el3.className='cnum '+(e2===2?'done':e2>0?'ok':'');
+}
+
+// ─── Backgrounds ─────────────────────────────
+function renderBgs(){
+  const g=document.getElementById('background-grid');
+  g.innerHTML=D.backgrounds.map(b=>`
+    <div class="card ${S.bg===b.n?'sel':''}" data-bg="${b.n}">
+      <div class="card-top"><div class="card-name">${b.n}</div>${badge(b.r)}</div>
+      <div class="card-note">${b.d}</div>
+    </div>`).join('');
+  g.querySelectorAll('.card').forEach(c=>c.addEventListener('click',()=>{
+    S.bg=S.bg===c.dataset.bg?null:c.dataset.bg;
+    renderBgs();updateSBar();updateTabBadges();
+  }));
+}
+
+// ─── ASI Slots ───────────────────────────────
+function openSlots(){return D.asiLevels.filter(l=>S.asi[l]&&S.asi[l].type==='feat'&&!S.asi[l].feat);}
+function assignedSlots(fn){return D.asiLevels.filter(l=>{const c=S.asi[l];return c&&c.type==='feat'&&c.feat===fn;});}
+
+function renderASI(){
+  const cont=document.getElementById('asi-slots');
+  cont.innerHTML=D.asiLevels.map(lv=>{
+    const ch=S.asi[lv];const hc=!!ch;
+    const title=hc?(ch.type==='feat'?`Feat: ${ch.feat||'(pick below)'}`
+                   :ch.type==='asi2'?'ASI +2':'+1/+1 to two stats'):'Unassigned';
+    return `<div class="aslot ${hc?'has-ch':''}" id="asl-${lv}">
+      <div class="aslot-hdr">
+        <span class="lpill">Lvl ${lv}</span>
+        <span class="aslot-title">${title}</span>
+      </div>
+      <div class="abtns">
+        <button class="abtn2 ${ch&&ch.type==='asi2'?'active':''}" data-lv="${lv}" data-t="asi2">+2 to one stat</button>
+        <button class="abtn2 ${ch&&ch.type==='split'?'active':''}" data-lv="${lv}" data-t="split">+1/+1 to two stats</button>
+        <button class="abtn2 ${ch&&ch.type==='feat'?'active':''}" data-lv="${lv}" data-t="feat">Take a Feat</button>
+        ${hc?`<button class="abtn2 clr" data-lv="${lv}" data-t="clear">✕</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  cont.querySelectorAll('.abtn2').forEach(b=>b.addEventListener('click',()=>{
+    const lv=+b.dataset.lv,tp=b.dataset.t;
+    if(tp==='clear'){delete S.asi[lv];}
+    else{
+      const cur=S.asi[lv];
+      if(cur&&cur.type===tp)delete S.asi[lv];
+      else S.asi[lv]={type:tp,feat:null};
+    }
+    renderASI();renderFeats();updateSBar();updateTabBadges();
+  }));
+}
+
+// ─── Feats ───────────────────────────────────
+function renderFeatFilters(){
+  const bar=document.getElementById('feat-filters');
+  const ratings=[{k:'all',l:'All',c:'fa'},{k:'blue',l:'Fantastic',c:'fb'},{k:'green',l:'Good',c:'fg'},{k:'orange',l:'Situational',c:'fo'},{k:'red',l:'Avoid',c:'fr'}];
+  bar.innerHTML=ratings.map(b=>`<button class="fbtn ${b.c} ${S.fFilt===b.k?'active':''}" data-f="${b.k}">${b.l}</button>`).join('')
+    +`<input class="srch" id="fsrch" placeholder="Search feats…" value="${S.fSearch}">`;
+  bar.querySelectorAll('[data-f]').forEach(b=>b.addEventListener('click',()=>{S.fFilt=b.dataset.f;renderFeatFilters();renderFeats();}));
+  document.getElementById('fsrch').addEventListener('input',e=>{S.fSearch=e.target.value;renderFeats();});
+}
+
+function renderFeatGroup(cat){
+  const g=document.getElementById('feats-'+cat);
+  const fq=S.fSearch.toLowerCase();
+  const vis=D.feats.filter(f=>{
+    if(f.cat!==cat)return false;
+    if(S.fFilt!=='all'&&f.r!==S.fFilt)return false;
+    if(fq&&!f.n.toLowerCase().includes(fq)&&!f.d.toLowerCase().includes(fq))return false;
+    return true;
+  });
+  if(!vis.length){g.innerHTML='<div style="color:var(--tx3);font-style:italic;padding:8px 0">No feats match.</div>';return;}
+
+  const open=openSlots();
+  g.innerHTML=vis.map(f=>{
+    const asgd=assignedSlots(f.n);
+    let btns='';
+    if(open.length){
+      btns+=`<div class="fassign">${open.map(lv=>`<button class="fassign-btn" data-af="${f.n}" data-lv="${lv}">+ Lvl ${lv}</button>`).join('')}</div>`;
+    }
+    if(asgd.length){
+      btns+=`<div class="fassign">${asgd.map(lv=>`<button class="fassign-btn asgd" data-rf="${f.n}" data-lv="${lv}">✓ Lvl ${lv} — Remove</button>`).join('')}</div>`;
+    }
+    return `<div class="card ${asgd.length?'sel':''}">
+      <div class="card-top"><div class="card-name">${f.n}</div>${badge(f.r)}</div>
+      <div class="card-note">${f.d}</div>
+      ${btns}
+    </div>`;
+  }).join('');
+
+  g.querySelectorAll('[data-af]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation();
+    const lv=+b.dataset.lv;if(S.asi[lv])S.asi[lv].feat=b.dataset.af;
+    renderASI();renderFeats();
+  }));
+  g.querySelectorAll('[data-rf]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation();
+    const lv=+b.dataset.lv;if(S.asi[lv])S.asi[lv].feat=null;
+    renderASI();renderFeats();
+  }));
+}
+
+function renderFeats(){
+  ['origin','general','dragonmark'].forEach(renderFeatGroup);
+}
+
+// ─── Epic Boons ──────────────────────────────
+function renderEpicBoons(){
+  document.getElementById('epicboons-grid').innerHTML=D.epicBoons.map(b=>`
+    <div class="card" style="cursor:default">
+      <div class="card-top"><div class="card-name">${b.n}</div>${badge(b.r)}</div>
+      <div class="card-note">${b.d}</div>
+    </div>`).join('');
+}
+
+// ─── Weapons & Armor ─────────────────────────
+function renderWeapons(){
+  document.getElementById('weapons-grid').innerHTML=D.weapons.map(w=>`
+    <div class="card" style="cursor:default">
+      <div class="card-top">
+        <div><div class="card-name">${w.n}</div><div class="card-stat">${w.mastery} Mastery · ${w.props}</div></div>
+        ${badge(w.r)}
+      </div>
+      <div class="card-note">${w.d}</div>
+    </div>`).join('');
+  document.getElementById('armor-grid').innerHTML=D.armor.map(a=>`
+    <div class="card" style="cursor:default">
+      <div class="card-top">
+        <div><div class="card-name">${a.n}</div><div class="card-stat">${a.props}</div></div>
+        ${badge(a.r)}
+      </div>
+      <div class="card-note">${a.d}</div>
+    </div>`).join('');
+}
+
+// ─── Multiclassing ───────────────────────────
+function renderMulticlass(){
+  document.getElementById('multiclass-grid').innerHTML=D.multiclass.map(m=>`
+    <div class="card" style="cursor:default">
+      <div class="card-top">
+        <div><div class="card-name">${m.n}</div><div class="card-stat">${m.dip}</div></div>
+        ${badge(m.r)}
+      </div>
+      <div class="card-note">${m.d}</div>
+    </div>`).join('');
+}
+
+// ─── Class Features ───────────────────────────
+function renderFeatures(){
+  document.getElementById('features-tbody').innerHTML=D.classFeatures.map(f=>`
+    <tr>
+      <td><span class="lchip">${f.lv}</span></td>
+      <td><span class="fname">${f.n}</span></td>
+      <td>${badge(f.r)}</td>
+      <td style="color:var(--tx2)">${f.d}</td>
+    </tr>`).join('');
+  document.getElementById('optional-grid').innerHTML=D.optional.map(f=>`
+    <div class="card" style="cursor:default">
+      <div class="card-top"><div class="card-name">${f.n}</div>${badge(f.r)}</div>
+      <div class="card-note">${f.d}</div>
+    </div>`).join('');
+}
+
+// ─── Summary ─────────────────────────────────
+function renderSummary(){
+  const selSk=D.skills.filter(s=>sSt(s.n)>=1);
+  const e1Sk =D.skills.filter(s=>sSt(s.n)>=2);
+  const e2Sk =D.skills.filter(s=>sSt(s.n)>=3);
+  const arr=S.abilityArr!==null?D.arrays[S.abilityArr]:null;
+  const arrTxt=arr?`${arr.n}: `+Object.entries(arr.v).map(([k,v])=>`${k} ${v}`).join(', '):'—';
+
+  const asiRows=D.asiLevels.map(lv=>{
+    const ch=S.asi[lv];
+    const val=ch?(ch.type==='feat'?`Feat — ${ch.feat||'(not assigned)'}`:ch.type==='asi2'?'+2 to one stat':'+1/+1 to two stats'):'—';
+    return `<div class="srow"><span class="skey">Level ${lv} ASI</span><span class="sval">${val}</span></div>`;
+  }).join('');
+
+  document.getElementById('summary-content').innerHTML=`
+    <div class="sblock">
+      <h3>Core Choices</h3>
+      <div class="srow"><span class="skey">Subclass</span><span class="sval">${S.subclass||'—'}</span></div>
+      <div class="srow"><span class="skey">Species</span><span class="sval">${S.species||'—'}</span></div>
+      <div class="srow"><span class="skey">Background</span><span class="sval">${S.bg||'—'}</span></div>
+      <div class="srow"><span class="skey">Ability Array</span><span class="sval">${arrTxt}</span></div>
+    </div>
+    <div class="sblock">
+      <h3>Skills &amp; Expertise</h3>
+      <div class="srow"><span class="skey">Class Skills (4)</span><span class="sval">${selSk.length?selSk.map(s=>s.n).join(', '):'—'}</span></div>
+      <div class="srow"><span class="skey">L1 Expertise (2)</span><span class="sval">${e1Sk.length?e1Sk.map(s=>s.n).join(', '):'—'}</span></div>
+      <div class="srow"><span class="skey">L6 Expertise (2)</span><span class="sval">${e2Sk.length?e2Sk.map(s=>s.n).join(', '):'—'}</span></div>
+    </div>
+    <div class="sblock"><h3>Feats &amp; ASIs</h3>${asiRows}</div>`;
+}
+
+// ─── Status bar ───────────────────────────────
+function updateSBar(){
+  document.getElementById('sb-sc').textContent=S.subclass||'—';
+  document.getElementById('sb-sp').textContent=S.species||'—';
+  document.getElementById('sb-bg').textContent=S.bg||'—';
+  document.getElementById('sb-sk').textContent=`${skCount()}/4`;
+  document.getElementById('sb-asi').textContent=`${D.asiLevels.filter(l=>S.asi[l]).length}/6`;
+}
+
+function updateTabBadges(){
+  document.querySelectorAll('.tbadge').forEach(b=>b.remove());
+  const add=(tab,txt)=>{const t=document.querySelector(`[data-tab="${tab}"]`);if(t){const b=document.createElement('span');b.className='tbadge';b.textContent=txt;t.appendChild(b);}};
+  if(S.subclass)add('subclass','✓');
+  if(S.species)add('species','✓');
+  if(skCount()>0)add('skills',`${skCount()}/4`);
+  if(S.bg)add('background','✓');
+  const au=D.asiLevels.filter(l=>S.asi[l]).length;
+  if(au>0)add('feats',`${au}/6`);
+}
+
+// ─── Copy ────────────────────────────────────
+document.getElementById('copy-btn').addEventListener('click',()=>{
+  const selSk=D.skills.filter(s=>sSt(s.n)>=1).map(s=>s.n);
+  const e1=D.skills.filter(s=>sSt(s.n)>=2).map(s=>s.n);
+  const e2=D.skills.filter(s=>sSt(s.n)>=3).map(s=>s.n);
+  const arr=S.abilityArr!==null?D.arrays[S.abilityArr]:null;
+  const lines=[
+    '=== D&D 2024 Rogue Build ===','',
+    `Subclass:      ${S.subclass||'—'}`,
+    `Species:       ${S.species||'—'}`,
+    `Background:    ${S.bg||'—'}`,
+    `Ability Array: ${arr?arr.n+' ('+Object.entries(arr.v).map(([k,v])=>`${k}:${v}`).join(', ')+')'  :'—'}`,
+    '',`Skills (4):    ${selSk.join(', ')||'—'}`,
+    `L1 Expertise:  ${e1.join(', ')||'—'}`,
+    `L6 Expertise:  ${e2.join(', ')||'—'}`,
+    '','Feats & ASIs:',
+    ...D.asiLevels.map(lv=>{
+      const ch=S.asi[lv];
+      if(!ch)return `  Level ${lv}: (unassigned)`;
+      if(ch.type==='feat')return `  Level ${lv}: Feat — ${ch.feat||'(not assigned)'}`;
+      return `  Level ${lv}: ${ch.type==='asi2'?'ASI +2':'ASI +1/+1'}`;
+    }),
+  ];
+  navigator.clipboard.writeText(lines.join('\n')).then(()=>{
+    const btn=document.getElementById('copy-btn');
+    btn.textContent='✓ Copied!';
+    setTimeout(()=>{btn.textContent='◆ Copy to Clipboard';},2000);
+  });
+});
+
+// ─── Init ────────────────────────────────────
+renderSubclasses();
+renderSpecies();
+renderAbilities();
+renderSkills();
+renderBgs();
+renderASI();
+renderFeatFilters();
+renderFeats();
+renderEpicBoons();
+renderWeapons();
+renderMulticlass();
+renderFeatures();
+</script>
+</body>
+</html>

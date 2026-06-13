@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Class Builder · D&D</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg:   #0a0c10;
+  --s1:   #11141b;
+  --s2:   #181c26;
+  --s3:   #1f2330;
+  --bd:   #232737;
+  --bd2:  #313749;
+  --tx:   #ddd3bc;
+  --tx2:  #8a8070;
+  --tx3:  #4e4a41;
+  --gold: #c4973a;
+  --gold2:#7a5c1e;
+  --acc:  #7c3aed;
+
+  --rb:#1e40af; --rb-bg:#0c1a35; --rb-t:#93c5fd;
+  --rg:#15803d; --rg-bg:#0a2416; --rg-t:#86efac;
+  --ro:#c2410c; --ro-bg:#2c1005; --ro-t:#fdba74;
+  --rr:#b91c1c; --rr-bg:#280606; --rr-t:#fca5a5;
+
+  --sel-bg:#0d1b33; --sel-bd:#2563eb;
+  --e1-bg:#160e30;  --e1-bd:#7c3aed;
+  --e2-bg:#0c2016;  --e2-bd:#059669;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Crimson Pro',Georgia,serif;background:var(--bg);color:var(--tx);min-height:100vh;font-size:16px;line-height:1.5}
+
+header{background:var(--s1);border-bottom:1px solid var(--bd);padding:12px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100}
+.hicon{font-size:1.4rem;line-height:1}
+header h1{font-family:'Cinzel',serif;font-size:1.05rem;font-weight:700;letter-spacing:.12em;color:var(--gold)}
+header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
+.hlegend{margin-left:auto;display:flex;gap:6px;align-items:center;flex-shrink:0}
+
+.tabs{background:var(--s1);border-bottom:1px solid var(--bd);display:flex;padding:0 24px;overflow-x:auto;gap:0;-webkit-overflow-scrolling:touch}
+.tab{padding:9px 16px;cursor:pointer;border-bottom:2px solid transparent;color:var(--tx2);font-family:'Cinzel',serif;font-size:.7rem;letter-spacing:.09em;white-space:nowrap;transition:all .2s;display:flex;align-items:center;gap:5px}
+.tab:hover{color:var(--tx)}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.tbadge{background:var(--gold2);color:var(--gold);font-size:.6rem;padding:1px 5px;border-radius:3px;font-family:'JetBrains Mono',monospace}
+
+.content{padding:22px 24px 74px;max-width:1280px;margin:0 auto}
+.pane{display:none}
+.pane.active{display:block;animation:fi .18s ease}
+@keyframes fi{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+.sh{margin-bottom:18px}
+.sh h2{font-family:'Cinzel',serif;font-size:.95rem;font-weight:600;letter-spacing:.07em;margin-bottom:3px;color:var(--gold)}
+.sh p{font-size:.85rem;color:var(--tx2);font-style:italic}
+
+.badge{display:inline-flex;align-items:center;font-family:'JetBrains Mono',monospace;font-size:.6rem;font-weight:500;padding:2px 7px;border-radius:3px;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.badge-blue  {background:var(--rb-bg);color:var(--rb-t);border:1px solid var(--rb)}
+.badge-green {background:var(--rg-bg);color:var(--rg-t);border:1px solid var(--rg)}
+.badge-orange{background:var(--ro-bg);color:var(--ro-t);border:1px solid var(--ro)}
+.badge-red   {background:var(--rr-bg);color:var(--rr-t);border:1px solid var(--rr)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.grid-sm{grid-template-columns:repeat(auto-fill,minmax(205px,1fr))}
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:12px 14px;cursor:pointer;transition:border-color .15s,background .15s,transform .1s;user-select:none}
+.card:hover{border-color:var(--bd2);background:var(--s2);transform:translateY(-1px)}
+.card.sel {border-color:var(--sel-bd);background:var(--sel-bg)}
+.card.e1  {border-color:var(--e1-bd); background:var(--e1-bg)}
+.card.e2  {border-color:var(--e2-bd); background:var(--e2-bg)}
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.card-name{font-family:'Cinzel',serif;font-size:.8rem;font-weight:600;letter-spacing:.04em}
+.card-cat{font-size:.58rem;color:var(--tx3);font-family:'Cinzel',serif;letter-spacing:.07em;text-transform:uppercase;margin-top:1px}
+.card-stat{font-family:'JetBrains Mono',monospace;font-size:.65rem;color:var(--tx3);background:var(--s2);padding:1px 5px;border-radius:3px;margin-top:2px}
+.card-note{font-size:.8125rem;color:var(--tx2);line-height:1.5}
+.card-state{margin-top:6px;font-size:.68rem}
+.card-state.s-prof{color:var(--rb-t)}
+.card-state.s-e1  {color:#c4b5fd}
+.card-state.s-e2  {color:var(--rg-t)}
+
+.cbar{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:10px 18px;margin-bottom:14px;display:flex;gap:28px;align-items:center;flex-wrap:wrap}
+.citem{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:72px}
+.cnum{font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:500;color:var(--tx3);transition:color .2s}
+.cnum.ok  {color:var(--rg-t)}
+.cnum.done{color:var(--gold)}
+.clabel{font-size:.6rem;color:var(--tx3);text-transform:uppercase;letter-spacing:.09em;font-family:'Cinzel',serif}
+
+.apicker{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+.abtn{padding:6px 13px;border-radius:5px;border:1px solid var(--bd);background:var(--s1);color:var(--tx2);cursor:pointer;font-size:.8125rem;font-family:'Crimson Pro',serif;transition:all .15s}
+.abtn:hover{color:var(--tx);border-color:var(--bd2)}
+.abtn.active{color:var(--gold);border-color:var(--gold2);background:#181408}
+.agrid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:18px}
+.acell{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:10px 6px;text-align:center}
+.acell.rb{border-color:var(--rb)}.acell.rg{border-color:var(--rg)}.acell.ro{border-color:var(--ro)}.acell.rr{border-color:var(--rr)}
+.alabel{font-family:'Cinzel',serif;font-size:.62rem;color:var(--tx2);letter-spacing:.1em;margin-bottom:4px}
+.aval{font-family:'JetBrains Mono',monospace;font-size:1.35rem;font-weight:500}
+.amod{font-size:.72rem;color:var(--tx2);font-family:'JetBrains Mono',monospace}
+.anotes{display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:8px}
+
+.aslots{display:flex;flex-direction:column;gap:10px;margin-bottom:26px}
+.aslot{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:13px 15px}
+.aslot.has-ch{border-color:var(--bd2)}
+.aslot-hdr{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.lpill{font-family:'JetBrains Mono',monospace;font-size:.62rem;background:var(--acc);color:#fff;padding:2px 8px;border-radius:9999px}
+.aslot-title{font-family:'Cinzel',serif;font-size:.78rem;color:var(--tx2)}
+.aslot.has-ch .aslot-title{color:var(--gold)}
+.abtns{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.abtn2{padding:5px 12px;border-radius:5px;border:1px solid var(--bd);background:var(--bg);color:var(--tx2);cursor:pointer;font-size:.8125rem;font-family:'Crimson Pro',serif;transition:all .15s}
+.abtn2:hover{color:var(--tx);border-color:var(--bd2)}
+.abtn2.active{color:var(--gold);border-color:var(--gold2);background:#181408}
+.abtn2.clr{margin-left:auto;opacity:.45;font-size:.75rem}
+.abtn2.clr:hover{opacity:1}
+
+.fassign{margin-top:8px;display:flex;gap:5px;flex-wrap:wrap}
+.fassign-btn{font-size:.68rem;padding:2px 8px;border-radius:3px;border:1px solid var(--bd);background:var(--bg);color:var(--tx2);cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all .15s}
+.fassign-btn:hover{border-color:var(--gold2);color:var(--gold)}
+.fassign-btn.asgd{border-color:var(--gold2);color:var(--gold);background:#181408}
+
+.fbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.fbtn{padding:4px 10px;border-radius:9999px;border:1px solid var(--bd);background:var(--s1);color:var(--tx2);cursor:pointer;font-size:.7rem;font-family:'JetBrains Mono',monospace;transition:all .15s}
+.fbtn:hover{color:var(--tx);border-color:var(--bd2)}
+.fbtn.fa.active{border-color:var(--gold2);color:var(--gold);background:#181408}
+.fbtn.fb.active{border-color:var(--rb);color:var(--rb-t);background:var(--rb-bg)}
+.fbtn.fg.active{border-color:var(--rg);color:var(--rg-t);background:var(--rg-bg)}
+.fbtn.fo.active{border-color:var(--ro);color:var(--ro-t);background:var(--ro-bg)}
+.fbtn.fr.active{border-color:var(--rr);color:var(--rr-t);background:var(--rr-bg)}
+.srch{padding:5px 11px;border-radius:5px;border:1px solid var(--bd);background:var(--s1);color:var(--tx);font-family:'Crimson Pro',serif;font-size:.875rem;flex:1;min-width:140px;max-width:240px;outline:none}
+.srch:focus{border-color:var(--bd2)}
+.srch::placeholder{color:var(--tx3)}
+.feat-ref-hdr{font-family:'Cinzel',serif;font-size:.8rem;color:var(--tx2);letter-spacing:.07em;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--bd)}
+
+.feat-group-hdr{font-family:'Cinzel',serif;font-size:.82rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--gold2)}
+.feat-group-section{margin-bottom:28px}
+
+.ftable{width:100%;border-collapse:collapse}
+.ftable th{font-family:'Cinzel',serif;font-size:.62rem;letter-spacing:.1em;color:var(--tx2);text-transform:uppercase;padding:6px 11px;border-bottom:1px solid var(--bd);text-align:left}
+.ftable td{padding:8px 11px;font-size:.8125rem;border-bottom:1px solid var(--bd);vertical-align:top}
+.ftable tr:last-child td{border-bottom:none}
+.lchip{font-family:'JetBrains Mono',monospace;font-size:.68rem;color:var(--tx3);background:var(--s2);padding:2px 6px;border-radius:3px}
+.fname{font-family:'Cinzel',serif;font-size:.75rem;letter-spacing:.04em;font-weight:600}
+
+.callout{background:var(--s2);border:1px solid var(--bd);border-left:3px solid var(--rb);border-radius:4px;padding:8px 12px;font-size:.8rem;color:var(--tx2);margin-bottom:14px}
+
+.sblock{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:16px 20px;margin-bottom:12px}
+.sblock h3{font-family:'Cinzel',serif;font-size:.67rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--bd)}
+.srow{display:flex;gap:10px;padding:4px 0;font-size:.875rem;border-bottom:1px solid var(--bd);align-items:flex-start}
+.srow:last-child{border-bottom:none}
+.skey{color:var(--tx2);min-width:135px;font-style:italic;flex-shrink:0}
+.sval{color:var(--tx)}
+.copybtn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:var(--s2);border:1px solid var(--gold2);color:var(--gold);border-radius:5px;cursor:pointer;font-family:'Cinzel',serif;font-size:.72rem;letter-spacing:.06em;transition:all .15s;margin-top:12px}
+.copybtn:hover{background:#181408}
+
+#sbar{position:fixed;bottom:0;left:0;right:0;background:var(--s1);border-top:1px solid var(--bd);padding:7px 24px;display:none;gap:18px;align-items:center;font-size:.72rem;z-index:100;overflow-x:auto;white-space:nowrap}
+.si{display:flex;align-items:center;gap:6px}
+.slbl{color:var(--tx3);font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.1em;text-transform:uppercase}
+.sval2{color:var(--tx);font-family:'JetBrains Mono',monospace;font-size:.68rem}
+.sval2.hi{color:var(--gold)}
+.sdiv{color:var(--bd2)}
+
+#loading{padding:48px 24px;color:var(--tx2);font-style:italic}
+#app{display:none}
+
+@media(max-width:640px){
+  .agrid{grid-template-columns:repeat(3,1fr)}
+  .content{padding:14px 14px 74px}
+  .hlegend{display:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="hicon">⚔</span>
+  <div>
+    <h1 id="class-title">CLASS BUILDER</h1>
+    <div class="hsub" id="class-sub">Loading…</div>
+  </div>
+  <div class="hlegend">
+    <span class="badge badge-blue">Fantastic</span>
+    <span class="badge badge-green">Good</span>
+    <span class="badge badge-orange">Situational</span>
+    <span class="badge badge-red">Avoid</span>
+  </div>
+</header>
+
+<div id="loading">Loading class data…</div>
+
+<div id="app">
+
+<nav class="tabs" id="tabs">
+  <div class="tab active" data-tab="subclass">Subclass</div>
+  <div class="tab" data-tab="species">Species</div>
+  <div class="tab" data-tab="abilities">Ability Scores</div>
+  <div class="tab" data-tab="skills">Skills &amp; Expertise</div>
+  <div class="tab" data-tab="background">Background</div>
+  <div class="tab" data-tab="feats">Feats &amp; ASIs</div>
+  <div class="tab" data-tab="epicboons">Epic Boons</div>
+  <div class="tab" data-tab="weapons">Weapons &amp; Armor</div>
+  <div class="tab" data-tab="multiclass">Multiclassing</div>
+  <div class="tab" data-tab="features">Class Features</div>
+  <div class="tab" data-tab="summary">Summary</div>
+</nav>
+
+<div class="content">
+
+  <div class="pane active" id="pane-subclass">
+    <div class="sh"><h2>Subclass</h2><p id="subclass-desc"></p></div>
+    <div class="grid" id="subclass-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-species">
+    <div class="sh"><h2>Species</h2><p>In 2024 D&amp;D, Species no longer grant ability score increases — those come from your Background. Choose based on racial traits and playstyle.</p></div>
+    <div class="grid" id="species-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-abilities">
+    <div class="sh"><h2>Ability Scores</h2><p>Values shown are after Background bonuses (+2/+1). Click an array to preview. Cells are color-coded by priority.</p></div>
+    <div class="apicker" id="array-picker"></div>
+    <div class="agrid" id="ability-grid"></div>
+    <div class="sh" style="margin-top:4px"><h2>Score Priorities</h2></div>
+    <div class="anotes" id="ability-notes"></div>
+  </div>
+
+  <div class="pane" id="pane-skills">
+    <div class="sh"><h2>Skills &amp; Expertise</h2><p id="skills-desc">Pick your class skills. Click a selected skill to cycle: Proficient → L1 Expertise → L6 Expertise → unselected.</p></div>
+    <div class="cbar" id="skills-cbar">
+      <div class="citem"><div class="cnum" id="cnt-s">0</div><div class="clabel">Skills</div></div>
+      <div class="citem" id="e1-citem"><div class="cnum" id="cnt-e1">0<span style="font-size:.65rem;color:var(--tx3)">/2</span></div><div class="clabel">L1 Expertise</div></div>
+      <div class="citem" id="e2-citem"><div class="cnum" id="cnt-e2">0<span style="font-size:.65rem;color:var(--tx3)">/2</span></div><div class="clabel">L6 Expertise</div></div>
+    </div>
+    <div class="callout"><strong>2024:</strong> Expertise can apply to any skill you're proficient in — including Background skills. This panel tracks your class picks; assign Expertise freely.</div>
+    <div class="grid grid-sm" id="skills-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-background">
+    <div class="sh"><h2>Background</h2><p>In 2024 D&amp;D, your Background sets ability scores (+2/+1 or +1/+1/+1) and grants an Origin Feat.</p></div>
+    <div class="callout" id="bg-callout"></div>
+    <div class="grid" id="background-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-feats">
+    <div class="sh"><h2>Feats &amp; Ability Score Improvements</h2><p id="feat-desc"></p></div>
+    <div class="aslots" id="asi-slots"></div>
+    <div class="feat-ref-hdr">Feat Reference</div>
+    <div class="fbar" id="feat-filters"></div>
+    <div class="feat-group-section">
+      <div class="feat-group-hdr">Origin Feats</div>
+      <div class="grid" id="feats-origin"></div>
+    </div>
+    <div class="feat-group-section">
+      <div class="feat-group-hdr">General Feats</div>
+      <div class="grid" id="feats-general"></div>
+    </div>
+    <div class="feat-group-section">
+      <div class="feat-group-hdr">Dragonmark Feats</div>
+      <div class="callout" style="margin-bottom:10px"><strong>Eberron only.</strong> Dragonmark Feats are campaign-specific — check with your DM. They replace other Origin Feats and require the appropriate Eberron lineage.</div>
+      <div class="grid" id="feats-dragonmark"></div>
+    </div>
+  </div>
+
+  <div class="pane" id="pane-epicboons">
+    <div class="sh"><h2>Epic Boons</h2><p>Available at level 19 as your final ASI. These are the most powerful feats in 2024 D&amp;D — each offers a build-defining upgrade.</p></div>
+    <div class="callout">You get one Epic Boon at level 19. It fills your final ASI slot. Epic Boons are not available as General Feats earlier in the build.</div>
+    <div class="grid" id="epicboons-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-weapons">
+    <div class="sh"><h2>Weapons</h2><p id="weapon-note"></p></div>
+    <div class="grid" id="weapons-grid"></div>
+    <div class="sh" style="margin-top:22px"><h2>Armor</h2><p id="armor-note"></p></div>
+    <div class="grid" id="armor-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-multiclass">
+    <div class="sh"><h2>Multiclassing</h2><p>Brief dips for specific features. Don't invest more levels than the feature requires.</p></div>
+    <div class="callout" id="multiclass-callout"></div>
+    <div class="grid" id="multiclass-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-features">
+    <div class="sh"><h2>Class Features</h2><p>Key class features with RPGBOT ratings.</p></div>
+    <table class="ftable">
+      <thead><tr><th>Lvl</th><th>Feature</th><th>Rating</th><th>Notes</th></tr></thead>
+      <tbody id="features-tbody"></tbody>
+    </table>
+    <div class="sh" style="margin-top:22px"><h2 id="optional-title">Sub-options</h2><p id="optional-desc"></p></div>
+    <div class="grid" id="optional-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-summary">
+    <div class="sh"><h2>Build Summary</h2><p>All your selections at a glance.</p></div>
+    <div id="summary-content"></div>
+    <button class="copybtn" id="copy-btn">◆ Copy to Clipboard</button>
+  </div>
+
+</div><!-- .content -->
+</div><!-- #app -->
+
+<div id="sbar">
+  <div class="si"><span class="slbl">Subclass</span><span class="sval2 hi" id="sb-sc">—</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Species</span><span class="sval2 hi" id="sb-sp">—</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Background</span><span class="sval2 hi" id="sb-bg">—</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Skills</span><span class="sval2" id="sb-sk">0/4</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">ASIs</span><span class="sval2" id="sb-asi">0/6</span></div>
+</div>
+
+<script>
+// ─── Data (loaded from API) ───────────────────
+let D = null;
+
+// ─── State ───────────────────────────────────
+const S = {
+  subclass:   null,
+  species:    null,
+  abilityArr: null,
+  skills:     {},
+  bg:         null,
+  asi:        {},
+  fFilt:      'all',
+  fSearch:    '',
+};
+
+// ─── Helpers ─────────────────────────────────
+function badge(r) {
+  const L = {blue:'★★★★', green:'★★★', orange:'★★', red:'★'};
+  return `<span class="badge badge-${r}">${L[r]}</span>`;
+}
+function mod(v) { const m = Math.floor((v-10)/2); return (m>=0?'+':'')+m; }
+function sSt(name) { return S.skills[name] || 0; }
+function skCount()  { return Object.values(S.skills).filter(v=>v>=1).length; }
+function e1Count()  { return Object.values(S.skills).filter(v=>v>=2).length; }
+function e2Count()  { return Object.values(S.skills).filter(v=>v>=3).length; }
+function skillPicks() { return D.ui?.skillPicks ?? 4; }
+function hasExpertise() { return D.ui?.hasExpertise ?? false; }
+
+// ─── Tabs ────────────────────────────────────
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('pane-'+t.dataset.tab).classList.add('active');
+    if (t.dataset.tab === 'summary') renderSummary();
+  });
+});
+
+// ─── Subclass ────────────────────────────────
+function renderSubclasses() {
+  const g = document.getElementById('subclass-grid');
+  g.innerHTML = D.subclasses.map(s => `
+    <div class="card ${S.subclass===s.name?'sel':''}" data-sc="${s.name}">
+      <div class="card-top"><div class="card-name">${s.name}</div>${badge(s.r)}</div>
+      <div class="card-note">${s.d}</div>
+    </div>`).join('');
+  g.querySelectorAll('.card').forEach(c => c.addEventListener('click', () => {
+    S.subclass = S.subclass===c.dataset.sc ? null : c.dataset.sc;
+    renderSubclasses(); updateSBar(); updateTabBadges();
+  }));
+}
+
+// ─── Species ─────────────────────────────────
+function renderSpecies() {
+  const g = document.getElementById('species-grid');
+  if (!D.species?.length) { g.innerHTML = '<div style="color:var(--tx3);font-style:italic;padding:8px 0">No species data for this class.</div>'; return; }
+  g.innerHTML = D.species.map(sp => `
+    <div class="card ${S.species===sp.n?'sel':''}" data-sp="${sp.n}">
+      <div class="card-top">
+        <div><div class="card-name">${sp.n}</div><div class="card-stat">${sp.src}</div></div>
+        ${badge(sp.r)}
+      </div>
+      <div class="card-note">${sp.d}</div>
+    </div>`).join('');
+  g.querySelectorAll('.card').forEach(c => c.addEventListener('click', () => {
+    S.species = S.species===c.dataset.sp ? null : c.dataset.sp;
+    renderSpecies(); updateSBar(); updateTabBadges();
+  }));
+}
+
+// ─── Ability Scores ───────────────────────────
+function renderAbilities() {
+  const pk = document.getElementById('array-picker');
+  pk.innerHTML = D.arrays.map((a,i) =>
+    `<button class="abtn ${S.abilityArr===i?'active':''}" data-i="${i}">${a.n}</button>`
+  ).join('');
+  pk.querySelectorAll('.abtn').forEach(b => b.addEventListener('click', () => {
+    S.abilityArr = S.abilityArr===+b.dataset.i ? null : +b.dataset.i;
+    renderAbilities();
+  }));
+
+  const rmap = {}; D.abilityNotes.forEach(n => rmap[n.s] = n.r);
+  const vals = S.abilityArr !== null ? D.arrays[S.abilityArr].v : null;
+  const stats = ['Str','Dex','Con','Int','Wis','Cha'];
+  document.getElementById('ability-grid').innerHTML = stats.map(s => {
+    const v = vals ? vals[s] : '—';
+    return `<div class="acell ${vals?rmap[s]:''}">
+      <div class="alabel">${s}</div>
+      <div class="aval">${v}</div>
+      <div class="amod">${vals?mod(v):'±?'}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('ability-notes').innerHTML = D.abilityNotes.map(n => `
+    <div class="card" style="cursor:default">
+      <div class="card-top"><div class="card-name">${n.s}</div>${badge(n.r)}</div>
+      <div class="card-note">${n.n}</div>
+    </div>`).join('');
+}
+
+// ─── Skills ──────────────────────────────────
+function renderSkills() {
+  const g = document.getElementById('skills-grid');
+  g.innerHTML = D.skills.map(sk => {
+    const st = sSt(sk.n);
+    const cls = st===1?'sel':st===2?'e1':st===3?'e2':'';
+    const stLabel = st===1 ? '<div class="card-state s-prof">✦ Proficient</div>'
+                  : st===2 ? '<div class="card-state s-e1">★ L1 Expertise</div>'
+                  : st===3 ? '<div class="card-state s-e2">★★ L6 Expertise</div>' : '';
+    return `<div class="card ${cls}" data-sk="${sk.n}">
+      <div class="card-top">
+        <div><div class="card-name">${sk.n}</div><div class="card-stat">${sk.s}</div></div>
+        ${badge(sk.r)}
+      </div>
+      <div class="card-note">${sk.d}</div>
+      ${stLabel}
+    </div>`;
+  }).join('');
+
+  g.querySelectorAll('.card').forEach(c => c.addEventListener('click', () => {
+    const nm = c.dataset.sk, cur = sSt(nm);
+    let next = 0;
+    if (cur === 0) { if (skCount() < skillPicks()) next = 1; }
+    else if (cur === 1) {
+      if (!hasExpertise()) next = 0;
+      else next = e1Count() < 2 ? 2 : 0;
+    }
+    else if (cur === 2) { next = e2Count() < 2 ? 3 : 1; }
+    else { next = 0; }
+    if (next === 0) delete S.skills[nm]; else S.skills[nm] = next;
+    renderSkills(); updateSBar(); updateTabBadges();
+  }));
+
+  const picks = skillPicks();
+  const sc = skCount(), e1 = e1Count(), e2 = e2Count();
+  const el1 = document.getElementById('cnt-s');
+  el1.innerHTML = `${sc}<span style="font-size:.65rem;color:var(--tx3)">/${picks}</span>`;
+  el1.className = 'cnum '+(sc===picks?'done':sc>0?'ok':'');
+
+  if (hasExpertise()) {
+    const el2 = document.getElementById('cnt-e1'), el3 = document.getElementById('cnt-e2');
+    el2.innerHTML = `${e1}<span style="font-size:.65rem;color:var(--tx3)">/2</span>`;
+    el3.innerHTML = `${e2}<span style="font-size:.65rem;color:var(--tx3)">/2</span>`;
+    el2.className = 'cnum '+(e1===2?'done':e1>0?'ok':'');
+    el3.className = 'cnum '+(e2===2?'done':e2>0?'ok':'');
+  }
+}
+
+// ─── Backgrounds ─────────────────────────────
+function renderBgs() {
+  const g = document.getElementById('background-grid');
+  g.innerHTML = D.backgrounds.map(b => `
+    <div class="card ${S.bg===b.n?'sel':''}" data-bg="${b.n}">
+      <div class="card-top"><div class="card-name">${b.n}</div>${badge(b.r)}</div>
+      <div class="card-note">${b.d}</div>
+    </div>`).join('');
+  g.querySelectorAll('.card').forEach(c => c.addEventListener('click', () => {
+    S.bg = S.bg===c.dataset.bg ? null : c.dataset.bg;
+    renderBgs(); updateSBar(); updateTabBadges();
+  }));
+}
+
+// ─── ASI Slots ───────────────────────────────
+function openSlots() { return D.asiLevels.filter(l => S.asi[l] && S.asi[l].type==='feat' && !S.asi[l].feat); }
+function assignedSlots(fn) { return D.asiLevels.filter(l => { const c=S.asi[l]; return c&&c.type==='feat'&&c.feat===fn; }); }
+
+function renderASI() {
+  const cont = document.getElementById('asi-slots');
+  cont.innerHTML = D.asiLevels.map(lv => {
+    const ch = S.asi[lv]; const hc = !!ch;
+    const title = hc ? (ch.type==='feat' ? `Feat: ${ch.feat||'(pick below)'}` : ch.type==='asi2' ? 'ASI +2' : '+1/+1 to two stats') : 'Unassigned';
+    return `<div class="aslot ${hc?'has-ch':''}" id="asl-${lv}">
+      <div class="aslot-hdr">
+        <span class="lpill">Lvl ${lv}</span>
+        <span class="aslot-title">${title}</span>
+      </div>
+      <div class="abtns">
+        <button class="abtn2 ${ch&&ch.type==='asi2'?'active':''}" data-lv="${lv}" data-t="asi2">+2 to one stat</button>
+        <button class="abtn2 ${ch&&ch.type==='split'?'active':''}" data-lv="${lv}" data-t="split">+1/+1 to two stats</button>
+        <button class="abtn2 ${ch&&ch.type==='feat'?'active':''}" data-lv="${lv}" data-t="feat">Take a Feat</button>
+        ${hc?`<button class="abtn2 clr" data-lv="${lv}" data-t="clear">✕</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  cont.querySelectorAll('.abtn2').forEach(b => b.addEventListener('click', () => {
+    const lv = +b.dataset.lv, tp = b.dataset.t;
+    if (tp === 'clear') { delete S.asi[lv]; }
+    else {
+      const cur = S.asi[lv];
+      if (cur && cur.type === tp) delete S.asi[lv];
+      else S.asi[lv] = {type:tp, feat:null};
+    }
+    renderASI(); renderFeats(); updateSBar(); updateTabBadges();
+  }));
+}
+
+// ─── Feats ───────────────────────────────────
+function renderFeatFilters() {
+  const bar = document.getElementById('feat-filters');
+  const ratings = [{k:'all',l:'All',c:'fa'},{k:'blue',l:'Fantastic',c:'fb'},{k:'green',l:'Good',c:'fg'},{k:'orange',l:'Situational',c:'fo'},{k:'red',l:'Avoid',c:'fr'}];
+  bar.innerHTML = ratings.map(b => `<button class="fbtn ${b.c} ${S.fFilt===b.k?'active':''}" data-f="${b.k}">${b.l}</button>`).join('')
+    + `<input class="srch" id="fsrch" placeholder="Search feats…" value="${S.fSearch}">`;
+  bar.querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => { S.fFilt=b.dataset.f; renderFeatFilters(); renderFeats(); }));
+  document.getElementById('fsrch').addEventListener('input', e => { S.fSearch=e.target.value; renderFeats(); });
+}
+
+function renderFeatGroup(cat) {
+  const g = document.getElementById('feats-'+cat);
+  if (!g) return;
+  const fq = S.fSearch.toLowerCase();
+  const vis = (D.feats||[]).filter(f => {
+    if (f.cat !== cat) return false;
+    if (S.fFilt !== 'all' && f.r !== S.fFilt) return false;
+    if (fq && !f.n.toLowerCase().includes(fq) && !f.d.toLowerCase().includes(fq)) return false;
+    return true;
+  });
+  if (!vis.length) { g.innerHTML = '<div style="color:var(--tx3);font-style:italic;padding:8px 0">No feats match.</div>'; return; }
+
+  const open = openSlots();
+  g.innerHTML = vis.map(f => {
+    const asgd = assignedSlots(f.n);
+    let btns = '';
+    if (open.length) btns += `<div class="fassign">${open.map(lv=>`<button class="fassign-btn" data-af="${f.n}" data-lv="${lv}">+ Lvl ${lv}</button>`).join('')}</div>`;
+    if (asgd.length) btns += `<div class="fassign">${asgd.map(lv=>`<button class="fassign-btn asgd" data-rf="${f.n}" data-lv="${lv}">✓ Lvl ${lv} — Remove</button>`).join('')}</div>`;
+    return `<div class="card ${asgd.length?'sel':''}">
+      <div class="card-top"><div class="card-name">${f.n}</div>${badge(f.r)}</div>
+      <div class="card-note">${f.d}</div>
+      ${btns}
+    </div>`;
+  }).join('');
+
+  g.querySelectorAll('[data-af]').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    const lv = +b.dataset.lv; if (S.asi[lv]) S.asi[lv].feat = b.dataset.af;
+    renderASI(); renderFeats();
+  }));
+  g.querySelectorAll('[data-rf]').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    const lv = +b.dataset.lv; if (S.asi[lv]) S.asi[lv].feat = null;
+    renderASI(); renderFeats();
+  }));
+}
+
+function renderFeats() {
+  ['origin','general','dragonmark'].forEach(renderFeatGroup);
+}
+
+// ─── Epic Boons ──────────────────────────────
+function renderEpicBoons() {
+  const g = document.getElementById('epicboons-grid');
+  if (!D.epicBoons?.length) { g.innerHTML = '<div style="color:var(--tx3);font-style:italic;padding:8px 0">No Epic Boon data for this class.</div>'; return; }
+  g.innerHTML = D.epicBoons.map(b => `
+    <div class="card" style="cursor:default">
+      <div class="card-top"><div class="card-name">${b.n}</div>${badge(b.r)}</div>
+      <div class="card-note">${b.d}</div>
+    </div>`).join('');
+}
+
+// ─── Weapons & Armor ─────────────────────────
+function renderWeapons() {
+  document.getElementById('weapons-grid').innerHTML = (D.weapons||[]).map(w => `
+    <div class="card" style="cursor:default">
+      <div class="card-top">
+        <div><div class="card-name">${w.n}</div><div class="card-stat">${w.mastery} Mastery · ${w.props}</div></div>
+        ${badge(w.r)}
+      </div>
+      <div class="card-note">${w.d}</div>
+    </div>`).join('');
+  document.getElementById('armor-grid').innerHTML = (D.armor||[]).map(a => `
+    <div class="card" style="cursor:default">
+      <div class="card-top">
+        <div><div class="card-name">${a.n}</div><div class="card-stat">${a.props}</div></div>
+        ${badge(a.r)}
+      </div>
+      <div class="card-note">${a.d}</div>
+    </div>`).join('');
+}
+
+// ─── Multiclassing ───────────────────────────
+function renderMulticlass() {
+  document.getElementById('multiclass-grid').innerHTML = (D.multiclass||[]).map(m => `
+    <div class="card" style="cursor:default">
+      <div class="card-top">
+        <div><div class="card-name">${m.n}</div><div class="card-stat">${m.dip}</div></div>
+        ${badge(m.r)}
+      </div>
+      <div class="card-note">${m.d}</div>
+    </div>`).join('');
+}
+
+// ─── Class Features ───────────────────────────
+function renderFeatures() {
+  document.getElementById('features-tbody').innerHTML = D.classFeatures.map(f => `
+    <tr>
+      <td><span class="lchip">${f.lv}</span></td>
+      <td><span class="fname">${f.n}</span></td>
+      <td>${badge(f.r)}</td>
+      <td style="color:var(--tx2)">${f.d}</td>
+    </tr>`).join('');
+  document.getElementById('optional-grid').innerHTML = (D.optional||[]).map(f => `
+    <div class="card" style="cursor:default">
+      <div class="card-top"><div class="card-name">${f.n}</div>${badge(f.r)}</div>
+      <div class="card-note">${f.d}</div>
+    </div>`).join('');
+}
+
+// ─── Summary ─────────────────────────────────
+function renderSummary() {
+  const selSk = D.skills.filter(s => sSt(s.n)>=1);
+  const e1Sk  = D.skills.filter(s => sSt(s.n)>=2);
+  const e2Sk  = D.skills.filter(s => sSt(s.n)>=3);
+  const arr   = S.abilityArr !== null ? D.arrays[S.abilityArr] : null;
+  const arrTxt = arr ? `${arr.n}: `+Object.entries(arr.v).map(([k,v])=>`${k} ${v}`).join(', ') : '—';
+  const asiRows = D.asiLevels.map(lv => {
+    const ch = S.asi[lv];
+    const val = ch ? (ch.type==='feat' ? `Feat — ${ch.feat||'(not assigned)'}` : ch.type==='asi2' ? '+2 to one stat' : '+1/+1 to two stats') : '—';
+    return `<div class="srow"><span class="skey">Level ${lv} ASI</span><span class="sval">${val}</span></div>`;
+  }).join('');
+
+  const expertiseRows = hasExpertise() ? `
+      <div class="srow"><span class="skey">L1 Expertise (2)</span><span class="sval">${e1Sk.length?e1Sk.map(s=>s.n).join(', '):'—'}</span></div>
+      <div class="srow"><span class="skey">L6 Expertise (2)</span><span class="sval">${e2Sk.length?e2Sk.map(s=>s.n).join(', '):'—'}</span></div>` : '';
+
+  document.getElementById('summary-content').innerHTML = `
+    <div class="sblock">
+      <h3>Core Choices</h3>
+      <div class="srow"><span class="skey">Subclass</span><span class="sval">${S.subclass||'—'}</span></div>
+      <div class="srow"><span class="skey">Species</span><span class="sval">${S.species||'—'}</span></div>
+      <div class="srow"><span class="skey">Background</span><span class="sval">${S.bg||'—'}</span></div>
+      <div class="srow"><span class="skey">Ability Array</span><span class="sval">${arrTxt}</span></div>
+    </div>
+    <div class="sblock">
+      <h3>Skills &amp; Expertise</h3>
+      <div class="srow"><span class="skey">Class Skills (${skillPicks()})</span><span class="sval">${selSk.length?selSk.map(s=>s.n).join(', '):'—'}</span></div>
+      ${expertiseRows}
+    </div>
+    <div class="sblock"><h3>Feats &amp; ASIs</h3>${asiRows}</div>`;
+}
+
+// ─── Status bar ───────────────────────────────
+function updateSBar() {
+  document.getElementById('sb-sc').textContent = S.subclass||'—';
+  document.getElementById('sb-sp').textContent = S.species||'—';
+  document.getElementById('sb-bg').textContent = S.bg||'—';
+  document.getElementById('sb-sk').textContent = `${skCount()}/${skillPicks()}`;
+  document.getElementById('sb-asi').textContent = `${D.asiLevels.filter(l=>S.asi[l]).length}/${D.asiLevels.length}`;
+}
+
+function updateTabBadges() {
+  document.querySelectorAll('.tbadge').forEach(b => b.remove());
+  const add = (tab, txt) => { const t=document.querySelector(`[data-tab="${tab}"]`); if(t){const b=document.createElement('span');b.className='tbadge';b.textContent=txt;t.appendChild(b);} };
+  if (S.subclass) add('subclass','✓');
+  if (S.species)  add('species','✓');
+  if (skCount()>0) add('skills',`${skCount()}/${skillPicks()}`);
+  if (S.bg) add('background','✓');
+  const au = D.asiLevels.filter(l=>S.asi[l]).length;
+  if (au>0) add('feats',`${au}/${D.asiLevels.length}`);
+}
+
+// ─── Copy ────────────────────────────────────
+document.getElementById('copy-btn').addEventListener('click', () => {
+  const selSk = D.skills.filter(s=>sSt(s.n)>=1).map(s=>s.n);
+  const e1    = D.skills.filter(s=>sSt(s.n)>=2).map(s=>s.n);
+  const e2    = D.skills.filter(s=>sSt(s.n)>=3).map(s=>s.n);
+  const arr   = S.abilityArr !== null ? D.arrays[S.abilityArr] : null;
+  const lines = [
+    `=== D&D ${D.meta.edition} ${D.meta.name} Build ===`, '',
+    `Subclass:      ${S.subclass||'—'}`,
+    `Species:       ${S.species||'—'}`,
+    `Background:    ${S.bg||'—'}`,
+    `Ability Array: ${arr ? arr.n+' ('+Object.entries(arr.v).map(([k,v])=>`${k}:${v}`).join(', ')+')' : '—'}`,
+    '', `Skills (${skillPicks()}):    ${selSk.join(', ')||'—'}`,
+    ...(hasExpertise() ? [`L1 Expertise:  ${e1.join(', ')||'—'}`, `L6 Expertise:  ${e2.join(', ')||'—'}`] : []),
+    '', 'Feats & ASIs:',
+    ...D.asiLevels.map(lv => {
+      const ch = S.asi[lv];
+      if (!ch) return `  Level ${lv}: (unassigned)`;
+      if (ch.type==='feat') return `  Level ${lv}: Feat — ${ch.feat||'(not assigned)'}`;
+      return `  Level ${lv}: ${ch.type==='asi2'?'ASI +2':'ASI +1/+1'}`;
+    }),
+  ];
+  navigator.clipboard.writeText(lines.join('\n')).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = '◆ Copy to Clipboard'; }, 2000);
+  });
+});
+
+// ─── Init (called after D is loaded) ─────────
+function init() {
+  const ui = D.ui || {};
+
+  // Dynamic header
+  document.title = `${D.meta.name} Builder · D&D ${D.meta.edition}`;
+  document.getElementById('class-title').textContent = `${D.meta.name.toUpperCase()} BUILDER`;
+  document.getElementById('class-sub').textContent   = `${D.meta.edition} D&D rules · RPGBOT guide`;
+
+  // Dynamic pane text from D.ui
+  if (ui.subclassDesc)    document.getElementById('subclass-desc').textContent = ui.subclassDesc;
+  if (ui.featDesc)        document.getElementById('feat-desc').textContent = ui.featDesc;
+  if (ui.backgroundNote)  document.getElementById('bg-callout').textContent = ui.backgroundNote;
+  if (ui.multiclassNote)  document.getElementById('multiclass-callout').textContent = ui.multiclassNote;
+  if (ui.weaponNote)      document.getElementById('weapon-note').textContent = ui.weaponNote;
+  if (ui.armorNote)       document.getElementById('armor-note').textContent = ui.armorNote;
+  if (ui.optionalTitle)   document.getElementById('optional-title').textContent = ui.optionalTitle;
+  if (ui.optionalDesc)    document.getElementById('optional-desc').textContent = ui.optionalDesc;
+  if (ui.skillPicks) {
+    document.getElementById('skills-desc').textContent =
+      `Pick ${ui.skillPicks} class skills.${ui.hasExpertise ? ' Click a selected skill to cycle: Proficient → L1 Expertise → L6 Expertise → unselected.' : ''}`;
+  }
+
+  // Hide expertise counter rows if class doesn't have expertise
+  if (!hasExpertise()) {
+    document.getElementById('e1-citem').style.display = 'none';
+    document.getElementById('e2-citem').style.display = 'none';
+  }
+
+  // Render everything
+  renderSubclasses();
+  renderSpecies();
+  renderAbilities();
+  renderSkills();
+  renderBgs();
+  renderASI();
+  renderFeatFilters();
+  renderFeats();
+  renderEpicBoons();
+  renderWeapons();
+  renderMulticlass();
+  renderFeatures();
+  updateSBar();
+
+  // Show app, hide loader
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('sbar').style.display = 'flex';
+}
+
+// ─── Bootstrap ───────────────────────────────
+const _classId = new URLSearchParams(location.search).get('class') || 'rogue-2024';
+
+fetch(`/api/classes/${_classId}`)
+  .then(r => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); })
+  .then(data => { D = data; init(); })
+  .catch(err => {
+    const el = document.getElementById('loading');
+    el.textContent = `Could not load "${_classId}": ${err.message}`;
+    el.style.color = 'var(--rr-t)';
+    el.style.fontStyle = 'normal';
+  });
+</script>
+</body>
+</html>

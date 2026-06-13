@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rogue Builder · D&D 5e</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg:   #0a0c10;
+  --s1:   #11141b;
+  --s2:   #181c26;
+  --s3:   #1f2330;
+  --bd:   #232737;
+  --bd2:  #313749;
+  --tx:   #ddd3bc;
+  --tx2:  #8a8070;
+  --tx3:  #4e4a41;
+  --gold: #c4973a;
+  --gold2:#7a5c1e;
+  --acc:  #7c3aed;
+
+  --rb:#1e40af; --rb-bg:#0c1a35; --rb-t:#93c5fd;
+  --rg:#15803d; --rg-bg:#0a2416; --rg-t:#86efac;
+  --ro:#c2410c; --ro-bg:#2c1005; --ro-t:#fdba74;
+  --rr:#b91c1c; --rr-bg:#280606; --rr-t:#fca5a5;
+
+  --sel-bg:#0d1b33; --sel-bd:#2563eb;
+  --e1-bg:#160e30;  --e1-bd:#7c3aed;
+  --e2-bg:#0c2016;  --e2-bd:#059669;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Crimson Pro',Georgia,serif;background:var(--bg);color:var(--tx);min-height:100vh;font-size:16px;line-height:1.5}
+
+/* Header */
+header{background:var(--s1);border-bottom:1px solid var(--bd);padding:12px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100}
+.hicon{font-size:1.4rem;line-height:1}
+header h1{font-family:'Cinzel',serif;font-size:1.05rem;font-weight:700;letter-spacing:.12em;color:var(--gold)}
+header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
+.hlegend{margin-left:auto;display:flex;gap:6px;align-items:center;flex-shrink:0}
+
+/* Tabs */
+.tabs{background:var(--s1);border-bottom:1px solid var(--bd);display:flex;padding:0 24px;overflow-x:auto;gap:0;-webkit-overflow-scrolling:touch}
+.tab{padding:9px 16px;cursor:pointer;border-bottom:2px solid transparent;color:var(--tx2);font-family:'Cinzel',serif;font-size:.7rem;letter-spacing:.09em;white-space:nowrap;transition:all .2s;display:flex;align-items:center;gap:5px}
+.tab:hover{color:var(--tx)}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.tbadge{background:var(--gold2);color:var(--gold);font-size:.6rem;padding:1px 5px;border-radius:3px;font-family:'JetBrains Mono',monospace}
+
+/* Layout */
+.content{padding:22px 24px 74px;max-width:1280px;margin:0 auto}
+.pane{display:none}
+.pane.active{display:block;animation:fi .18s ease}
+@keyframes fi{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+/* Section headers */
+.sh{margin-bottom:18px}
+.sh h2{font-family:'Cinzel',serif;font-size:.95rem;font-weight:600;letter-spacing:.07em;margin-bottom:3px;color:var(--gold)}
+.sh p{font-size:.85rem;color:var(--tx2);font-style:italic}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;font-family:'JetBrains Mono',monospace;font-size:.6rem;font-weight:500;padding:2px 7px;border-radius:3px;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.badge-blue  {background:var(--rb-bg);color:var(--rb-t);border:1px solid var(--rb)}
+.badge-green {background:var(--rg-bg);color:var(--rg-t);border:1px solid var(--rg)}
+.badge-orange{background:var(--ro-bg);color:var(--ro-t);border:1px solid var(--ro)}
+.badge-red   {background:var(--rr-bg);color:var(--rr-t);border:1px solid var(--rr)}
+
+/* Cards */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.grid-sm{grid-template-columns:repeat(auto-fill,minmax(205px,1fr))}
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:12px 14px;cursor:pointer;transition:border-color .15s,background .15s,transform .1s;user-select:none}
+.card:hover{border-color:var(--bd2);background:var(--s2);transform:translateY(-1px)}
+.card.sel {border-color:var(--sel-bd);background:var(--sel-bg)}
+.card.e1  {border-color:var(--e1-bd); background:var(--e1-bg)}
+.card.e2  {border-color:var(--e2-bd); background:var(--e2-bg)}
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.card-name{font-family:'Cinzel',serif;font-size:.8rem;font-weight:600;letter-spacing:.04em}
+.card-stat{font-family:'JetBrains Mono',monospace;font-size:.65rem;color:var(--tx3);background:var(--s2);padding:1px 5px;border-radius:3px;margin-top:2px}
+.card-note{font-size:.8125rem;color:var(--tx2);line-height:1.5}
+.card-state{margin-top:6px;font-size:.68rem}
+.card-state.s-prof{color:var(--rb-t)}
+.card-state.s-e1  {color:#c4b5fd}
+.card-state.s-e2  {color:var(--rg-t)}
+
+/* Skill counter */
+.cbar{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:10px 18px;margin-bottom:14px;display:flex;gap:28px;align-items:center;flex-wrap:wrap}
+.citem{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:72px}
+.cnum{font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:500;color:var(--tx3);transition:color .2s}
+.cnum.ok  {color:var(--rg-t)}
+.cnum.done{color:var(--gold)}
+.clabel{font-size:.6rem;color:var(--tx3);text-transform:uppercase;letter-spacing:.09em;font-family:'Cinzel',serif}
+
+/* Ability scores */
+.apicker{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+.abtn{padding:6px 13px;border-radius:5px;border:1px solid var(--bd);background:var(--s1);color:var(--tx2);cursor:pointer;font-size:.8125rem;font-family:'Crimson Pro',serif;transition:all .15s}
+.abtn:hover{color:var(--tx);border-color:var(--bd2)}
+.abtn.active{color:var(--gold);border-color:var(--gold2);background:#181408}
+.agrid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:18px}
+.acell{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:10px 6px;text-align:center}
+.acell.rb{border-color:var(--rb)}.acell.rg{border-color:var(--rg)}.acell.ro{border-color:var(--ro)}.acell.rr{border-color:var(--rr)}
+.alabel{font-family:'Cinzel',serif;font-size:.62rem;color:var(--tx2);letter-spacing:.1em;margin-bottom:4px}
+.aval{font-family:'JetBrains Mono',monospace;font-size:1.35rem;font-weight:500}
+.amod{font-size:.72rem;color:var(--tx2);font-family:'JetBrains Mono',monospace}
+.anotes{display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:8px}
+
+/* ASI */
+.aslots{display:flex;flex-direction:column;gap:10px;margin-bottom:26px}
+.aslot{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:13px 15px}
+.aslot.has-ch{border-color:var(--bd2)}
+.aslot-hdr{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.lpill{font-family:'JetBrains Mono',monospace;font-size:.62rem;background:var(--acc);color:#fff;padding:2px 8px;border-radius:9999px}
+.aslot-title{font-family:'Cinzel',serif;font-size:.78rem;color:var(--tx2)}
+.aslot.has-ch .aslot-title{color:var(--gold)}
+.abtns{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.abtn2{padding:5px 12px;border-radius:5px;border:1px solid var(--bd);background:var(--bg);color:var(--tx2);cursor:pointer;font-size:.8125rem;font-family:'Crimson Pro',serif;transition:all .15s}
+.abtn2:hover{color:var(--tx);border-color:var(--bd2)}
+.abtn2.active{color:var(--gold);border-color:var(--gold2);background:#181408}
+.abtn2.clr{margin-left:auto;opacity:.45;font-size:.75rem}
+.abtn2.clr:hover{opacity:1}
+
+/* Feat assign */
+.fassign{margin-top:8px;display:flex;gap:5px;flex-wrap:wrap}
+.fassign-btn{font-size:.68rem;padding:2px 8px;border-radius:3px;border:1px solid var(--bd);background:var(--bg);color:var(--tx2);cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all .15s}
+.fassign-btn:hover{border-color:var(--gold2);color:var(--gold)}
+.fassign-btn.asgd{border-color:var(--gold2);color:var(--gold);background:#181408}
+
+/* Filter bar */
+.fbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.fbtn{padding:4px 10px;border-radius:9999px;border:1px solid var(--bd);background:var(--s1);color:var(--tx2);cursor:pointer;font-size:.7rem;font-family:'JetBrains Mono',monospace;transition:all .15s}
+.fbtn:hover{color:var(--tx);border-color:var(--bd2)}
+.fbtn.fa.active{border-color:var(--gold2);color:var(--gold);background:#181408}
+.fbtn.fb.active{border-color:var(--rb);color:var(--rb-t);background:var(--rb-bg)}
+.fbtn.fg.active{border-color:var(--rg);color:var(--rg-t);background:var(--rg-bg)}
+.fbtn.fo.active{border-color:var(--ro);color:var(--ro-t);background:var(--ro-bg)}
+.fbtn.fr.active{border-color:var(--rr);color:var(--rr-t);background:var(--rr-bg)}
+.srch{padding:5px 11px;border-radius:5px;border:1px solid var(--bd);background:var(--s1);color:var(--tx);font-family:'Crimson Pro',serif;font-size:.875rem;flex:1;min-width:140px;max-width:240px;outline:none}
+.srch:focus{border-color:var(--bd2)}
+.srch::placeholder{color:var(--tx3)}
+.feat-ref-hdr{font-family:'Cinzel',serif;font-size:.8rem;color:var(--tx2);letter-spacing:.07em;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--bd)}
+
+/* Feature table */
+.ftable{width:100%;border-collapse:collapse}
+.ftable th{font-family:'Cinzel',serif;font-size:.62rem;letter-spacing:.1em;color:var(--tx2);text-transform:uppercase;padding:6px 11px;border-bottom:1px solid var(--bd);text-align:left}
+.ftable td{padding:8px 11px;font-size:.8125rem;border-bottom:1px solid var(--bd);vertical-align:top}
+.ftable tr:last-child td{border-bottom:none}
+.lchip{font-family:'JetBrains Mono',monospace;font-size:.68rem;color:var(--tx3);background:var(--s2);padding:2px 6px;border-radius:3px}
+.fname{font-family:'Cinzel',serif;font-size:.75rem;letter-spacing:.04em;font-weight:600}
+
+/* Callout */
+.callout{background:var(--s2);border:1px solid var(--bd);border-left:3px solid var(--rb);border-radius:4px;padding:8px 12px;font-size:.8rem;color:var(--tx2);margin-bottom:14px;font-style:italic}
+
+/* Summary */
+.sblock{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:16px 20px;margin-bottom:12px}
+.sblock h3{font-family:'Cinzel',serif;font-size:.67rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--bd)}
+.srow{display:flex;gap:10px;padding:4px 0;font-size:.875rem;border-bottom:1px solid var(--bd);align-items:flex-start}
+.srow:last-child{border-bottom:none}
+.skey{color:var(--tx2);min-width:135px;font-style:italic;flex-shrink:0}
+.sval{color:var(--tx)}
+.copybtn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:var(--s2);border:1px solid var(--gold2);color:var(--gold);border-radius:5px;cursor:pointer;font-family:'Cinzel',serif;font-size:.72rem;letter-spacing:.06em;transition:all .15s;margin-top:12px}
+.copybtn:hover{background:#181408}
+
+/* Status bar */
+#sbar{position:fixed;bottom:0;left:0;right:0;background:var(--s1);border-top:1px solid var(--bd);padding:7px 24px;display:flex;gap:18px;align-items:center;font-size:.72rem;z-index:100;overflow-x:auto;white-space:nowrap}
+.si{display:flex;align-items:center;gap:6px}
+.slbl{color:var(--tx3);font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.1em;text-transform:uppercase}
+.sval2{color:var(--tx);font-family:'JetBrains Mono',monospace;font-size:.68rem}
+.sval2.hi{color:var(--gold)}
+.sdiv{color:var(--bd2)}
+
+@media(max-width:640px){
+  .agrid{grid-template-columns:repeat(3,1fr)}
+  .content{padding:14px 14px 74px}
+  .hlegend{display:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="hicon">⚔</span>
+  <div>
+    <h1>ROGUE BUILDER</h1>
+    <div class="hsub">D&amp;D 5e 2014 rules · RPGBOT guide</div>
+  </div>
+  <div class="hlegend">
+    <span class="badge badge-blue">Fantastic</span>
+    <span class="badge badge-green">Good</span>
+    <span class="badge badge-orange">Situational</span>
+    <span class="badge badge-red">Avoid</span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <div class="tab active" data-tab="subclass">Subclass</div>
+  <div class="tab" data-tab="abilities">Ability Scores</div>
+  <div class="tab" data-tab="skills">Skills &amp; Expertise</div>
+  <div class="tab" data-tab="background">Background</div>
+  <div class="tab" data-tab="feats">Feats &amp; ASIs</div>
+  <div class="tab" data-tab="features">Class Features</div>
+  <div class="tab" data-tab="summary">Summary</div>
+</nav>
+
+<div class="content">
+
+  <div class="pane active" id="pane-subclass">
+    <div class="sh"><h2>Roguish Archetype</h2><p>Chosen at level 3 — defines your specialization.</p></div>
+    <div class="grid" id="subclass-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-abilities">
+    <div class="sh"><h2>Ability Scores</h2><p>Click an array to preview it. Cells are color-coded by priority.</p></div>
+    <div class="apicker" id="array-picker"></div>
+    <div class="agrid" id="ability-grid"></div>
+    <div class="sh" style="margin-top:4px"><h2>Score Priorities</h2></div>
+    <div class="anotes" id="ability-notes"></div>
+  </div>
+
+  <div class="pane" id="pane-skills">
+    <div class="sh"><h2>Skills &amp; Expertise</h2><p>Pick 4 class skills. Click a selected skill to cycle: Proficient → L1 Expertise → L6 Expertise → unselected.</p></div>
+    <div class="cbar">
+      <div class="citem"><div class="cnum" id="cnt-s">0<span style="font-size:.65rem;color:var(--tx3)">/4</span></div><div class="clabel">Skills</div></div>
+      <div class="citem"><div class="cnum" id="cnt-e1">0<span style="font-size:.65rem;color:var(--tx3)">/2</span></div><div class="clabel">L1 Expertise</div></div>
+      <div class="citem"><div class="cnum" id="cnt-e2">0<span style="font-size:.65rem;color:var(--tx3)">/2</span></div><div class="clabel">L6 Expertise</div></div>
+    </div>
+    <div class="callout"><strong>Expertise</strong> doubles your proficiency bonus on that skill. Perception and Stealth are almost always worth it.</div>
+    <div class="grid grid-sm" id="skills-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-background">
+    <div class="sh"><h2>Background</h2><p>Look for backgrounds that fill in skills you couldn't get from your 4 class choices.</p></div>
+    <div class="grid" id="background-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-feats">
+    <div class="sh"><h2>Feats &amp; Ability Score Improvements</h2><p>Rogues get 6 ASI slots. Click "Take a Feat", then assign below using the feat grid.</p></div>
+    <div class="aslots" id="asi-slots"></div>
+    <div class="feat-ref-hdr">Feat Reference</div>
+    <div class="fbar" id="feat-filters"></div>
+    <div class="grid" id="feats-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-features">
+    <div class="sh"><h2>Class Features</h2><p>Key features with RPGBOT ratings.</p></div>
+    <table class="ftable">
+      <thead><tr><th>Lvl</th><th>Feature</th><th>Rating</th><th>Notes</th></tr></thead>
+      <tbody id="features-tbody"></tbody>
+    </table>
+    <div class="sh" style="margin-top:22px"><h2>Optional Features (Tasha's)</h2></div>
+    <div class="grid" id="optional-grid"></div>
+  </div>
+
+  <div class="pane" id="pane-summary">
+    <div class="sh"><h2>Build Summary</h2><p>All your selections at a glance.</p></div>
+    <div id="summary-content"></div>
+    <button class="copybtn" id="copy-btn">◆ Copy to Clipboard</button>
+  </div>
+
+</div>
+
+<div id="sbar">
+  <div class="si"><span class="slbl">Subclass</span><span class="sval2 hi" id="sb-sc">—</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Background</span><span class="sval2 hi" id="sb-bg">—</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Skills</span><span class="sval2" id="sb-sk">0/4</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">ASIs</span><span class="sval2" id="sb-asi">0/6</span></div>
+</div>
+
+<script>
+const D = {
+  subclasses:[
+    {name:"Swashbuckler",   r:"blue",   d:"Charismatic master duelists. Uses Charisma in unique ways in and out of combat. Panache enables clever social plays. Best single-classed archetype overall."},
+    {name:"Arcane Trickster",r:"green", d:"Use illusions and enchantments to confuse and outsmart foes. Booming Blade and Mage Hand shenanigans add considerable utility."},
+    {name:"Assassin",       r:"green",  d:"Masters of infiltration and disguise. Devastating sneak attacks at combat's start. Excels when campaigns support preparation time."},
+    {name:"Phantom",        r:"green",  d:"Speak to the dead and use their knowledge to empower your attacks and skills. Adds necrotic damage and versatile utility features."},
+    {name:"Scout",          r:"green",  d:"Adept skirmishers and ambushers. Skirmisher lets you move when a creature approaches without provoking opportunity attacks."},
+    {name:"Soulknife",      r:"green",  d:"Use psionic power to create psychic blades. No equipment needed; Psychic Blades bypass many resistances and deal psychic damage."},
+    {name:"Thief",          r:"green",  d:"The iconic rogue. Masters using tools and magic items to overcome challenges. Fast Hands is incredibly versatile."},
+    {name:"Inquisitive",    r:"orange", d:"Masters of Insight and Investigation. Unerring Eye makes finding Sneak Attack easier, but the subclass chassis is mechanically weaker."},
+    {name:"Mastermind",     r:"orange", d:"Help action works at range in combat. Excellent roleplay subclass but limited mechanical payoff in pure combat scenarios."},
+  ],
+  arrays:[
+    {n:"Most Rogues — Point Buy",           v:{Str:8,Dex:15,Con:14,Int:11,Wis:12,Cha:12}},
+    {n:"Most Rogues — Standard Array",      v:{Str:8,Dex:15,Con:14,Int:10,Wis:13,Cha:12}},
+    {n:"Arcane Trickster — Point Buy",      v:{Str:8,Dex:15,Con:14,Int:14,Wis:10,Cha:10}},
+    {n:"Arcane Trickster — Standard Array", v:{Str:8,Dex:15,Con:13,Int:14,Wis:12,Cha:10}},
+  ],
+  abilityNotes:[
+    {s:"Str",r:"red",   n:"Dump stat. Nothing a typical Rogue does uses Strength."},
+    {s:"Dex",r:"blue",  n:"Rogues run on Dexterity. Adds to skills, tools, attacks, damage, AC, and saves."},
+    {s:"Con",r:"green", n:"Hit points always matter, especially for melee Rogues."},
+    {s:"Int",r:"orange",n:"Arcane Tricksters need it for spells. Others only need it for Investigation."},
+    {s:"Wis",r:"orange",n:"Helpful for Insight, Perception, and saves. Inquisitives want a bit more."},
+    {s:"Cha",r:"green", n:"Rogues make a great Face, and you can't be a Face without Charisma."},
+  ],
+  skills:[
+    {n:"Acrobatics",     s:"Dex",r:"orange",d:"Very situational."},
+    {n:"Athletics",      s:"Str",r:"red",   d:"Rogues don't do anything that requires Athletics."},
+    {n:"Deception",      s:"Cha",r:"blue",  d:"Important for a Face."},
+    {n:"Insight",        s:"Wis",r:"green", d:"Important for a Face."},
+    {n:"Intimidation",   s:"Cha",r:"green", d:"Important for a Face."},
+    {n:"Investigation",  s:"Int",r:"green", d:"Very helpful, but not as important as Perception."},
+    {n:"Perception",     s:"Wis",r:"blue",  d:"Most important skill in the game. Essential."},
+    {n:"Performance",    s:"Cha",r:"red",   d:"Performance is for Bards."},
+    {n:"Persuasion",     s:"Cha",r:"blue",  d:"Essential for a Face."},
+    {n:"Sleight of Hand",s:"Dex",r:"orange",d:"Thematic but not useful. Locks/traps use Thieves' Tools, not this."},
+    {n:"Stealth",        s:"Dex",r:"blue",  d:"A Rogue without Stealth is a very strange Rogue."},
+  ],
+  backgrounds:[
+    {n:"Criminal",            r:"blue",  d:"Two key Rogue skills, two tool kits. Swap Thieves' Tools for Poisoner's Kit."},
+    {n:"Urban Bounty Hunter", r:"blue",  d:"Basically two extra class skill choices plus tool proficiencies including Thieves' Tools."},
+    {n:"Charlatan",           r:"green", d:"Two Rogue skills and two tool kits."},
+    {n:"Courtier",            r:"green", d:"Perfect for a Face build."},
+    {n:"Faction Agent",       r:"green", d:"Fantastic for a Face; fills in a social skill you couldn't get elsewhere."},
+    {n:"Far Traveler",        r:"green", d:"Two excellent skills for a Rogue, plus a bonus language."},
+    {n:"Noble",               r:"green", d:"Good choice for a Face. History is decent if you have Intelligence."},
+    {n:"Urchin",              r:"green", d:"Two important Rogue skills, two tool kits. Swap Thieves' Tools for Poisoner's Kit."},
+    {n:"Acolyte",             r:"orange",d:"Insight and Religion, extra languages. Decent for a Face."},
+    {n:"City Watch",          r:"orange",d:"Athletics doesn't help Rogues, but Insight and languages are great for a Face."},
+    {n:"Cloistered Scholar",  r:"orange",d:"Two knowledge skills and two languages; good for a Face with decent Intelligence."},
+    {n:"Entertainer",         r:"orange",d:"Disguise Kit proficiency is really the only interesting piece."},
+    {n:"Guild Artisan",       r:"orange",d:"Two important skills for any Face, but the tool proficiency isn't very helpful."},
+    {n:"Inheritor",           r:"orange",d:"Can't really use Survival, but the rest is decent. Far Traveler provides similar options with better skills."},
+    {n:"Mercenary Veteran",   r:"orange",d:"Athletics occasionally useful; any Face needs Persuasion."},
+    {n:"Sage",                r:"orange",d:"Arcane Trickster might justify two knowledge skills; extra languages nice for a Face."},
+    {n:"Waterdavian Noble",   r:"orange",d:"Potentially good for a Face with decent Intelligence."},
+  ],
+  feats:[
+    {n:"Crossbow Expert",    r:"blue",  d:"Excellent for ranged builds. Extra crossbow attack as bonus action. Fire adjacent to enemies."},
+    {n:"Lucky",              r:"blue",  d:"Three rerolls per long rest on attacks, checks, or saves. Best safety net in the game."},
+    {n:"Magic Initiate",     r:"blue",  d:"Booming Blade and Green-Flame Blade work with Sneak Attack. Major damage and utility boost."},
+    {n:"Sharpshooter",       r:"blue",  d:"Insane damage with Sneak Attack. Requires Advantage first — combine with Steady Aim or hide via Cunning Action."},
+    {n:"Skill Expert",       r:"blue",  d:"Skill + Expertise + ASI in one feat. Easy to slot into any build."},
+    {n:"Alert",              r:"green", d:"Going first is great for Rogues, especially Assassins. +5 initiative, immune to surprise."},
+    {n:"Dungeon Delver",     r:"green", d:"Handling traps and secret doors falls to the Rogue. Excellent in dungeon-heavy campaigns."},
+    {n:"Fey Touched",        r:"green", d:"Misty Step is extremely useful. Consider Bless or Gift of Alacrity. Avoid Hex/Hunter's Mark."},
+    {n:"Fighting Initiate",  r:"green", d:"Archery fighting style is a huge damage improvement. Blind Fighting helps vs. invisible foes."},
+    {n:"Inspiring Leader",   r:"green", d:"Great with decent Charisma. Temporary HP vastly reduces need for magical healing."},
+    {n:"Mobile",             r:"green", d:"Hit-and-run tactics. Move in, attack, retreat without provoking opportunity attacks."},
+    {n:"Piercer",            r:"green", d:"Easy to slot in. With Sneak Attack you roll lots of dice — the reroll comes up constantly."},
+    {n:"Ritual Caster",      r:"green", d:"Great for Arcane Tricksters to expand utility. Find Familiar lets your owl use Help for Advantage."},
+    {n:"Skulker",            r:"green", d:"Very helpful for archer Rogues who rely on sniping. Missing doesn't reveal you."},
+    {n:"Telekinetic",        r:"green", d:"Easy escape from grapples. Especially good for Arcane Trickster (no components needed)."},
+    {n:"Actor",              r:"orange",d:"Complements the Assassin's disguise and infiltration abilities very nicely."},
+    {n:"Defensive Duelist",  r:"orange",d:"Tempting for melee, but Uncanny Dodge also uses your reaction and fills the same role."},
+    {n:"Eldritch Adept",     r:"orange",d:"Devil's Sight is great if you lack Darkvision. Only available to Arcane Trickster."},
+    {n:"Gunner",             r:"orange",d:"Minor upgrade; longbow proficiency from race is less costly and arguably more effective."},
+    {n:"Healer",             r:"orange",d:"Best use case is the Thief with Fast Hands. Consider Magic Initiate + Healing Word instead."},
+    {n:"Metamagic Adept",    r:"orange",d:"Arcane Trickster only. Powerful but limited spell slots make this a tough investment."},
+    {n:"Observant",          r:"orange",d:"Probably overkill. Use Expertise to boost your skills instead."},
+    {n:"Poisoner",           r:"orange",d:"Inexpensive poison + Poisoned condition. DC 14 Con save unreliable; needs careful action management."},
+    {n:"Resilient",          r:"orange",d:"Con saves helpful but Lucky usually wins out for most builds."},
+    {n:"Sentinel",           r:"orange",d:"More Sneak Attack via opportunity attacks, but positioning issues and you're a fragile melee target."},
+    {n:"Skilled",            r:"orange",d:"Reliable Talent at level 11 outweighs diversifying. Prefer Skill Expert instead."},
+    {n:"Telepathic",         r:"orange",d:"Telepathy still requires shared language so benefits are minimal. Ability score bump reduces cost."},
+    {n:"War Caster",         r:"orange",d:"Tempting for Arcane Trickster with Booming/Green-Flame Blade, but not strictly necessary."},
+    {n:"Dual Wielder",       r:"red",   d:"Upgrading to two rapiers barely matters. Raising Dexterity gets you the same gains plus more."},
+    {n:"Durable",            r:"red",   d:"Leave this for your party's front line."},
+    {n:"Elemental Adept",    r:"red",   d:"Can't apply Sneak Attack to offensive spells; not good for Arcane Tricksters."},
+    {n:"Martial Adept",      r:"red",   d:"One maneuver per short rest isn't enough to justify this feat."},
+    {n:"Moderately Armored", r:"red",   d:"You should be raising Dexterity; medium armor won't be competitive once you do."},
+    {n:"Savage Attacker",    r:"red",   d:"Explicitly bad. Rogue's biggest die is d8 — averages ~2 extra damage per turn. Not worth it."},
+    {n:"Shadow Touched",     r:"red",   d:"An Arcane Trickster can already replicate the interesting parts of this feat."},
+    {n:"Spell Sniper",       r:"red",   d:"You cannot use Sneak Attack with spell attacks."},
+  ],
+  classFeatures:[
+    {lv:1, n:"Expertise",         r:"blue",  d:"Pick skills that fit your campaign. With Reliable Talent at 11, these become nearly unbeatable."},
+    {lv:1, n:"Sneak Attack",      r:"blue",  d:"Source of most Rogue damage. Once per turn, not per round — can use it on reactions too."},
+    {lv:1, n:"Thieves' Cant",     r:"orange",d:"Really only matters for flavor."},
+    {lv:2, n:"Cunning Action",    r:"blue",  d:"Fantastic. Archers hide between attacks; melee Rogues dash/disengage safely."},
+    {lv:3, n:"Roguish Archetype", r:"blue",  d:"Choose your subclass. Defines your specialization."},
+    {lv:5, n:"Uncanny Dodge",     r:"blue",  d:"Halve damage from one attack per round as a reaction. Huge over the course of a combat."},
+    {lv:7, n:"Evasion",           r:"blue",  d:"Between this and Uncanny Dodge you are very durable against area effects."},
+    {lv:11,n:"Reliable Talent",   r:"blue",  d:"Minimum roll of 10 + bonus on any proficient skill. Especially powerful for Expertise skills."},
+    {lv:14,n:"Blindsense",        r:"green", d:"Locating invisible creatures is very hard. Knowing where they stand goes a long way."},
+    {lv:15,n:"Slippery Mind",     r:"green", d:"Wisdom probably isn't great, but Proficiency Bonus is large enough at this level to matter."},
+    {lv:18,n:"Elusive",           r:"blue",  d:"Attackers never have Advantage against you. With Uncanny Dodge and Evasion, you're very durable."},
+    {lv:20,n:"Stroke of Luck",    r:"blue",  d:"Turn a miss into a hit or a failed check into a 20. Essential when the chips are down."},
+  ],
+  optional:[
+    {n:"Steady Aim (Tasha's)",r:"green",d:"Guarantees Sneak Attack at the cost of your movement that turn. Best for new players or weaker subclasses. Can be abused with mounts. Recommended if you're playing an orange/red subclass."},
+  ],
+  asiLevels:[4,8,10,12,16,19],
+};
+
+// ─── State ───────────────────────────────────
+const S={
+  subclass:null,
+  abilityArr:null,
+  skills:{},   // name → 0/1/2/3
+  bg:null,
+  asi:{},      // level → {type:'asi2'|'split'|'feat', feat:null}
+  fFilt:'all',
+  fSearch:'',
+};
+
+// ─── Helpers ─────────────────────────────────
+function badge(r){
+  const L={blue:'★★★★',green:'★★★',orange:'★★',red:'★'};
+  return `<span class="badge badge-${r}">${L[r]}</span>`;
+}
+function mod(v){const m=Math.floor((v-10)/2);return(m>=0?'+':'')+m;}
+function sSt(name){return S.skills[name]||0;}
+function skCount(){return Object.values(S.skills).filter(v=>v>=1).length;}
+function e1Count(){return Object.values(S.skills).filter(v=>v>=2).length;}
+function e2Count(){return Object.values(S.skills).filter(v=>v>=3).length;}
+
+// ─── Tabs ────────────────────────────────────
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('pane-'+t.dataset.tab).classList.add('active');
+    if(t.dataset.tab==='summary')renderSummary();
+  });
+});
+
+// ─── Subclass ────────────────────────────────
+function renderSubclasses(){
+  const g=document.getElementById('subclass-grid');
+  g.innerHTML=D.subclasses.map(s=>`
+    <div class="card ${S.subclass===s.name?'sel':''}" data-sc="${s.name}">
+      <div class="card-top"><div class="card-name">${s.name}</div>${badge(s.r)}</div>
+      <div class="card-note">${s.d}</div>
+    </div>`).join('');
+  g.querySelectorAll('.card').forEach(c=>c.addEventListener('click',()=>{
+    S.subclass=S.subclass===c.dataset.sc?null:c.dataset.sc;
+    renderSubclasses();updateSBar();updateTabBadges();
+  }));
+}
+
+// ─── Ability Scores ───────────────────────────
+function renderAbilities(){
+  const pk=document.getElementById('array-picker');
+  pk.innerHTML=D.arrays.map((a,i)=>
+    `<button class="abtn ${S.abilityArr===i?'active':''}" data-i="${i}">${a.n}</button>`
+  ).join('');
+  pk.querySelectorAll('.abtn').forEach(b=>b.addEventListener('click',()=>{
+    S.abilityArr=S.abilityArr===+b.dataset.i?null:+b.dataset.i;
+    renderAbilities();
+  }));
+
+  const rmap={};D.abilityNotes.forEach(n=>rmap[n.s]=n.r);
+  const vals=S.abilityArr!==null?D.arrays[S.abilityArr].v:null;
+  const stats=['Str','Dex','Con','Int','Wis','Cha'];
+  document.getElementById('ability-grid').innerHTML=stats.map(s=>{
+    const v=vals?vals[s]:'—';
+    return `<div class="acell ${vals?rmap[s]:''}">
+      <div class="alabel">${s}</div>
+      <div class="aval">${v}</div>
+      <div class="amod">${vals?mod(v):'±?'}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('ability-notes').innerHTML=D.abilityNotes.map(n=>`
+    <div class="card" style="cursor:default">
+      <div class="card-top"><div class="card-name">${n.s}</div>${badge(n.r)}</div>
+      <div class="card-note">${n.n}</div>
+    </div>`).join('');
+}
+
+// ─── Skills ──────────────────────────────────
+function renderSkills(){
+  const g=document.getElementById('skills-grid');
+  g.innerHTML=D.skills.map(sk=>{
+    const st=sSt(sk.n);
+    const cls=st===1?'sel':st===2?'e1':st===3?'e2':'';
+    const stLabel=st===1?'<div class="card-state s-prof">✦ Proficient</div>'
+                 :st===2?'<div class="card-state s-e1">★ L1 Expertise</div>'
+                 :st===3?'<div class="card-state s-e2">★★ L6 Expertise</div>':'';
+    return `<div class="card ${cls}" data-sk="${sk.n}">
+      <div class="card-top">
+        <div><div class="card-name">${sk.n}</div><div class="card-stat">${sk.s}</div></div>
+        ${badge(sk.r)}
+      </div>
+      <div class="card-note">${sk.d}</div>
+      ${stLabel}
+    </div>`;
+  }).join('');
+
+  g.querySelectorAll('.card').forEach(c=>c.addEventListener('click',()=>{
+    const nm=c.dataset.sk,cur=sSt(nm);
+    let next=0;
+    if(cur===0){if(skCount()<4)next=1;}
+    else if(cur===1){next=e1Count()<2?2:0;}
+    else if(cur===2){next=e2Count()<2?3:1;}
+    else{next=0;}
+    if(next===0)delete S.skills[nm];else S.skills[nm]=next;
+    renderSkills();updateSBar();updateTabBadges();
+  }));
+
+  const sc=skCount(),e1=e1Count(),e2=e2Count();
+  const el1=document.getElementById('cnt-s'),el2=document.getElementById('cnt-e1'),el3=document.getElementById('cnt-e2');
+  el1.innerHTML=`${sc}<span style="font-size:.65rem;color:var(--tx3)">/4</span>`;
+  el2.innerHTML=`${e1}<span style="font-size:.65rem;color:var(--tx3)">/2</span>`;
+  el3.innerHTML=`${e2}<span style="font-size:.65rem;color:var(--tx3)">/2</span>`;
+  el1.className='cnum '+(sc===4?'done':sc>0?'ok':'');
+  el2.className='cnum '+(e1===2?'done':e1>0?'ok':'');
+  el3.className='cnum '+(e2===2?'done':e2>0?'ok':'');
+}
+
+// ─── Backgrounds ─────────────────────────────
+function renderBgs(){
+  const g=document.getElementById('background-grid');
+  g.innerHTML=D.backgrounds.map(b=>`
+    <div class="card ${S.bg===b.n?'sel':''}" data-bg="${b.n}">
+      <div class="card-top"><div class="card-name">${b.n}</div>${badge(b.r)}</div>
+      <div class="card-note">${b.d}</div>
+    </div>`).join('');
+  g.querySelectorAll('.card').forEach(c=>c.addEventListener('click',()=>{
+    S.bg=S.bg===c.dataset.bg?null:c.dataset.bg;
+    renderBgs();updateSBar();updateTabBadges();
+  }));
+}
+
+// ─── ASI Slots ───────────────────────────────
+function openSlots(){return D.asiLevels.filter(l=>S.asi[l]&&S.asi[l].type==='feat'&&!S.asi[l].feat);}
+function assignedSlots(fn){return D.asiLevels.filter(l=>{const c=S.asi[l];return c&&c.type==='feat'&&c.feat===fn;});}
+
+function renderASI(){
+  const cont=document.getElementById('asi-slots');
+  cont.innerHTML=D.asiLevels.map(lv=>{
+    const ch=S.asi[lv];const hc=!!ch;
+    const title=hc?(ch.type==='feat'?`Feat: ${ch.feat||'(pick below)'}`
+                   :ch.type==='asi2'?'ASI +2':'+1/+1 to two stats'):'Unassigned';
+    return `<div class="aslot ${hc?'has-ch':''}" id="asl-${lv}">
+      <div class="aslot-hdr">
+        <span class="lpill">Lvl ${lv}</span>
+        <span class="aslot-title">${title}</span>
+      </div>
+      <div class="abtns">
+        <button class="abtn2 ${ch&&ch.type==='asi2'?'active':''}" data-lv="${lv}" data-t="asi2">+2 to one stat</button>
+        <button class="abtn2 ${ch&&ch.type==='split'?'active':''}" data-lv="${lv}" data-t="split">+1/+1 to two stats</button>
+        <button class="abtn2 ${ch&&ch.type==='feat'?'active':''}" data-lv="${lv}" data-t="feat">Take a Feat</button>
+        ${hc?`<button class="abtn2 clr" data-lv="${lv}" data-t="clear">✕</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  cont.querySelectorAll('.abtn2').forEach(b=>b.addEventListener('click',()=>{
+    const lv=+b.dataset.lv,tp=b.dataset.t;
+    if(tp==='clear'){delete S.asi[lv];}
+    else{
+      const cur=S.asi[lv];
+      if(cur&&cur.type===tp)delete S.asi[lv];
+      else S.asi[lv]={type:tp,feat:null};
+    }
+    renderASI();renderFeats();updateSBar();updateTabBadges();
+  }));
+}
+
+// ─── Feats ───────────────────────────────────
+function renderFeatFilters(){
+  const bar=document.getElementById('feat-filters');
+  const btns=[{k:'all',l:'All',c:'fa'},{k:'blue',l:'Fantastic',c:'fb'},{k:'green',l:'Good',c:'fg'},{k:'orange',l:'Situational',c:'fo'},{k:'red',l:'Avoid',c:'fr'}];
+  bar.innerHTML=btns.map(b=>`<button class="fbtn ${b.c} ${S.fFilt===b.k?'active':''}" data-f="${b.k}">${b.l}</button>`).join('')
+    +`<input class="srch" id="fsrch" placeholder="Search feats…" value="${S.fSearch}">`;
+  bar.querySelectorAll('.fbtn').forEach(b=>b.addEventListener('click',()=>{S.fFilt=b.dataset.f;renderFeatFilters();renderFeats();}));
+  document.getElementById('fsrch').addEventListener('input',e=>{S.fSearch=e.target.value;renderFeats();});
+}
+
+function renderFeats(){
+  const g=document.getElementById('feats-grid');
+  const fq=S.fSearch.toLowerCase();
+  const vis=D.feats.filter(f=>{
+    if(S.fFilt!=='all'&&f.r!==S.fFilt)return false;
+    if(fq&&!f.n.toLowerCase().includes(fq)&&!f.d.toLowerCase().includes(fq))return false;
+    return true;
+  });
+  if(!vis.length){g.innerHTML='<div style="color:var(--tx3);font-style:italic;padding:8px">No feats match.</div>';return;}
+
+  const open=openSlots();
+  g.innerHTML=vis.map(f=>{
+    const asgd=assignedSlots(f.n);
+    let btns='';
+    if(open.length){
+      btns+=`<div class="fassign">${open.map(lv=>`<button class="fassign-btn" data-af="${f.n}" data-lv="${lv}">+ Lvl ${lv}</button>`).join('')}</div>`;
+    }
+    if(asgd.length){
+      btns+=`<div class="fassign">${asgd.map(lv=>`<button class="fassign-btn asgd" data-rf="${f.n}" data-lv="${lv}">✓ Lvl ${lv} — Remove</button>`).join('')}</div>`;
+    }
+    return `<div class="card ${asgd.length?'sel':''}">
+      <div class="card-top"><div class="card-name">${f.n}</div>${badge(f.r)}</div>
+      <div class="card-note">${f.d}</div>
+      ${btns}
+    </div>`;
+  }).join('');
+
+  g.querySelectorAll('[data-af]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation();
+    const lv=+b.dataset.lv;if(S.asi[lv])S.asi[lv].feat=b.dataset.af;
+    renderASI();renderFeats();
+  }));
+  g.querySelectorAll('[data-rf]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation();
+    const lv=+b.dataset.lv;if(S.asi[lv])S.asi[lv].feat=null;
+    renderASI();renderFeats();
+  }));
+}
+
+// ─── Class Features ───────────────────────────
+function renderFeatures(){
+  document.getElementById('features-tbody').innerHTML=D.classFeatures.map(f=>`
+    <tr>
+      <td><span class="lchip">${f.lv}</span></td>
+      <td><span class="fname">${f.n}</span></td>
+      <td>${badge(f.r)}</td>
+      <td style="color:var(--tx2)">${f.d}</td>
+    </tr>`).join('');
+  document.getElementById('optional-grid').innerHTML=D.optional.map(f=>`
+    <div class="card" style="cursor:default">
+      <div class="card-top"><div class="card-name">${f.n}</div>${badge(f.r)}</div>
+      <div class="card-note">${f.d}</div>
+    </div>`).join('');
+}
+
+// ─── Summary ─────────────────────────────────
+function renderSummary(){
+  const selSk=D.skills.filter(s=>sSt(s.n)>=1);
+  const e1Sk =D.skills.filter(s=>sSt(s.n)>=2);
+  const e2Sk =D.skills.filter(s=>sSt(s.n)>=3);
+  const arr=S.abilityArr!==null?D.arrays[S.abilityArr]:null;
+  const arrTxt=arr?`${arr.n}: `+Object.entries(arr.v).map(([k,v])=>`${k} ${v}`).join(', '):'—';
+
+  const asiRows=D.asiLevels.map(lv=>{
+    const ch=S.asi[lv];
+    const val=ch?(ch.type==='feat'?`Feat — ${ch.feat||'(not assigned)'}`:ch.type==='asi2'?'+2 to one stat':'+1/+1 to two stats'):'—';
+    return `<div class="srow"><span class="skey">Level ${lv} ASI</span><span class="sval">${val}</span></div>`;
+  }).join('');
+
+  document.getElementById('summary-content').innerHTML=`
+    <div class="sblock">
+      <h3>Core Choices</h3>
+      <div class="srow"><span class="skey">Subclass</span><span class="sval">${S.subclass||'—'}</span></div>
+      <div class="srow"><span class="skey">Background</span><span class="sval">${S.bg||'—'}</span></div>
+      <div class="srow"><span class="skey">Ability Array</span><span class="sval">${arrTxt}</span></div>
+    </div>
+    <div class="sblock">
+      <h3>Skills &amp; Expertise</h3>
+      <div class="srow"><span class="skey">Class Skills (4)</span><span class="sval">${selSk.length?selSk.map(s=>s.n).join(', '):'—'}</span></div>
+      <div class="srow"><span class="skey">L1 Expertise (2)</span><span class="sval">${e1Sk.length?e1Sk.map(s=>s.n).join(', '):'—'}</span></div>
+      <div class="srow"><span class="skey">L6 Expertise (2)</span><span class="sval">${e2Sk.length?e2Sk.map(s=>s.n).join(', '):'—'}</span></div>
+    </div>
+    <div class="sblock"><h3>Feats &amp; ASIs</h3>${asiRows}</div>`;
+}
+
+// ─── Status bar ───────────────────────────────
+function updateSBar(){
+  document.getElementById('sb-sc').textContent=S.subclass||'—';
+  document.getElementById('sb-bg').textContent=S.bg||'—';
+  document.getElementById('sb-sk').textContent=`${skCount()}/4`;
+  document.getElementById('sb-asi').textContent=`${D.asiLevels.filter(l=>S.asi[l]).length}/6`;
+}
+
+function updateTabBadges(){
+  document.querySelectorAll('.tbadge').forEach(b=>b.remove());
+  const add=(tab,txt)=>{const t=document.querySelector(`[data-tab="${tab}"]`);if(t){const b=document.createElement('span');b.className='tbadge';b.textContent=txt;t.appendChild(b);}};
+  if(S.subclass)add('subclass','✓');
+  if(skCount()>0)add('skills',`${skCount()}/4`);
+  if(S.bg)add('background','✓');
+  const au=D.asiLevels.filter(l=>S.asi[l]).length;
+  if(au>0)add('feats',`${au}/6`);
+}
+
+// ─── Copy ────────────────────────────────────
+document.getElementById('copy-btn').addEventListener('click',()=>{
+  const selSk=D.skills.filter(s=>sSt(s.n)>=1).map(s=>s.n);
+  const e1=D.skills.filter(s=>sSt(s.n)>=2).map(s=>s.n);
+  const e2=D.skills.filter(s=>sSt(s.n)>=3).map(s=>s.n);
+  const arr=S.abilityArr!==null?D.arrays[S.abilityArr]:null;
+  const lines=[
+    '=== D&D 5e Rogue Build ===','',
+    `Subclass:      ${S.subclass||'—'}`,
+    `Background:    ${S.bg||'—'}`,
+    `Ability Array: ${arr?arr.n+' ('+Object.entries(arr.v).map(([k,v])=>`${k}:${v}`).join(', ')+')'  :'—'}`,
+    '',`Skills (4):    ${selSk.join(', ')||'—'}`,
+    `L1 Expertise:  ${e1.join(', ')||'—'}`,
+    `L6 Expertise:  ${e2.join(', ')||'—'}`,
+    '','Feats & ASIs:',
+    ...D.asiLevels.map(lv=>{
+      const ch=S.asi[lv];
+      if(!ch)return `  Level ${lv}: (unassigned)`;
+      if(ch.type==='feat')return `  Level ${lv}: Feat — ${ch.feat||'(not assigned)'}`;
+      return `  Level ${lv}: ${ch.type==='asi2'?'ASI +2':'ASI +1/+1'}`;
+    }),
+  ];
+  navigator.clipboard.writeText(lines.join('\n')).then(()=>{
+    const btn=document.getElementById('copy-btn');
+    btn.textContent='✓ Copied!';
+    setTimeout(()=>{btn.textContent='◆ Copy to Clipboard';},2000);
+  });
+});
+
+// ─── Init ────────────────────────────────────
+renderSubclasses();
+renderAbilities();
+renderSkills();
+renderBgs();
+renderASI();
+renderFeatFilters();
+renderFeats();
+renderFeatures();
+</script>
+</body>
+</html>

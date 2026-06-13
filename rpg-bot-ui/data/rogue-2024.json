@@ -1,0 +1,1136 @@
+{
+  "subclasses": [
+    {
+      "name": "Soulknife",
+      "r": "blue",
+      "d": "Use psychic powers to create psychic blades that need no equipment, bypass many resistances, and deal psychic damage. Psi-Bolstered Knack helps with skill checks."
+    },
+    {
+      "name": "Arcane Trickster",
+      "r": "green",
+      "d": "Add wizard spellcasting and excel at using Mage Hand in unique ways. Build around True Strike and Intelligence for an Int-based attack Rogue."
+    },
+    {
+      "name": "Assassin",
+      "r": "green",
+      "d": "Masters of infiltration and deadly surprise. Devastating Sneak Attacks at the start of combat. Excels when campaigns support preparation time."
+    },
+    {
+      "name": "Thief",
+      "r": "green",
+      "d": "Move quickly, act quickly, and use magic items better than anyone else. Fast Hands unlocks the Healer feat trick — probably the best use of that feat in the game."
+    }
+  ],
+  "species": [
+    {
+      "n": "Changeling",
+      "src": "EFotA",
+      "r": "blue",
+      "d": "Two extra skills, perpetual Advantage on Charisma checks, and built-in disguises. Excellent for a Face build."
+    },
+    {
+      "n": "Halfling",
+      "src": "PHB",
+      "r": "blue",
+      "d": "Tailor-made for the Rogue. Brave covers your weakest defense. Halfling Nimbleness lets you move through enemies' spaces. Naturally Stealthy lets you hide behind allies."
+    },
+    {
+      "n": "Human",
+      "src": "PHB",
+      "r": "blue",
+      "d": "An additional skill and an Origin Feat on top of your Background's feat. Easy choice on any build."
+    },
+    {
+      "n": "Dhampir",
+      "src": "ABoH",
+      "r": "green",
+      "d": "Spider Climb and a Bite attack for a bonus Sneak Attack option. Good for a melee Rogue who wants a vampire aesthetic."
+    },
+    {
+      "n": "Elf",
+      "src": "PHB",
+      "r": "green",
+      "d": "Darkvision, Keen Senses (Perception), and immunity to sleep effects. Wood Elves get extra speed and can hide in light obscurement."
+    },
+    {
+      "n": "Gnome",
+      "src": "PHB",
+      "r": "green",
+      "d": "Gnomish Cunning grants Advantage on Int/Wis/Cha saves vs. magic — extremely useful. Forest Gnomes add minor illusions."
+    },
+    {
+      "n": "Khoravar",
+      "src": "EFotA",
+      "r": "green",
+      "d": "Extra skill proficiency and a bonus to Charisma checks. Solid if you want to play a half-elf Face Rogue."
+    },
+    {
+      "n": "Warforged",
+      "src": "EFotA",
+      "r": "green",
+      "d": "+1 to AC, no need to eat or breathe, immunity to disease. Durable in a way most Rogues aren't."
+    },
+    {
+      "n": "Aasimar",
+      "src": "PHB",
+      "r": "orange",
+      "d": "Healing Hands and Darkvision are nice, but the damage forms (Radiant Soul etc.) don't complement a Sneak Attack playstyle well."
+    },
+    {
+      "n": "Dragonborn",
+      "src": "PHB",
+      "r": "orange",
+      "d": "Breath Weapon and elemental resistances are fine features, but nothing here is specifically useful to the Rogue."
+    },
+    {
+      "n": "Dwarf",
+      "src": "PHB",
+      "r": "orange",
+      "d": "Dwarven Resilience (poison resistance and advantage on saves) is genuinely good, but speed reduction hurts a mobile Rogue."
+    },
+    {
+      "n": "Goliath",
+      "src": "PHB",
+      "r": "orange",
+      "d": "Giant's Power adds Str-based options that you won't use, and Stone's Endurance competes with your Bonus Action. Situational."
+    },
+    {
+      "n": "Kalashtar",
+      "src": "EFotA",
+      "r": "orange",
+      "d": "Psychic resistance is useful, but the rest is very campaign-dependent. Good if the DM uses a lot of mind-affecting magic."
+    },
+    {
+      "n": "Lorwyn Changeling",
+      "src": "LFL",
+      "r": "orange",
+      "d": "Shapeshifting is flavorful, but this version lacks the mechanical bite of the EFotA Changeling. Situational."
+    },
+    {
+      "n": "Orc",
+      "src": "PHB",
+      "r": "orange",
+      "d": "Adrenaline Rush gives extra mobility on a Bonus Action, which competes with Cunning Action. Relentless Endurance is solid insurance."
+    },
+    {
+      "n": "Rimekin",
+      "src": "LFL",
+      "r": "orange",
+      "d": "Cold-flavored abilities rarely align with a Rogue's core tactics. The slow effect can be useful situationally."
+    },
+    {
+      "n": "Shifter",
+      "src": "EFotA",
+      "r": "orange",
+      "d": "Shifting provides a burst of survivability, but you'd rather use your bonus action. Best for melee builds who need a panic button."
+    },
+    {
+      "n": "Tiefling",
+      "src": "PHB",
+      "r": "orange",
+      "d": "Hellish Rebuke is a nice reaction and Darkvision is always welcome, but Infernal Legacy doesn't directly improve Rogue tactics."
+    }
+  ],
+  "arrays": [
+    {
+      "n": "Standard Build — Point Buy",
+      "v": {
+        "Str": 8,
+        "Dex": 17,
+        "Con": 15,
+        "Int": 10,
+        "Wis": 14,
+        "Cha": 8
+      }
+    },
+    {
+      "n": "Standard Build — Standard Array",
+      "v": {
+        "Str": 8,
+        "Dex": 17,
+        "Con": 14,
+        "Int": 12,
+        "Wis": 14,
+        "Cha": 10
+      }
+    },
+    {
+      "n": "Arcane Trickster — Point Buy",
+      "v": {
+        "Str": 8,
+        "Dex": 17,
+        "Con": 15,
+        "Int": 14,
+        "Wis": 10,
+        "Cha": 8
+      }
+    },
+    {
+      "n": "PHB Recommended (AT)",
+      "v": {
+        "Str": 12,
+        "Dex": 17,
+        "Con": 14,
+        "Int": 14,
+        "Wis": 10,
+        "Cha": 8
+      }
+    }
+  ],
+  "abilityNotes": [
+    {
+      "s": "Str",
+      "r": "red",
+      "n": "Dump stat. Nothing a typical Rogue does uses Strength."
+    },
+    {
+      "s": "Dex",
+      "r": "blue",
+      "n": "Your primary ability. Skills, tools, attacks, damage, AC, and your best save. Your Background must increase this."
+    },
+    {
+      "s": "Con",
+      "r": "green",
+      "n": "Hit points are always important, especially for melee Rogues who draw more attacks."
+    },
+    {
+      "s": "Int",
+      "r": "orange",
+      "n": "Arcane Tricksters need it for spells. Others only need it for Investigation."
+    },
+    {
+      "s": "Wis",
+      "r": "orange",
+      "n": "Helpful for Insight, Perception, and saves. Slippery Mind (level 15) adds Wisdom save proficiency."
+    },
+    {
+      "s": "Cha",
+      "r": "green",
+      "n": "Rogues make a great Face. You can't be effective without Charisma if you plan to fill that role."
+    }
+  ],
+  "skills": [
+    {
+      "n": "Acrobatics",
+      "s": "Dex",
+      "r": "orange",
+      "d": "Very situational."
+    },
+    {
+      "n": "Athletics",
+      "s": "Str",
+      "r": "red",
+      "d": "Functionally useless. Sleight of Hand handles manacles and rope better."
+    },
+    {
+      "n": "Deception",
+      "s": "Cha",
+      "r": "green",
+      "d": "Important for a Face."
+    },
+    {
+      "n": "Insight",
+      "s": "Wis",
+      "r": "green",
+      "d": "Important for a Face."
+    },
+    {
+      "n": "Intimidation",
+      "s": "Cha",
+      "r": "green",
+      "d": "Important for a Face."
+    },
+    {
+      "n": "Investigation",
+      "s": "Int",
+      "r": "green",
+      "d": "Very helpful, but not as important as Perception."
+    },
+    {
+      "n": "Perception",
+      "s": "Wis",
+      "r": "blue",
+      "d": "Most important skill in the game. Several party members should have it even if you're great at it."
+    },
+    {
+      "n": "Performance",
+      "s": "Cha",
+      "r": "red",
+      "d": "Functionally useless."
+    },
+    {
+      "n": "Persuasion",
+      "s": "Cha",
+      "r": "blue",
+      "d": "Essential for a Face. Expertise here is devastating."
+    },
+    {
+      "n": "Sleight of Hand",
+      "s": "Dex",
+      "r": "green",
+      "d": "Now used to pick locks. Proficient in both Sleight of Hand and Thieves' Tools: use the higher modifier and roll with Advantage."
+    },
+    {
+      "n": "Stealth",
+      "s": "Dex",
+      "r": "blue",
+      "d": "A Rogue without Stealth is a very strange Rogue."
+    }
+  ],
+  "backgrounds": [
+    {
+      "n": "Carouser",
+      "r": "blue",
+      "d": "Good ability scores, great feat, fantastic skills if you're playing Face. (ABoH)"
+    },
+    {
+      "n": "Charlatan",
+      "r": "blue",
+      "d": "Absolutely fantastic for the Rogue — especially in a small party or for a Face build. (PHB)"
+    },
+    {
+      "n": "Criminal",
+      "r": "blue",
+      "d": "Perfect for a stealthy character. (PHB)"
+    },
+    {
+      "n": "Genie Touched",
+      "r": "blue",
+      "d": "Excellent ability scores and skills. Great access to Booming Blade or True Strike for non-AT builds. (FRHoF)"
+    },
+    {
+      "n": "Scribe",
+      "r": "blue",
+      "d": "Easy go-to, especially in a small party needing skill coverage. Good stats, good skills, Skilled gives even more. (PHB)"
+    },
+    {
+      "n": "Wayfarer",
+      "r": "blue",
+      "d": "Good ability scores, good skills, and Lucky. Tool proficiency is redundant but everything else is excellent. (PHB)"
+    },
+    {
+      "n": "Archaeologist",
+      "r": "green",
+      "d": "Good skill coverage. Basically Scribe but with different fixed skills. Good for small parties. (EFotA)"
+    },
+    {
+      "n": "Guide",
+      "r": "green",
+      "d": "Great ability scores, decent skills. Magic Initiate (Druid) can give useful utility options. (PHB)"
+    },
+    {
+      "n": "Inquisitive",
+      "r": "green",
+      "d": "Works for an Int-based Arcane Trickster. Alert offsets lower Dexterity for initiative. (EFotA)"
+    },
+    {
+      "n": "Mulhorandi Tomb Raider",
+      "r": "green",
+      "d": "Good ability scores for any Rogue with decent Intelligence. (FRHoF)"
+    },
+    {
+      "n": "Zhentarim Mercenary",
+      "r": "green",
+      "d": "Good ability scores and skills for a Cha-investing Rogue. Zhentarim Ruffian is excellent. (FRHoF)"
+    },
+    {
+      "n": "Acolyte",
+      "r": "orange",
+      "d": "Could build around True Strike for Int-based attacks, but you'll likely get more value from Human + Magic Initiate. (PHB)"
+    },
+    {
+      "n": "Artisan",
+      "r": "orange",
+      "d": "Good ability scores for an Arcane Trickster, decent skills, but Crafter is not a great feat. (PHB)"
+    },
+    {
+      "n": "Entertainer",
+      "r": "orange",
+      "d": "Good ability scores and Musician is welcome in any party, but the skills are nearly useless for a Rogue. (PHB)"
+    },
+    {
+      "n": "Noble",
+      "r": "orange",
+      "d": "Could work for an Int-based Arcane Trickster, but Scribe has better skills. (PHB)"
+    },
+    {
+      "n": "Sage",
+      "r": "orange",
+      "d": "Int and Con work for Arcane Trickster, but you're still a Rogue first — you really need Dexterity. (PHB)"
+    },
+    {
+      "n": "Sailor",
+      "r": "orange",
+      "d": "Decent ability scores, one good skill, but Tavern Brawler is useless on a Rogue. (PHB)"
+    },
+    {
+      "n": "Soldier",
+      "r": "orange",
+      "d": "Good ability scores, but Savage Attacker is wasted on the Rogue and the skills aren't great. (PHB)"
+    },
+    {
+      "n": "Dead Magic Dweller",
+      "r": "red",
+      "d": "Bad ability scores, bad feat, bad skills. (FRHoF)"
+    },
+    {
+      "n": "Farmer",
+      "r": "red",
+      "d": "Bad ability scores, bad skills. (PHB)"
+    },
+    {
+      "n": "Guard",
+      "r": "red",
+      "d": "Bad ability scores. If you want Alert, look at Inquisitive. (PHB)"
+    },
+    {
+      "n": "Hermit",
+      "r": "red",
+      "d": "Not good enough to justify the lack of a Dexterity increase. (PHB)"
+    }
+  ],
+  "feats": [
+    {
+      "n": "Healer",
+      "r": "blue",
+      "cat": "origin",
+      "d": "The Thief Rogue's Fast Hands lets you use Battle Medic as a Bonus Action — probably the best use of Healer in the entire game."
+    },
+    {
+      "n": "Lucky",
+      "r": "blue",
+      "cat": "origin",
+      "d": "An easy choice on any character. Three extra d20 rolls per long rest on attacks, checks, or saves."
+    },
+    {
+      "n": "Purple Dragon Rook",
+      "r": "blue",
+      "cat": "origin",
+      "d": "Proficiency in Insight or Persuasion, and give Heroic Inspiration to your whole party once per day. Excellent if you don't need something else. (FRHoF)"
+    },
+    {
+      "n": "Tireless Reveler",
+      "r": "blue",
+      "cat": "origin",
+      "d": "Heroic Inspiration is always useful. A great choice on literally any character. (ABoH)"
+    },
+    {
+      "n": "Zhentarim Ruffian",
+      "r": "blue",
+      "cat": "origin",
+      "d": "Opportunity Attacks can effectively double your damage output. Gives your whole party Advantage on initiative. (FRHoF)"
+    },
+    {
+      "n": "Alert",
+      "r": "green",
+      "cat": "origin",
+      "d": "Never a bad choice, but less impactful for Assassins who already get Advantage on initiative."
+    },
+    {
+      "n": "Magic Initiate",
+      "r": "green",
+      "cat": "origin",
+      "d": "Standard builds can use buffs like Guidance or Mage Armor. Arcane Tricksters can build around True Strike for Int-based attacks."
+    },
+    {
+      "n": "Musician",
+      "r": "green",
+      "cat": "origin",
+      "d": "A great way to contribute to any party."
+    },
+    {
+      "n": "Skilled",
+      "r": "green",
+      "cat": "origin",
+      "d": "Rogues get more skills than anyone else, but a small party may still need more coverage."
+    },
+    {
+      "n": "Vampire's Plaything",
+      "r": "green",
+      "cat": "origin",
+      "d": "Timely Retreat is really good. (ABoH)"
+    },
+    {
+      "n": "Child of the Sun",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Faerie Fire may help Arcane Tricksters, but you already have easy Advantage from Cunning Action. (LFL)"
+    },
+    {
+      "n": "Crafter",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Neat but not especially impactful. Crafting mundane gear stops mattering early and omits the Herbalist Kit."
+    },
+    {
+      "n": "Shadowmoor Hexer",
+      "r": "orange",
+      "cat": "origin",
+      "d": "1d6 damage isn't worth Concentration, but Hex's debuff on Wisdom ability checks helps you stay hidden. (LFL)"
+    },
+    {
+      "n": "Harper Agent",
+      "r": "red",
+      "cat": "origin",
+      "d": "The Help Action isn't useful enough to justify this unless you're a Hobgoblin. (FRHoF)"
+    },
+    {
+      "n": "Savage Attacker",
+      "r": "red",
+      "cat": "origin",
+      "d": "Your weapon damage die isn't a big enough part of your output to make this impactful."
+    },
+    {
+      "n": "Spellfire Spark",
+      "r": "red",
+      "cat": "origin",
+      "d": "Rogues lean too heavily on Bonus Action to make this an easy choice. (FRHoF)"
+    },
+    {
+      "n": "Tavern Brawler",
+      "r": "red",
+      "cat": "origin",
+      "d": "You should literally never make an unarmed strike."
+    },
+    {
+      "n": "Tough",
+      "r": "red",
+      "cat": "origin",
+      "d": "If you need this, you need to be using Cunning Action more to stay safely out of reach."
+    },
+    {
+      "n": "Dual Wielder",
+      "r": "blue",
+      "cat": "general",
+      "d": "Grab a weapon with Nick and you roll at least two d20s per turn, dramatically improving Sneak Attack reliability."
+    },
+    {
+      "n": "Skulker",
+      "r": "blue",
+      "cat": "general",
+      "d": "This feat was made for the Rogue. Absolutely essential if you plan to fight at range — missing doesn't reveal you."
+    },
+    {
+      "n": "Athlete",
+      "r": "green",
+      "cat": "general",
+      "d": "A climb speed is the next best thing to flight. Standing up quickly from prone and reduced jump run-up both help in combat."
+    },
+    {
+      "n": "Fey Touched",
+      "r": "green",
+      "cat": "general",
+      "d": "Helpful for Arcane Tricksters. Misty Step may be redundant with Cunning Action, but more spells and free castings add real utility."
+    },
+    {
+      "n": "Inspiring Leader",
+      "r": "green",
+      "cat": "general",
+      "d": "A massive amount of temporary hit points. Wait until you have 20 Dexterity first since it can't improve Dex."
+    },
+    {
+      "n": "Piercer",
+      "r": "green",
+      "cat": "general",
+      "d": "Nearly all your preferred weapons deal Piercing. The reroll can target any damage die — including Sneak Attack dice."
+    },
+    {
+      "n": "Resilient",
+      "r": "green",
+      "cat": "general",
+      "d": "Never a bad choice. Hard to pick the right ability until you have 20 Dex and all the feats you want."
+    },
+    {
+      "n": "Sentinel",
+      "r": "green",
+      "cat": "general",
+      "d": "Potentially an easy way to get Sneak Attack outside your own turn via Opportunity Attacks."
+    },
+    {
+      "n": "Shadow-Touched",
+      "r": "green",
+      "cat": "general",
+      "d": "You're almost certainly going to learn Invisibility. Free castings are a reliable bonus."
+    },
+    {
+      "n": "Sharpshooter",
+      "r": "green",
+      "cat": "general",
+      "d": "Helpful for ranged builds but not essential."
+    },
+    {
+      "n": "Skill Expert",
+      "r": "green",
+      "cat": "general",
+      "d": "More skills are always nice, especially once you have Reliable Talent at level 7."
+    },
+    {
+      "n": "Actor",
+      "r": "orange",
+      "cat": "general",
+      "d": "Too situational on its own, though it nicely complements Assassin infiltration."
+    },
+    {
+      "n": "Charger",
+      "r": "orange",
+      "cat": "general",
+      "d": "Combine Cunning Action (Dash) with the push to rush into melee, knock target back, then retreat. Niche but functional."
+    },
+    {
+      "n": "Chef",
+      "r": "orange",
+      "cat": "general",
+      "d": "Won't contribute meaningfully to Rogue capabilities, but THP snacks are always welcome."
+    },
+    {
+      "n": "Defensive Duelist",
+      "r": "orange",
+      "cat": "general",
+      "d": "Too much overlap with Uncanny Dodge."
+    },
+    {
+      "n": "Keen Mind",
+      "r": "orange",
+      "cat": "general",
+      "d": "Even for the Arcane Trickster, this is hard to justify."
+    },
+    {
+      "n": "Mage Slayer",
+      "r": "orange",
+      "cat": "general",
+      "d": "Great insurance against mental saves, but hiding keeps you untargetable. High-level Slippery Mind reduces the appeal further."
+    },
+    {
+      "n": "Observant",
+      "r": "orange",
+      "cat": "general",
+      "d": "Competes too much with crucial class features and action economy."
+    },
+    {
+      "n": "Poisoner",
+      "r": "orange",
+      "cat": "general",
+      "d": "Poisoning before combat is less of a hassle for Rogues than multi-attack classes. Damage doesn't scale with level."
+    },
+    {
+      "n": "Slasher",
+      "r": "orange",
+      "cat": "general",
+      "d": "Rogues get very few slashing Sneak Attack weapons, but this can work with whips."
+    },
+    {
+      "n": "Telekinetic",
+      "r": "orange",
+      "cat": "general",
+      "d": "Too situational."
+    },
+    {
+      "n": "Telepathic",
+      "r": "orange",
+      "cat": "general",
+      "d": "Too situational."
+    },
+    {
+      "n": "War Caster",
+      "r": "orange",
+      "cat": "general",
+      "d": "Potentially useful for Arcane Tricksters, but not strictly necessary."
+    },
+    {
+      "n": "Crossbow Expert",
+      "r": "red",
+      "cat": "general",
+      "d": "Not worth the feat. Use Steady Aim for Advantage while still rolling two d20s to hit."
+    },
+    {
+      "n": "Crusher",
+      "r": "red",
+      "cat": "general",
+      "d": "Rogues' Sneak Attack weapons almost all deal Piercing. Crusher needs bludgeoning and doesn't give a Dexterity increase."
+    },
+    {
+      "n": "Durable",
+      "r": "red",
+      "cat": "general",
+      "d": "Bad and conflicts with your crucial Bonus Action class features."
+    },
+    {
+      "n": "Grappler",
+      "r": "red",
+      "cat": "general",
+      "d": "Rogues should not be grappling."
+    },
+    {
+      "n": "Great Weapon Master",
+      "r": "red",
+      "cat": "general",
+      "d": "The ability score increase is useless and you'll only get the damage bonus once per round."
+    },
+    {
+      "n": "Heavily Armored",
+      "r": "red",
+      "cat": "general",
+      "d": "Ruins stealth."
+    },
+    {
+      "n": "Martial Weapon Training",
+      "r": "red",
+      "cat": "general",
+      "d": "A 1-level Fighter dip is almost always a better idea unless you expect to reach level 20."
+    },
+    {
+      "n": "Medium Armor Master",
+      "r": "red",
+      "cat": "general",
+      "d": "Borderline worthless. Put +2 into Dexterity and wear light armor."
+    },
+    {
+      "n": "Polearm Master",
+      "r": "red",
+      "cat": "general",
+      "d": "You should not be using a polearm to attack."
+    },
+    {
+      "n": "Ritual Caster",
+      "r": "red",
+      "cat": "general",
+      "d": "Not even on an Arcane Trickster."
+    },
+    {
+      "n": "Shield Master",
+      "r": "red",
+      "cat": "general",
+      "d": "You don't get proficiency with shields."
+    },
+    {
+      "n": "Speedy",
+      "r": "red",
+      "cat": "general",
+      "d": "You have Cunning Action."
+    },
+    {
+      "n": "Spell Sniper",
+      "r": "red",
+      "cat": "general",
+      "d": "You cannot use Sneak Attack with spell attacks."
+    },
+    {
+      "n": "Weapon Master",
+      "r": "red",
+      "cat": "general",
+      "d": "You already get enough Weapon Mastery slots from your class."
+    },
+    {
+      "n": "Aberrant Dragonmark",
+      "r": "green",
+      "cat": "dragonmark",
+      "d": "Grants cantrips and a leveled spell (recharges on long rest). The d8 chaos die is a risk, but the free spellcasting is genuinely useful for a Rogue who wants utility without a multiclass dip."
+    },
+    {
+      "n": "Mark of Detection",
+      "r": "orange",
+      "cat": "dragonmark",
+      "d": "Arcane Eye and See Invisibility are excellent, but your spell save DC is Int-based — not a natural fit unless you're an Arcane Trickster. The skill bonuses help an investigation-focused build. (Eberron)"
+    },
+    {
+      "n": "Mark of Finding",
+      "r": "orange",
+      "cat": "dragonmark",
+      "d": "Hunter's Mark and terrain-based advantage are more Ranger-flavored than Rogue. The perception bonus is nice, but this is a heavy investment for situational gains. (Eberron)"
+    },
+    {
+      "n": "Mark of Handling",
+      "r": "red",
+      "cat": "dragonmark",
+      "d": "Animal-focused abilities rarely see use in a typical dungeon campaign. Almost nothing here benefits the Rogue's core tactics. (Eberron)"
+    },
+    {
+      "n": "Mark of Healing",
+      "r": "green",
+      "cat": "dragonmark",
+      "d": "Cure Wounds spells and a bonus to Medicine checks fit a supportive Rogue in a small party. Pairs well with the Thief's Fast Hands to use Healer as a Bonus Action. (Eberron)"
+    },
+    {
+      "n": "Mark of Hospitality",
+      "r": "orange",
+      "cat": "dragonmark",
+      "d": "Friends and Unseen Servant are flavorful but rarely impactful in combat. Good for roleplay-heavy or social campaigns. (Eberron)"
+    },
+    {
+      "n": "Mark of Making",
+      "r": "green",
+      "cat": "dragonmark",
+      "d": "Fabricate and Identify are highly useful utility spells. The bonus to tool checks improves your Thieves' Tools rolls. Good pick for a Rogue who wants out-of-combat utility. (Eberron)"
+    },
+    {
+      "n": "Mark of Passage",
+      "r": "green",
+      "cat": "dragonmark",
+      "d": "Misty Step and enhanced movement align perfectly with the mobile Rogue's playstyle. Extra escape options for when Cunning Action isn't enough. (Eberron)"
+    },
+    {
+      "n": "Mark of Scribing",
+      "r": "orange",
+      "cat": "dragonmark",
+      "d": "Sending and Comprehend Languages are useful utility but niche in combat. Best in political or intrigue campaigns where communication matters. (Eberron)"
+    },
+    {
+      "n": "Mark of Sentinel",
+      "r": "orange",
+      "cat": "dragonmark",
+      "d": "Alert and Guardian of Faith lean more Fighter/Paladin. The initiative bonus is nice, but most of the spell list doesn't fit the Rogue's action economy. (Eberron)"
+    },
+    {
+      "n": "Mark of Shadow",
+      "r": "green",
+      "cat": "dragonmark",
+      "d": "Invisibility and Darkness are excellent for a stealthy Rogue who wants more sneaking options beyond Cunning Action. Pairs especially well with Skulker. (Eberron)"
+    },
+    {
+      "n": "Mark of Storm",
+      "r": "orange",
+      "cat": "dragonmark",
+      "d": "Gust of Wind and Fog Cloud can help with escape or positioning, but most Rogues already have plenty of mobility. Situational. (Eberron)"
+    },
+    {
+      "n": "Mark of Warding",
+      "r": "orange",
+      "cat": "dragonmark",
+      "d": "Alarm and Arcane Lock are useful utility for dungeon security and infiltration prep, but contribute little in direct combat. (Eberron)"
+    }
+  ],
+  "epicBoons": [
+    {
+      "n": "Boon of Combat Prowess",
+      "r": "blue",
+      "d": "Functionally removes your ability to miss. If you used two-weapon fighting for a second Sneak Attack chance, you can safely stop."
+    },
+    {
+      "n": "Boon of Skill",
+      "r": "blue",
+      "d": "Stunningly powerful combined with Reliable Talent. Every proficient skill becomes extraordinary."
+    },
+    {
+      "n": "Boon of Energy Resistance",
+      "r": "green",
+      "d": "Powerful defense on any character."
+    },
+    {
+      "n": "Boon of Fortitude",
+      "r": "green",
+      "d": "Great on a melee build where you draw many attacks."
+    },
+    {
+      "n": "Boon of Fortune's Favor",
+      "r": "green",
+      "d": "Excellent on literally anyone."
+    },
+    {
+      "n": "Boon of Misty Escape",
+      "r": "green",
+      "d": "Great insurance for any character."
+    },
+    {
+      "n": "Boon of Poison Mastery",
+      "r": "green",
+      "d": "Immunity to poison is great, and Cunning Strike lets you trade 1d6 damage for 2d6 poison which you can then reroll. (FRHoF)"
+    },
+    {
+      "n": "Boon of Speed",
+      "r": "green",
+      "d": "Extra movement is nice, but you can already Disengage as a Bonus Action."
+    },
+    {
+      "n": "Boon of the Night Spirit",
+      "r": "green",
+      "d": "Excellent for a stealthy Rogue. Note that Hide, Search, and Study are Actions that break the invisibility."
+    },
+    {
+      "n": "Boon of Truesight",
+      "r": "green",
+      "d": "Probably your only built-in option for handling invisible enemies at high levels."
+    },
+    {
+      "n": "Boon of Fate",
+      "r": "orange",
+      "d": "More useful to support allies' save-or-suck spells than for anything you're doing."
+    },
+    {
+      "n": "Boon of Irresistible Offense",
+      "r": "orange",
+      "d": "You don't attack frequently enough for the damage boost to be meaningful. Magic weapon handles resistance."
+    },
+    {
+      "n": "Boon of Recovery",
+      "r": "orange",
+      "d": "Last Stand is great insurance, but not enough to justify as your first Epic Boon."
+    }
+  ],
+  "classFeatures": [
+    {
+      "lv": 1,
+      "n": "Expertise",
+      "r": "blue",
+      "d": "Doubles proficiency on two chosen skills at level 1, two more at level 6. Rogues get Expertise earlier than any other class."
+    },
+    {
+      "lv": 1,
+      "n": "Sneak Attack",
+      "r": "blue",
+      "d": "Central combat mechanic. Once per turn (not per round) — can trigger on reactions too. A 65% hit chance means missing 1-in-3; get Advantage."
+    },
+    {
+      "lv": 1,
+      "n": "Thieves' Cant",
+      "r": "orange",
+      "d": "Rarely impactful in play. 2024 update: also grants an extra language proficiency."
+    },
+    {
+      "lv": 1,
+      "n": "Weapon Mastery",
+      "r": "green",
+      "d": "New in 2024. Rogues get 2 slots. Vex grants Advantage (qualifies for Sneak Attack); Nick enables a bonus attack for a second d20 roll."
+    },
+    {
+      "lv": 2,
+      "n": "Cunning Action",
+      "r": "blue",
+      "d": "Central to all Rogue tactics. Ranged builds Hide between attacks; melee builds Dash or Disengage to strike and retreat safely."
+    },
+    {
+      "lv": 3,
+      "n": "Steady Aim",
+      "r": "orange",
+      "d": "Good backup when other Sneak Attack tactics fail, but prevents movement — leaving you very exposed."
+    },
+    {
+      "lv": 3,
+      "n": "Subclass",
+      "r": "blue",
+      "d": "Defines your specialization."
+    },
+    {
+      "lv": 5,
+      "n": "Cunning Strike",
+      "r": "blue",
+      "d": "Massive expansion of combat options. Trade Sneak Attack dice for rider effects: Poison (Con save), Trip (prone), or Withdraw (free movement)."
+    },
+    {
+      "lv": 5,
+      "n": "Uncanny Dodge",
+      "r": "blue",
+      "d": "Halve damage from one attack per round as a reaction. Huge damage mitigation over the course of a combat."
+    },
+    {
+      "lv": 6,
+      "n": "Expertise (2nd round)",
+      "r": "blue",
+      "d": "Two more Expertise choices. You now have four skills at double proficiency."
+    },
+    {
+      "lv": 7,
+      "n": "Evasion",
+      "r": "blue",
+      "d": "Between Evasion and Uncanny Dodge you are very durable. Half or no damage on Dex-save effects."
+    },
+    {
+      "lv": 7,
+      "n": "Reliable Talent",
+      "r": "blue",
+      "d": "Minimum roll of 10 on any proficient skill check. Especially powerful for Expertise skills. Moved from level 11 in 2024."
+    },
+    {
+      "lv": 11,
+      "n": "Improved Cunning Strike",
+      "r": "blue",
+      "d": "Use up to two Cunning Strike effects on the same attack. Combining two Con-save effects gives decent odds at least one sticks."
+    },
+    {
+      "lv": 14,
+      "n": "Devious Strikes",
+      "r": "green",
+      "d": "More Cunning Strike options. Costlier but more impactful: Daze, Knock Out, Obscure."
+    },
+    {
+      "lv": 15,
+      "n": "Slippery Mind",
+      "r": "blue",
+      "d": "Proficiency in both Wisdom and Charisma saves. With Dex and Int already covered, you now have broad save protection."
+    },
+    {
+      "lv": 18,
+      "n": "Elusive",
+      "r": "green",
+      "d": "Not always relevant, but excellent protection when you'd otherwise be very vulnerable."
+    },
+    {
+      "lv": 20,
+      "n": "Stroke of Luck",
+      "r": "blue",
+      "d": "Works on any d20 test — turn a miss into a hit or a failed check into a 20. At least one guaranteed critical hit per rest."
+    }
+  ],
+  "optional": [
+    {
+      "n": "Cunning Strike: Poison",
+      "r": "orange",
+      "d": "Poisoned is a massive debuff, but targets Constitution saves (consistently high). Resistance and immunity to poison are also common."
+    },
+    {
+      "n": "Cunning Strike: Trip",
+      "r": "green",
+      "d": "Knocking an enemy prone benefits your whole party. Especially useful against flying enemies — prone causes most to fall."
+    },
+    {
+      "n": "Cunning Strike: Withdraw",
+      "r": "green",
+      "d": "Somewhat redundant with Cunning Action but very useful for melee builds. Combine with Cunning Action Dash for extreme retreat range."
+    },
+    {
+      "n": "Devious Strike: Daze",
+      "r": "green",
+      "d": "Gamble less Sneak Attack damage than Knock Out but still extremely impactful. Works on targets immune to unconsciousness."
+    },
+    {
+      "n": "Devious Strike: Knock Out",
+      "r": "orange",
+      "d": "A huge gamble — 6d6 Sneak Attack dice to apply Unconscious. Targets Constitution saves (high). Needs Bane or Mind Sliver support to be reliable."
+    },
+    {
+      "n": "Devious Strike: Obscure",
+      "r": "green",
+      "d": "Most creatures have mediocre Dexterity. Blinded is a significant debuff that will be reliably impactful for your whole career."
+    }
+  ],
+  "asiLevels": [
+    4,
+    8,
+    10,
+    12,
+    16,
+    19
+  ],
+  "weapons": [
+    {
+      "n": "Dagger",
+      "mastery": "Nick",
+      "props": "Finesse · Light · Thrown",
+      "r": "blue",
+      "d": "The cornerstone of two-weapon fighting. Nick mastery gives a free bonus attack so you roll two d20s per turn, dramatically improving Sneak Attack reliability. Take Piercer to reroll any damage die — including Sneak Attack dice."
+    },
+    {
+      "n": "Shortsword",
+      "mastery": "Vex",
+      "props": "Finesse · Light",
+      "r": "blue",
+      "d": "Pair with a dagger. Vex grants Advantage on your next attack after a hit, qualifying for Sneak Attack without spending Cunning Action."
+    },
+    {
+      "n": "Light Crossbow",
+      "mastery": "Slow",
+      "props": "Ranged · Two-Handed",
+      "r": "blue",
+      "d": "Your best long-range option. If hiding and sniping with Cunning Action is your plan, this is your weapon. Slow mastery can lock down fast enemies."
+    },
+    {
+      "n": "Scimitar",
+      "mastery": "Nick",
+      "props": "Finesse · Light",
+      "r": "green",
+      "d": "The go-to secondary weapon for two-weapon fighting — largest damage die of any weapon with Nick. Use a dagger instead if you're taking Piercer."
+    },
+    {
+      "n": "Rapier",
+      "mastery": "Vex",
+      "props": "Finesse",
+      "r": "green",
+      "d": "Larger damage die than the shortsword, but a dagger secondary gives you a second d20 roll that easily makes up the difference in average damage."
+    },
+    {
+      "n": "Shortbow",
+      "mastery": "Vex",
+      "props": "Ranged",
+      "r": "orange",
+      "d": "Perfectly fine, but if you can make sniping work the light crossbow is clearly better for the Slow mastery and the extra range."
+    },
+    {
+      "n": "Hand Crossbow",
+      "mastery": "Vex",
+      "props": "Ranged · Light",
+      "r": "red",
+      "d": "Little reason to use for two-weapon fighting — you could use a hand crossbow and a dagger without eating your Bonus Action. Cunning Action is non-negotiable."
+    }
+  ],
+  "armor": [
+    {
+      "n": "Studded Leather",
+      "props": "Light · AC 12 + Dex",
+      "r": "blue",
+      "d": "You're going to live in this. Maximizing Dexterity makes it competitive with medium or heavy armor — with no stealth penalty."
+    }
+  ],
+  "multiclass": [
+    {
+      "n": "Wizard",
+      "dip": "1 level",
+      "r": "blue",
+      "d": "Ritual casting plus Booming Blade, True Strike, and Find Familiar. Have your familiar use Help for guaranteed Advantage (and Sneak Attack) on every attack."
+    },
+    {
+      "n": "Artificer",
+      "dip": "2–3 lvls",
+      "r": "green",
+      "d": "Booming Blade cantrip plus powerful Infusions (Enhanced Defense, Goggles of Night). Three levels unlocks Armorer's Infiltrator Armor: Advantage on Stealth and a Dex-based ranged attack that qualifies for Sneak Attack."
+    },
+    {
+      "n": "Bard",
+      "dip": "2 levels",
+      "r": "green",
+      "d": "Two more Expertise choices and a splash of spellcasting. Clean, low-investment dip."
+    },
+    {
+      "n": "Fighter",
+      "dip": "1 level",
+      "r": "green",
+      "d": "Archery Fighting Style is a significant improvement for ranged builds. Two-Weapon Fighting is a trap — the +2–3 damage bonus is irrelevant next to Sneak Attack scaling."
+    },
+    {
+      "n": "Ranger",
+      "dip": "1–3 lvls",
+      "r": "green",
+      "d": "One level for a Fighting Style and Hunter's Mark. Three levels for Gloom Stalker, which makes many dungeon and wilderness campaigns dramatically easier."
+    },
+    {
+      "n": "Monk",
+      "dip": "3 levels",
+      "r": "orange",
+      "d": "Bonus Action attacks can't apply Sneak Attack. Unarmored Defense (Wis-based) won't beat studded leather with high Dexterity. Way of Shadow at 3 levels is decent but a large investment for something you're already built for."
+    },
+    {
+      "n": "Barbarian",
+      "dip": "2 levels",
+      "r": "red",
+      "d": "Reckless Attack only works with Strength-based attacks — never good for a Dexterity Rogue. Unarmored Defense is an AC boost, but the core mechanic is wasted."
+    },
+    {
+      "n": "Warlock",
+      "dip": "any",
+      "r": "red",
+      "d": "You can't deliver Sneak Attack with Eldritch Blast, and low-level Invocations aren't especially useful. If you want spellcasting, Wizard is a much easier choice."
+    }
+  ],
+  "name": "Rogue",
+  "edition": "2024",
+  "ui": {
+    "skillPicks": 4,
+    "hasExpertise": true,
+    "optionalTitle": "Cunning Strike & Devious Strikes Options",
+    "optionalDesc": "Effects you can apply by trading Sneak Attack dice.",
+    "backgroundNote": "Any Background that doesn’t increase Dexterity is immediately out. The Origin Feat from your Background is one of your most important choices.",
+    "multiclassNote": "Every level outside Rogue delays Sneak Attack scaling, Reliable Talent (level 7), and Slippery Mind (level 15). The bar for a dip is high.",
+    "weaponNote": "Rogues get 2 Weapon Mastery slots. Focus on Finesse or Light weapons for Sneak Attack eligibility.",
+    "armorNote": "Rogues are proficient in light armor only.",
+    "subclassDesc": "Chosen at level 3. 2024 D&D has four subclasses. See the RPGBOT Subclasses Guide for detailed ratings.",
+    "featDesc": "Origin Feats come from your Background; General Feats fill ASI slots. Dragonmark Feats require an Eberron lineage."
+  }
+}
