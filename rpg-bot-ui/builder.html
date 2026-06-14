@@ -224,6 +224,8 @@ header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
     <div class="sh"><h2>Skills</h2><p id="skills-desc">Pick your class skills.</p></div>
     <div class="cbar" id="skills-cbar">
       <div class="citem"><div class="cnum" id="cnt-s">0</div><div class="clabel">Skills</div></div>
+      <div class="citem" id="e1-citem"><div class="cnum" id="cnt-e1">0</div><div class="clabel">L1 Exp.</div></div>
+      <div class="citem" id="e2-citem"><div class="cnum" id="cnt-e2">0</div><div class="clabel">L6 Exp.</div></div>
     </div>
     <div class="grid grid-sm" id="skills-grid"></div>
   </div>
@@ -711,6 +713,16 @@ function init() {
   if (ui.skillPicks) {
     document.getElementById('skills-desc').textContent =
       `Pick ${ui.skillPicks} class skills.${ui.hasExpertise ? ' Click a selected skill to cycle: Proficient → L1 Expertise → L6 Expertise → unselected.' : ''}`;
+  }
+
+  // Normalise feats: support both flat array and {origin,general,epicBoons} object
+  if (D.feats && !Array.isArray(D.feats)) {
+    if (!D.epicBoons) D.epicBoons = D.feats.epicBoons || [];
+    D.feats = [
+      ...(D.feats.origin    || []),
+      ...(D.feats.general   || []),
+      ...(D.feats.dragonmark|| []),
+    ];
   }
 
   // Hide expertise counter rows if class doesn't have expertise
