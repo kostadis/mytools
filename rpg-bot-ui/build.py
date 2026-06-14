@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""Generate self-contained class builder HTML files from rpgbot.db.
+"""Generate self-contained HTML files from rpgbot.db.
 
-The template (builder.html) is a live-preview app that fetches data from
-the API at runtime.  This script produces a standalone version by:
-  1. Embedding the class data as `const D = {...};` in place of `let D = null;`
-  2. Replacing the fetch() bootstrap block with a direct `init();` call
-
-The output file requires no server — open it directly in a browser.
+Supports two types of builders:
+1. Class builders (rogue-2024, etc.) using builder.html template
+2. Spell builders (arcane-trickster-spells) using spell-builder.html template
 
 Usage:
     python3 build.py                    build all classes  →  dist/
     python3 build.py rogue-2024         build one class    →  dist/
+    python3 build.py arcane-trickster-spells --spell    build spell builder
     python3 build.py rogue-2024 -o .    write to current dir
 """
 
@@ -21,15 +19,15 @@ import sqlite3
 
 SCRIPT_DIR       = os.path.dirname(os.path.abspath(__file__))
 DB_PATH          = os.path.join(SCRIPT_DIR, 'rpgbot.db')
-TEMPLATE         = os.path.join(SCRIPT_DIR, 'builder.html')
+CLASS_TEMPLATE   = os.path.join(SCRIPT_DIR, 'builder.html')
+SPELL_TEMPLATE   = os.path.join(SCRIPT_DIR, 'spell-builder.html')
 
-# Exact strings the generator finds and replaces in builder.html.
-# If you rename these in the template, update them here too.
+# Exact strings the generator finds and replaces.
 DATA_SENTINEL      = 'let D = null;'
 BOOTSTRAP_SENTINEL = '// ─── Bootstrap'
 
 
-def build_class(class_id: str, out_dir: str) -> str:
+def build_class(class_id: str, out_dir: str, is_spell: bool = False) -> str:
     db = sqlite3.connect(DB_PATH)
     row = db.execute(
         "SELECT name, edition, data FROM classes WHERE id = ?", (class_id,)
@@ -37,27 +35,28 @@ def build_class(class_id: str, out_dir: str) -> str:
     db.close()
 
     if not row:
-        raise ValueError(f"Class '{class_id}' not found in DB — run seed.py first")
+        raise ValueError(f"'{class_id}' not found in DB — run seed.py first")
 
     name, edition, data_json = row
     data = json.loads(data_json)
-    # Inject meta the same way the API does, so init() sees D.meta
-    data['meta'] = {'id': class_id, 'name': name, 'edition': edition}
 
-    with open(TEMPLATE, encoding='utf-8') as f:
+    # Inject meta if not present (for class data)
+    if 'meta' not in data:
+        data['meta'] = {'id': class_id, 'name': name, 'edition': edition}
+
+    # Choose template based on type
+    template_path = SPELL_TEMPLATE if is_spell else CLASS_TEMPLATE
+
+    with open(template_path, encoding='utf-8') as f:
         html = f.read()
 
     # ── Substitution 1: embed data ──────────────────────────────────────────
-    # Replace `let D = null;` with the full const declaration.
     if DATA_SENTINEL not in html:
         raise RuntimeError(f"DATA_SENTINEL {DATA_SENTINEL!r} not found in template")
     inline = f'const D = {json.dumps(data, ensure_ascii=False)};'
     html = html.replace(DATA_SENTINEL, inline, 1)
 
     # ── Substitution 2: remove the fetch bootstrap ──────────────────────────
-    # Everything from the bootstrap marker to the closing </script> is cut and
-    # replaced with a bare `init();` — D is already defined above, so init()
-    # runs synchronously with no network round-trip.
     if BOOTSTRAP_SENTINEL not in html:
         raise RuntimeError(f"BOOTSTRAP_SENTINEL {BOOTSTRAP_SENTINEL!r} not found in template")
     boot_idx    = html.index(BOOTSTRAP_SENTINEL)
@@ -66,7 +65,11 @@ def build_class(class_id: str, out_dir: str) -> str:
 
     # ── Write output ────────────────────────────────────────────────────────
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, f'{class_id}-builder.html')
+    # For spell builders, use the ID directly; for classes, add -builder suffix
+    if is_spell:
+        out_path = os.path.join(out_dir, f'{class_id}.html')
+    else:
+        out_path = os.path.join(out_dir, f'{class_id}-builder.html')
     with open(out_path, 'w', encoding='utf-8') as f:
         f.write(html)
     return out_path
@@ -81,11 +84,13 @@ def list_classes() -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description='Build self-contained class builder HTML from rpgbot.db'
+        description='Build self-contained HTML from rpgbot.db'
     )
-    parser.add_argument('class_id', nargs='?', help='Class ID to build (omit to build all)')
+    parser.add_argument('class_id', nargs='?', help='ID to build (omit to build all)')
     parser.add_argument('-o', '--out', default='dist', metavar='DIR',
                         help='Output directory (default: dist/)')
+    parser.add_argument('--spell', action='store_true',
+                        help='Build as spell builder (uses spell-builder.html)')
     args = parser.parse_args()
 
     ids = list_classes()
@@ -98,11 +103,11 @@ def main() -> None:
         ids = [args.class_id]
 
     out_dir = os.path.abspath(args.out)
-    print(f"Building {len(ids)} class(es) → {out_dir}/")
+    print(f"Building {len(ids)} item(s) → {out_dir}/")
     for cid in ids:
-        out = build_class(cid, out_dir)
+        out = build_class(cid, out_dir, is_spell=args.spell)
         size = os.path.getsize(out)
-        print(f"  {cid:20s}  →  {os.path.basename(out)}  ({size//1024}KB)")
+        print(f"  {cid:30s}  →  {os.path.basename(out)}  ({size//1024}KB)")
 
 
 if __name__ == '__main__':
