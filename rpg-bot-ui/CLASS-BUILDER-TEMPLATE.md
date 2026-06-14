@@ -1,0 +1,122 @@
+# Class Builder 2024 - Implementation Template
+
+This is a template for creating new class builders for D&D 2024 rules. Copy this file, rename it to match your class (e.g., `FIGHTER-24.md`), and fill in the class-specific details.
+
+## Overview
+Create a [Class Name] character builder for D&D 2024 rules, mirroring the architecture and design of the existing Rogue Builder but adapted for [Class Name]-specific mechanics. The builder follows the same static site generator pattern: `data/[class]-2024.json` → `rpgbot.db` → `dist/[class]-2024-builder.html`.
+
+## Implementation Status: ⏳ IN PROGRESS / ✅ COMPLETE
+
+The [Class Name] builder has been successfully implemented using the shared `builder.html` template. Key changes made to `builder.html` to support [Class Name]-specific features:
+
+### Changes to builder.html
+1. **Header**: Changed icon from ⚔ to [Icon] for [Class Name] theme
+2. **Tabs**: Changed "Subclass" tab to "[Class Type]" (data-tab="subclass" kept for backward compatibility)
+3. **Pane**: Changed pane title from "Subclass" to "[Class Type] Description"
+4. **Skills**: [Skill changes - e.g., "Removed Expertise counters" or "Changed skill pick limit from 4 to X"]
+5. **Status Bar**: Changed `sb-sc` to `sb-[short]` for [Class Type] display
+6. **Feats**: [Feats changes - e.g., "Removed Dragonmark Feats category" or "Added [Class Name] Feats category"]
+7. **Dynamic UI**: Uses `D.ui` config object for all class-specific text
+
+### Data File Changes (data/[class]-2024.json)
+1. Fixed `subclasses` array to use `"name"` instead of `"n"` (template requirement)
+2. Updated `featDesc` to reflect [Class Name]'s ASI slots
+3. All other [Class Name]-specific data already correctly configured:
+   - `skillPicks: X` ([Class Name] pick X skills)
+   - `hasExpertise: true/false` (Expertise for [Class Name])
+   - `asiLevels: [list]` (ASI levels)
+   - [Class Type] descriptions and options
+
+## Core Design Principles
+- **Consistency**: Maintain identical UI/UX patterns, CSS classes, and color scheme as the Rogue Builder
+- **Accuracy**: Fully implement 2024 D&D rules: [Primary Stat] from Background, Weapon Mastery system, three feat tiers (Origin/General/Epic Boons)
+- **Simplicity**: Remove complexity that doesn't apply to [Class Name] ([list specific exclusions])
+- **Clarity**: Emphasize [Primary Stat] as primary stat and [Class Type] as core feature
+
+## Key Differences from Rogue Builder
+
+| Feature | Rogue | [Class Name] |
+|--------|-------|--------------|
+| **Class Type** | Subclass (chosen at level 3) | [Class Type] (chosen at level X) |
+| **Primary Stat** | Dexterity | [Primary Stat] |
+| **Skill Picks** | 4 + Expertise tiers (L1/L6) | [Number] ([Expertise status]) |
+| **ASI Slots** | 6 (levels 4, 8, 10, 12, 16, 19) | [Number] (levels [list]) |
+| **Weapon Mastery** | 2 slots | [Number] slots |
+| **Armor Proficiency** | Light only | [Armor list] |
+| **Core Features** | Sneak Attack, Reliable Talent, Cunning Strike | [Class Name] features |
+| **Feats** | Origin, General, Dragonmark | [Feats categories] |
+| **Epic Boons** | 1 at level 19 | 1 at level 19 |
+
+## Files Modified
+
+| File | Changes |
+|------|---------|
+| `data/[class]-2024.json` | Fixed `subclasses` to use `"name"` instead of `"n"`; updated `featDesc` for [Class Name] |
+| `builder.html` | [List builder.html changes] |
+| `seed.py` | No changes needed |
+| `build.py` | No changes needed - uses shared `builder.html` template |
+
+## Build Process
+```bash
+# Seed the database with [Class Name] data
+python3 seed.py [class]-2024
+
+# Build the [Class Name] builder HTML
+python3 build.py [class]-2024
+
+# Output: dist/[class]-2024-builder.html
+```
+
+## Architecture Notes
+- The shared `builder.html` template uses `D.ui` config object to adapt to class-specific settings
+- `D.ui.skillPicks` - defaults to 4 (overridden for [Class Name])
+- `D.ui.hasExpertise` - defaults to false (set based on [Class Name])
+- Status bar uses `sb-[short]` instead of `sb-sc` for [Class Type] display
+- The template automatically hides Expertise counters when `hasExpertise` is false
+
+## Testing Plan
+
+1. **Data Validation**: Verify `data/[class]-2024.json` structure matches expected format
+2. **UI Functionality**: Test all click interactions, selections, and counters
+3. **Copy Functionality**: Verify copy-to-clipboard generates correct [Class Name] build format
+4. **Responsive Design**: Test on mobile devices (640px breakpoint)
+5. **[Class Type]-Specific Features**: Validate all [Class Type] options render correctly
+6. **ASI Tracking**: Confirm [Number] ASI slots are tracked correctly
+7. **Skill Tracking**: Confirm [Number] skills can be selected with [Expertise status]
+8. **Armor/Weapon Display**: Verify Weapon Mastery and armor proficiencies display correctly
+9. **Summary Accuracy**: Confirm all summary elements reflect correct selections
+
+## Deployment
+
+- Output file: `dist/[class]-2024-builder.html`
+- Generated by `build.py` from `data/[class]-2024.json` and `builder.html` template
+- Compatible with existing `rpgbot.db` database structure
+- No external dependencies - pure HTML/CSS/JS as per architecture
+
+## Notes
+
+This implementation follows the "render within structure" principle: the structure (HTML layout, CSS classes, data format) is human-designed and verified, and the LLM is only responsible for rendering the content within that structure. This prevents precision errors in scope decisions while leveraging the LLM's strength in content generation.
+
+## Common Class-Specific Changes Reference
+
+### Classes Without Expertise (like Cleric)
+- Set `D.ui.hasExpertise: false`
+- Set `D.ui.skillPicks: 2` (or appropriate number)
+- Expertise counters automatically hidden by template
+
+### Classes Without Dragonmark Feats (like Cleric)
+- Dragonmark Feats category automatically removed by template
+
+### Classes With Custom Primary Stat
+- Update `abilityNotes` to reflect primary stat priority
+- Update `backgroundNote` to emphasize primary stat requirement
+
+### Classes With Custom ASI Progression
+- Update `asiLevels` array with correct levels
+- Update `featDesc` to reflect correct number of slots
+
+### Classes With Custom Class Type (Domain, Path, Pact, etc.)
+- Update tab label from "Subclass" to appropriate term
+- Update pane title and description
+- Update status bar label and ID
+- Update copy button output text

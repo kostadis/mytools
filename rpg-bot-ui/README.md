@@ -55,7 +55,9 @@ print(content[:20000])   # read in passes — guides are ~50KB of text
 
 ### 2. Create the data file
 
-Create `data/CLASSNAME-2024.json`. See `data/rogue-2024.json` for the full schema, and `DESIGN-2024.md` for extraction guidance. Required top-level keys:
+Create `data/CLASSNAME-2024.json`. See `data/rogue-2024.json` for the full schema, and `DESIGN-2024.md` for extraction guidance. For class-specific implementation details, see `CLASS-BUILDER-TEMPLATE.md`.
+
+Required top-level keys:
 
 | Key | Description |
 |-----|-------------|
@@ -163,6 +165,8 @@ The live server reads the database at request time, so you can `seed.py` a chang
 | `rogue2024-builder.html` | Standalone reference builder (data embedded) |
 | `DESIGN.md` | Extraction guide for 2014 D&D guides |
 | `DESIGN-2024.md` | Extraction guide for 2024 D&D guides |
+| `CLASS-BUILDER-TEMPLATE.md` | Template for creating new class builders |
+| `CLERIC-24.md` | Implementation plan for Cleric builder (reference) |
 
 ---
 
