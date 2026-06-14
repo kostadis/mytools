@@ -1,0 +1,505 @@
+{
+  "name": "Barbarian",
+  "edition": "2024",
+  "ui": {
+    "skillPicks": 2,
+    "hasExpertise": false,
+    "optionalTitle": "Path",
+    "optionalDesc": "Choose your Path of Rage",
+    "subclassDesc": "Choose your Path of Rage",
+    "featDesc": "Choose your Feats and Ability Score Improvements",
+    "backgroundNote": "Your background grants you an Origin Feat and skill proficiencies. Consider how your background complements your Path.",
+    "multiclassNote": "Multiclassing can enhance your Barbarian's capabilities. Fighter and Monk are popular choices.",
+    "weaponNote": "Choose your weapons and Weapon Mastery options",
+    "armorNote": "Choose your armor proficiency. Half plate is recommended for most Barbarians."
+  },
+  "subclasses": [
+    {
+      "name": "Path of the Berserker",
+      "r": "blue",
+      "d": "Simple, but deadly, the Berserker adds even more damage and can shrug off common charm and fear effects."
+    },
+    {
+      "name": "Path of the Wild Heart",
+      "r": "blue",
+      "d": "Channel animal-themed abilities each time you rage, allowing you to choose powerful tactical options to meet the needs of the moment."
+    },
+    {
+      "name": "Path of the World Tree",
+      "r": "blue",
+      "d": "Protect your allies and ensnare your enemies with a fun mix of extended reach, teleportation, and temporary hit points."
+    },
+    {
+      "name": "Path of the Zealot",
+      "r": "blue",
+      "d": "Channel the fury of the gods to make yourself nearly unstoppable."
+    }
+  ],
+  "species": [
+    {
+      "n": "Aasimar",
+      "r": "green",
+      "d": "Two damage resistances to damage types which are frequently used to bypass resistance to bludgeoning/piercing/slashing damage, and a once per day transformation that offers flight or options to handle crowds, both of which are challenges for most Barbarians."
+    },
+    {
+      "n": "Dhampir",
+      "r": "green",
+      "d": "Darkvision, Spider Climb, and a damage resistance. Vampiric Bite is more useful for the Barbarian than for any other class. Barbarians are built around Strength and Constitution, which is already perfect, and the damage bonus from Rage will add to the Piercing damage dealt by Vampiric Bite, increasing the healing or the attack/check bonus you recieve from using it."
+    },
+    {
+      "n": "Dragonborn",
+      "r": "blue",
+      "d": "A damage resistance, likely to a common damage type like poison or fire, and a decent way to handle crowds of small enemies. The 2024 Barbarian's Rage can be extended by forcing enemies to make a saving throw, in part specifically to support Dragonborn Barbarians using their breath. You also get Darkvision and flight once per day."
+    },
+    {
+      "n": "Dwarf",
+      "r": "blue",
+      "d": "Darkvision, resistance to the most common non-weapon damage type, and even more hit points. Tremorsense is only situationally useful, but it may also be your only way to handle hidden or invisible enemies, making it a useful tool for the Barbarian."
+    },
+    {
+      "n": "Elf",
+      "r": "green",
+      "d": "Darkvision, an extra skill, and Fey Ancestry are all great for the Barbarian. Things get difficult when we look at innate spellcasting since many of the options are combat spells that rely on Concentration. Wood Elf may be viable here, however, since Druidcraft has no combat application, Longstrider doesn't require Concentration, and Pass Without Trace isn't helpful for Barbarians in combat. Altogether, the Wood Elf offers some interesting utility, though not being able to recast the innate spells does make them less useful than they are for spellcasting classes."
+    },
+    {
+      "n": "Gnome",
+      "r": "green",
+      "d": "Darkvision and Gnomish Cunning are both great. The Barbarian's biggest weakness is their mental saves, and Gnomish Cunning does a lot to help. However, Advantage when you have a low or even negative ability modifier may not get you very far at high levels."
+    },
+    {
+      "n": "Goliath",
+      "r": "blue",
+      "d": "The Giant Ancestry options provide some very exciting effects, especially when you combine the on-hit effects with Weapon Mastery and eventually with Brutal Strikes. Personally, I like Hill's Tumble and Stone's Endurance for melee martial builds, but nearly all of the options are worth consideration. Large Form and and Powerful Build are both neat, but they won't be as impactful as Giant Ancestry."
+    },
+    {
+      "n": "Human",
+      "r": "blue",
+      "d": "An additional skill and origin feat are an easy choice on any build."
+    },
+    {
+      "n": "Orc",
+      "r": "blue",
+      "d": "Adrenaline Rush is an excellent option for the Barbarian, allowing them to move between targets more easily in combat and padding their hit points even further. Remember that while you're raging your damage resistances will also protect your Temporary Hit Points, doubling their effectiveness against bludgeoning/piercing/slashing damage. Relentless Endurance provides a safety net in case things go badly for you. Darkvision is great, too."
+    },
+    {
+      "n": "Shifter",
+      "r": "blue",
+      "d": "Lots of good choices here. Beasthide makes you more durable, longtooth gives you more damage output, and Wildhunt can negate the drawback of Reckless Attack. You'll have some difficulty getting both Shifting and Rage going at the same time since both require your Bonus Action, but otherwise it's great."
+    },
+    {
+      "n": "Warforged",
+      "r": "blue",
+      "d": "+1 AC, some resistances and immunities, and no need to sleep. A great formula for a simple, durable barbarian. Be sure to pick up proficiency in Perception to capitalize on the fact that you don't need sleep so that you can remain alert and watch over your party during long rests."
+    }
+  ],
+  "feats": {
+    "origin": [
+      {
+        "n": "Alert",
+        "r": "green",
+        "cat": "origin",
+        "d": "Never a bad choice, but less impactful for martial characters than for full casters."
+      },
+      {
+        "n": "Cult of the Dragon Initiate",
+        "r": "green",
+        "cat": "origin",
+        "d": "This offers a useful crowd control option and the ability to easily generate Heroic Inspiration. Since it forces a save, it can also extend Rage."
+      },
+      {
+        "n": "Lords' Alliance Agent",
+        "r": "green",
+        "cat": "origin",
+        "d": "Inspiring Strike is great for the Barbarian. Since you have Reckless Attack, you can easily roll 4 d20's on attack rolls every turn once you have Extra Attack, giving you plenty of opportunities to crit. However, Reassert Honor won't do much for you because you have Reckless Attack."
+      },
+      {
+        "n": "Lucky",
+        "r": "green",
+        "cat": "origin",
+        "d": "An easy choice on any character. It won't directly impact your build, but it's a great default if you don't need anything else."
+      },
+      {
+        "n": "Musician",
+        "r": "green",
+        "cat": "origin",
+        "d": "A great way to contribute to any party."
+      },
+      {
+        "n": "Purple Dragon Rook",
+        "r": "blue",
+        "cat": "origin",
+        "d": "Grab proficiency in Insight and hand out Inspiration to the party."
+      },
+      {
+        "n": "Savage Attacker",
+        "r": "green",
+        "cat": "origin",
+        "d": "Barbarians rely on small numbers of attacks with big weapons, so Savage Attacker is a decent damage boost."
+      },
+      {
+        "n": "Tireless Reveler",
+        "r": "blue",
+        "cat": "origin",
+        "d": "A great choice on literally any character. While it doesn't set you up for any specific build, Heroic Inspiration is always useful."
+      },
+      {
+        "n": "Tough",
+        "r": "blue",
+        "cat": "origin",
+        "d": "Great on a class that routinely draws attacks made with Advantage. Rage's damage resistance will make this even more impactful."
+      },
+      {
+        "n": "Vampire's Plaything",
+        "r": "green",
+        "cat": "origin",
+        "d": "Timely Retreat is really good."
+      },
+      {
+        "n": "Zhentarim Ruffian",
+        "r": "blue",
+        "cat": "origin",
+        "d": "An easy choice on any melee build. If you have an easy source of Heroic Inspiration, such as someone in the party with Musician, this is a huge asset for your whole party."
+      }
+    ],
+    "general": [
+      {
+        "n": "Athlete",
+        "r": "green",
+        "cat": "general",
+        "d": "A decent choice for many martial characters. A climb speed is the next best thing to a fly speed. The ability to stand up quickly makes falling or being knocked prone less of a problem. The ability to jump with less of a running start may let you easily jump over difficult terrain and other obstacles which otherwise might slow your movement in combat."
+      },
+      {
+        "n": "Bloodlust",
+        "r": "green",
+        "cat": "general",
+        "d": "Good Ability Scores, some insurance on your Hit Point Dice, and an option to heal yourself in combat without cutting into your action economy. In-combat healing is usually a bad idea because it cuts into your action economy in self-destructive ways, but this doesn't carry that issue. This won't win a fight for you, but it might keep you fighting."
+      },
+      {
+        "n": "Charger",
+        "r": "blue",
+        "cat": "general",
+        "d": "The bonus damage doesn't scale, but that's not why you're here. The push effect will stack with the Push mastery and with the push option from Brutal Strikes. Combining the three lets you push enemies a total of 35 feet away, putting most creatures outside of their ability to get back into melee without dashing. Add Crusher and you can get that up to 40 feet."
+      },
+      {
+        "n": "Chef",
+        "r": "blue",
+        "cat": "general",
+        "d": "An excellent source of additional healing and of Temporary Hit Points. THP on a Barbarian are fantastic because Rage can stretch their effectiveness, and better efficiency from Short Rest healing helps make up for how much damage Barbarians typically absorb. I've used Chef on a Barbarian in a long campaign, and it was absolutely amazing."
+      },
+      {
+        "n": "Crusher",
+        "r": "green",
+        "cat": "general",
+        "d": "A simple and easy way to control enemies' positions in combat, especially when combined with the Push mastery."
+      },
+      {
+        "n": "Dual Wielder",
+        "r": "green",
+        "cat": "general",
+        "d": "Two-weapon fighting is absolutely viable for the Barbarian, and your Rage damage bonus provides a helpful flat bonus on the additional attacks which can make up for not applying your ability modifier to the damage. The Bonus Action attack from the Enhanced Dual Wielding feature appears to be separate from the one granted by the Light weapon property, so if you're using two Light weapons and one has the Nick mastery, you may be able to attack with your second weapon both during your Attack action and as a Bonus Action, allowing you to make 3 total attacks (4 with Extra Attack) in a turn. We're still waiting to see if the rules will be clarified for this."
+      },
+      {
+        "n": "Great Weapon Master",
+        "r": "blue",
+        "cat": "general",
+        "d": "Simple, easy, and reliable. A must have for any Barbarian using two-handed weapons, though it's fine to wait until level 8 when you have Extra Attack and your Proficiency Bonus is higher than the +2 you have at level 4."
+      },
+      {
+        "n": "Mage Slayer",
+        "r": "blue",
+        "cat": "general",
+        "d": "The Guarded Mind feature gives you an easy solution to the Barbarian's biggest weakness in combat. Concentration Breaker is only situationally useful, but Guarded Mind will come into play constantly."
+      },
+      {
+        "n": "Piercer",
+        "r": "green",
+        "cat": "general",
+        "d": "An easy damage boost if you're using piercing weapons like pikes."
+      },
+      {
+        "n": "Polearm Master",
+        "r": "blue",
+        "cat": "general",
+        "d": "Pole Strike will fight for space with the Bonus Action to activate Rage, but many Barbarians don't use their Bonus Action in combat once they're raging. The Reactive Strike feature is a reliable and easy boost to your damage output, and makes you even better as your party's Defender."
+      },
+      {
+        "n": "Purple Dragon Commandant",
+        "r": "blue",
+        "cat": "general",
+        "d": "Encourage Ally is a great pool of Temporary Hit Points, and the fact that it can be based on your Strength score is excellent. Last Stand may feel redundant with Reckless Attack, but it will allow you to stop using Reckless Attack when your health is low so you don't need to make that high-risk gamble."
+      },
+      {
+        "n": "Resilient",
+        "r": "green",
+        "cat": "general",
+        "d": "Choosing Dexterity will make your Dextersity saves very reliable when you also consider Danger Sense. Resilient (Wisdom) is nice, but I recommend Mage Slayer instead since it's a guarantee."
+      },
+      {
+        "n": "Sentinel",
+        "r": "blue",
+        "cat": "general",
+        "d": "An excellent choice for any melee character."
+      },
+      {
+        "n": "Slasher",
+        "r": "blue",
+        "cat": "general",
+        "d": "Combine the Hamstring feature with a weapon with the Slow mastery, and you can give one creature a 20-foot speed penalty. Add Brutal Strike, and you can make that a 35-foot speed penalty. That puts most enemies at 0. Even if it doesn't, you have a huge mobility advantage. Use a reach weapon, and you can hit enemies from outside of their reach, then take a few steps to get too far away for them to chase you without spending their Action to Dash. Unfortunately, the only slashing weapon with Slow is the Whip, so your options for this combo are limited and it means giving up a bigger damage die."
+      },
+      {
+        "n": "Street Justice",
+        "r": "blue",
+        "cat": "general",
+        "d": "While Barbarians can't abuse the grapple mechanics quite as well as they could in the 2014 rules, Barbarians are still good grapplers, and using chains/manacles/rope to bind a creature is absurdly powerful considering how easy it is. Binding a creature in chains requires a Strength (Athletics) check, which should be effortless while you're raging, and the increased DC to escape will keep enemies Restrained."
+      },
+      {
+        "n": "Zhentarim Tactics",
+        "r": "blue",
+        "cat": "general",
+        "d": "Even though this doesn't provide an increase to an Ability Score that the Barbarian needs to increase, it's an amazing feat for the Barbarian. If you're running Reckless Attack, you're going to be hit with attacks, which means that Zhentarim Tactics will reliably get you extra attacks essentially every turn."
+      }
+    ],
+    "epicBoons": [
+      {
+        "n": "Boon of Combat Prowess",
+        "r": "blue",
+        "d": "Brutal Strike negates any Advantage on your attack, making it less reliable than your regular attacks. This removes that problem."
+      },
+      {
+        "n": "Boon of Desperate Resilience",
+        "r": "blue",
+        "d": "Rage will give you resistance to weapon damage types, but by this level many enemies attacks will deal multiple damage types with their attacks. This provides a lot of extra durability once you're Bloodied, which will keep you fighting. Once you're Bloodied, look for sources of Temporary Hit Points to stretch your hp as far as possible."
+      },
+      {
+        "n": "Boon of the Bright Sun",
+        "r": "blue",
+        "d": "Give yourself and your allies 10 Temporary Hit Points each turn. Boon of Bountiful Health is a a good complement to this, giving you extra THP whenever you gain any."
+      },
+      {
+        "n": "Boon of the Night Spirit",
+        "r": "blue",
+        "d": "Free invisibility is amazing on any character, but this gets absolutely crazy on Warrior of Shadow, allowing you to cast Darkness and get more benefits than you would from Superior Defense."
+      },
+      {
+        "n": "Boon of Irresistible Offense",
+        "r": "blue",
+        "d": "Easy and simple. With two attacks and Reckless Attack you're rolling four d20's to attack. Even if you only ever get one Epic Boon, you could have 25 Strength at level 20, and adding 25 damage to a hit is a hefty bonus. If you want to fish for this damage bonus, give two-weapon fighting a look so that you're making more attack rolls in a turn."
+      }
+    ]
+  },
+  "classFeatures": [
+    {
+      "lv": 1,
+      "n": "Rage",
+      "r": "blue",
+      "d": "Rage is the Barbarian's defining class feature. The bonus damage isn't huge, but it's reliable and consistent. The resistance to damage makes Barbarians exceptionally durable."
+    },
+    {
+      "lv": 1,
+      "n": "Unarmored Defense",
+      "r": "orange",
+      "d": "This is great flavor for the Barbarian, but won't do much good for you unless your ability scores are very high. Your Dexterity and Constitution modifiers need to total +7 to match the total AC bonus provided by half plate armor. That's generally achievable by level 8 unless you rolled for ability scores, assuming that you started with 14 Dexterity and largely ignored Strength. More realistically, you should expect to hit 20 Constitution by 12th level at the earliest, and even then Unarmored Defense will only match Half plate."
+    },
+    {
+      "lv": 1,
+      "n": "Weapon Mastery",
+      "r": "blue",
+      "d": "Always excellent. Since you only get 2 at a time, I recommend picking your favorite melee weapon and the Trident. With the Topple property, you can throw a trident to knock flying enemies prone, making it a great solution to an otherwise frustrating challenge."
+    },
+    {
+      "lv": 2,
+      "n": "Danger Sense",
+      "r": "blue",
+      "d": "Given the Barbarian's proficiency in medium armor, your Dexterity is probably 14, and Barbarians aren't proficient in Dexterity saves. Advantage on these saves will make you reasonably good at them."
+    },
+    {
+      "lv": 2,
+      "n": "Reckless Attack",
+      "r": "blue",
+      "d": "Rage makes you resistant to damage from normal weapons (attacks which do weird damage types still work fine), so Advantage on attacks against you doesn't matter as much. Advantage makes your own attacks extremely reliable, which means consistent, reliable damage output."
+    },
+    {
+      "lv": 3,
+      "n": "Primal Knowledge",
+      "r": "green",
+      "d": "This offers the Barbarian some options to be more effective outside of combat. Intimidation, Perception, and Stealth are all good skill choices for Barbarians, and changing them to be Strength checks will dramatically improve your skill bonus. Rage also gives you Advantage on Strength checks, making these skills very reliable."
+    },
+    {
+      "lv": 5,
+      "n": "Extra Attack",
+      "r": "blue",
+      "d": "Two attacks means potentially twice as much damage in a turn, and twice as much opportunity to apply your Rage bonus to damage and to apply Weapon Mastery."
+    },
+    {
+      "lv": 5,
+      "n": "Fast Movement",
+      "r": "green",
+      "d": "A little bit of extra speed won't have a huge effect on the game most of the time, but it does make it easier for you to get into melee quickly."
+    },
+    {
+      "lv": 7,
+      "n": "Feral Instinct",
+      "r": "blue",
+      "d": "Going early is always great. Get into melee with enemies before they can move to attack your squishy allies. Just try not to block any area damage or area control effects which your party's spellcasters might be planning."
+    },
+    {
+      "lv": 7,
+      "n": "Instinctive Pounce",
+      "r": "green",
+      "d": "At this level the Barbarian has Fast Movement, so many Barbarians will have 40 ft. speed. Moving half of that speed when you begin a Rage allows the Barbarian to get into melee faster, which is essential since the Barbarian is essentially a melee-only class."
+    },
+    {
+      "lv": 9,
+      "n": "Brutal Strike",
+      "r": "blue",
+      "d": "This is the Barbarian's exciting option at high levels. Brutal Strike lets you add a bit of damage and a powerful on-hit effect similar to Weapon Mastery. However, you need to forgo all Advantage on the attack (not just from Reckless Attack, but any source of Advantage) in order to use it. This means that your Brutal Strike attack won't be as reliable as you may expect after 7 levels of using Reckless Attack."
+    },
+    {
+      "lv": 11,
+      "n": "Relentless Rage",
+      "r": "blue",
+      "d": "This will keep you conscious for a long time if you get hit with a low number of high-damage attacks, but lots of small attacks will raise the DC too quickly for this to remain effective. Be sure to eliminate weak but numerous enemies before your HP starts getting scary."
+    },
+    {
+      "lv": 13,
+      "n": "Improved Brutal Strike",
+      "r": "blue",
+      "d": "Even more options!"
+    },
+    {
+      "lv": 15,
+      "n": "Persistent Rage",
+      "r": "blue",
+      "d": "Refreshing your Rage uses once per day effectively doubles the size of your pool. You're also less likely to lose your Rage since being Incapacitated no longer causes it to end."
+    },
+    {
+      "lv": 17,
+      "n": "Improved Brutal Strike",
+      "r": "blue",
+      "d": "No new options at this level, but you add another 1d10 damage and now you can apply two effects at the same time. Combining Forceful Blow and Hamstring Blow can put an enemy out of range to get back into melee unless they Dash, which can take melee-only enemies out of combat. There's not much other synergy between the effects, but making a target vulnerable on their next save and on the next attack against them by combining Staggering Blow and Sundering Blow makes it easy for your party to focus their attention on a single high-value target."
+    },
+    {
+      "lv": 18,
+      "n": "Indomitable Might",
+      "r": "blue",
+      "d": "Your Strength is almost certainly 20 by this level, which means that the floor on d20 rolls for Strength checks is now 20. This gets even sillier when your floor is higher than 20 thanks to Epic Boons and Primal Champion."
+    },
+    {
+      "lv": 20,
+      "n": "Primal Champion",
+      "r": "blue",
+      "d": "Mathematically fantastic. A huge buff to your capabilities both offensively and defensively. Note that this can raise your ability scores to 25 specifically to allow for the +1 from an Epic Boon taken at level 19."
+    }
+  ],
+  "weapons": [
+    {
+      "n": "Battle Axe",
+      "r": "green",
+      "d": "Topple is fine, but it's only appealing in melee if you have other melee allies. If you want Advantage, you already have Reckless Attack."
+    },
+    {
+      "n": "Glaive",
+      "r": "orange",
+      "d": "The Graze mastery is good insurance for characters with a chance to miss, but you're going to maximize Strength and then use Reckless Attack, so missing will be rare until Brutal Strike comes online, and Graze doesn't help with Brutal Strike."
+    },
+    {
+      "n": "Greataxe",
+      "r": "green",
+      "d": "Cleave is probably your only option for handling crowds. The additional attack will apply your Rage damage bonus, but it may be difficult to use reliably since the second target needs to be adjacent to the first."
+    },
+    {
+      "n": "Longsword",
+      "r": "blue",
+      "d": "The Sap mastery offsets the penalty for Reckless Attack, adding to your durability without cutting into your damage output."
+    },
+    {
+      "n": "Pike",
+      "r": "blue",
+      "d": "Push becomes very appealing once you get Brutal Strike and can launch enemies 25 feet away in one hit."
+    },
+    {
+      "n": "Trident",
+      "r": "blue",
+      "d": "Your go-to ranged option. With the Thrown property and the Topple mastery, you can throw these at flying enemies to knock them prone, causing most flying enemies to fall."
+    },
+    {
+      "n": "Whip",
+      "r": "blue",
+      "d": "The only weapon with Reach and with the Slow mastery."
+    }
+  ],
+  "armor": [
+    {
+      "n": "Half plate",
+      "r": "blue",
+      "d": "Half plate will provide more AC than your Unarmored Defense until your total modifiers in Dexterity and Constitution add up to +7. Expect to spend most of your career in half plate unless you need to be stealthy."
+    }
+  ],
+  "abilityScores": [
+    {
+      "n": "Standard Build — Point Buy",
+      "v": {
+        "Str": 15,
+        "Dex": 14,
+        "Con": 15,
+        "Int": 8,
+        "Wis": 10,
+        "Cha": 8
+      }
+    }
+  ],
+  "skills": [
+    {
+      "n": "Intimidation",
+      "r": "green",
+      "d": "Useful while raging, and likely your only viable social skill."
+    },
+    {
+      "n": "Perception",
+      "r": "blue",
+      "d": "One of the most important skills in the game. At least two people in the party should have it, but more is always better."
+    }
+  ],
+  "backgrounds": [
+    {
+      "n": "Chondathan Freeboter",
+      "r": "green",
+      "d": "Excellent for a Barbarian looking to be useful outside of combat. The Ability Scores are good, the skills are decent, and you get Skilled. Use Skilled to get proficiency in Thieves' Tools and you could be a passable Scout."
+    },
+    {
+      "n": "Flaming Fist Mercenary",
+      "r": "blue",
+      "d": "An easy choice, this gets you Strength and Constiution increases, Tough, and two decent skills for the Barbarian."
+    },
+    {
+      "n": "Guard",
+      "r": "green",
+      "d": "Good ability scores, and perception is a great skill. Alert isn't crucial for most martial characters, but remember that you can trade initiative with a willing ally to help an allied spellcaster act early."
+    },
+    {
+      "n": "Farmer",
+      "r": "green",
+      "d": "A good option for front-line martials. The ability scores are great, and Tough is an easy go-to feat if you don't want more complexity, but you won't get much use out of the skills."
+    },
+    {
+      "n": "Purple Dragon Squire",
+      "r": "blue",
+      "d": "Good Ability Scores, Purple Dragon Rook works for the Barbarian, and you get one passable skill."
+    },
+    {
+      "n": "Rashemi Wanderer",
+      "r": "blue",
+      "d": "Good Ability Scores, Tough, and decent skills for the Barbarian."
+    },
+    {
+      "n": "Soldier",
+      "r": "green",
+      "d": "Good ability scores for the Barbarian, and Savage Attacker is good feat for the weapons that Barbarians typically use, especially since you'll never get more than two attacks, but Athletics is borderline useless in the 2024 rules, and Intimidation won't help you much since you're probably going to dump Charisma."
+    },
+    {
+      "n": "Zhentarim Mercenary",
+      "r": "green",
+      "d": "You can get a Strength increase, Zhentarim Ruffian is decent, and you get one good skill. On its own, this Background is fine, but Zhentarim Tactics is absolutely amazing, so you might take this just to easily qualify for Zhentarim Tactics."
+    }
+  ]
+}
