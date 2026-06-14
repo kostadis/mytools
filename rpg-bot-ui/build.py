@@ -61,7 +61,7 @@ def build_class(class_id: str, out_dir: str, is_spell: bool = False) -> str:
         raise RuntimeError(f"BOOTSTRAP_SENTINEL {BOOTSTRAP_SENTINEL!r} not found in template")
     boot_idx    = html.index(BOOTSTRAP_SENTINEL)
     script_idx  = html.rindex('</script>')
-    html = html[:boot_idx] + 'init();\n' + html[script_idx:]
+    html = html[:boot_idx] + "document.addEventListener('DOMContentLoaded', init);\n" + html[script_idx:]
 
     # ── Write output ────────────────────────────────────────────────────────
     os.makedirs(out_dir, exist_ok=True)

@@ -169,7 +169,7 @@ header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
 <body>
 
 <header>
-  <span class="hicon">⚔</span>
+  <span class="hicon">☀</span>
   <div>
     <h1 id="class-title">CLASS BUILDER</h1>
     <div class="hsub" id="class-sub">Loading…</div>
@@ -187,10 +187,10 @@ header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
 <div id="app">
 
 <nav class="tabs" id="tabs">
-  <div class="tab active" data-tab="subclass">Subclass</div>
+  <div class="tab active" data-tab="subclass">Domain</div>
   <div class="tab" data-tab="species">Species</div>
   <div class="tab" data-tab="abilities">Ability Scores</div>
-  <div class="tab" data-tab="skills">Skills &amp; Expertise</div>
+  <div class="tab" data-tab="skills">Skills</div>
   <div class="tab" data-tab="background">Background</div>
   <div class="tab" data-tab="feats">Feats &amp; ASIs</div>
   <div class="tab" data-tab="epicboons">Epic Boons</div>
@@ -203,7 +203,7 @@ header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
 <div class="content">
 
   <div class="pane active" id="pane-subclass">
-    <div class="sh"><h2>Subclass</h2><p id="subclass-desc"></p></div>
+    <div class="sh"><h2>Divine Domain</h2><p id="subclass-desc"></p></div>
     <div class="grid" id="subclass-grid"></div>
   </div>
 
@@ -221,13 +221,12 @@ header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
   </div>
 
   <div class="pane" id="pane-skills">
-    <div class="sh"><h2>Skills &amp; Expertise</h2><p id="skills-desc">Pick your class skills. Click a selected skill to cycle: Proficient → L1 Expertise → L6 Expertise → unselected.</p></div>
+    <div class="sh"><h2>Skills</h2><p id="skills-desc">Pick your class skills.</p></div>
     <div class="cbar" id="skills-cbar">
       <div class="citem"><div class="cnum" id="cnt-s">0</div><div class="clabel">Skills</div></div>
-      <div class="citem" id="e1-citem"><div class="cnum" id="cnt-e1">0<span style="font-size:.65rem;color:var(--tx3)">/2</span></div><div class="clabel">L1 Expertise</div></div>
-      <div class="citem" id="e2-citem"><div class="cnum" id="cnt-e2">0<span style="font-size:.65rem;color:var(--tx3)">/2</span></div><div class="clabel">L6 Expertise</div></div>
+      <div class="citem" id="e1-citem"><div class="cnum" id="cnt-e1">0</div><div class="clabel">L1 Exp.</div></div>
+      <div class="citem" id="e2-citem"><div class="cnum" id="cnt-e2">0</div><div class="clabel">L6 Exp.</div></div>
     </div>
-    <div class="callout"><strong>2024:</strong> Expertise can apply to any skill you're proficient in — including Background skills. This panel tracks your class picks; assign Expertise freely.</div>
     <div class="grid grid-sm" id="skills-grid"></div>
   </div>
 
@@ -249,11 +248,6 @@ header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
     <div class="feat-group-section">
       <div class="feat-group-hdr">General Feats</div>
       <div class="grid" id="feats-general"></div>
-    </div>
-    <div class="feat-group-section">
-      <div class="feat-group-hdr">Dragonmark Feats</div>
-      <div class="callout" style="margin-bottom:10px"><strong>Eberron only.</strong> Dragonmark Feats are campaign-specific — check with your DM. They replace other Origin Feats and require the appropriate Eberron lineage.</div>
-      <div class="grid" id="feats-dragonmark"></div>
     </div>
   </div>
 
@@ -296,15 +290,15 @@ header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
 </div><!-- #app -->
 
 <div id="sbar">
-  <div class="si"><span class="slbl">Subclass</span><span class="sval2 hi" id="sb-sc">—</span></div>
+  <div class="si"><span class="slbl">Domain</span><span class="sval2 hi" id="sb-dm">—</span></div>
   <span class="sdiv">|</span>
   <div class="si"><span class="slbl">Species</span><span class="sval2 hi" id="sb-sp">—</span></div>
   <span class="sdiv">|</span>
   <div class="si"><span class="slbl">Background</span><span class="sval2 hi" id="sb-bg">—</span></div>
   <span class="sdiv">|</span>
-  <div class="si"><span class="slbl">Skills</span><span class="sval2" id="sb-sk">0/4</span></div>
+  <div class="si"><span class="slbl">Skills</span><span class="sval2" id="sb-sk">0/2</span></div>
   <span class="sdiv">|</span>
-  <div class="si"><span class="slbl">ASIs</span><span class="sval2" id="sb-asi">0/6</span></div>
+  <div class="si"><span class="slbl">ASIs</span><span class="sval2" id="sb-asi">0/5</span></div>
 </div>
 
 <script>
@@ -651,7 +645,7 @@ function renderSummary() {
 
 // ─── Status bar ───────────────────────────────
 function updateSBar() {
-  document.getElementById('sb-sc').textContent = S.subclass||'—';
+  document.getElementById('sb-dm').textContent = S.subclass||'—';
   document.getElementById('sb-sp').textContent = S.species||'—';
   document.getElementById('sb-bg').textContent = S.bg||'—';
   document.getElementById('sb-sk').textContent = `${skCount()}/${skillPicks()}`;
@@ -721,6 +715,16 @@ function init() {
       `Pick ${ui.skillPicks} class skills.${ui.hasExpertise ? ' Click a selected skill to cycle: Proficient → L1 Expertise → L6 Expertise → unselected.' : ''}`;
   }
 
+  // Normalise feats: support both flat array and {origin,general,epicBoons} object
+  if (D.feats && !Array.isArray(D.feats)) {
+    if (!D.epicBoons) D.epicBoons = D.feats.epicBoons || [];
+    D.feats = [
+      ...(D.feats.origin    || []),
+      ...(D.feats.general   || []),
+      ...(D.feats.dragonmark|| []),
+    ];
+  }
+
   // Hide expertise counter rows if class doesn't have expertise
   if (!hasExpertise()) {
     document.getElementById('e1-citem').style.display = 'none';
@@ -748,7 +752,7 @@ function init() {
   document.getElementById('sbar').style.display = 'flex';
 }
 
-init();
+document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>
