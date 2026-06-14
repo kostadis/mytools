@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spell Builder · D&D</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg:   #0a0c10;
+  --s1:   #11141b;
+  --s2:   #181c26;
+  --s3:   #1f2330;
+  --bd:   #232737;
+  --bd2:  #313749;
+  --tx:   #ddd3bc;
+  --tx2:  #8a8070;
+  --tx3:  #4e4a41;
+  --gold: #c4973a;
+  --gold2:#7a5c1e;
+  --acc:  #7c3aed;
+
+  --rb:#1e40af; --rb-bg:#0c1a35; --rb-t:#93c5fd;
+  --rg:#15803d; --rg-bg:#0a2416; --rg-t:#86efac;
+  --ro:#c2410c; --ro-bg:#2c1005; --ro-t:#fdba74;
+  --rr:#b91c1c; --rr-bg:#280606; --rr-t:#fca5a5;
+
+  --sel-bg:#0d1b33; --sel-bd:#2563eb;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Crimson Pro',Georgia,serif;background:var(--bg);color:var(--tx);min-height:100vh;font-size:16px;line-height:1.5}
+
+header{background:var(--s1);border-bottom:1px solid var(--bd);padding:12px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100}
+.hicon{font-size:1.4rem;line-height:1}
+header h1{font-family:'Cinzel',serif;font-size:1.05rem;font-weight:700;letter-spacing:.12em;color:var(--gold)}
+header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
+.hlegend{margin-left:auto;display:flex;gap:6px;align-items:center;flex-shrink:0}
+
+.tabs{background:var(--s1);border-bottom:1px solid var(--bd);display:flex;padding:0 24px;overflow-x:auto;gap:0;-webkit-overflow-scrolling:touch}
+.tab{padding:9px 16px;cursor:pointer;border-bottom:2px solid transparent;color:var(--tx2);font-family:'Cinzel',serif;font-size:.7rem;letter-spacing:.09em;white-space:nowrap;transition:all .2s;display:flex;align-items:center;gap:5px}
+.tab:hover{color:var(--tx)}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.tbadge{background:var(--gold2);color:var(--gold);font-size:.6rem;padding:1px 5px;border-radius:3px;font-family:'JetBrains Mono',monospace}
+
+.content{padding:22px 24px 74px;max-width:1280px;margin:0 auto}
+.pane{display:none}
+.pane.active{display:block;animation:fi .18s ease}
+@keyframes fi{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+.sh{margin-bottom:18px}
+.sh h2{font-family:'Cinzel',serif;font-size:.95rem;font-weight:600;letter-spacing:.07em;margin-bottom:3px;color:var(--gold)}
+.sh p{font-size:.85rem;color:var(--tx2);font-style:italic}
+
+.badge{display:inline-flex;align-items:center;font-family:'JetBrains Mono',monospace;font-size:.6rem;font-weight:500;padding:2px 7px;border-radius:3px;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.badge-blue  {background:var(--rb-bg);color:var(--rb-t);border:1px solid var(--rb)}
+.badge-green {background:var(--rg-bg);color:var(--rg-t);border:1px solid var(--rg)}
+.badge-orange{background:var(--ro-bg);color:var(--ro-t);border:1px solid var(--ro)}
+.badge-red   {background:var(--rr-bg);color:var(--rr-t);border:1px solid var(--rr)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:12px 14px;cursor:pointer;transition:border-color .15s,background .15s,transform .1s;user-select:none}
+.card:hover{border-color:var(--bd2);background:var(--s2);transform:translateY(-1px)}
+.card.sel {border-color:var(--sel-bd);background:var(--sel-bg)}
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.card-name{font-family:'Cinzel',serif;font-size:.8rem;font-weight:600;letter-spacing:.04em}
+.card-note{font-size:.8125rem;color:var(--tx2);line-height:1.5}
+.card-state{margin-top:6px;font-size:.68rem}
+.card-state.selected{color:var(--rg-t)}
+
+.cbar{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:10px 18px;margin-bottom:14px;display:flex;gap:28px;align-items:center;flex-wrap:wrap}
+.citem{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:72px}
+.cnum{font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:500;color:var(--tx3);transition:color .2s}
+.cnum.ok  {color:var(--rg-t)}
+.cnum.done{color:var(--gold)}
+.clabel{font-size:.6rem;color:var(--tx3);text-transform:uppercase;letter-spacing:.09em;font-family:'Cinzel',serif}
+
+.fbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.fbtn{padding:4px 10px;border-radius:9999px;border:1px solid var(--bd);background:var(--s1);color:var(--tx2);cursor:pointer;font-size:.7rem;font-family:'JetBrains Mono',monospace;transition:all .15s}
+.fbtn:hover{color:var(--tx);border-color:var(--bd2)}
+.fbtn.fa.active{border-color:var(--gold2);color:var(--gold);background:#181408}
+.fbtn.fb.active{border-color:var(--rb);color:var(--rb-t);background:var(--rb-bg)}
+.fbtn.fg.active{border-color:var(--rg);color:var(--rg-t);background:var(--rg-bg)}
+.fbtn.fo.active{border-color:var(--ro);color:var(--ro-t);background:var(--ro-bg)}
+.fbtn.fr.active{border-color:var(--rr);color:var(--rr-t);background:var(--rr-bg)}
+.srch{padding:5px 11px;border-radius:5px;border:1px solid var(--bd);background:var(--s1);color:var(--tx);font-family:'Crimson Pro',serif;font-size:.875rem;flex:1;min-width:140px;max-width:240px;outline:none}
+.srch:focus{border-color:var(--bd2)}
+.srch::placeholder{color:var(--tx3)}
+
+.sblock{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:16px 20px;margin-bottom:12px}
+.sblock h3{font-family:'Cinzel',serif;font-size:.67rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--bd)}
+.srow{display:flex;gap:10px;padding:4px 0;font-size:.875rem;border-bottom:1px solid var(--bd);align-items:flex-start}
+.srow:last-child{border-bottom:none}
+.skey{color:var(--tx2);min-width:135px;font-style:italic;flex-shrink:0}
+.sval{color:var(--tx)}
+.sval span{color:var(--gold)}
+.copybtn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:var(--s2);border:1px solid var(--gold2);color:var(--gold);border-radius:5px;cursor:pointer;font-family:'Cinzel',serif;font-size:.72rem;letter-spacing:.06em;transition:all .15s;margin-top:12px}
+.copybtn:hover{background:#181408}
+
+#sbar{position:fixed;bottom:0;left:0;right:0;background:var(--s1);border-top:1px solid var(--bd);padding:7px 24px;display:none;gap:18px;align-items:center;font-size:.72rem;z-index:100;overflow-x:auto;white-space:nowrap}
+.si{display:flex;align-items:center;gap:6px}
+.slbl{color:var(--tx3);font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.1em;text-transform:uppercase}
+.sval2{color:var(--tx);font-family:'JetBrains Mono',monospace;font-size:.68rem}
+.sval2.hi{color:var(--gold)}
+.sdiv{color:var(--bd2)}
+
+#loading{padding:48px 24px;color:var(--tx2);font-style:italic}
+#app{display:none}
+
+@media(max-width:640px){
+  .content{padding:14px 14px 74px}
+  .hlegend{display:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="hicon">⚔</span>
+  <div>
+    <h1 id="class-title">SPELL BUILDER</h1>
+    <div class="hsub" id="class-sub">Loading…</div>
+  </div>
+  <div class="hlegend">
+    <span class="badge badge-blue">Fantastic</span>
+    <span class="badge badge-green">Good</span>
+    <span class="badge badge-orange">Situational</span>
+    <span class="badge badge-red">Avoid</span>
+  </div>
+</header>
+
+<div id="loading">Loading spell data…</div>
+
+<div id="app">
+
+<nav class="tabs" id="tabs">
+  <div class="tab active" data-tab="cantrip">Cantrips</div>
+  <div class="tab" data-tab="level1">Level 1</div>
+  <div class="tab" data-tab="level2">Level 2</div>
+  <div class="tab" data-tab="level3">Level 3</div>
+  <div class="tab" data-tab="level4">Level 4</div>
+  <div class="tab" data-tab="summary">Summary</div>
+</nav>
+
+<div class="content">
+
+  <div class="pane active" id="pane-cantrip">
+    <div class="sh"><h2>Cantrips</h2><p>Known: <span id="known-cantrip">0</span>/2</p></div>
+    <div class="fbar" id="filter-cantrip"></div>
+    <div class="grid" id="grid-cantrip"></div>
+  </div>
+
+  <div class="pane" id="pane-level1">
+    <div class="sh"><h2>Level 1 Spells</h2><p>Known: <span id="known-level1">0</span>/2 | Slots: <span id="slots-level1">0</span></p></div>
+    <div class="fbar" id="filter-level1"></div>
+    <div class="grid" id="grid-level1"></div>
+  </div>
+
+  <div class="pane" id="pane-level2">
+    <div class="sh"><h2>Level 2 Spells</h2><p>Known: <span id="known-level2">0</span>/2 | Slots: <span id="slots-level2">0</span></p></div>
+    <div class="fbar" id="filter-level2"></div>
+    <div class="grid" id="grid-level2"></div>
+  </div>
+
+  <div class="pane" id="pane-level3">
+    <div class="sh"><h2>Level 3 Spells</h2><p>Known: <span id="known-level3">0</span>/2 | Slots: <span id="slots-level3">0</span></p></div>
+    <div class="fbar" id="filter-level3"></div>
+    <div class="grid" id="grid-level3"></div>
+  </div>
+
+  <div class="pane" id="pane-level4">
+    <div class="sh"><h2>Level 4 Spells</h2><p>Known: <span id="known-level4">0</span>/2 | Slots: <span id="slots-level4">0</span></p></div>
+    <div class="fbar" id="filter-level4"></div>
+    <div class="grid" id="grid-level4"></div>
+  </div>
+
+  <div class="pane" id="pane-summary">
+    <div class="sh"><h2>Spell Selection</h2><p>Your spell list.</p></div>
+    <div id="summary-content"></div>
+    <button class="copybtn" id="copy-btn">◆ Copy to Clipboard</button>
+  </div>
+
+</div><!-- .content -->
+</div><!-- #app -->
+
+<div id="sbar">
+  <div class="si"><span class="slbl">Cantrips</span><span class="sval2 hi" id="sb-cantrip">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Level 1</span><span class="sval2" id="sb-lvl1">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Level 2</span><span class="sval2" id="sb-lvl2">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Level 3</span><span class="sval2" id="sb-lvl3">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Level 4</span><span class="sval2" id="sb-lvl4">0/2</span></div>
+</div>
+
+<script>
+// ─── Data (loaded from API) ───────────────────
+let D = null;
+
+// ─── State ───────────────────────────────────
+const S = {
+  spells: {
+    cantrip: [],
+    level1: [],
+    level2: [],
+    level3: [],
+    level4: []
+  },
+  filters: {
+    cantrip: { filt: 'all', search: '' },
+    level1: { filt: 'all', search: '' },
+    level2: { filt: 'all', search: '' },
+    level3: { filt: 'all', search: '' },
+    level4: { filt: 'all', search: '' }
+  },
+  level: 3
+};
+
+// ─── Helpers ─────────────────────────────────
+function badge(r) {
+  const L = {blue:'★★★★', green:'★★★', orange:'★★', red:'★'};
+  return `<span class="badge badge-${r}">${L[r]}</span>`;
+}
+
+function knownCount(level) { return S.spells[level].length; }
+function maxKnown(level) { return D.ui?.knownPerLevel?.[level] ?? 2; }
+function slotCount(level) { return D.slots?.[String(level)] ?? 0; }
+
+// ─── Tabs ────────────────────────────────────
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('pane-'+t.dataset.tab).classList.add('active');
+    if (t.dataset.tab === 'summary') renderSummary();
+  });
+});
+
+// ─── Filter UI ───────────────────────────────
+function renderFilter(level) {
+  const bar = document.getElementById('filter-'+level);
+  const ratings = [
+    {k:'all',l:'All',c:'fa'},{k:'blue',l:'Fantastic',c:'fb'},
+    {k:'green',l:'Good',c:'fg'},{k:'orange',l:'Situational',c:'fo'},{k:'red',l:'Avoid',c:'fr'}
+  ];
+  const f = S.filters[level];
+  bar.innerHTML = ratings.map(b => 
+    `<button class="fbtn ${b.c} ${f.filt===b.k?'active':''}" data-f="${b.k}" data-l="${level}">${b.l}</button>`
+  ).join('')
+    + `<input class="srch" id="fsrch-${level}" placeholder="Search…\" value="${f.search}">`;
+  
+  bar.querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => {
+    S.filters[b.dataset.l].filt = b.dataset.f;
+    renderFilter(b.dataset.l);
+    renderSpells(b.dataset.l);
+  }));
+  document.getElementById(`fsrch-${level}`).addEventListener('input', e => {
+    S.filters[level].search = e.target.value;
+    renderSpells(level);
+  });
+}
+
+// ─── Spell Grid ──────────────────────────────
+function renderSpells(level) {
+  const g = document.getElementById('grid-'+level);
+  const f = S.filters[level];
+  const fq = f.search.toLowerCase();
+  const max = maxKnown(level);
+  const cur = knownCount(level);
+  
+  const vis = (D[level]||[]).filter(s => {
+    if (f.filt !== 'all' && s.r !== f.filt) return false;
+    if (fq && !s.n.toLowerCase().includes(fq) && !s.d.toLowerCase().includes(fq)) return false;
+    return true;
+  });
+  
+  if (!vis.length) {
+    g.innerHTML = '<div style="color:var(--tx3);font-style:italic;padding:8px 0">No spells match.</div>';
+    return;
+  }
+  
+  g.innerHTML = vis.map(s => {
+    const sel = S.spells[level].includes(s.n) ? 'sel' : '';
+    const st = sel ? '<div class="card-state selected">✓ Selected</div>' : '';
+    return `<div class="card ${sel}" data-l="${level}" data-s="${s.n}">
+      <div class="card-top">
+        <div class="card-name">${s.n}</div>
+        ${badge(s.r)}
+      </div>
+      <div class="card-note">${s.d}</div>
+      ${st}
+    </div>`;
+  }).join('');
+  
+  g.querySelectorAll('.card').forEach(c => c.addEventListener('click', () => {
+    const lvl = c.dataset.l, nm = c.dataset.s;
+    const idx = S.spells[lvl].indexOf(nm);
+    if (idx >= 0) {
+      S.spells[lvl].splice(idx, 1);
+    } else {
+      if (knownCount(lvl) >= max) return;
+      S.spells[lvl].push(nm);
+    }
+    updateCounts();
+    renderSpells(lvl);
+    updateSBar();
+    if (document.querySelector('.tab[data-tab="summary"]').classList.contains('active')) {
+      renderSummary();
+    }
+  }));
+}
+
+function updateCounts() {
+  document.getElementById('known-cantrip').textContent = knownCount('cantrip');
+  document.getElementById('known-level1').textContent = knownCount('level1');
+  document.getElementById('known-level2').textContent = knownCount('level2');
+  document.getElementById('known-level3').textContent = knownCount('level3');
+  document.getElementById('known-level4').textContent = knownCount('level4');
+  
+  document.getElementById('slots-level1').textContent = slotCount(1);
+  document.getElementById('slots-level2').textContent = slotCount(2);
+  document.getElementById('slots-level3').textContent = slotCount(3);
+  document.getElementById('slots-level4').textContent = slotCount(4);
+}
+
+// ─── Summary ─────────────────────────────────
+function renderSummary() {
+  const lines = [];
+  
+  for (const level of ['cantrip','level1','level2','level3','level4']) {
+    const spells = S.spells[level];
+    if (spells.length > 0) {
+      const max = maxKnown(level);
+      lines.push(`<div class="srow"><span class="skey">${level.toUpperCase()} (${spells.length}/${max})</span><span class="sval">${spells.map(n=>`<span>${n}</span>`).join(', ')}</span></div>`);
+    }
+  }
+  
+  if (lines.length === 0) {
+    lines.push('<div style="color:var(--tx3);padding:8px 0">No spells selected yet.</div>');
+  }
+  
+  document.getElementById('summary-content').innerHTML = lines.join('');
+}
+
+// ─── Status bar ──────────────────────────────
+function updateSBar() {
+  document.getElementById('sb-cantrip').textContent = `${knownCount('cantrip')}/${maxKnown('cantrip')}`;
+  document.getElementById('sb-lvl1').textContent = `${knownCount('level1')}/${maxKnown('level1')}`;
+  document.getElementById('sb-lvl2').textContent = `${knownCount('level2')}/${maxKnown('level2')}`;
+  document.getElementById('sb-lvl3').textContent = `${knownCount('level3')}/${maxKnown('level3')}`;
+  document.getElementById('sb-lvl4').textContent = `${knownCount('level4')}/${maxKnown('level4')}`;
+}
+
+// ─── Copy ────────────────────────────────────
+document.getElementById('copy-btn').addEventListener('click', () => {
+  const lines = [`=== ${D.meta.name} Spells (Level ${S.level}) ===`, ''];
+  
+  for (const level of ['cantrip','level1','level2','level3','level4']) {
+    const spells = S.spells[level];
+    if (spells.length > 0) {
+      lines.push(`${level.toUpperCase()}:`);
+      lines.push(...spells.map(s => `  - ${s}`));
+      lines.push('');
+    }
+  }
+  
+  navigator.clipboard.writeText(lines.join('\n')).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = '◆ Copy to Clipboard'; }, 2000);
+  });
+});
+
+// ─── Init (called after D is loaded) ─────────
+function init() {
+  const ui = D.ui || {};
+  
+  // Initialize state from data
+  for (const level of ['cantrip','level1','level2','level3','level4']) {
+    S.spells[level] = [];
+  }
+  
+  // Dynamic header
+  document.title = `${D.meta.name} Spell Builder · D&D ${D.meta.edition}`;
+  document.getElementById('class-title').textContent = `${D.meta.name.toUpperCase()} SPELL BUILDER`;
+  document.getElementById('class-sub').textContent   = `${D.meta.edition} D&D rules · RPGBOT guide`;
+  
+  updateCounts();
+  updateSBar();
+  
+  for (const level of ['cantrip','level1','level2','level3','level4']) {
+    renderFilter(level);
+    renderSpells(level);
+  }
+  
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('sbar').style.display = 'flex';
+}
+
+// ─── Bootstrap ───────────────────────────────
+init();
+</script>
+</body>
+</html>

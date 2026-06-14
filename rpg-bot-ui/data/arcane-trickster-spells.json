@@ -1,0 +1,1077 @@
+{
+  "cantrip": [
+    {
+      "n": "Acid Splash",
+      "r": "red",
+      "d": "(PHB): Rogues are at their best when they\u2019re focused on dealing big damage to single targets. Acid Splash won\u2019t help you with that. It\u2019s tempting to add area damage to your options, but the gap in how much damage Acid Splash does compared to Sneak Attack is massive, especially when you consider other things like Cunning Strike and Weapon Mastery."
+    },
+    {
+      "n": "Blade Ward",
+      "r": "green",
+      "d": "(PHB): Excellent for any melee build, but not worth the Action to cast it in combat. If you can cast this before walking into a fight, it\u2019s fantastic."
+    },
+    {
+      "n": "Booming Blade",
+      "r": "blue",
+      "d": "(SCAG / TCoE): Attack, then use Cunning Action to Disengage. Instant hit-and-run tactics, and enemies take extra damage if they chase you."
+    },
+    {
+      "n": "Chill Touch",
+      "r": "red",
+      "d": "(PHB): Spell attacks won\u2019t help you."
+    },
+    {
+      "n": "Control Flames",
+      "r": "red",
+      "d": ": Bad."
+    },
+    {
+      "n": "Create Bonfire",
+      "r": "orange",
+      "d": "(EEPC / XGtE): The damage isn\u2019t as good as a Sneak Attack, but rogues don\u2019t have a lot of spells which require Concentration so if you can set this up before combat or on a turn when you can\u2019t deliver a Sneak Attack it could provide some useful area control."
+    },
+    {
+      "n": "Dancing Lights",
+      "r": "orange",
+      "d": "(PHB): An amusing distraction, but you can usually accomplish the same thing using Mage Hand and a candle or torch."
+    },
+    {
+      "n": "Elementalism",
+      "r": "red",
+      "d": "(PHB): Bad."
+    },
+    {
+      "n": "Encode Thoughts",
+      "r": "red",
+      "d": ": Too situational. It\u2019s a neat idea for a thieves\u2019 guild to use this, but you just can\u2019t afford space for it."
+    },
+    {
+      "n": "Fire Bolt",
+      "r": "red",
+      "d": "(PHB): Spell attacks won\u2019t help you."
+    },
+    {
+      "n": "Friends",
+      "r": "green",
+      "d": "(PHB): Despite being built around Intelligence, you might make room for Charisma-based skills. An easy way to quickly charm a creature can be very helpful, though watch our for the 1-minute duration and the consequences when it ends."
+    },
+    {
+      "n": "Frostbite",
+      "r": "red",
+      "d": "(XGtE): Maybe useful once you get Magical Ambush, but it\u2019s a stretch."
+    },
+    {
+      "n": "Green-Flame Blade",
+      "r": "orange",
+      "d": "(SCAG / TCoE): Allows you to attack two enemies at once, which rogues are generally bad at doing. But you can\u2019t guarantee that enemies will be positioned for the secondary damage, so this is inherently situational."
+    },
+    {
+      "n": "Gust",
+      "r": "red",
+      "d": "(EEPC): The push effect is too weak to justify. This could be useful if it didn\u2019t have Verbal components because you could use it to create distractions while sneaking, but you still need to break stealth to cast it."
+    },
+    {
+      "n": "Infestation",
+      "r": "red",
+      "d": "(XGtE): Not useful enough to use instead of attacking."
+    },
+    {
+      "n": "Light",
+      "r": "red",
+      "d": "(PHB): Get Darkvision. You\u2019re a Rogue."
+    },
+    {
+      "n": "Lightning Lure",
+      "r": "red",
+      "d": "(SCAG / TCoE): Not useful enough to use instead of attacking"
+    },
+    {
+      "n": "Mending",
+      "r": "red",
+      "d": "(PHB): Too situational."
+    },
+    {
+      "n": "Message",
+      "r": "orange",
+      "d": "(PHB): Conceptually great for a Rogue, but it\u2019s only situationally useful."
+    },
+    {
+      "n": "Mind Sliver",
+      "r": "orange",
+      "d": "(PHB): An amazing cantrip, but it won\u2019t deliver Sneak Attack."
+    },
+    {
+      "n": "Minor Illusion",
+      "r": "blue",
+      "d": "(PHB): Fantastically useful."
+    },
+    {
+      "n": "Mold Earth",
+      "r": "red",
+      "d": "(EEPC): Bad."
+    },
+    {
+      "n": "Poison Spray",
+      "r": "red",
+      "d": "(PHB): Spell attacks won\u2019t help you."
+    },
+    {
+      "n": "Prestidigitation",
+      "r": "green",
+      "d": "(PHB): Versatile and fantastic, a creative rogue can do a lot between this and Minor Illusion. For suggestions on how to use Prestidigitation to its fullest, see our Practical Guide to Prestidigitation."
+    },
+    {
+      "n": "Ray of Frost",
+      "r": "red",
+      "d": "(PHB): Spell attacks won\u2019t help you."
+    },
+    {
+      "n": "Shape Water",
+      "r": "green",
+      "d": "(EEPC): A fantastically useful utility."
+    },
+    {
+      "n": "Shocking Grasp",
+      "r": "red",
+      "d": "(PHB): Spell attacks won\u2019t help you."
+    },
+    {
+      "n": "Sword Burst",
+      "r": "orange",
+      "d": "(SCAG / TCoE): Run into a crowd, Sword Burst, Cunning Action (Disengage)."
+    },
+    {
+      "n": "Thunderclap",
+      "r": "red",
+      "d": "(PHB): Bad."
+    },
+    {
+      "n": "Toll the Dead",
+      "r": "red",
+      "d": "(PHB): Fine damage, but it won\u2019t deliver Sneak Attack."
+    },
+    {
+      "n": "True Strike",
+      "r": "blue",
+      "d": "(PHB): The go-to attack option for ranged builds, True Strike allows you to build around Intelligence and attack both in melee and at range equally well. Booming Blade may have more tactical impact and potentially better damage, but it only works in melee."
+    }
+  ],
+  "level1": [
+    {
+      "n": "Absorb Elements",
+      "r": "green",
+      "d": "(XGtE): Very powerful, but Rogues get both Uncanny Dodge and Evasion, so this isn\u2019t as useful for you as for other characters."
+    },
+    {
+      "n": "Alarm",
+      "r": "red",
+      "d": "(PHB): Not useful enough to prepare permanently."
+    },
+    {
+      "n": "Burning Hands",
+      "r": "red",
+      "d": "(PHB): Not enough damage."
+    },
+    {
+      "n": "Catapult",
+      "r": "red",
+      "d": "(EEPC): Not enough damage."
+    },
+    {
+      "n": "Charm Person",
+      "r": "orange",
+      "d": "(PHB): A great option for handling social situations, especially once you have Magical Ambush."
+    },
+    {
+      "n": "Chromatic Orb",
+      "r": "red",
+      "d": "(PHB): Spell attacks won\u2019t help you."
+    },
+    {
+      "n": "Color Spray",
+      "r": "red",
+      "d": "(PHB): Bad."
+    },
+    {
+      "n": "Comprehend Languages",
+      "r": "red",
+      "d": "(PHB): Not useful enough to prepare permanently."
+    },
+    {
+      "n": "Detect Magic",
+      "r": "orange",
+      "d": "(PHB): Essential in any party, but hopefully someone else can cast it."
+    },
+    {
+      "n": "Disguise Self",
+      "r": "orange",
+      "d": "(PHB): Situationally useful. If your game involves a lot of social situations and intrigure, this may be very useful."
+    },
+    {
+      "n": "Distort Value",
+      "r": "red",
+      "d": "(AI): Too situational, though it does feel very thematic for the Rogue."
+    },
+    {
+      "n": "Earth Tremor",
+      "r": "red",
+      "d": "(EEPC / XGtE): Not a good fit for the Rogue."
+    },
+    {
+      "n": "Expeditious Retreat",
+      "r": "red",
+      "d": "(PHB): You have Cunning Action."
+    },
+    {
+      "n": "False Life",
+      "r": "green",
+      "d": "(PHB): Always a good buff."
+    },
+    {
+      "n": "Feather Fall",
+      "r": "orange",
+      "d": "(PHB): Every party should have it, but hopefully someone else can cast it."
+    },
+    {
+      "n": "Find Familiar",
+      "r": "blue",
+      "d": "(PHB): Familiars are extremely useful, and you can cast this as a ritual. An owl can move into melee range, then Dash away using its Flyby ability to avoid provoking Opportunity Attacks. This allows you to easily target foes for Sneak Attack with very little effort on top of the other fantastic benefits of having a familiar. I just wish that the owl wasn\u2019t so significantly better than every other option so that there was a good reason to consider other types of familiars"
+    },
+    {
+      "n": "Fog Cloud",
+      "r": "green",
+      "d": "(PHB): Useful for covering your escape, and Darkvision can\u2019t see through it."
+    },
+    {
+      "n": "Frost Fingers",
+      "r": "red",
+      "d": "(RotF): Not enough damage."
+    },
+    {
+      "n": "Grease",
+      "r": "orange",
+      "d": "(PHB): Potentially useful for knocking enemies prone before you rush into melee to attack."
+    },
+    {
+      "n": "Ice Knife",
+      "r": "red",
+      "d": "(PHB): Spell attacks won\u2019t help you."
+    },
+    {
+      "n": "Identify",
+      "r": "red",
+      "d": "(PHB): Leave this to a full spellcaster if anyone bothers to use it at all. Cursed items are rare, the rules for identifying magic items are generous."
+    },
+    {
+      "n": "Illusory Script",
+      "r": "red",
+      "d": "(PHB): Too situational."
+    },
+    {
+      "n": "Jim\u2019s Magic Missile",
+      "r": "red",
+      "d": "AI: Spell attacks won\u2019t help you."
+    },
+    {
+      "n": "Jump",
+      "r": "green",
+      "d": "(PHB): A huge improvement to mobility for a melee build, but wait to take this until you have a few spell slots to throw around."
+    },
+    {
+      "n": "Longstrider",
+      "r": "green",
+      "d": "(PHB): An easy mobility boost with a long duration."
+    },
+    {
+      "n": "Mage Armor",
+      "r": "green",
+      "d": "(PHB): This will raise your maximum AC by 1 compared to Studded Leather. That\u2019s a great benefit if you don\u2019t expect to find magic armor in your game."
+    },
+    {
+      "n": "Magic Missile",
+      "r": "red",
+      "d": "(PHB): Reliable damage, but not enough of it."
+    },
+    {
+      "n": "Protection from Evil and Good",
+      "r": "orange",
+      "d": "(PHB): A good defensive buff against a large number of creatures, but not consistently useful enough for you to prepare permanently since you\u2019re not your party\u2019s Defender."
+    },
+    {
+      "n": "Ray of Sickness",
+      "r": "red",
+      "d": "(PHB): Spell attacks won\u2019t help you."
+    },
+    {
+      "n": "Shield",
+      "r": "orange",
+      "d": "(PHB): In most cases, this is redundant with Uncanny Dodge. However, Shield boosts your AC until your next turn, potentially negating multiple attacks. In situations where you\u2019re being targeted with numerous attacks, Shield will be considerably more protective than Uncanny Dodge. Still, in those situations ideally you have a tanky ally like a fighter to draw attention, or you\u2019re using other spells like Blur or Mirror Image to protect yourself."
+    },
+    {
+      "n": "Silent Image",
+      "r": "blue",
+      "d": "(PHB): While not nearly as powerful as Major Image, if you just want an object or a visual effect, Silent Image does the job just as well. Throw up a fake wall, door, or portcullis to slow pursuers. Create a piece of furniture like a box or a chest, then hide inside it and stab people when they try to open it like a pointy jack in the box. Illusions are limited more by your creativity (and your DM\u2019s willingness to play along) than by the spell\u2019s text."
+    },
+    {
+      "n": "Silvery Barbs",
+      "r": "blue",
+      "d": "(SCoC): Extremely powerful, but also very complicated. See my blog post on Silvery Barbs for details on the numerous abuse cases which the spell allows."
+    },
+    {
+      "n": "Sleep",
+      "r": "blue",
+      "d": "(PHB): A powerful save-or-suck spell at any level. Once you have Magical Ambush, you can incapacitate one or more creatures turn 1 and potentially remove them from the fight entirely."
+    },
+    {
+      "n": "Spellfire Flare",
+      "r": "red",
+      "d": "(FRHoF): Spell attacks will not help you."
+    },
+    {
+      "n": "Snare",
+      "r": "red",
+      "d": "(XGtE): Not useful enough to prepare permanently."
+    },
+    {
+      "n": "Tasha\u2019s Caustic Brew",
+      "r": "red",
+      "d": "(TCoE): Not enough damage."
+    },
+    {
+      "n": "Thunderwave",
+      "r": "red",
+      "d": "(PHB): If you need to get away from enemies, Cunning Action (Disengage)."
+    },
+    {
+      "n": "Unseen Servant",
+      "r": "orange",
+      "d": "(PHB): A nice utility, but not consistently useful enough to prepare permanently."
+    },
+    {
+      "n": "Wardaway",
+      "r": "orange",
+      "d": "(FRHoF): A weaker version of Tasha\u2019s Mind Whip, Wardaway makes some huge trades to fit into a level 1 spell. The damage is obviously much worse, but that\u2019s not why you\u2019re here. The target still gets to move an act in the same turn, but halving their speed is still impactful. The biggest limitation is that Wardaway uses a Constitution save instead of a much more reliable Intelligence save. At low levels where enemies have very few saving throw proficiencies, Wardaway may be decently reliable. But enemies at low levels also rarely have Bonus Actions, so they\u2019re likely to fail the save and barely notice the spell\u2019s effect. If you are going to upcast this, cast Tasha\u2019s Mind Whip instead."
+    },
+    {
+      "n": "Witch Bolt",
+      "r": "red",
+      "d": "(PHB): Spell attacks won\u2019t help you."
+    }
+  ],
+  "level2": [
+    {
+      "n": "Aganazzar\u2019s scorcher",
+      "r": "red",
+      "d": "(XGtE): Not enough damage."
+    },
+    {
+      "n": "Air Bubble",
+      "r": "red",
+      "d": ": Too situational to prepare permanently."
+    },
+    {
+      "n": "Alter Self",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently."
+    },
+    {
+      "n": "Arcane Lock",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently."
+    },
+    {
+      "n": "Arcane Vigor",
+      "r": "orange",
+      "d": "(PHB): Your only option for self healing, but healing in combat is rarely a good idea, and this is very expensive."
+    },
+    {
+      "n": "Augury",
+      "r": "red",
+      "d": "(PHB): As much as I love this spell, it\u2019s not useful enough to prepare permanently."
+    },
+    {
+      "n": "Blindness/Deafness",
+      "r": "green",
+      "d": "(PHB): Constitution saves are unreliable, but Magical Ambush will mitigate that significantly, making this a powerful debuff."
+    },
+    {
+      "n": "Blur",
+      "r": "green",
+      "d": "(PHB): A fantastic defensive buff, especially if you\u2019re fighting in melee where you\u2019re going to be targeted by a lot of attacks."
+    },
+    {
+      "n": "Borrowed Knowledge",
+      "r": "blue",
+      "d": ": A great way to pretend to be good at a skill for a little. It appears to work with Reliable Talent, so with this spell running you may be more reliable at any skill than anyone else in the party."
+    },
+    {
+      "n": "Cloud of Daggers",
+      "r": "red",
+      "d": "(PHB): Without a way to force enemies into the AOE, this will see very little use."
+    },
+    {
+      "n": "Continual Flame",
+      "r": "red",
+      "d": "(PHB): Not useful enough to prepare permanently."
+    },
+    {
+      "n": "Crown of Madness",
+      "r": "red",
+      "d": "(PHB): Too situational."
+    },
+    {
+      "n": "Darkness",
+      "r": "red",
+      "d": "(PHB): Without the ability to see in magical darkness, this is no more useful than Fog"
+    },
+    {
+      "n": "Darkvision",
+      "r": "blue",
+      "d": "(PHB): Darkvision is crucial for a class that benefits so much from fighting in the dark, so if you don\u2019t have this from your race or from an ally, you should strongly consider it."
+    },
+    {
+      "n": "Detect Thoughts",
+      "r": "red",
+      "d": "(PHB): Too situational."
+    },
+    {
+      "n": "Dragon\u2019s Breath",
+      "r": "orange",
+      "d": ": Your attacks will do more damage than spending your Action to use the breath weapon. This may be appealing if you can cast it on a familiar."
+    },
+    {
+      "n": "Dust Devil",
+      "r": "red",
+      "d": "(EEPC): Too situational. If you desperately need a push effect, get Gust of Wind."
+    },
+    {
+      "n": "Earthbind",
+      "r": "red",
+      "d": ": Use Cunning Action to hide, then Sneak Attack with a ranged weapon. Snipe your enemies out of the sky if they\u2019re dumb enough to be a flying target."
+    },
+    {
+      "n": "Elminster\u2019s Elusion",
+      "r": "orange",
+      "d": "(FRHoF): Situational by design since you only need this against spells and magic effects, which not every enemy can produce. You already have Evasion to cover Dexterity saves, but your other saves are weak by comparison, so Advantage on those saves may be very helpful. It\u2019s often easier to hide so that you can\u2019t be targeted, though that isn\u2019t always an option."
+    },
+    {
+      "n": "Enhance Ability",
+      "r": "blue",
+      "d": "(PHB): Fantastically useful in situations where you or an ally are making a lot of ability checks at once, such as in social situations."
+    },
+    {
+      "n": "Enlarge/Reduce",
+      "r": "red",
+      "d": "(PHB): No significant benefit for you."
+    },
+    {
+      "n": "Flaming Sphere",
+      "r": "red",
+      "d": "(PHB): Too little damage."
+    },
+    {
+      "n": "Gentle Repose",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently."
+    },
+    {
+      "n": "Gift of Gab",
+      "r": "green",
+      "d": "(AI): Are you playing a silver-tongued rogue, but in real life you\u2019re barely able to string two syllables together? Here\u2019s your solution. But be warned: while the spell doesn\u2019t allow a saving throw, it only fixes the past 6 seconds."
+    },
+    {
+      "n": "Gust of Wind",
+      "r": "red",
+      "d": "(PHB): Too situational."
+    },
+    {
+      "n": "Hold Person",
+      "r": "red",
+      "d": "(PHB): You get this far too late, and the number of humanoid enemies was reduced significantly in the 2024 rules as many historically humanoid creatures changed creature type."
+    },
+    {
+      "n": "Invisibility",
+      "r": "blue",
+      "d": "(PHB): Essential."
+    },
+    {
+      "n": "Jim\u2019s Glowing Coin",
+      "r": "orange",
+      "d": ": If you can cast this before enemies notice you, it can put your party at a huge advantage. But you can\u2019t always expect that to be an option."
+    },
+    {
+      "n": "Kinetic Jaunt",
+      "r": "red",
+      "d": "(SCoC): This is what Cunning Action is for."
+    },
+    {
+      "n": "Knock",
+      "r": "red",
+      "d": "(PHB): You get proficiency in Thieves\u2019 Tools, you have good Dexterity, and you might also have proficiency or Expertise in Sleight of Hand, which means that you\u2019re really good at picking locks. Bringing a spell that invalidates those capabilities feels silly."
+    },
+    {
+      "n": "Levitate",
+      "r": "green",
+      "d": "(PHB): Constitution saves are hard, but lifting an enemy off the ground makes many enemies much less dangerous, often totally removing them from a fight. They only get an initial save, which you can make much more reliable with Magical Ambush, so you may be able to use this to great effect."
+    },
+    {
+      "n": "Locate Object",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare peraenantly, though it does feel very useful on a Rogue who might do a lot of sneaking and stealing."
+    },
+    {
+      "n": "Magic Mouth",
+      "r": "orange",
+      "d": "(PHB): Find a way to cast Thaumaturgy to raise your voice\u2019s volume, then cast this spell on a piece of paper and scream into it for as long as you are physically capable. Set the trigger to \u201cwhen the paper is unfolded\u201d. Leave the paper for someone to find, or use mage hand to open it at a distance. Instant distraction. The material component is inexpensive by the time you can cast this, and the duration is \u201cuntil dispelled\u201d, so you can carry about a big stack of pre-cast Magic Mouth spells for all sorts of shenanigans. Still, this it too situational to prepare permanently."
+    },
+    {
+      "n": "Magic Weapon",
+      "r": "orange",
+      "d": "(PHB): A fantastic offensive buff, but you\u2019re only making one attack per weapon, so you won\u2019t get nearly as much use out of this as other characters would."
+    },
+    {
+      "n": "Maximilian\u2019s Earthen Grasp",
+      "r": "orange",
+      "d": "(EEPC): Restraining an enemy makes them easy to Sneak Attack, but this isn\u2019t worth the Action cost when you could Cunning Action (Hide) and Sneak Attack on the same turn."
+    },
+    {
+      "n": "Melf\u2019s Acid Arrow",
+      "r": "red",
+      "d": "(PHB): Poor damage."
+    },
+    {
+      "n": "Mind Spike",
+      "r": "red",
+      "d": "(PHB): Too situational."
+    },
+    {
+      "n": "Mirror Image",
+      "r": "green",
+      "d": "(PHB): As effective as Blur (at least until you take a couple hits), and it doesn\u2019t require Concentration."
+    },
+    {
+      "n": "Misty Step",
+      "r": "blue",
+      "d": "(PHB): Fantastic short-range teleportation with only Verbal components, so you can use it to easily escape grapples and restraints."
+    },
+    {
+      "n": "Nathair\u2019s Mischief",
+      "r": "red",
+      "d": "(FToD): Unpredictable and weak."
+    },
+    {
+      "n": "Nystul\u2019s Magic Aura",
+      "r": "orange",
+      "d": "(PHB): Only situationally useful. Masking yourself as a construct makes you immune to many dangerous spells, but enemies rarely cast those spells."
+    },
+    {
+      "n": "Phantasmal Force",
+      "r": "blue",
+      "d": "(PHB): An excellent save-or-suck at any level, especially since it targets Intelligence saves. Combined with Magical Ambush, this is almost unstoppable."
+    },
+    {
+      "n": "Pyrotechnics",
+      "r": "red",
+      "d": "(EEPC): The effects are weak and the required setup is annoying."
+    },
+    {
+      "n": "Ray of Enfeeblement",
+      "r": "red",
+      "d": "(PHB): Con saves are the least reliable save, and the creatures that suffer from this spell will also have high Constitution saves."
+    },
+    {
+      "n": "Rope Trick",
+      "r": "orange",
+      "d": "(PHB): Useful, but I really hope that someone else in your party can cast this."
+    },
+    {
+      "n": "Scorching Ray",
+      "r": "red",
+      "d": "(PHB): Spell attacks won\u2019t help you."
+    },
+    {
+      "n": "See Invisibility",
+      "r": "green",
+      "d": "(PHB): Probably your only counter to invisible enemies unless you can get a magic item like a Lantern of Revealing. Maybe skip this if your party has other options like Faerie Fire."
+    },
+    {
+      "n": "Shadow Blade",
+      "r": "blue",
+      "d": "(XGtE): Compared to a rapier, the Shadow Blade adds 1d8 damage per attack, it changes to psychic damage (which is resisted by very few creatures), and it adds the Thrown property for some reason. Since it gives you Advantage to attack creatures in dim light or darkness, it will offset Disadvantage for attacking creatures when it\u2019s too dark for you to see. This is a great boost to your damage output. Unfortunately, it doesn\u2019t have Weapon Mastery because it was published under the 2014 rules. You can upcast the spell to increase the damage dice, but you really don\u2019t need to. Guaranteed Advantage while attacking a target in dim light or darkness means that you can easily apply Sneak Attack, and compared to your pile of sneak attack dice the extra d8 isn\u2019t worth your extremely limited higher-level spell slots. Unfortunately, attack cantrips including Booming Blade and True Strike both require you to use a weapon with a monetary value, which means that you can\u2019t use them with Shadow Blade."
+    },
+    {
+      "n": "Shatter",
+      "r": "red",
+      "d": "(PHB): The damage isn\u2019t good enough to justify the Action cost."
+    },
+    {
+      "n": "Skywrite",
+      "r": "red",
+      "d": "(EEPC): Too situational"
+    },
+    {
+      "n": "Snilloc\u2019s snowball swarm",
+      "r": "red",
+      "d": "(XGtE): Shatter. but with less damage and worse damage type."
+    },
+    {
+      "n": "Spider Climb",
+      "r": "blue",
+      "d": "(PHB): The next best thing to flight. Very appealing for fighting at range and for bypassing many terrain obstacles."
+    },
+    {
+      "n": "Spray of Cards",
+      "r": "orange",
+      "d": "(BOmT): The damage is poor, but temporarily blinding a creature on a Dexterity save is potentially powerful against Strength-based enemies, who typically have awful Dexterity saves."
+    },
+    {
+      "n": "Suggestion",
+      "r": "blue",
+      "d": "(PHB): Fantastically versatile and extremely powerful. The fact that you can use this with Magical Ambush feels very silly. Jump out of a barrel and shout \u201cgo take the day off\u201d and watch your target load up their belongings and go home for the day. The 2024 version of the spell is insanely abusable because of how permissive it is. RAW you can tell a creature to suffocate themselves to death. I recommend using the 2014 version of the spell to avoid Suggestion derailing your game."
+    },
+    {
+      "n": "Tasha\u2019s Mind Whip",
+      "r": "green",
+      "d": "(TCoE): Not a lot of damage, but it\u2019s on an Intelligence save, and it severely limits your target\u2019s action options, making this a powerful offensive option at any level."
+    },
+    {
+      "n": "Vortex Warp",
+      "r": "orange",
+      "d": "(SCoC): Very good, but it doesn\u2019t affect you, so this is best left to full spellcasters."
+    },
+    {
+      "n": "Warding Wind",
+      "r": "orange",
+      "d": "(XGtE): A moving sphere of difficult terrain centered on you. This can make it difficult for enemies to get into melee with you, which can make hit-and-run tactics very simple. But you may be better served by using Cunning Action to move in and out of range of your enemies\u2019 movement."
+    },
+    {
+      "n": "Web",
+      "r": "green",
+      "d": "(PHB): Fantastic area control at any level even if your Intelligence is relatively poor."
+    }
+  ],
+  "level3": [
+    {
+      "n": "Animate Dead",
+      "r": "red",
+      "d": "(PHB): You don\u2019t have enough spell slots to keep your undead under control."
+    },
+    {
+      "n": "Antagonize",
+      "r": "red",
+      "d": "(BoMT): Attacking stuff is your job. This should never do more damage than your own attacks."
+    },
+    {
+      "n": "Ashardalon\u2019s Stride",
+      "r": "red",
+      "d": "(FToD): You have Cunning Action if you need to move around without provoking Opportunity Attacks."
+    },
+    {
+      "n": "Bestow Curse",
+      "r": "orange",
+      "d": "(PHB): A powerful debuff, but against most creatures you\u2019ll get better results from just killing them."
+    },
+    {
+      "n": "Blink",
+      "r": "red",
+      "d": "(PHB): An interesting defensive option which doesn\u2019t require Concentration, but you can easily make yourself untargetable with Cunning Action (Hide) in many situations."
+    },
+    {
+      "n": "Catnap",
+      "r": "orange",
+      "d": "(XGtE): Only situationally useful, and you should not be the one to cast it."
+    },
+    {
+      "n": "Clairvoyance",
+      "r": "orange",
+      "d": "(PHB): A great scouting option, but Rogues are built for scouting and you get very few spell slots."
+    },
+    {
+      "n": "Conjure Constructs",
+      "r": "orange",
+      "d": "(FRHoF): The damage and the Action economy are terrible, but you might use this between encounters to provide Temporary Hit Points to your whole party. That\u2019s a very expensive way to get a few THP for a subclass that gets one level 4 spell slot."
+    },
+    {
+      "n": "Counterspell",
+      "r": "orange",
+      "d": "(PHB): Helpful, but only situationally useful, and you almost certainly don\u2019t have the room to prepare this on a daily basis without major sacrifices."
+    },
+    {
+      "n": "Dispel Magic",
+      "r": "orange",
+      "d": "(PHB): If your party doesn\u2019t have someone else who can cast Dispel Magic by the time it\u2019s an option for you, you\u2019re probably all dead."
+    },
+    {
+      "n": "Enemies Abound",
+      "r": "blue",
+      "d": "(XgtE): Astoundingly few enemies have good Intelligence saves, especially big scary melee monsters. Throw this on something tanky and horrifying that\u2019s there to protect squishy enemies from you and your friends, and watch it freak out and kill its buddies for you. The duration is only a minute, and obviously this only works in an encounter with multiple enemies, but that doesn\u2019t make the spell less awesome."
+    },
+    {
+      "n": "Erupting Earth",
+      "r": "red",
+      "d": "(EEPC / XGtE): Not enough damage to compete with Fireball, and not enough difficult terrain to justify the spell slot."
+    },
+    {
+      "n": "Fast Friends",
+      "r": "red",
+      "d": "(AI): You won\u2019t use this enough to justify one of your extremely limited preparation slots. Cast Suggestion instead."
+    },
+    {
+      "n": "Fear",
+      "r": "green",
+      "d": "(PHB): A great way to disable groups of opponents, but fear immunity is common. Somewhere an Arcane Trickster has made a habit of using Magical Ambush to leap from cover, shout \u201cBoo!\u201d, and cause entire encounters to drop their weapons and flee."
+    },
+    {
+      "n": "Feign Death",
+      "r": "red",
+      "d": "(PHB): Too situational."
+    },
+    {
+      "n": "Fireball",
+      "r": "blue",
+      "d": "(PHB): Rogues are very good at killing big, singular enemies, but they\u2019re bad at handling crowds of weak enemies. Fireball neatly fills that gap. Even if you\u2019re surrounded, you\u2019re proficient in Dexterity saves and have Evasion. Drop a Fireball at you\u2019re feet, and you\u2019ll probably come out in better shape than your enemies will."
+    },
+    {
+      "n": "Flame Arrows",
+      "r": "red",
+      "d": "(XGtE): Bad. A total of 12d6 damage is not enough for a level 3 spell slot, and that\u2019s assuming that you manage to make 12 qualifying attacks in the 1-hour duration and hit with them. A Rogue is arguably the most likely to make this work, but it\u2019s just not enough damage."
+    },
+    {
+      "n": "Fly",
+      "r": "blue",
+      "d": "(PHB): It\u2019s hard to overstate how powerful flight is."
+    },
+    {
+      "n": "Gaseous Form",
+      "r": "orange",
+      "d": "(PHB): If anyone were to use this to great effect, it would be a Rogue. But it\u2019s still only situationally useful, so it\u2019s hard to justify preparing it permanently."
+    },
+    {
+      "n": "Glyph of Warding",
+      "r": "red",
+      "d": "(PHB): Depending on how your DM handles it, this is either a situationally useful defensive measure or a reality-bending way to break the game from the comfort of your own home. See our Practical Guide to Glyph of Warding."
+    },
+    {
+      "n": "Haste",
+      "r": "blue",
+      "d": "(PHB): Used as intended, Haste is a decent short-term buff that will give you either some extra movement or an additional chance to hit if your one attack per turn misses. In most cases, you can get the same benefits from your Bonus Action by using Cunning Action for movement or Two-Weapon Fighting for an additional attack. But Haste also has an abuse case which you can use to reliably get a Sneak Attack outside of your turn. On your own turn, use the bonus Action from Haste to attack. If you miss, you\u2019ve still taken the Attack action on your turn, so you still qualify for two-weapon fighting if you need another attack (and provided that you meet the other requirements). Then spend your normal Action to take the Ready action. Use a sufficiently broad condition like \u201canyone other than me moves or acts\u201d, and choose to attack as your response to the condition. Then when someone else tries to do something you can attack using your Reaction, potentially dealing another Sneak Attack (remember that Sneak Attack is once per turn, not once per round)."
+    },
+    {
+      "n": "Hypnotic Pattern",
+      "r": "blue",
+      "d": "(PHB): Use Magical Ambush, save-or-suck the entire encounter, then quickly eliminate enemies one at a time. Barring resistance/immunity to Charmed, you\u2019re basically unstoppable."
+    },
+    {
+      "n": "Intellect Fortress",
+      "r": "green",
+      "d": "(TCoE): Technically situational, but an absolutely spectacular defense against enemies which rely on spells or common effects like charm and fear effects. Unlike species traits like the Gnome\u2019s Cunning or the Satyr and Yuan-Ti\u2019s Magic Resistance, this applies to all Intelligence, Wisdom, and Charisma saving throws, providing broad and effective protection against many of the most dangerous save-or-suck effects in the game. You also get resistance to Psychic damage, which is nice if you\u2019re fighting mind flayers, aboleths, or Bards who enjoy Vicious Mockery. With a 1-hour duration, the Concentration requirement can be problematic, but it also means that you can carry this through multiple encounters at low cost, so in situations where you need this it\u2019s not going to eat all of your spell slots."
+    },
+    {
+      "n": "Laerel\u2019s Silver Lance",
+      "r": "orange",
+      "d": "(FRHoF): The damage type is fantastic, the Prone effect is great, very few area damage spells target Strength saves, and you can omit targets to avoid hitting friends. There\u2019s definitely a niche here, but 3d10 (avg. 16.5) is very low compared to other level 3 spells. Lightning Bolt is 8d6 (avg. 28), and upcasting Laerel\u2019s Silver Lance actually widens that gap. Preparing this and buying the 250 gp spell component feels like too much investment for the extremely narrow case where you can justify using this over other damage spells."
+    },
+    {
+      "n": "Leomund\u2019s Tiny Hut",
+      "r": "orange",
+      "d": "(PHB): Tiny Hut is a great place to rest, and you can cast it as a ritual. Leave it to a full caster if you can."
+    },
+    {
+      "n": "Lightning Bolt",
+      "r": "red",
+      "d": "(PHB): Line AOEs are really hard. Use Fireball."
+    },
+    {
+      "n": "Magic Circle",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently"
+    },
+    {
+      "n": "Major Image",
+      "r": "green",
+      "d": "(PHB): Fantastically versatile, and creatures don\u2019t make a saving throw. Instead, they need to know to touch the illusion or make an Intelligence (Investigation) check, or they need to physically interact with the illusion. Even then, you can buy yourself a great deal of time while the target tries to figure out your illusion."
+    },
+    {
+      "n": "Melf\u2019s Minute Meteors",
+      "r": "red",
+      "d": "(EEPC / XGtE): Conflicts with Cunning Action."
+    },
+    {
+      "n": "Nondetection",
+      "r": "green",
+      "d": "(PHB): Good, but not totally essential. Divination spells include things like See Invisibility, so if you or your party relies on invisibility of any kind this protects from several magical countermeasures to both stealth and invisibility. However, most enemies aren\u2019t spellcasters and won\u2019t have access to those divination options, so you can\u2019t justify casting this every day. The spell also has an expensive material component specifically to deter you from casting this all the time. Still, with an 8-hour duration, if you need this spell it\u2019s going to do exactly what you need it to do."
+    },
+    {
+      "n": "Phantom Steed",
+      "r": "red",
+      "d": "(PHB): By the time you can cast this, your allies can likely produce much better ways to travel long distances."
+    },
+    {
+      "n": "Protection from Energy",
+      "r": "red",
+      "d": "(PHB): You have Evasion and you can cast Absorb Elements. You won\u2019t get enough out of this to justify preparing it permanently."
+    },
+    {
+      "n": "Remove Curse",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently."
+    },
+    {
+      "n": "Sending",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently."
+    },
+    {
+      "n": "Sleet Storm",
+      "r": "red",
+      "d": "(PHB): Not useful enough to make it more appealing than Fireball or Hypnotic Pattern."
+    },
+    {
+      "n": "Slow",
+      "r": "orange",
+      "d": "(PHB): A good debuff, but it won\u2019t help you do Rogue things."
+    },
+    {
+      "n": "Speak with Dead",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently."
+    },
+    {
+      "n": "Spirit Shroud",
+      "r": "red",
+      "d": "(TCoE): With only one or two attacks per turn, this isn\u2019t worth the spell slot."
+    },
+    {
+      "n": "Stinking Cloud",
+      "r": "orange",
+      "d": "(PHB): While this can rob targets of their Action if they fail the save, the area is small and easy to escape."
+    },
+    {
+      "n": "Summon Fey",
+      "r": "green",
+      "d": "(PHB): Decent summons, but no unique synergy. The Tricksy version\u2019s ability to summon magical darkness is neat, but it doesn\u2019t help you since you can\u2019t see in magical darkness. For more help, see our Practical Guide to Summoning Spells."
+    },
+    {
+      "n": "Summon Lesser Demons",
+      "r": "red",
+      "d": "(XGtE): You can\u2019t control the demons, and they\u2019re probably not strong enough to win an encounter on their own. The material component may also be problem since it has a 24 freshness timer. For more help, see our Practical Guide to Summoning Spells."
+    },
+    {
+      "n": "Summon Shadowspan",
+      "r": "green",
+      "d": "(TCoE): The sneakiest summon option, but the ability to hide as a Bonus Action sometimes does not make this any better for a Rogue than for anyone else. For more help, see our Practical Guide to Summoning Spells."
+    },
+    {
+      "n": "Summon Undead",
+      "r": "blue",
+      "d": "(PHB): Several excellent combat options, and the ghostly option can fly around and do stuff for you. The Skeletal option is an effective ranged attacker, and it can easily out damage any of your other spell options if you can fit multiple encounters into the 1-hour duration. For more help, see our Practical Guide to Summoning Spells."
+    },
+    {
+      "n": "Sylun\u00e9\u2019s Viper",
+      "r": "blue",
+      "d": "(FRHoF): Bonus Action casting time, 1-hour duration, no Concentration. The damage is horrid, and poison immunity is obviously a problem, but the ability to make a target Incapacitated on hit means that you can lock a single target out of a fight for as long as you can reliably hit them with attacks. The Incapacitation effect doesn\u2019t allow a save, so even Legendary Resistance won\u2019t protect enemies from this. You also get a climb speed so that you can climb out of reach and bite enemies from safety. The spell\u2019s biggest weakness is the Temporary Hit Points. You only get 15, and the spell ends early once you\u2019re out of THP. Plan to hide as a Bonus Action to make yourself hard to target and also to get Advantage on the Spell Attack."
+    },
+    {
+      "n": "Thunder Step",
+      "r": "red",
+      "d": "(XGtE): Use Misty Step and reserve your Action for attacking."
+    },
+    {
+      "n": "Tongues",
+      "r": "orange",
+      "d": "(PHB): If you\u2019re built to be decent in social situations, this could be useful, but most Arcane Tricksters dump Charisma and related skills."
+    },
+    {
+      "n": "Vampiric Touch",
+      "r": "red",
+      "d": "(PHB): Spell attacks won\u2019t help you."
+    },
+    {
+      "n": "Wall of Sand",
+      "r": "orange",
+      "d": "(EEPC / XGtE): Passable area control, but Web will be more effective if the terrain supports it."
+    },
+    {
+      "n": "Wall of Water",
+      "r": "red",
+      "d": "(EEPC / XGtE): This makes it hard for you to engage enemies. Wall of Sand is more useful."
+    },
+    {
+      "n": "Water Breathing",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently."
+    }
+  ],
+  "level4": [
+    {
+      "n": "Arcane Eye",
+      "r": "orange",
+      "d": "(PHB): Scouting safely is important, and it\u2019s a major part of the Rogue\u2019s role in the party. Still, you\u2019ve been scouting for 18 levels without this and you\u2019ve somehow survived this long."
+    },
+    {
+      "n": "Backlash",
+      "r": "red",
+      "d": "(FRHoF): You have Uncanny Dodge and Evasion, which should cover the vast majority of damage source which might justify using this. If you want additional protection, prepare Absorb Elements and/or Shield."
+    },
+    {
+      "n": "Banishment",
+      "r": "blue",
+      "d": "(PHB): A fantastic save-or-suck, especially with Magical Ambush. Start an encounter by banishing the biggest thing in the fight that doesn\u2019t have Legendary Resistance, them clean up whatever\u2019s left before your target can come back."
+    },
+    {
+      "n": "Blight",
+      "r": "red",
+      "d": "(PHB): Bad."
+    },
+    {
+      "n": "Charm Monster",
+      "r": "red",
+      "d": "(PHB): If you\u2019re trying to be friendly, use Enhance Ability. If you\u2019re trying to compel and enemy to do something you want, use Suggestion."
+    },
+    {
+      "n": "Confusion",
+      "r": "red",
+      "d": "(PHB): Unpredictable and unreliable."
+    },
+    {
+      "n": "Conjure Minor Elementals",
+      "r": "red",
+      "d": "(PHB): Fantastic more many characters relying on attack rolls, but you\u2019re likely only making two attacks per turn at most, so you won\u2019t benefit as much as most characters who would use this."
+    },
+    {
+      "n": "Control Water",
+      "r": "red",
+      "d": "(PHB): Too situational."
+    },
+    {
+      "n": "Dimension Door",
+      "r": "orange",
+      "d": "(PHB): While Misty Step solves the vast majority of your teleportation needs (especially in combat), Dimension Door has considerably longer range and doesn\u2019t require line of sight, thus allowing you to quickly infiltrate or escape an area which might otherwise be impenetrable."
+    },
+    {
+      "n": "Divination",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently."
+    },
+    {
+      "n": "Fabricate",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently."
+    },
+    {
+      "n": "Fire Shield",
+      "r": "red",
+      "d": "(PHB): You should not be drawing enough attacks to justify this."
+    },
+    {
+      "n": "Greater Invisibility",
+      "r": "blue",
+      "d": "(PHB): Probably the most important spell that anyone can cast on a rogue."
+    },
+    {
+      "n": "Hallucinatory Terrain",
+      "r": "orange",
+      "d": "(PHB): Unless you specifically need the 24-hour duration and the massive area of effect, Major Image will suffice."
+    },
+    {
+      "n": "Ice Storm",
+      "r": "red",
+      "d": "(PHB): Terrible. Bad damage, and the difficult terrain doesn\u2019t last long enough."
+    },
+    {
+      "n": "Leomund\u2019s Secret Chest",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently."
+    },
+    {
+      "n": "Locate Creature",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently."
+    },
+    {
+      "n": "Mordenkainen\u2019s Faithful Hound",
+      "r": "red",
+      "d": "(PHB): Decent for defending a specific point, but not useful enough to be your only level 4 spell each day."
+    },
+    {
+      "n": "Mordenkainen\u2019s Private Sanctum",
+      "r": "red",
+      "d": "(PHB): You get one level 4 spell slot every day. Do you really want to spend it on a place to sleep?"
+    },
+    {
+      "n": "Otiluke\u2019s Resilient Sphere",
+      "r": "blue",
+      "d": "(PHB): Single-target save-or-suck, and you can make it more reliable with Magical Ambush. A good way to take a target out of a fight until you\u2019re ready to handle them."
+    },
+    {
+      "n": "Phantasmal Killer",
+      "r": "red",
+      "d": "(PHB): If you\u2019re going to hit a single target with a spell, you want it to eliminate or incapacitate them in one shot, and Phantasmal Killer simply doesn\u2019t do that."
+    },
+    {
+      "n": "Polymorph",
+      "r": "orange",
+      "d": "(PHB): Normally a fantastic combat option, but your own attacks will greatly exceed anything that you can turn into. You might turn into something just for the massive pool of Temporary Hit Points, but that\u2019s likely not enough to justify your only level 4 spell slot."
+    },
+    {
+      "n": "Raulothim\u2019s Psychic Lance",
+      "r": "red",
+      "d": "(PHB): Too situational to prepare permanently."
+    },
+    {
+      "n": "Spellfire Storm",
+      "r": "orange",
+      "d": "(FRHoF): The damage isn\u2019t great and Constitution saves aren\u2019t reliable, but the AOE is decently large and this can prevent enemies from casting spells. The Con save when casting a spell is identical to Counterspell, so you\u2019re effectively countering every spell that enemies try to cast while in the area. I would only use when facing enemy spellcasters (the damage isn\u2019t good enough otherwise), but with enemy spellcasters on the field this can easily define an encounter. We can also compare Spellfire Storm to Moonbeam, which also creates a column of Radiant damage. Spellfire Storm deals the same damage as Moonbeam cast at the same spell level and uses the same save, but instead of bother Shapeshifters, Spellfire Storm shuts down enemy spellcasters. Spellfire Storm can\u2019t be moved, but the considerably larger radius means that you don\u2019t need to move it in many encounters. In close quarters, enemies may be unable to move out of the area. Of course, that also means that you can\u2019t use forced movement to repeatedly trigger the spell\u2019s damage like you could with area effects which don\u2019t cover the entire battlefield. Casting as a Circle Spell: 25,000 gp to do this is absolutely insane. This is something that should happen as a plot point, not as a player tactic. Maybe you drop this on an extraplanar gate so that your party can fight waves of demons to shut down the gate or something similarly epic and plot-defining."
+    },
+    {
+      "n": "Spirit of Death",
+      "r": "green",
+      "d": "(BoMT): Summon Undead is arguably better, but this is still a good summon. For more help, see our Practical Guide to Summoning Spells."
+    },
+    {
+      "n": "Stone Shape",
+      "r": "blue",
+      "d": "(PHB): This is one of the most useful spells in the game. Castles, dungeons, caves, mountains, and all manner of other locales include an abundance of stone. The ability to reshape that stone to your purposes in an instant is immensely useful. This is a spell limited only by your imagination. A 5-foot cube is plenty of space to wreak all kinds of havoc if you\u2019re clever."
+    },
+    {
+      "n": "Stoneskin",
+      "r": "red",
+      "d": "(PHB): You have Uncanny Dodge."
+    },
+    {
+      "n": "Storm Sphere",
+      "r": "orange",
+      "d": "(EEPC / XGtE): Passable area control for an extended fight, but the damage is poor, and 1 minute of this probably isn\u2019t enough for your single level 4 spell slot. Sickening Radiance is much better."
+    },
+    {
+      "n": "Summon Aberration",
+      "r": "blue",
+      "d": "(PHB): Three diverse and effective combat options. If you can keep the summon alive for the full duration, it\u2019s a great way to get an ally into melee with enemies so that you can use Sneak Attack. Even barring that, summons are pretty great in combat. For more help, see our Practical Guide to Summoning Spells."
+    },
+    {
+      "n": "Summon Construct",
+      "r": "blue",
+      "d": "(PHB): Not as effective offensively as Summon Aberration, but all three summoned constructs are unusually durable for creatures summoned by similar spells. For more help, see our Practical Guide to Summoning Spells."
+    },
+    {
+      "n": "Summon Elemental",
+      "r": "orange",
+      "d": "(PHB): Summon Aberration is better offensively, and Summon Construct provides a more durable summon. Summon Elemental\u2019s biggest advantage is that you can summon a creature that can fight effectively underwater, but even then it\u2019s not a great summon. For more help, see our Practical Guide to Summoning Spells."
+    },
+    {
+      "n": "Vitriolic Sphere",
+      "r": "red",
+      "d": "(PHB): Bad."
+    },
+    {
+      "n": "Wall of Fire",
+      "r": "green",
+      "d": "(PHB): Fantastic area control, but you get it so late that the damage isn\u2019t great, and it won\u2019t help you do Rogue things."
+    },
+    {
+      "n": "Watery Sphere",
+      "r": "red",
+      "d": "(EEPC / XGtE): The primary appeal here is the ability to restrain the target, then drag them around for the spell\u2019s duration, but that consumes your Action, which means that you\u2019re not Sneak Attacking."
+    }
+  ]
+}

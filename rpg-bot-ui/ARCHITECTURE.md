@@ -14,18 +14,31 @@ rpgbot.db            ← SQLite store
 dist/*.html          ← generated output (distribute these)
 ```
 
+Two types of builders are supported:
+
+| Type | Template | Output | Example |
+|------|----------|--------|---------|
+| Class | `builder.html` | `<id>-builder.html` | `rogue-2024-builder.html` |
+| Spell | `spell-builder.html` | `<id>.html` | `arcane-trickster-spells.html` |
+
 ---
 
 ## Layers
 
 ### Layer 1 — Data model (`data/*.json`)
 
-Each class is a JSON file named `<class-id>.json` (e.g. `rogue-2024.json`). This is the only file you edit when updating content.
+Each class or spell set is a JSON file named `<id>.json` (e.g. `rogue-2024.json`, `arcane-trickster-spells.json`). This is the only file you edit when updating content.
 
-The file contains:
+**Class JSON** contains:
 - **`name`**, **`edition`** — metadata used as DB columns and injected into the page title
 - **`ui`** — UI configuration for the template (skill pick count, expertise flag, section titles, callout text)
 - **All content arrays** — `subclasses`, `species`, `feats`, `epicBoons`, `classFeatures`, etc.
+
+**Spell JSON** contains:
+- **`meta`** — `{ name, edition }` metadata
+- **`ui`** — UI configuration (`knownPerLevel` dict for max spells per level)
+- **`spells`** — object with `cantrip`, `level1`, `level2`, `level3`, `level4` arrays
+- **`slots`** — optional spell slots per level (defaults to 0)
 
 The JSON file is the canonical source. The database and all generated HTML are derived from it.
 
@@ -44,17 +57,24 @@ CREATE TABLE classes (
 
 `seed.py` populates this from `data/`. The `name` and `edition` columns are denormalized for easy listing without parsing JSON. Everything else is in `data`.
 
-### Layer 3 — Template (`builder.html`)
+### Layer 3 — Template (`builder.html` or `spell-builder.html`)
 
-A vanilla JS single-page app with **no embedded class data**. At load time it either:
-- **Dev mode** (served by `app.py`): fetches `/api/classes/{id}` and calls `init(D)`
+A vanilla JS single-page app with **no embedded data**. At load time it either:
+- **Dev mode** (served by `app.py`): fetches `/api/classes/{id}` or `/api/spells/{id}` and calls `init(D)`
 - **Build mode** (generated file): `const D = <json>;` is already present, calls `init()` directly
 
-The template is completely generic — the same HTML renders any class. All class-specific text (section titles, callout copy, skill pick counts) flows in from `D.ui` inside `init()`.
+The template is completely generic — the same HTML renders any class or spell set. All class-specific text (section titles, callout copy, skill pick counts) flows in from `D.ui` inside `init()`.
+
+**Spell builder** (`spell-builder.html`) is specialized for spell selection:
+- 5 tabs: Cantrips, Level 1-4
+- Rating filter (All/Fantastic/Good/Situational/Avoid) + search
+- Known spell counter per level
+- Spell slot tracker per level
+- Summary view with copy-to-clipboard
 
 ### Layer 4 — Generator (`build.py`)
 
-Makes two string substitutions on `builder.html`:
+Makes two string substitutions on the template:
 
 | What | Before | After |
 |------|--------|-------|
@@ -62,6 +82,18 @@ Makes two string substitutions on `builder.html`:
 | Bootstrap block | `// ─── Bootstrap` → end of `<script>` | `init();` |
 
 The result is a self-contained HTML file. No fetch, no server dependency.
+
+**Usage:**
+```bash
+# Build all classes
+python3 build.py
+
+# Build one class
+python3 build.py rogue-2024
+
+# Build spell builder
+python3 build.py arcane-trickster-spells --spell
+```
 
 ---
 
@@ -192,6 +224,15 @@ Epic Boons are a separate array (`D.epicBoons`) on their own tab, not mixed with
 - [ ] Run `python3 build.py <class-id>`
 - [ ] Open `dist/<class-id>-builder.html` and click through every tab
 - [ ] Run the JS validation: `node -e "...new Function(m[1])..."`
+
+## Adding a new spell set checklist
+
+- [ ] Extract spell data from RPGBOT guide (see `arcane-trickster.mhtml` example)
+- [ ] Create `data/<spell-set-id>.json` with `meta`, `ui.knownPerLevel`, `spells`, and `slots`
+- [ ] Each spell has `n` (name), `r` (rating: blue/green/orange/red), `d` (description)
+- [ ] Run `python3 seed.py <spell-set-id>`
+- [ ] Run `python3 build.py <spell-set-id> --spell`
+- [ ] Open `dist/<spell-set-id>.html` and test filters and selection
 
 ---
 
