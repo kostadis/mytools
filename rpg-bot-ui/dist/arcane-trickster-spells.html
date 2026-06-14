@@ -272,7 +272,7 @@ function renderSpells(level) {
   const max = maxKnown(level);
   const cur = knownCount(level);
   
-  const vis = (D.spells[level]||[]).filter(s => {
+  const vis = (D[level]||[]).filter(s => {
     if (f.filt !== 'all' && s.r !== f.filt) return false;
     if (fq && !s.n.toLowerCase().includes(fq) && !s.d.toLowerCase().includes(fq)) return false;
     return true;
@@ -378,6 +378,11 @@ document.getElementById('copy-btn').addEventListener('click', () => {
 // ─── Init (called after D is loaded) ─────────
 function init() {
   const ui = D.ui || {};
+  
+  // Initialize state from data
+  for (const level of ['cantrip','level1','level2','level3','level4']) {
+    S.spells[level] = [];
+  }
   
   // Dynamic header
   document.title = `${D.meta.name} Spell Builder · D&D ${D.meta.edition}`;
