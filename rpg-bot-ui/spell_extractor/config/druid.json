@@ -10,7 +10,7 @@
   "rating_class_prefix": "rating-",
   "skip_names": ["Red", "Orange", "Green", "Blue"],
   "level_sections": [
-    {"header_text": "cleric cantrips", "header_id": "cleric-cantrips", "json_key": "cantrip", "ul_id": "cantrips"},
+    {"header_text": "druid cantrips", "header_id": "druid-cantrips", "json_key": "cantrip", "ul_id": "Cantrips"},
     {"header_text": "level 1", "header_id": "level-1", "json_key": "level1", "ul_id": null},
     {"header_text": "level 2", "header_id": "level-2", "json_key": "level2", "ul_id": null},
     {"header_text": "level 3", "header_id": "level-3", "json_key": "level3", "ul_id": null},
