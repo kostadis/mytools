@@ -1,0 +1,13 @@
+{
+  "engine": "htmlparser",
+  "rating_map": {},
+  "rating_class_prefix": "rating-",
+  "skip_names": [],
+  "level_sections": [
+    {"header_text": "", "header_id": null, "json_key": "", "ul_id": null}
+  ],
+  "description_cleanup": {
+    "remove_citations": true,
+    "max_length": 500
+  }
+}
