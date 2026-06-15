@@ -1,0 +1,27 @@
+{
+  "engine": "text",
+  "class_name": "Cleric",
+  "edition": "2024",
+  "sections": [
+    {"header_text": "Cleric Class Features", "parser": "text"},
+    {"header_text": "Cleric Backgrounds", "parser": "text"},
+    {"header_text": "Cleric Species", "parser": "text"},
+    {"header_text": "Cleric Ability Scores", "parser": "text"},
+    {"header_text": "Cleric Skills", "parser": "text"},
+    {"header_text": "Cleric Feats", "parser": "text"},
+    {"header_text": "Cleric Weapons", "parser": "text"},
+    {"header_text": "Cleric Armor", "parser": "text"}
+  ],
+  "ui_defaults": {
+    "skillPicks": 2,
+    "hasExpertise": false,
+    "optionalTitle": "Divine Order Options",
+    "optionalDesc": "Choose your Divine Order at level 1",
+    "subclassDesc": "Chosen at level 1. Divine Orders split clerics between front-line and back-line roles.",
+    "featDesc": "General Feats fill your ASI slots. Origin Feats come from your Background.",
+    "backgroundNote": "In 2024 D&D, your Background sets ability scores (+2/+1) and grants an Origin Feat. Wisdom is non-negotiable.",
+    "multiclassNote": "Clerics can multiclass well with many classes, but the healing focus works best alone.",
+    "weaponNote": "Clerics don't get Weapon Mastery slots. Simple or martial weapons depending on Divine Order.",
+    "armorNote": "Clerics are proficient in light, medium, and (if Protector) heavy armor, plus shields."
+  }
+}
