@@ -1,0 +1,21 @@
+{
+  "engine": "html",
+  "class_name": "Barbarian",
+  "edition": "2024",
+  "sections": [
+    {"header_text": "Path of the", "parser": "html"},
+    {"header_text": "Class Features", "parser": "html"},
+    {"header_text": "Ability Scores", "parser": "html"},
+    {"header_text": "Skills", "parser": "html"}
+  ],
+  "ui_defaults": {
+    "skillPicks": 2,
+    "hasExpertise": false,
+    "subclassDesc": "Choose your Primal Path at level 3.",
+    "featDesc": "General Feats fill your ASI slots.",
+    "backgroundNote": "In 2024 D&D, your Background sets ability scores (+2/+1) and grants an Origin Feat.",
+    "multiclassNote": "Barbarians multiclass well with classes that benefit from high Strength and Constitution.",
+    "weaponNote": "Barbarians use Strength for attack and damage rolls with melee weapons.",
+    "armorNote": "Barbarians are proficient in light and medium armor, plus shields."
+  }
+}
