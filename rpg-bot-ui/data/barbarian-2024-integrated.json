@@ -34,6 +34,7 @@
     }
   ],
   "species": [],
+  "arrays": [],
   "abilityNotes": [],
   "skills": [],
   "backgrounds": [],
@@ -43,14 +44,14 @@
     {
       "lv": 1,
       "n": "Rage",
-      "r": "green",
-      "d": "Rage is the Barbarian’s defining class feature. The bonus damage isn’t huge, but it’s reliable and consistent. The resistance to damage makes Barbarians exceptionally durable."
+      "r": "orange",
+      "d": "Rage is the Barbarian\u2019s defining class feature. The bonus damage isn\u2019t huge, but it\u2019s reliable and consistent. The resistance to damage makes Barbarians exceptionally durable."
     },
     {
       "lv": 1,
       "n": "Unarmored Defense",
       "r": "green",
-      "d": "This is great flavor for the Barbarian, but won’t do much good for you unless your ability scores are very high. Your Dexterity and Constitution modifiers need to total +7 to match the total AC bonus provided by half plate armor. That’s generally achievable by level 8 unless you rolled for ability..."
+      "d": "This is great flavor for the Barbarian, but won\u2019t do much good for you unless your ability scores are very high. Your Dexterity and Constitution modifiers need to total +7 to match the total AC bonus provided by half plate armor. That\u2019s generally achievable by level 8 unless you rolled for ability..."
     },
     {
       "lv": 1,
@@ -62,13 +63,13 @@
       "lv": 2,
       "n": "Danger Sense",
       "r": "green",
-      "d": "Given the Barbarian’s proficiency in medium armor, your Dexterity is probably 14, and Barbarians aren’t proficient in Dexterity saves. Advantage on these saves will make you reasonably good at them."
+      "d": "Given the Barbarian\u2019s proficiency in medium armor, your Dexterity is probably 14, and Barbarians aren\u2019t proficient in Dexterity saves. Advantage on these saves will make you reasonably good at them."
     },
     {
       "lv": 2,
       "n": "Reckless Attack",
-      "r": "green",
-      "d": "Rage makes you resistant to damage from normal weapons , so Advantage on attacks against you doesn’t matter as much. Advantage makes your own attacks extremely reliable, which means consistent, reliable damage output."
+      "r": "orange",
+      "d": "Rage makes you resistant to damage from normal weapons , so Advantage on attacks against you doesn\u2019t matter as much. Advantage makes your own attacks extremely reliable, which means consistent, reliable damage output."
     },
     {
       "lv": 3,
@@ -92,13 +93,13 @@
       "lv": 5,
       "n": "Fast Movement",
       "r": "orange",
-      "d": "A little bit of extra speed won’t have a huge effect on the game most of the time, but it does make it easier for you to get into melee quickly."
+      "d": "A little bit of extra speed won\u2019t have a huge effect on the game most of the time, but it does make it easier for you to get into melee quickly."
     },
     {
       "lv": 7,
       "n": "Feral Instinct",
       "r": "green",
-      "d": "Going early is always great. Get into melee with enemies before they can move to attack your squishy allies. Just try not to block any area damage or area control effects which your party’s spellcasters might be planning."
+      "d": "Going early is always great. Get into melee with enemies before they can move to attack your squishy allies. Just try not to block any area damage or area control effects which your party\u2019s spellcasters might be planning."
     },
     {
       "lv": 7,
@@ -109,8 +110,8 @@
     {
       "lv": 9,
       "n": "Brutal Strike",
-      "r": "green",
-      "d": "This is the Barbarian’s exciting option at high levels. Brutal Strike lets you add a bit of damage and a powerful on-hit effect similar to Weapon Mastery. However, you need to forgo all Advantage on the attack in order to use it. This means that your Brutal Strike attack won’t be as reliable as you..."
+      "r": "orange",
+      "d": "This is the Barbarian\u2019s exciting option at high levels. Brutal Strike lets you add a bit of damage and a powerful on-hit effect similar to Weapon Mastery. However, you need to forgo all Advantage on the attack in order to use it. This means that your Brutal Strike attack won\u2019t be as reliable as you..."
     },
     {
       "lv": 11,
@@ -128,13 +129,13 @@
       "lv": 15,
       "n": "Persistent Rage",
       "r": "orange",
-      "d": "Refreshing your Rage uses once per day effectively doubles the size of your pool. You’re also less likely to lose your Rage since being Incapacitated no longer causes it to end."
+      "d": "Refreshing your Rage uses once per day effectively doubles the size of your pool. You\u2019re also less likely to lose your Rage since being Incapacitated no longer causes it to end."
     },
     {
       "lv": 17,
       "n": "Improved Brutal Strike",
       "r": "orange",
-      "d": "No new options at this level, but you add another 1d10 damage and now you can apply two effects at the same time. Combining Forceful Blow and Hamstring Blow can put an enemy out of range to get back into melee unless they Dash, which can take melee-only enemies out of combat. There’s not much other..."
+      "d": "No new options at this level, but you add another 1d10 damage and now you can apply two effects at the same time. Combining Forceful Blow and Hamstring Blow can put an enemy out of range to get back into melee unless they Dash, which can take melee-only enemies out of combat. There\u2019s not much other..."
     },
     {
       "lv": 18,

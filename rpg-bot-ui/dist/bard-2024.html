@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spell Builder · D&D</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg:   #0a0c10;
+  --s1:   #11141b;
+  --s2:   #181c26;
+  --s3:   #1f2330;
+  --bd:   #232737;
+  --bd2:  #313749;
+  --tx:   #ddd3bc;
+  --tx2:  #8a8070;
+  --tx3:  #4e4a41;
+  --gold: #c4973a;
+  --gold2:#7a5c1e;
+  --acc:  #7c3aed;
+
+  --rb:#1e40af; --rb-bg:#0c1a35; --rb-t:#93c5fd;
+  --rg:#15803d; --rg-bg:#0a2416; --rg-t:#86efac;
+  --ro:#c2410c; --ro-bg:#2c1005; --ro-t:#fdba74;
+  --rr:#b91c1c; --rr-bg:#280606; --rr-t:#fca5a5;
+
+  --sel-bg:#0d1b33; --sel-bd:#2563eb;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Crimson Pro',Georgia,serif;background:var(--bg);color:var(--tx);min-height:100vh;font-size:16px;line-height:1.5}
+
+header{background:var(--s1);border-bottom:1px solid var(--bd);padding:12px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100}
+.hicon{font-size:1.4rem;line-height:1}
+header h1{font-family:'Cinzel',serif;font-size:1.05rem;font-weight:700;letter-spacing:.12em;color:var(--gold)}
+header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
+.hlegend{margin-left:auto;display:flex;gap:6px;align-items:center;flex-shrink:0}
+
+.tabs{background:var(--s1);border-bottom:1px solid var(--bd);display:flex;padding:0 24px;overflow-x:auto;gap:0;-webkit-overflow-scrolling:touch}
+.tab{padding:9px 16px;cursor:pointer;border-bottom:2px solid transparent;color:var(--tx2);font-family:'Cinzel',serif;font-size:.7rem;letter-spacing:.09em;white-space:nowrap;transition:all .2s;display:flex;align-items:center;gap:5px}
+.tab:hover{color:var(--tx)}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.tbadge{background:var(--gold2);color:var(--gold);font-size:.6rem;padding:1px 5px;border-radius:3px;font-family:'JetBrains Mono',monospace}
+
+.content{padding:22px 24px 74px;max-width:1280px;margin:0 auto}
+.pane{display:none}
+.pane.active{display:block;animation:fi .18s ease}
+@keyframes fi{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+.sh{margin-bottom:18px}
+.sh h2{font-family:'Cinzel',serif;font-size:.95rem;font-weight:600;letter-spacing:.07em;margin-bottom:3px;color:var(--gold)}
+.sh p{font-size:.85rem;color:var(--tx2);font-style:italic}
+
+.badge{display:inline-flex;align-items:center;font-family:'JetBrains Mono',monospace;font-size:.6rem;font-weight:500;padding:2px 7px;border-radius:3px;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.badge-blue  {background:var(--rb-bg);color:var(--rb-t);border:1px solid var(--rb)}
+.badge-green {background:var(--rg-bg);color:var(--rg-t);border:1px solid var(--rg)}
+.badge-orange{background:var(--ro-bg);color:var(--ro-t);border:1px solid var(--ro)}
+.badge-red   {background:var(--rr-bg);color:var(--rr-t);border:1px solid var(--rr)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:12px 14px;cursor:pointer;transition:border-color .15s,background .15s,transform .1s;user-select:none}
+.card:hover{border-color:var(--bd2);background:var(--s2);transform:translateY(-1px)}
+.card.sel {border-color:var(--sel-bd);background:var(--sel-bg)}
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.card-name{font-family:'Cinzel',serif;font-size:.8rem;font-weight:600;letter-spacing:.04em}
+.card-note{font-size:.8125rem;color:var(--tx2);line-height:1.5}
+.card-state{margin-top:6px;font-size:.68rem}
+.card-state.selected{color:var(--rg-t)}
+
+.cbar{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:10px 18px;margin-bottom:14px;display:flex;gap:28px;align-items:center;flex-wrap:wrap}
+.citem{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:72px}
+.cnum{font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:500;color:var(--tx3);transition:color .2s}
+.cnum.ok  {color:var(--rg-t)}
+.cnum.done{color:var(--gold)}
+.clabel{font-size:.6rem;color:var(--tx3);text-transform:uppercase;letter-spacing:.09em;font-family:'Cinzel',serif}
+
+.fbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.fbtn{padding:4px 10px;border-radius:9999px;border:1px solid var(--bd);background:var(--s1);color:var(--tx2);cursor:pointer;font-size:.7rem;font-family:'JetBrains Mono',monospace;transition:all .15s}
+.fbtn:hover{color:var(--tx);border-color:var(--bd2)}
+.fbtn.fa.active{border-color:var(--gold2);color:var(--gold);background:#181408}
+.fbtn.fb.active{border-color:var(--rb);color:var(--rb-t);background:var(--rb-bg)}
+.fbtn.fg.active{border-color:var(--rg);color:var(--rg-t);background:var(--rg-bg)}
+.fbtn.fo.active{border-color:var(--ro);color:var(--ro-t);background:var(--ro-bg)}
+.fbtn.fr.active{border-color:var(--rr);color:var(--rr-t);background:var(--rr-bg)}
+.srch{padding:5px 11px;border-radius:5px;border:1px solid var(--bd);background:var(--s1);color:var(--tx);font-family:'Crimson Pro',serif;font-size:.875rem;flex:1;min-width:140px;max-width:240px;outline:none}
+.srch:focus{border-color:var(--bd2)}
+.srch::placeholder{color:var(--tx3)}
+
+.sblock{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:16px 20px;margin-bottom:12px}
+.sblock h3{font-family:'Cinzel',serif;font-size:.67rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--bd)}
+.srow{display:flex;gap:10px;padding:4px 0;font-size:.875rem;border-bottom:1px solid var(--bd);align-items:flex-start}
+.srow:last-child{border-bottom:none}
+.skey{color:var(--tx2);min-width:135px;font-style:italic;flex-shrink:0}
+.sval{color:var(--tx)}
+.sval span{color:var(--gold)}
+.copybtn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:var(--s2);border:1px solid var(--gold2);color:var(--gold);border-radius:5px;cursor:pointer;font-family:'Cinzel',serif;font-size:.72rem;letter-spacing:.06em;transition:all .15s;margin-top:12px}
+.copybtn:hover{background:#181408}
+
+#sbar{position:fixed;bottom:0;left:0;right:0;background:var(--s1);border-top:1px solid var(--bd);padding:7px 24px;display:none;gap:18px;align-items:center;font-size:.72rem;z-index:100;overflow-x:auto;white-space:nowrap}
+.si{display:flex;align-items:center;gap:6px}
+.slbl{color:var(--tx3);font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.1em;text-transform:uppercase}
+.sval2{color:var(--tx);font-family:'JetBrains Mono',monospace;font-size:.68rem}
+.sval2.hi{color:var(--gold)}
+.sdiv{color:var(--bd2)}
+
+#loading{padding:48px 24px;color:var(--tx2);font-style:italic}
+#app{display:none}
+
+@media(max-width:640px){
+  .content{padding:14px 14px 74px}
+  .hlegend{display:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="hicon">⚔</span>
+  <div>
+    <h1 id="class-title">SPELL BUILDER</h1>
+    <div class="hsub" id="class-sub">Loading…</div>
+  </div>
+  <div class="hlegend">
+    <span class="badge badge-blue">Fantastic</span>
+    <span class="badge badge-green">Good</span>
+    <span class="badge badge-orange">Situational</span>
+    <span class="badge badge-red">Avoid</span>
+  </div>
+</header>
+
+<div id="loading">Loading spell data…</div>
+
+<div id="app">
+
+<nav class="tabs" id="tabs">
+  <div class="tab active" data-tab="cantrip">Cantrips</div>
+  <div class="tab" data-tab="level1">Level 1</div>
+  <div class="tab" data-tab="level2">Level 2</div>
+  <div class="tab" data-tab="level3">Level 3</div>
+  <div class="tab" data-tab="level4">Level 4</div>
+  <div class="tab" data-tab="level5">Level 5</div>
+  <div class="tab" data-tab="level6">Level 6</div>
+  <div class="tab" data-tab="level7">Level 7</div>
+  <div class="tab" data-tab="level8">Level 8</div>
+  <div class="tab" data-tab="level9">Level 9</div>
+  <div class="tab" data-tab="summary">Summary</div>
+</nav>
+
+<div class="content">
+
+  <div class="pane active" id="pane-cantrip">
+    <div class="sh"><h2>Cantrips</h2><p>Known: <span id="known-cantrip">0</span>/2</p></div>
+    <div class="fbar" id="filter-cantrip"></div>
+    <div class="grid" id="grid-cantrip"></div>
+  </div>
+
+  <div class="pane" id="pane-level1">
+    <div class="sh"><h2>Level 1 Spells</h2><p>Known: <span id="known-level1">0</span>/2 | Slots: <span id="slots-level1">0</span></p></div>
+    <div class="fbar" id="filter-level1"></div>
+    <div class="grid" id="grid-level1"></div>
+  </div>
+
+  <div class="pane" id="pane-level2">
+    <div class="sh"><h2>Level 2 Spells</h2><p>Known: <span id="known-level2">0</span>/2 | Slots: <span id="slots-level2">0</span></p></div>
+    <div class="fbar" id="filter-level2"></div>
+    <div class="grid" id="grid-level2"></div>
+  </div>
+
+  <div class="pane" id="pane-level3">
+    <div class="sh"><h2>Level 3 Spells</h2><p>Known: <span id="known-level3">0</span>/2 | Slots: <span id="slots-level3">0</span></p></div>
+    <div class="fbar" id="filter-level3"></div>
+    <div class="grid" id="grid-level3"></div>
+  </div>
+
+  <div class="pane" id="pane-level4">
+    <div class="sh"><h2>Level 4 Spells</h2><p>Known: <span id="known-level4">0</span>/2 | Slots: <span id="slots-level4">0</span></p></div>
+    <div class="fbar" id="filter-level4"></div>
+    <div class="grid" id="grid-level4"></div>
+  </div>
+
+  <div class="pane" id="pane-level5">
+    <div class="sh"><h2>Level 5 Spells</h2><p>Known: <span id="known-level5">0</span>/2 | Slots: <span id="slots-level5">0</span></p></div>
+    <div class="fbar" id="filter-level5"></div>
+    <div class="grid" id="grid-level5"></div>
+  </div>
+
+  <div class="pane" id="pane-level6">
+    <div class="sh"><h2>Level 6 Spells</h2><p>Known: <span id="known-level6">0</span>/2 | Slots: <span id="slots-level6">0</span></p></div>
+    <div class="fbar" id="filter-level6"></div>
+    <div class="grid" id="grid-level6"></div>
+  </div>
+
+  <div class="pane" id="pane-level7">
+    <div class="sh"><h2>Level 7 Spells</h2><p>Known: <span id="known-level7">0</span>/2 | Slots: <span id="slots-level7">0</span></p></div>
+    <div class="fbar" id="filter-level7"></div>
+    <div class="grid" id="grid-level7"></div>
+  </div>
+
+  <div class="pane" id="pane-level8">
+    <div class="sh"><h2>Level 8 Spells</h2><p>Known: <span id="known-level8">0</span>/2 | Slots: <span id="slots-level8">0</span></p></div>
+    <div class="fbar" id="filter-level8"></div>
+    <div class="grid" id="grid-level8"></div>
+  </div>
+
+  <div class="pane" id="pane-level9">
+    <div class="sh"><h2>Level 9 Spells</h2><p>Known: <span id="known-level9">0</span>/2 | Slots: <span id="slots-level9">0</span></p></div>
+    <div class="fbar" id="filter-level9"></div>
+    <div class="grid" id="grid-level9"></div>
+  </div>
+
+  <div class="pane" id="pane-summary">
+    <div class="sh"><h2>Spell Selection</h2><p>Your spell list.</p></div>
+    <div id="summary-content"></div>
+    <button class="copybtn" id="copy-btn">◆ Copy to Clipboard</button>
+  </div>
+
+</div><!-- .content -->
+</div><!-- #app -->
+
+<div id="sbar">
+  <div class="si"><span class="slbl">Cantrips</span><span class="sval2 hi" id="sb-cantrip">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 1</span><span class="sval2" id="sb-lvl1">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 2</span><span class="sval2" id="sb-lvl2">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 3</span><span class="sval2" id="sb-lvl3">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 4</span><span class="sval2" id="sb-lvl4">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 5</span><span class="sval2" id="sb-lvl5">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 6</span><span class="sval2" id="sb-lvl6">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 7</span><span class="sval2" id="sb-lvl7">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 8</span><span class="sval2" id="sb-lvl8">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 9</span><span class="sval2" id="sb-lvl9">0/2</span></div>
+</div>
+
+<script>
+// ─── Data (loaded from API) ───────────────────
+const D = {"meta": {"id": "bard-2024", "name": "Bard Spells", "edition": "2024"}, "ui": {"knownPerLevel": {"cantrip": 2, "level1": 2, "level2": 2, "level3": 2, "level4": 2, "level5": 2, "level6": 2, "level7": 2, "level8": 2, "level9": 2}}, "slots": {"1": 2, "2": 3, "3": 4, "4": 4, "5": 4, "6": 4, "7": 4, "8": 4, "9": 4, "10": 4, "11": 4, "12": 4, "13": 4, "14": 4, "15": 4, "16": 4, "17": 4, "18": 4, "19": 4, "20": 4}, "cantrip": [{"n": "Blade Ward", "r": "green", "d": "At very low levels, this can be a good defensive option. As you gain levels and get more spell slots, you’ll want to reserve your Concentration for more impactful spells."}, {"n": "Dancing Lights", "r": "orange", "d": "An amusing distraction, but you can usually accomplish the same thing using Mage Hand and a candle or torch."}, {"n": "Friends", "r": "green", "d": "High risk, high reward. This is great for dealing with brief social interactions with NPCs that you’ll never see again or that have no way to cause trouble for you, or who you might end up attacking anyway for whatever reason. There’s no Verbal component, so you can safely use this while hidden."}, {"n": "Light", "r": "green", "d": "Disposable magic light is fantastic, but you’ll do fine with torches if you don’t have room for the Cantrip."}, {"n": "Mage Hand", "r": "blue", "d": "The ability to move objects at a safe distance is profoundly useful. Use it to pull levers, open doors, sort your laundry, and all manner of other important but potentially hazardous tasks where you wouldn’t want to risk your own hands."}, {"n": "Mending", "r": "orange", "d": "Too situational. Short of Rust Monsters and a few oozes, nearly nothing in 5e deals damage to your equipment. If you’re playing Spelljammer, this is essential, but otherwise you can skip it."}, {"n": "Message", "r": "orange", "d": "Situational. Use this to send messages without revealing your position."}, {"n": "Minor Illusion", "r": "blue", "d": "Room for plenty of creative, deceptive uses. The 5-foot cube is easily enough to create something to hide behind, provided that your enemies don’t see you create the illusion."}, {"n": "Prestidigitation", "r": "blue", "d": "Whenever you want to do something small and magical that’s not covered by another spell, it’s usually covered by prestidigitation. This spell is exceptionally versatile. For suggestions on how to use Prestidigitation to its fullest, see our Practical Guide to Prestidigitation ."}, {"n": "Starry Wisp", "r": "orange", "d": "With True Strike available, the only benefit to Starry Wisp is that it can prevent the target from becoming Invisible. But that is not useful enough to justify picking this as a Cantrip since you get to prepare so few."}, {"n": "Thunderclap", "r": "orange", "d": "Most Bards have no business being in a position to use this, but martial Bards like College of Swords and College of Valor may find this an effective option against crowds in melee."}, {"n": "True Strike", "r": "blue", "d": "Your go-to attack Cantrip. A crossbow with True Strike will do more damage and have better range than most damaging Cantrips until their damage has scaled at least once, and the ones which out-scale True Strike aren’t on the Bard’s spell list. If you increase your spellcasting modifier to +4 at level 4, a crossbow with True Strike will deal more damage (average 12) than d10-based Cantrips like Fire Bolt (average 11), and d8-based Cantrips like Starry Wisp simply can’t compete."}, {"n": "Vicious Mockery", "r": "blue", "d": "Easily the most iconic Bard spell, Vicious Mockery is unique, flavorful, and mechanically fantastic. The damage is relatively small, but the debuff is absolutely worth the poor damage."}], "level1": [{"n": "Animal Friendship", "r": "orange", "d": "Arguably easier than proficiency in Animal Handling, but it will become obsolete once beasts disappear around CR 10."}, {"n": "Bane", "r": "orange", "d": "While the debuff is good, Bane is often difficult to justify. Against crowds, enemies will die too quickly to justify debuffing them. Against bigger enemies, it makes more sense to hit them with something more debilitating. However, Bane isn’t without merit. Since it targets Charisma saves, many enemies that are resistant to more common Constitution or Wisdom saves still have poor Charisma saves. It’s also especially useful against enemies with Legendary Resistance because it puts the DM into a "}, {"n": "Charm Person", "r": "green", "d": "If you can cast this on a target outside of combat without them noticing, this can be a great way to defuse a potentially hostile situation. However, the spell has some complications. Charm Person has no visual effect like a ball of fire, so there’s no visual indication that the spell succeeded or failed. The target doesn’t know that they’ve been targeted by the spell if they succeed on the saving throw, but you don’t know if they succeeded or failed unless your DM decides to tell you (and they "}, {"n": "Color spray", "r": "red", "d": "The effect is not powerful enough and the duration is not long enough to justify the spell slot."}, {"n": "Command", "r": "green", "d": "Enough effects to be useful in many situations, but it’s a single-target spell and the effects only last one turn, so at low levels it’s hard to justify. Consider picking this up a few levels into your career once you have the abilty to upcast it to affect multiple targets. The best uses of Command typically require support from your allies. Approach and Flee are great if you have melee allies who can make Opportunity Attacks when the target moves. Drop is great if someone in your party can quic"}, {"n": "Comprehend languages", "r": "blue", "d": "Cast this as a ritual. Unfortunately it’s a self-targeting spell so your communication will be one-way unless whatever you’re talking to also has a solution."}, {"n": "Cure Wounds", "r": "green", "d": "Significantly more healing than Healing Word, but the action economy is worse in exchange. Save this for when you need a lot of hit points in a hurry. Ideally, you’ll heal an ally from 0 hp (or at least close to it) to full or nearly full hp. As a rule, healing in combat is a bad choice unless someone is unconscious or you can heal them enough to keep them conscious for multiple turns. If you heal an ally and they immediately take damage roughly equal to what you healed, you have spent an Action"}, {"n": "Detect Magic", "r": "green", "d": "Essential. If you’re not concentrating on anything else, it’s often a good idea to cast this as a ritual and walk around with it."}, {"n": "Disguise Self", "r": "orange", "d": "Learning a single spell is cheaper than proficiency in a Disguise Kit. Buying a scroll is even cheaper."}, {"n": "Dissonant Whispers", "r": "blue", "d": "Surprisingly good crowd control. This only requires Verbal components, so you can use it while grappled to force the creature grappling you to run away. The damage isn’t spectacular, but honestly you don’t need it to be. The forced movement will provoke Opportunity Attacks, so you can get a lot of additional damage output by using against enemies who are in melee with your allies."}, {"n": "Distort Value", "r": "orange", "d": "If your DM allows you to trade magic items, this might be incredibly useful. However, your DM might also find this incredibly annoying and punish you for using it by having angry traders track you down after an unfair trade. Discuss this spell with your DM before you consider preparing it."}, {"n": "Earth Tremor", "r": "orange", "d": "Not nearly enough damage, and being prone isn’t enough of a problem in 5e. The difficult terrain effect is the real draw. It only works on “loose earth or stone”, but that covers nearly anything you’ll stand on except wood, so it’s an easy way to create difficult terrain. Unfortunately, it also affects you, so be careful not to trap yourself among enemies."}, {"n": "Faerie Fire", "r": "blue", "d": "The lowest-level option to deal with invisible creatures, and Advantage on attacks against creatures which fail their save means that this remains a powerful support option well into high levels, especially against big bulky enemies with high AC but poor Dexterity saves. Hopefully you won’t run into any invisible creatures at 1st level, but but it’s important to have some way to deal with invisibility just in case."}, {"n": "Feather Fall", "r": "blue", "d": "Someone in the party needs to have this at all times, and you’re someone. Falling damage is a silly, embarrassing way to die."}, {"n": "Healing Word", "r": "blue", "d": "More important than Cure Wounds, especially at low levels. As a bonus action you can heal an unconscious ally enough to get them back into the fight, and you still have your action for Vicious Mockery."}, {"n": "Heroism", "r": "green", "d": "At low levels where your tank might only have 12 hp and enemies are doing something like 5-8 damage per turn, this is a big enough buff to win a fight for you. At higher levels it will be less appealing due to the Concentration requirement, unfortunately. An ounce of prevention is worth a pound of cure. All that you need to make Heroism more effective than Cure Wounds is to know who is going to take damage for the next several rounds. Considering that most parties have one or two characters draw"}, {"n": "Identify", "r": "orange", "d": "Only situationally useful. Even if you encounter a magic item, this typically isn’t necessary because you can usually identify a magic item by spending a Short Rest in contact with it. Some (but not all) cursed magic items can be identified using the Identify spell."}, {"n": "Illusory Script", "r": "red", "d": "A fun party trick, but 10 gp is expensive if you want to use this often."}, {"n": "Longstrider", "r": "orange", "d": "A helpful buff for highly mobile characters, and with an hour-long duration it can be a great use of low-level spell slots once your level 1 spells start lagging in combat."}, {"n": "Silent Image", "r": "blue", "d": "While not nearly so powerful as Major Image, if you just want an object or a visual effect, Silent Image does the job just as well. Throw up a fake wall, door, or portcullis to slow pursuers. Create a piece of furniture, then hide inside it and stab people when they try to open it. Illusions are limited more by your creativity (and your DM’s willingness to play along) than by the spell’s text."}, {"n": "Silvery Barbs", "r": "blue", "d": "Extremely powerful, but also very complicated. See our blog post on Silvery Barbs for details on the numerous abuse cases which the spell allows."}, {"n": "Sleep", "r": "blue", "d": "Making your targets Incapacitated will rob them of most of their turn and break Concentration. You may get lucky and have targets fall asleep after the second save, especially if you can debuff their save with Mind Sliver or some other effect. This is an incredibly powerful save-or-suck spell that will work for your whole career and doesn’t need to be upcast. Sure, the AOE is tiny, but if this were a single-target spell it would still be really good."}, {"n": "Speak with Animals", "r": "orange", "d": "Situational, but sometimes the only witnesses are wild animals and you just need a clue from your local family of squirrels."}, {"n": "Tasha’s Hideous Laughter", "r": "green", "d": "A great low-level save or suck, but generally you want to use this on a creature then leave it alone until you’ve dealt with anything else in the encounter. The best comparison at this level is to Sleep. Sleep is an AOE (though a small one), and if your target fails the second save, they fall Unconscious. Sleep will be more impactful, but it’s also easier to remove."}, {"n": "Thunderwave", "r": "orange", "d": "With the exception of Gust, this is one of your very few options for pushing enemies away from you. It’s especially appealing if you can push an enemy into an area control effect, but otherwise it’s not a good go-to option for damage output in combat."}, {"n": "Unseen Servant", "r": "orange", "d": "This has very limited utility in combat or in dangerous situations, but that doesn’t mean that it has none. With a 1-hour duration you can get a lot done with a single casting. Interacting with items can mean opening doors and chests, carrying items, using potions on allies, and other things which you might not have time or patience to do. 2 Strength isn’t enough to carry anything heavy or to break down a door, but it’s often enough to trigger traps."}], "level2": [{"n": "Aid", "r": "blue", "d": "With an 8-hour duration and three targets, this is a staple buff that’s worth casting literally every day. Keep in mind that this actually increases the targets’ hit point maximum, so temporary hit points can be added, too. Aid’s casting time allows it to be used in combat, which is unusual but offers an interesting option. With three targets and a 30-foot range, you can cast it to both buff and heal your allies during combat. Targets’ current hit points and hit point maximum both increase, so a"}, {"n": "Animal Messenger", "r": "orange", "d": "Situational and less reliable than similar spells like Sending, but it’s also a spell level lower than Sending and it’s a Ritual. If you know that your recipient is going to be wherever you send your message, this works fine. Unfortunately, the recipient doesn’t get to respond."}, {"n": "Blindness/Deafness", "r": "green", "d": "Blindness is crippling, especially for enemies who fight at range like archers and spellcasters. It’s also helpful against melee enemies, but Constitution saves tend to be high, so it’s often best to use this on enemies which are more physically frail. Deafness is a mild annoyance."}, {"n": "Borrowed Knowledge", "r": "green", "d": "A great way to cover skill proficiencies that your party doesn’t have, Borrowed Knowledge lasts an hour and doesn’t require Concentration, so you can combine it with Enhance Ability to become instantly excellent at any skill. Enhance Ability is more broadly useful because you can cast it on other allies to support them when their best skills come into play, but when there’s a gap in your party’s skillset, you can use this to come to the rescue."}, {"n": "Calm Emotions", "r": "green", "d": "Two situational but frequently useful effects. First, you can use this to temporarily suppress effects which charm or frighten your allies. Both effects are common, and many enemies can apply them to your whole party. Charm effects often include mind control effects, and suppressing them for a minute on a willing ally can easily buy you enough time to deal with whatever is trying to mind control your friends. Fear effects are often area effects, such as a dragon’s Frightful Presence, so suppress"}, {"n": "Cloud of Daggers", "r": "blue", "d": "4d4 damage (average 10) isn’t great, and a 5-foot cloud is not a big AOE, but this applies the damage without a save, and you can apply it repeatedly over the spell’s duration. Since you can move this as an Action, you can cast this on your first turn and use it every turn for an entire fight, dealing comparable single-target damage to Magic Missile. If you can force enemies into the cloud repeatedly, you can abuse it using many of the same tactics as Spirit Guadians. But, if you can’t manage th"}, {"n": "Crown of Madness", "r": "red", "d": "“The charmed target must use its Action before moving on each of its turns to make a melee attack”. Unless your enemies are dumb enough to stand next to their ally while they’re clearly under the effects of a harmful spell, you’re going to get maybe one attack out of this."}, {"n": "Detect Thoughts", "r": "orange", "d": "Situational, but a clever player can use this to gather crucial information from enemies unwilling to share it. However, the checks to continue focusing on a single creature’s thoughts are Intelligence checks and bards rarely have enough Intelligence to succeed reliably at opposed Intelligence checks. If you can, have an ally cast buffs like Guidance or Enhance Ability (Intelligence) on you to give yourself an edge."}, {"n": "Enhance Ability", "r": "blue", "d": "Fantastic and versatile. Using this to buff Charisma for your party’s Face will make any social situation go a lot better."}, {"n": "Enlarge/Reduce", "r": "green", "d": "A useful option both as a buff for melee allies and as a utility option, though I would rarely try using this to shrink enemies. You can use this on a small ally to make them small enough to smuggle in a pocket, or you can use this on an ally to give them an edge against enemies that rely on grappling. The bonus damage for being enlarged is nice, but not really worth the spell slot unless the target is making a huge number of weapon attacks like a high-level fighter."}, {"n": "Enthrall", "r": "red", "d": "Too situational, too limited, and the duration is too short. The best usage I can think of for this is to distract a bunch of creatures while your allies move past them or move into place to ambush them. But in most cases where you’re resorting to violence you’ll have better results with a different spell like Calm Emotions. In situations where you need to move past people, cast Invisibility."}, {"n": "Gift of Gab", "r": "orange", "d": "Another hilarious entry from Acquisitions Incorporated with dubious use in a typical game. The intent of having mechanics in place for social interactions is to detach your real-world social skills from your character’s social skills. If you say something foolish in real life, your DM should generally be kind enough to filter that through your character into something that would make sense for them to say. But if they don’t, this is a perfectly fine way to clean up a mistake. Keep in mind that i"}, {"n": "Heat Metal", "r": "green", "d": "Situational by design, but against nearly any humanoid in metal armor, this spell is a death sentence. The damage will be slow, but Disadvantage on attack rolls and Ability Checks makes martial creatures (the ones typically in metal armor) basically useless. Upcasting the spell is surprisingly efficient since the additional damage applies every round, so if you’re fortunate enough to encounter a suitable enemy, use this to its fullest. It also monopolizes your Bonus Action, which can be hard for"}, {"n": "Hold Person", "r": "orange", "d": "On/off button for Humanoids. Humanoids are a tiny portion of DnD’s roster of enemies, so this spell is situational by design. Even some creatures which have historically been common Humanoid antagonists like Hoblins and Sahuagin have changed creature type in the 2024 rules, though there are more NPC stat blocks than in the 2014 rules, which might keep Humanoids a relevant threat in some campaigns. In encounters with multiple foes, you can up-cast Hold Person to paralyze multiple targets, so this"}, {"n": "Invisibility", "r": "blue", "d": "An essential scouting and infiltration tool, and as you get higher-level spell slots you can affect more of your party. The conditions which break the Invisibility spell are surprisingly narrow. While attacks and spells include most of the offensive things which a player does, those two things don’t include other offensive options like breath weapons, including those provided by spells like Dragon’s Breath, polymorph effects, or the Dragonborn’s breath weapon."}, {"n": "Kinetic Jaunt", "r": "green", "d": "Bards don’t get Misty Step, and Kinetic Jaunt is a great way to remove yourself from melee. However, it requires Concentration and doesn’t remove you from grapples, so it’s not a universally effective solution, especially with the Bard’s limited number of spells known. It may be more effective to use offensive spells like to inhibit whatever is grappling you or to use Invisibility to avoid Opportunity Attacks."}, {"n": "Knock", "r": "blue", "d": "The primary reason to have proficiency with Thieves’ Tools is to handle locks. Knock doesn’t require a check. It just works. Make aggressive eye contact with your party’s Rogue while you cast this just to rub it in."}, {"n": "Lesser Restoration", "r": "green", "d": "Situational, but a situation that comes up often. If you don’t have a Cleric or Druid in the party, you may be the only one with access to this spell, so you’ll want to take it at some point."}, {"n": "Locate Animals or Plants", "r": "red", "d": "Too situational."}, {"n": "Locate Object", "r": "red", "d": "Too situational, and too easy to counter. Anyone with any knowledge of magic that’s trying to hide something will wrap it in lead."}, {"n": "Magic Mouth", "r": "orange", "d": "Very situational, but it’s cast as a Ritual, so it’s easy to keep handy. This is more useful if you have a permanent base, but you can also place the effect on portable objects (like a piece of paper) in order to perform various shenanigans. Honestly, the most fun part of this spell is coming up with silly ways to abuse it. For example: if you can cast Thaumaturgy somehow, Magic Mouth still recites the message in the volume at which you originally spoke so you can turn a piece of paper into an e"}, {"n": "Mirror Image", "r": "green", "d": "A great defensive option, and it doesn’t require Concentration so you can easily use it alongside other great options like Fly. It’s easy to compare this to Blur since they’re the same level and fill the same niche. Blur applies Disadvantage, but Disadvantage is only useful if your AC is high enough that attackers have a reasonable chance to miss their attacks. When enemies’ attack bonuses have long outstripped the AC provided by Mage Armor and Shield, Mirror Image remains useful. However, since"}, {"n": "Nathair’s Mischief", "r": "red", "d": "Amusing, but unpredictable and unreliable. Since the effect and the save change every round, you can’t choose the targets’ weak saves, and even if targets do fail their save they might still be able to fight unhindered. Targets do need to save every round (unless you roll the molasses option), but the effects simply aren’t powerful enough."}, {"n": "Phantasmal Force", "r": "blue", "d": "Don’t cast this spell for the damage (though 20d8 single-target damage is really good for a level 2 spell); cast this to incapacitate the target somehow. For example: Create an illusion of the floor beneath the target sprouting teeth, rising up around the creature, and eating it like a venus fly trap. The creature “treats the phantasm as if it were real”, and, unless they know to use Intelligence (Investigation) to disbelieve the illusion, they’ll spend 10 rounds struggling against a non-existen"}, {"n": "Pyrotechnics", "r": "orange", "d": "Only situationally useful, slightly annoying to set up, and when it does work the effects aren’t good enough. The flame doesn’t need to be especially large, so a torch or even a candle will suffice. Drop a torch on the ground, run out of range, and cast the spell. The blinding effect isn’t spectacular because it only lasts on round and it’s on a Constitution save. The smoke cloud option is objectively worse than similar options like Fog Cloud or Darkness, but it doesn’t require Concentration whi"}, {"n": "See Invisibility", "r": "blue", "d": "Easy, reliable counter to invisibility. No Concentration, no aiming an AOE like Faerie Fire, and, if you cast this ahead of time, no spending an Action in combat. The 1-hour duration is great, but expect to refresh this after short rests if you expect invisibility to be a frequent problem. The 2024 stealth rules make creatures hidden by giving them the Invisible condition. See Invisibility negates the Invisible condition. Therefore, you can see hidden creatures so long as they don’t have total c"}, {"n": "Shatter", "r": "green", "d": "The poor man’s fireball. 3d8 damage in a 10-foot radius is enough to hit several targets and deal decent damage. However, the save is Constitution so many creatures will be able to resist easily. Disadvantage for creatures made of inorganic materials is really neat, but how often do you fight a group of animated armors or iron golems?"}, {"n": "Silence", "r": "blue", "d": "Verbal components are extremely common in spells, including many that spellcasters frequently use to escape dangerous situations. If you can trap an enemy spellcaster in place (such as by having an ally grapple them) and drop Silence around them, you’ll significantly limit their options. In the 2024 rules, spellcasting enemies will have combat actions that aren’t actually spells and which will ignore Silence, but you’ll still limit some of their best options."}, {"n": "Skywrite", "r": "red", "d": "Only useful as a novelty. Still, it’s hard to resist the ability to insult someone by writing nasty things about them in the sky for everyone to see for miles around."}, {"n": "Spray of Cards", "r": "orange", "d": "Poor damage (though doing force damage is really nice), short range, and the blindness doesn’t last long enough that you can benefit in any way except moving out of melee. This could be useful if you get dragged into melee against you will, but Misty Step handles that situation much better."}, {"n": "Suggestion", "r": "blue", "d": "Extremely versatile and problematically powerful . You can use this to accomplish a lot of things. This is more effective, reliable, and immediate than Geas. However, the 8-hour duration requires Concentration. If you want to use this while adventuring, you’re committing a significant resource for a full day to get the full duration of the spell. This spell benefits greatly from your own creativity, so the more thought you put into its use, the more effective it will be. 25 words is generous, an"}, {"n": "Warding Wind", "r": "green", "d": "Being deafened is annoying but usually not impactful. The big draw here is the difficult terrain to deter melee enemies and Disadvantage to deter ranged attackers. This competes conceptually with Blur since both options impose Disadvantage, but there are some trade-offs. Blur only lasts 1 minute, but the Disadvantage applies to all attacks rather than just ranged attacks. Warding Wind lasts 10 minutes and makes it hard for enemies to move near you, potentially keeping them from reaching you in m"}, {"n": "Zone of Truth", "r": "red", "d": "Too situational to justify on a class can’t change its prepared spells on a daily basis."}], "level3": [{"n": "Antagonize", "r": "orange", "d": "Since your target can only attack creatures within its reach when you cast the spell, this is only situationally useful. There’s some functional overlap with Crown of Madness, too. The tiny amount of damage isn’t enough to be impactful, so don’t let that fool you into thinking this is an easy go-to spell. The scaling is terrible, too, so don’t bother upcasting this."}, {"n": "Cacophonic Shield", "r": "green", "d": "Spirit Guardians for Bards and Sorcerers! Cacophonic Shield turns you into a roving blender, allowing you to define entire encounters with a single spell. Thunder damage is rarely resisted, but the Constitution save is a huge limitation, and Deafened is rarely impactful in the 5e rules. This certainly isn’t as good as Spirit Guardians or Yolande’s Regal Presence, but it’s available to more classes than Spirit Guardians and two levels lower than Yolande’s Regal Presence, so you can lean into Spir"}, {"n": "Bestow Curse", "r": "blue", "d": "The effects are versatile enough that you can easily bring this into play in a variety of situations, and the scaling mechanism works well enough that this remains a viable option for higher-level spell slots. Use the third option against big tanky enemies with poor Wisdom, or use the first option against enemies that like to grapple. If you’re ever uncertain, use the third option. Robbing a creature of their turn on a failed saving throw is debilitating, and can take creatures almost completely"}, {"n": "Catnap", "r": "orange", "d": "A Short Rest is typically one hour. In most campaigns, that will be fine most of the time unless the DM is deliberately creating a time crunch which prevents resting or otherwise sitting about wasting time. In those cases you might be able to squeeze in a Catnap, but more than likely the 10-minute duration will still be problematic. If danger is the driving concern, cast Rope Trick instead and spend an hour in a pocket dimension."}, {"n": "Clairvoyance", "r": "blue", "d": "With a 1-mile range and the ability to place the sensor in a place you can’t see, this is a fantastic way to safely scout dangerous places. If you have enough time to sit around and cast the spell repeatedly you can scout whole structures from the outside by gradually learning about more interior locations through previous castings."}, {"n": "Dispel Magic", "r": "blue", "d": "Every party needs someone who can cast Dispel Magic. It’s simply too important to forgo."}, {"n": "Enemies Abound", "r": "blue", "d": "Astoundingly few enemies have good Intelligence saves, especially big, scary melee monsters. Throw this on something tanky and horrifying that’s there to protect squishy enemies from you and your friends, and watch it freak out and kill its buddies for you. The duration is only a minute, and obviously this only works in an encounter with multiple enemies, but that doesn’t make the spell less awesome."}, {"n": "Fast Friends", "r": "green", "d": "A fantastic non-lethal option for handling single targets, but it has some limitations. The target needs to be able to understand you, so you likely need to share a language. The spell requires Concentration, so you don’t want to maintain this during combat if you can avoid it. And of course, you don’t want to try casting this during combat. If you can isolate a single enemy outside of combat, you may be able to ply them for information or send them on errands which will save you trouble later. "}, {"n": "Fear", "r": "green", "d": "A great way to disable groups of opponents, but Fear resistance immunity an immunity are common, and the cone AOE can put you dangerously close to your enemies. This is especially effective against humanoid enemies sinces it forces them to drop what they’re holding, including things like weapons and spellcasting foci."}, {"n": "Feign Death", "r": "red", "d": "Very situational."}, {"n": "Glyph of Warding", "r": "orange", "d": "Depending on how your DM handles it, this is either a situationally useful defensive measure or a reality-bending way to break the game from the comfort of your own home. See our Practical Guide to Glyph of Warding ."}, {"n": "Hypnotic Pattern", "r": "blue", "d": "I often say that spellcaster’s spells early in a fight should dictate the outcome of the fight, and Hypnotic Pattern is a great example of such a spell. Take a group of creatures out of a fight for a full minute on only one save. Targets don’t get another save, and the effect doesn’t end until the spell does or someone breaks targets out of the effect. This means that you can focus on enemies which pass the initial save, then gradually eliminate the remaining targets one at a time. This doesn’t "}, {"n": "Intellect Fortress", "r": "green", "d": "Technically situational, but an absolutely spectacular defense against enemies which rely on spells or common effects like charm and fear effects. Unlike racial traits like the Gnome’s Cunning or the Satyr and Yuan-Ti Pureblood’s Magic Resistance, this applies to all Intelligence, Wisdom, and Charisma saving throws, providing broad and effective protection against many of the most dangerous save-or-suck effects in the game. You also get resistance to psychic damage, which is nice if you’re fight"}, {"n": "Leomund’s Tiny Hut", "r": "blue", "d": "With an 8-hour duration and the ability to cast it as a Ritual, Leomund’s Tiny Hut is useful both as an option for resting, and as a surprising utility and combat option. The hemisphere (the effect is a hemisphere, but the flavor text confusingly describes it as a done) which it creates is impenetrable and impassable like a wall of force, except for creatures which are inside the sphere when you cast the spell (your party, usually). Since it’s opaque, most low-level teleport effects like Misty s"}, {"n": "Major Image", "r": "blue", "d": "Fantastically versatile, and creatures don’t make a saving throw. Instead, they need to know to make an Intelligence (Investigation) check, or they need to physically interact with the illusion. Even then, you can buy yourself a great deal of time while the target tries to figure out your illusion."}, {"n": "Mass Healing Word", "r": "orange", "d": "You never want to need this. It heals exactly as much as standard Healing Word at a much higher cost, but the ability to heal multiple targets means that you can bring multiple allies back into the fight and you still have your Action that turn. Also, the upcasting is terrible."}, {"n": "Motivational Speech", "r": "blue", "d": "This makes the Inspiring Leader somewhat obsolete. Inspiring Leader will provide considerably more temporary hit points, but this doesn’t require a feat and takes one tenth the time."}, {"n": "Nondetection", "r": "green", "d": "Good, but not totally essential. Divination spells include things like See Invisibility, so if you or your party relies on invisibility of any kind this protects from several magical countermeasures to both stealth and invisibility. However, most enemies aren’t spellcasters and won’t have access to those divination options, so you can’t justify casting this every day. The spell also has an expensive material component specifically to deter you from casting this all the time. Still, with an 8-hou"}, {"n": "Plant Growth", "r": "green", "d": "Situational. Outside of normal adventuring activities, the ability to enrich land to double crop yields is very useful. But DnD is a game primarily about adventuring, and the option to make an area of plants overgrown is the more important option for most adventurers. In most cases, Entangle will work fine if you just need to slow your enemies down, but Plant Growth doesn’t expire, so those plants remain difficult to walk through until someone clears the plants (which may requires hours of chopp"}, {"n": "Sending", "r": "green", "d": "Not especially glamorous, but messaging over massive distances has a number of uses. Also, due to the wording of the spell, you can use it on creatures that don’t understand your speech and they’ll still understand your meaning, allowing you to use Sending in place of Tongues if you only need to convey brief messages."}, {"n": "Slow", "r": "green", "d": "Slow is a great debuff for martial enemies, but it has to compete with other Wisdom save options at the same spell level. Compared to Hypnotic Pattern, Slow severely handicaps targets, but they can still fight back. Hypnotic Pattern’s targets can’t act at all until they’re released from the effect, but it’s also a Charm effect which some creatures are immune or resistant to. The 25% chance to fail casting spells with Somatic components is interesting, but unreliable. If you want to prevent spell"}, {"n": "Speak with Dead", "r": "orange", "d": "This is a spell of justify on a class with a limited number of spells known. This is a spell of last resort. It is extremely limited, and if the dead creature didn’t like you while it’s alive it’s unlikely to be helpful after you’ve killed it. Your best bet is to use this on an NPC with information that you can’t get otherwise. Cast Gentle Repose on the corpse to keep it intact so that you can hit it with Speak with Dead again 10 days later."}, {"n": "Speak with Plants", "r": "orange", "d": "Situational. If you encounter plant creatures, this may allow you to handle them nonviolently, but I don’t think this is useful enough to learn permanently on a class with a limited number of spells known."}, {"n": "Stinking Cloud", "r": "orange", "d": "While this can rob targets of their Action and Bonus Action if they fail the save, the area is small and easy to escape. Given the choice between the two, I would go for Sleet Storm first."}, {"n": "Tongues", "r": "blue", "d": "Language can present a serious barrier. You may not want to pick this up when you first get access to level 3 spells, but consider picking it up later when using alevel 3 spell on a utility option is less daunting. Remember that you can cast this on other people, which is great since you are likely the worst person to cast this on."}], "level4": [{"n": "Backlash", "r": "green", "d": "Situational by design, and excellent at what it does, but you should not use this spell every round . The considerations and interactions here are complicated, and a level 4+ spell slot is a powerful resource. Strongly consider using Absorb Elements or Shield first, as both of those spells are considerably less expensive. But Retaliate can cover any damage source and also does retaliatory damage, so there is definitely a powerful niche use here. The primary function of Backlash is to reduce inco"}, {"n": "Charm Monster", "r": "green", "d": "A great nonlethal way to deal with enemies. It doesn’t require that the target be able to understand you, but otherwise has the same complications which Charm Person does: the target is only friendly toward you, and when the spell ends they know that they were charmed."}, {"n": "Compulsion", "r": "orange", "d": "This is technically situational, but if you can get a group of enemies to all run one direction and bunch up against a wall or something, they’re very easy to hit with a big AOE. You can’t run them into something like a Wall of Fire, unfortunately."}, {"n": "Confusion", "r": "red", "d": "I’ve hated Confusion since 3rd edition. It’s unpredictable, unreliable, and makes combat take twice as long as it would normally. It’s great that it’s an AOE, and you might be able to make creatures attack their allies, but there are too many points of failure for it to be a reliable option."}, {"n": "Dimension Door", "r": "green", "d": "Bards don’t get Misty step, so this and Kinetic Jaunt are you lowest-level teleportation options."}, {"n": "Doomtide", "r": "red", "d": "The damage isn’t high, but it’s a good damage type and the save debuff is excellent. Magical darkness will force most enemies to exit the AOE on their turn so that you can force them back into it to trigger the effect again. But, unlike most ongoing area damage spells, the sphere moves away from you gradually, which can make it difficult to keep the spell in the area where you’re fighting. There’s also no word on what happens when the sphere hits cover, so it might run right through walls. Casti"}, {"n": "Fount of Moonlight", "r": "orange", "d": "A small damage boost for weapon-using Bards. The Reaction to blind attackers is neat, but Constitution saves tend to be high, and you need to take damage and risk losing Concentration to benefit from it. You also can’t upcast it for more damage. If you want to use this, strongly consider learning Conjure Minor Elementals when you get Magical Secrets."}, {"n": "Freedom of Movement", "r": "orange", "d": "Nice, but situational. If you need to get yourself out of restraints or a grapple, cast Dimension Door."}, {"n": "Greater Invisibility", "r": "blue", "d": "Invisibility in 5e is really good, and running around for a full minute being almost impossible to target is a huge advantage."}, {"n": "Hallucinatory Terrain", "r": "orange", "d": "Situational. Unless you specifically need the 24-hour duration and the massive area of effect, Major Image will suffice."}, {"n": "Locate Creature", "r": "orange", "d": "More effective than mundane tracking, but the 1,000-foot range can be a problem if the target is actively fleeing from you. If you’re going to use this, be sure that you’re moving faster than your target."}, {"n": "Phantasmal Killer", "r": "blue", "d": "Despite how slowly it kills the target, this is a great single-target spell and the spell level scaling is absolutely spectacular. Against big burly foes which often have poor mental stats, the save will be hard to pass and the debuff will make their attacks and ability checks much less effective. Because casting Phantasmal Killer increases the damage by a d10 every time it deals damage (rather than just the on the first damage roll like many spells), this remains an effective option well beyond"}, {"n": "Polymorph", "r": "blue", "d": "Fantastic and versatile, but also very complicated. See our Practical Guide to Polymorph for detailed advice on how to get the most out of Polymorph. There was some ambiguity when the 2024 rules were first published, but errata has updated Polymorph to clarify that the Temporary Hit Points vanish when the spell ends."}, {"n": "Raulothim’s Psychic Lance", "r": "green", "d": "Situational by design. The damage is low for a spell of this level, especially for one that’s single-target, but the damage alone isn’t why you’re here. The save is Intelligence, and those tend to be among the lowest saves, even at very high levels, and the target is Incapacitated on a failed save, robbing them of a turn, so despite it being single-target with lackluster damage it’s a powerful tool against single foes. Even better, if you know the target’s name (often easy for named antagonists)"}], "level5": [{"n": "Alustriel’s Mooncloak", "r": "green", "d": "Situational by design, but really good at what it does. Half cover and three damage resistances is a ton of protection for yourself and your whole party, which is great on a class that can’t easily change their prepared spells. If your enemies depend on the covered damage types, this could change the course of a fight. Cover also provides a bonus to Dexterity saves, making this especially useful against area effects like breath weapons. There are two options to end the spell early, but try to av"}, {"n": "Animate Objects", "r": "green", "d": "This spell is complicated, but it can be profoundly effective when it works. It works a bit like a summon spell, but requires conveniently placed objects for you to animate. A summon spell is typically both safer and more convenient, but placing multiple bodies on the battlefield means that you can block space and hold enemies in place more easily than you could with a single summon. The difference is size between potential objects is an important decision. Huge creatures are the most efficient "}, {"n": "Awaken", "r": "red", "d": "Neat, but extremely situational."}, {"n": "Dominate Person", "r": "orange", "d": "Humanoids stop being common enemies after low levels because high-CR humanoids are typically NPCs with names and backstories and things like that. Even then, the 2024 rules dramatically shrunk the number of humanoids, changing th Still, there’s no better off-switch for a humanoid than Dominate Person. Upcasting the spell increases the duration, allowing you to drag the target through a bunch of fights. However, the creature taking damage allows additional saves, so be sure to keep it out of harm"}, {"n": "Dream", "r": "orange", "d": "While this spell on its own can be very powerful, it’s only usable outside of combat, and there are a lot of limitations on its usage. This is a great option for NPCs to mess with players, but it’s rare that a player can employ this effectively against their enemies."}, {"n": "Geas", "r": "orange", "d": "This spell is situational by design. It has a 1-minute casting time and Verbal components, so you’re not going to break this out in combat or while sneaking around in a dungeon. You’re going to restrain the subject, and stand around chanting for a full minute and hope that they fail the save. Once that’s done, you need to give them a suitable command (read the spell description). Generally you’ll want it to be something that benefits you, but will also take the target most of the duration to kee"}, {"n": "Greater Restoration", "r": "blue", "d": "If you don’t have a Cleric in the party, you need this."}, {"n": "Hold Monster", "r": "blue", "d": "A great example of a “save or suck” spell. With the exception of undead, this works on any creature type, and paralysis takes a creature out of a fight almost as much as killing them. If you have an ally who fights in melee, send them to follow up with melee attacks. Automatic critical hits are too hard to pass up many melee allies. Keep in mind that targets get another save at the end of each of their turns, so you need to act quickly while targets are still affected."}, {"n": "Legend Lore", "r": "orange", "d": "Situational, but potentially very useful. “Famous” is a bit subjective, but there’s easy room to argue that someone gaining notoriety in some fashion is famous enough to qualify. The spell calls out that you could learn “secret lore that has never been widely known,” which presents some interesting opportunities. You might be able to learn things like the identities of secretive, unknown enemies. The more you know already, the more detailed the information becomes, so repeated castings might lea"}, {"n": "Mass Cure Wounds", "r": "orange", "d": "You shouldn’t need this. It doesn’t do enough healing to justify the spell slot, so the best use case is to cast it when you have more than one ally at 0 hit points. If you reach that point, things have gone very seriously wrong. Healing Word is a much more efficient way to get people conscious, and considering how little healing you’re getting out of Mass Cure Wounds your allies will probably go down again anyway if anything looks at them funny."}, {"n": "Mislead", "r": "orange", "d": "Situational. Not an easy option in combat, but out of combat this provides a safe way to scout an area or to trick other creatures. If you do this in combat, you may be able to target enemies with spells while you’re safely behind total cover. You still measure range from your own body, but you can use the duplicate to see places that you normally can’t."}, {"n": "Modify Memory", "r": "green", "d": "The actual intent of the spell is very situational, but this spell is accidentally a really effective save-or-suck spell. Compare it to Hold Monster against a single target, which is the same level. Hold Monster allows additional saves every round, though admittedly Paralyzed is more lethal than Incapacitated. The target is unaware of its surroundings, so you can reasonably get Advantage on attack rolls against it, but, as long as it isn’t damaged, you could also fully restrain the target before"}, {"n": "Planar Binding", "r": "orange", "d": "At the level you get this, 1,000gp is a steep price to pay for a spell that lasts 24 hours. Save this for higher levels when you can cast something like Gate to summon a powerful creature and bind it to your service for a long time. If you can somehow get two Level 9 Wizard Spells, you could summon a Balor or something equally powerful for a year and a day, then command it to conquer a continent for you or something. Most creatures won’t be happy about this form of servitude, of course, so be su"}, {"n": "Raise Dead", "r": "orange", "d": "This is an odd thing to find on the Bard spell list. Death is part of the game, so eventually you’ll need this, but it’s no fun to spend one of your limited spells known on a spell you might cast once or twice ever."}, {"n": "Rary’s Telepathic bond", "r": "blue", "d": "Cast this as a ritual. The ability to communicate silently across limitless distance is a massive tactical advantage in most situations where other creatures are a problem. The fact that this has no range limit once it’s in effect means that you can use it to communicate with allies while they scout around, potentially including familiars and summoned creatures. This also neatly solves the challenge of language barriers, so, if you can get a target to sit around for 10 minutes, you no longer nee"}, {"n": "Scrying", "r": "green", "d": "Technically situational, but it’s a situation that comes up frequently. Any time that you want to know what the BBEG is up to, cast Scrying and take a look. The spell gets easier the more you know the target, and after one face-to-face encounter you could easily make off with something tying you to the target to penalize their saving throw."}, {"n": "Seeming", "r": "orange", "d": "Very situational, but hard to replace in situations where you need it."}, {"n": "Skill Empowerment", "r": "blue", "d": "Expertise for everyone! You won’t be throwing this on the Fighter for them to shove or grapple everything they meet (you have better combat buffs), but you can put this on a character before sneaking, before an important social situation, before investigating something important, or basically any other time that there’s an important skill check to be made and you have time to buff yourselves beforehand."}, {"n": "Synaptic Static", "r": "green", "d": "Start with Fireball. Shave 30 feet off the range, change the damage type to psychic, and change the saving throw to Intelligence. Very few creatures are good at intelligence saves, so expect most creatures to fail the save. The 8d6 damage feels underwhelming at this spell level, but subtracting a d6 from attack rolls and ability checks for a full minute is a significant debuff. This is a good option to start a fight with a large number of martial enemies because they’ll be impacted most by debuf"}, {"n": "Teleportation Circle", "r": "orange", "d": "Situational, but generally one of the safest long-distance teleportation options, especially since it doesn’t have a cap on the number or size of creatures affected. However, how useful it is depends on the availability of convenient teleportation circles in your campaign. If your DM isn’t going to make such teleportation circles available and useful, look elsewhere."}, {"n": "Yolande’s Regal Presence", "r": "blue", "d": "Spirit Guardians, but it’s Psychic Damage and it knocks enemies Prone and pushes them away. The AOE and the damage aren’t amazing, but they really don’t need to be."}], "level6": [{"n": "Dirge", "r": "blue", "d": "This is another one of those Spirit Guardians-style spells: Turn it on, walk into a room, blend your enemies. However, most of those spells have Emanations of 10 to 20 feet. Dirge has a staggering like radius of 60 feet, which will cover all by the largest combat encounters. It pays for that massive radius with a 1-minute duration (compared to 10 for similar spells) and only 3d10 damage (compared to 3d8 for level 3 Spirit Guardians). The secondary effect knocks foes prone of halves their speed, "}, {"n": "Eyebite", "r": "blue", "d": "If you cast this, don’t expect to do anything else for the duration of the encounter. A save-or-suck to put targets to sleep every turn is hard to beat, and the fact that you can do it every turn is spectacular. Sure, targets only remain asleep until the spell ends, but that’s plenty of time for someone else in your party to walk over and deliver a guaranteed critical hit. When the target wakes from taking damage they’ll still be prone, and on your next turn you’re free to put them to sleep agai"}, {"n": "Find the Path", "r": "orange", "d": "Situational, and often difficult to use, but still very interesting. The hardest part of using the spell is finding an object from the place you want to go. Once you’ve solved that problem, Find the Path merely gives you directions. It doesn’t avoid hazards and it doesn’t point out traps, so be wary of traps and ambushes along the way."}, {"n": "Guards and Wards", "r": "orange", "d": "Very situational. This spell is generally used by NPCs rather than by players since it’s so rare for players to stay in one place long enough to make the spell permanent, but if you have a permanent base and you’re a Wizard this is basically required. It’s like covering your mouth when you cough. You could choose to not do it, but I’ll think much less of you for it."}, {"n": "Heroes’ Feast", "r": "orange", "d": "An absolutely amazing spell, the 1,000gp cost means that you need to save it for special occasions."}, {"n": "Mass Suggestion", "r": "blue", "d": "Suggestion is absurdly powerful, and this is even better. Unlike Suggestion you don’t need to maintain Concentration, and the base duration for Mass Suggestion is triple Suggestion’s duration with the option to extend it with higher-level spell slots. If you’ve had good results with Suggestion, consider replacing it with Mass Suggestion."}, {"n": "Otto’s Irresistible Dance", "r": "green", "d": "The primary appeal of Otto’s Irresistible Dance is that the target suffers the effects immediately, and doesn’t get to make a save until they have spent an Action to make the save, and since they must spend all of their movement dancing, they effectively lose at least one turn after being targeted (they still get a Bonus Action). This is a great way to sneak past Legendary Resistances, and if you’re positioned well in the initiative order your allies might get to spend their turns attacking the "}, {"n": "Programmed Illusion", "r": "green", "d": "This spell is weird and complicated and I love it. The casting time is 1 Action, so you can use it really quickly but somehow script a 5-minute performance in under 6 seconds. It has a 25gp expensive material component which it doesn’t consume for reasons I dopn’t understand. The 30-foot cube area is enough to fill a decently large stage, allowing you to script entire plays (albeit short ones). The triggering condition is flexible enough that you can use a separate casting of Programmed Illusion"}, {"n": "True Seeing", "r": "blue", "d": "You don’t always want this running, but you always want this available. For 1 hour you can see through illusions and invisibility, effectively negating them, and you can see into the Ethereal plane so that you can see creatures using options like Blink or walking around on the ethereal plane on their own like Phased Spiders. However, you can only see 120 feet away, so you’re not totally protected. Invisible creatures can maintain a safe distance while observing and even attacking you if there is"}], "level7": [{"n": "Dream of the Blue Veil", "r": "orange", "d": "This is more a plot point than a spell. Don’t learn this unless your DM tells you to."}, {"n": "Etherealness", "r": "blue", "d": "A profoundly effective scouting/escape option. Unless you’re fighting ethereal enemies, you’re untouchable. You can see and hear into the material plane (albeit at a limited distance), allowing you to spy on other creatures in person without their knowledge. The spell lasts 8 hours, which is sufficient to do a lot of things potentially including a Long Rest. Note that this only works on a plane bordering the Ethereal Plane, so it only works on the Material Plane, the Feywild, and the Shadowfell."}, {"n": "Forcecage", "r": "green", "d": "An absolutely amazing way to isolate either your party or your enemies, but the 1,500 gp component will become expensive quickly. The duration is long enough to take a short rest, and there’s no save for enemies to resist it. Have an ally drop an AOE damage over time spell like Hunger of Hadar, then drop a Force Cage on top of it and you’re playing a magical game of “Will it Blend?”."}, {"n": "Mirage Arcane", "r": "blue", "d": "This is a difficult spell. The affectable area is huge, the distance is Sight (go climb a mountain on a clear day), and the effects of the illusion are tangible enough that you can physically interact with them, including picking up sticks or stones. But it’s unclear how far that goes: Can you burn the illusory wood to keep yourself warm? Can you smooth over difficult terrain in the same way that you can make smooth terrain difficult? Could you place stairs in the side of a clear cliff face? How"}, {"n": "Mordenkainen’s Magnificent Mansion", "r": "green", "d": "In the real world, learning to cast this spell would mean that you could comfortably retire. Each day you would walk out of the mansion, cast the spell again to recreate the house for 24 hours, then you would return to your invisible extraplanar abode to enjoy another 24 hours of abundant food, comfort, and nearly-invisible servants. The size of the mansion amounts to 5000 square feet, which is plenty to accommodate a party of adventurers and a sizeable retinue. The suggested 100 banquet guests "}, {"n": "Mordenkainen’s Sword", "r": "red", "d": "This is an objectively bad spell. Compare it to Bigby’s Hand, and it’s pretty clear. Bigby’s Hand can move twice as fast, it can do more than attack, and, when upcast to the same level as Mordenkainen’s Sword, it does considerably more damage of the same damage type. The fact that both spells are in the Player’s Handbook is ridiculous."}, {"n": "Power Word Fortify", "r": "blue", "d": "A huge amount of Temporary Hit Points. There’s no specified duration, so these THP last until your next Long Rest, making it easy to cast this before walking into a dangerous situation."}, {"n": "Prismatic Spray", "r": "orange", "d": "Unpredictable. The AOE is great, and effects 6, 7, and 8 are all great (any two rays would be spectacular), but the spell is unpredictable and I’m always reluctant to recommend unpredictable spells because unpredictable means unreliable. If you’ve historically enjoyed Cone of Cold and want an upgrade I could see an opportunity here."}, {"n": "Project Image", "r": "orange", "d": "Mislead with a massively longer duration and better range. The language used to describe the duplicate’s capabilities is nearly identical, but it’s much better than just that. The extra range, the ability to see through its senses, and the ability to move the image means that you’re effectively sending a flying, you-shaped illusion to sneak around. If you disguise your real body before casting the spell, you can scout an area disguised as someone else. If you’re caught, no problem: the illusion "}, {"n": "Regenerate", "r": "red", "d": "Too situational to select as a spellcaster with a limited number of spells known. DnD doesn’t have injury rules which lead to limb removal except in very specific circumstances, so it’s not like characters are losing fingers and toes despite spending potentially years being sliced and diced by all manner of opponents."}, {"n": "Resurrection", "r": "red", "d": "If you learned Raise Dead you might replace it with Resurrection, but I don’t think Resurrection is a meaningful improvement over Raise Dead."}, {"n": "Symbol", "r": "red", "d": "While many of the effects are wonderful, the inability to move the symbol and the high casting cost are prohibitive. Use Glyph of Warding."}, {"n": "Teleport", "r": "blue", "d": "With a 10-foot range and up to 8 targets you can easily teleport your entire party, and without the need to hold hands and form a circle you can often rescue the whole party in the midst of combat without too much trouble. However, Teleport has a complicated mechanic related to how familiar you are with the target destination and there’s often a possibility of mishap. Be sure to borrow a souvenir from new places so that you can easily return if necessary without the risk of a mishap."}], "level8": [{"n": "Antipathy/Sympathy", "r": "green", "d": "Difficult to use because it targets a single type of creature, but if you’re facing a homogenous group of enemies you can greatly hinder them with either option. Even against single creatures, using Sympathy to force an enemy to approach one of your party members (sympathy on a paladin to attract a lich) can force enemies into a situation which will end in their death."}, {"n": "Befuddlement", "r": "blue", "d": "Prevent spellcasting and the Magic Action is a huge problem for many high-level enemies, and Intelligence saves are consistently the lowest across the whole CR spectrum."}, {"n": "Dominate Monster", "r": "green", "d": "Arguably the best save-or-suck spell in the game, but the target gets Advantage on the save if you’re fighting it. This means that you want to cast it on your target outside of combat, but that presents a frustrating complication in the rules. As soon as you declare that you want to cast this, the DM should call for initiative to be rolled, at which point you’re now fighting the creature. You’ll need to talk to your DM about how they want to handle this, or your targets will always have Advantag"}, {"n": "Glibness", "r": "green", "d": "Very helpful in extended social situations, but you may do fine with Enhance Ability."}, {"n": "Mind Blank", "r": "orange", "d": "Only situationally useful. Mind Fortress and Nondetection are typically sufficient, but sometimes you need even more protection."}, {"n": "Power Word Stun", "r": "green", "d": "Gambling on a creature’s current hit point total is hard, especially since you get so few spell slots at this level, but if you can time this to hit a wounded enemy (or an enemy with a low hit point maximum like many spellcasters) it can take them out of the encounter long enough for you to win largely unopposed."}], "level9": [{"n": "Foresight", "r": "blue", "d": "This is, without a doubt, the best buff in the game. With an 8-hour duration you can throw it on the lucky recipient and watch them laugh their way through nearly any challenge for a full day worth of adventuring. ezstandalone.cmd.push(function () { ezstandalone.showAds(186); });"}, {"n": "Mass Polymorph", "r": "orange", "d": "You sacrifice the absolute power of True Polymorph for the ability to affect up to 10 creatures. The rules for handling creatures with no CR (your party) are written to make this really unappealing compared to True Polymorph. Compared to turning one ally into a CR 17+ dragon, turning up to 10 of your allies into Tyrannosauruses (Tyrannosaurs? Tyrannosauri?) simply isn’t as effective, even if the phrase “I turn us all into tyrannosauruses” is one of the coolest things I can think to say during a "}, {"n": "Power Word Heal", "r": "green", "d": "Full healing and removing a bunch of status conditions in one spell is really tempting, but preventing all of that damage and all of those conditions with Foresight will work much better."}, {"n": "Power Word Kill", "r": "orange", "d": "100 hit points is a very low cap, but it’s hard to argue with how effective it is to outright slay a creature with no rolls involved. As an example, a 20th-level wizard with 12 Constitution will have 102 hit points (6+19*4+20), so basically nothing which is scary at this level will be immediately vulnerable, but if your allies can deal a bunch of damage quickly you may be able to use this in round 1 of a fight."}, {"n": "Prismatic Wall", "r": "green", "d": "The ultimate area control spell. 10-minute duration with no Concentration, you and your allies can pass through it unharmed, and if enemies move through it they can take up to 50d6 damage, be turned to stone, and be sent to another plane. The wall can be destroyed, but the process to do so is so laughably obnoxious that I doubt anyone would actually try it (it’s a relic of early editions of DnD). Drop a spell like Maddening Darkness or Sickening Radiance, then encircle your enemies in a spherica"}, {"n": "Psychic Scream", "r": "green", "d": "Up to 10 creatures within 90 feet of you in any direction. Intelligence saves are the weakest save on average, even for high-CR monsters, so in many cases you can Stun enemies and keep them stunned for an incredibly long time. There’s no duration on the stun effect, so enemies with poor Intelligence may be permanently stunned . The damage is fine, but that’s absolutely an after-thought compared to the stun effect."}, {"n": "True Polymorph", "r": "green", "d": "If you want to use this to turn yourself into a creature and fight in that form, Shapechange is objectively better. True Polymorph’s advantage is that it can affect other creatures. Turning a creature into another creature can be used to turn yourself or an ally into a big scary monster or you can use it to turn an enemy into something harmless. The target gets Temporary Hit Points equal to the new form’s max hp, so you can turn them into something like a frog to give them a pittance of THP. The"}]};
+
+// ─── State ───────────────────────────────────
+const S = {
+  spells: {
+    cantrip: [],
+    level1: [],
+    level2: [],
+    level3: [],
+    level4: [],
+    level5: [],
+    level6: [],
+    level7: [],
+    level8: [],
+    level9: []
+  },
+  filters: {
+    cantrip: { filt: 'all', search: '' },
+    level1: { filt: 'all', search: '' },
+    level2: { filt: 'all', search: '' },
+    level3: { filt: 'all', search: '' },
+    level4: { filt: 'all', search: '' },
+    level5: { filt: 'all', search: '' },
+    level6: { filt: 'all', search: '' },
+    level7: { filt: 'all', search: '' },
+    level8: { filt: 'all', search: '' },
+    level9: { filt: 'all', search: '' }
+  },
+  level: 3
+};
+
+// ─── Helpers ─────────────────────────────────
+function badge(r) {
+  const L = {blue:'★★★★', green:'★★★', orange:'★★', red:'★'};
+  return `<span class="badge badge-${r}">${L[r]}</span>`;
+}
+
+function knownCount(level) { return S.spells[level].length; }
+function maxKnown(level) { return D.ui?.knownPerLevel?.[level] ?? 2; }
+function slotCount(level) { return D.slots?.[String(level)] ?? 0; }
+
+// ─── Tabs ────────────────────────────────────
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('pane-'+t.dataset.tab).classList.add('active');
+    if (t.dataset.tab === 'summary') renderSummary();
+  });
+});
+
+// ─── Filter UI ───────────────────────────────
+function renderFilter(level) {
+  const bar = document.getElementById('filter-'+level);
+  if (!bar) return;
+  const ratings = [
+    {k:'all',l:'All',c:'fa'},{k:'blue',l:'Fantastic',c:'fb'},
+    {k:'green',l:'Good',c:'fg'},{k:'orange',l:'Situational',c:'fo'},{k:'red',l:'Avoid',c:'fr'}
+  ];
+  const f = S.filters[level];
+  bar.innerHTML = ratings.map(b => 
+    `<button class="fbtn ${b.c} ${f.filt===b.k?'active':''}" data-f="${b.k}" data-l="${level}">${b.l}</button>`
+  ).join('')
+    + `<input class="srch" id="fsrch-${level}" placeholder="Search…\" value="${f.search}">`;
+  
+  bar.querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => {
+    S.filters[b.dataset.l].filt = b.dataset.f;
+    renderFilter(b.dataset.l);
+    renderSpells(b.dataset.l);
+  }));
+  const searchInput = document.getElementById(`fsrch-${level}`);
+  if (searchInput) {
+    searchInput.addEventListener('input', e => {
+      S.filters[level].search = e.target.value;
+      renderSpells(level);
+    });
+  }
+}
+
+// ─── Spell Grid ──────────────────────────────
+function renderSpells(level) {
+  const g = document.getElementById('grid-'+level);
+  const f = S.filters[level];
+  const fq = f.search.toLowerCase();
+  const max = maxKnown(level);
+  const cur = knownCount(level);
+  
+  const vis = (D[level]||[]).filter(s => {
+    if (f.filt !== 'all' && s.r !== f.filt) return false;
+    if (fq && !s.n.toLowerCase().includes(fq) && !s.d.toLowerCase().includes(fq)) return false;
+    return true;
+  });
+  
+  if (!vis.length) {
+    g.innerHTML = '<div style="color:var(--tx3);font-style:italic;padding:8px 0">No spells match.</div>';
+    return;
+  }
+  
+  g.innerHTML = vis.map(s => {
+    const sel = S.spells[level].includes(s.n) ? 'sel' : '';
+    const st = sel ? '<div class="card-state selected">✓ Selected</div>' : '';
+    return `<div class="card ${sel}" data-l="${level}" data-s="${s.n}">
+      <div class="card-top">
+        <div class="card-name">${s.n}</div>
+        ${badge(s.r)}
+      </div>
+      <div class="card-note">${s.d}</div>
+      ${st}
+    </div>`;
+  }).join('');
+  
+  g.querySelectorAll('.card').forEach(c => c.addEventListener('click', () => {
+    const lvl = c.dataset.l, nm = c.dataset.s;
+    const idx = S.spells[lvl].indexOf(nm);
+    if (idx >= 0) {
+      S.spells[lvl].splice(idx, 1);
+    } else {
+      if (knownCount(lvl) >= max) return;
+      S.spells[lvl].push(nm);
+    }
+    updateCounts();
+    renderSpells(lvl);
+    updateSBar();
+    if (document.querySelector('.tab[data-tab="summary"]').classList.contains('active')) {
+      renderSummary();
+    }
+  }));
+}
+
+function updateCounts() {
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  levels.forEach(lvl => {
+    const el = document.getElementById('known-'+lvl);
+    if (el) el.textContent = knownCount(lvl);
+  });
+  
+  for (let i = 1; i <= 9; i++) {
+    const el = document.getElementById('slots-level'+i);
+    if (el) el.textContent = slotCount(i);
+  }
+}
+
+// ─── Summary ─────────────────────────────────
+function renderSummary() {
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  const lines = [];
+  
+  for (const level of levels) {
+    const spells = S.spells[level];
+    if (spells.length > 0) {
+      const max = maxKnown(level);
+      lines.push(`<div class="srow"><span class="skey">${level.toUpperCase()} (${spells.length}/${max})</span><span class="sval">${spells.map(n=>`<span>${n}</span>`).join(', ')}</span></div>`);
+    }
+  }
+  
+  if (lines.length === 0) {
+    lines.push('<div style="color:var(--tx3);padding:8px 0">No spells selected yet.</div>');
+  }
+  
+  document.getElementById('summary-content').innerHTML = lines.join('');
+}
+
+// ─── Status bar ──────────────────────────────
+function updateSBar() {
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  levels.forEach(lvl => {
+    const el = document.getElementById('sb-'+lvl.replace('level','lvl'));
+    if (el) el.textContent = `${knownCount(lvl)}/${maxKnown(lvl)}`;
+  });
+}
+
+// ─── Copy ────────────────────────────────────
+document.getElementById('copy-btn').addEventListener('click', () => {
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  const lines = [`=== ${D.meta.name} Spells (Level ${S.level}) ===`, ''];
+  
+  for (const level of levels) {
+    const spells = S.spells[level];
+    if (spells.length > 0) {
+      lines.push(`${level.toUpperCase()}:`);
+      lines.push(...spells.map(s => `  - ${s}`));
+      lines.push('');
+    }
+  }
+  
+  navigator.clipboard.writeText(lines.join('\n')).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = '◆ Copy to Clipboard'; }, 2000);
+  });
+});
+
+// ─── Init (called after D is loaded) ─────────
+function init() {
+  const ui = D.ui || {};
+  
+  // Initialize state from data
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  for (const level of levels) {
+    S.spells[level] = [];
+  }
+  
+  // Dynamic header
+  document.title = `${D.meta.name} Spell Builder · D&D ${D.meta.edition}`;
+  document.getElementById('class-title').textContent = `${D.meta.name.toUpperCase()} SPELL BUILDER`;
+  document.getElementById('class-sub').textContent   = `${D.meta.edition} D&D rules · RPGBOT guide`;
+  
+  updateCounts();
+  updateSBar();
+  
+  for (const level of levels) {
+    renderFilter(level);
+    renderSpells(level);
+  }
+  
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('sbar').style.display = 'flex';
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
