@@ -1,0 +1,37 @@
+WEBVTT
+
+00:00:02.000 --> 00:00:07.000
+<v Alex>Welcome everyone. Let's go through the kick-off slides.
+
+00:00:02.000 --> 00:00:07.000
+<v Alex>We're aiming to ship Phase 1 by end of next week.
+
+00:00:30.000 --> 00:00:35.000
+<v Bo>Two of us full time should be enough if scope holds.
+
+00:01:00.000 --> 00:01:05.000
+<v Alex>On to the architecture. It's a single-process CLI.
+
+00:01:00.000 --> 00:01:05.000
+<v Alex>Cache is keyed by URL hash, same convention as today.
+
+00:01:45.000 --> 00:01:50.000
+<v Cam>The block diagram on the next slide is the same one from the design doc.
+
+00:02:30.000 --> 00:02:35.000
+<v Alex>Open question: what retention do we want for generated notes?
+
+00:02:45.000 --> 00:02:50.000
+<v Bo>I'd say keep them indefinitely. Frames can be purged on the existing schedule.
+
+00:03:00.000 --> 00:03:05.000
+<v Cam>Agreed. We can make it configurable.
+
+00:03:30.000 --> 00:03:35.000
+<v Alex>Last slide. Alex writes the spec, Bo prototypes the parser, Cam reviews end of week.
+
+00:03:50.000 --> 00:03:55.000
+<v Bo>Sounds good.
+
+00:03:52.000 --> 00:03:57.000
+<v Cam>Works for me.

@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "recording_url": "https://example.invalid/rec/play/synthetic-fixture-12345",
+  "total_cost_usd": 0.0,
+  "budget_ceiling_usd": 0.0,
+  "slides": [
+    {
+      "slide_id": "s001",
+      "title": "Project kick-off",
+      "bullets": [
+        "Goal: ship Phase 1 by end of next week",
+        "Two engineers staffed full-time"
+      ],
+      "visual_description": "Simple title card with two-line agenda below the title.",
+      "raw_ocr": "Project kick-off\nGoal: ship Phase 1 by end of next week\nTwo engineers staffed full-time",
+      "extraction_method": "vision",
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "slide_id": "s002",
+      "title": "Architecture overview",
+      "bullets": [
+        "Single-process CLI",
+        "Filesystem cache keyed by URL hash"
+      ],
+      "visual_description": "",
+      "raw_ocr": "Architecture overview\nSingle-process CLI\nFilesystem cache keyed by URL hash",
+      "extraction_method": "vision",
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "slide_id": "s003",
+      "title": "",
+      "bullets": [],
+      "visual_description": "",
+      "raw_ocr": "Block diagram showing capture -> extract -> understand -> synthesise pipeline with arrows. No text labels visible.",
+      "extraction_method": "vision",
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "slide_id": "s004",
+      "title": "Open questions",
+      "bullets": [],
+      "visual_description": "Single-question slide with the question shown as a centred sentence.",
+      "raw_ocr": "Open questions\nWhat retention policy do we want for generated notes?",
+      "extraction_method": "vision",
+      "estimated_cost_usd": 0.0
+    },
+    {
+      "slide_id": "s005",
+      "title": "Next steps",
+      "bullets": [
+        "Alex writes the spec",
+        "Bo prototypes the parser",
+        "Cam reviews end of week"
+      ],
+      "visual_description": "Three-row table with columns Owner / Item / Deadline.",
+      "raw_ocr": "Next steps\nAlex - writes the spec\nBo - prototypes the parser\nCam - reviews end of week",
+      "extraction_method": "vision",
+      "estimated_cost_usd": 0.0
+    }
+  ]
+}

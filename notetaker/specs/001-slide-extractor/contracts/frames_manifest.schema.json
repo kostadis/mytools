@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "notetaker/frames_manifest/1.0",
+  "title": "FramesManifestSchema",
+  "description": "Output contract for the Capture stage (companion to TranscriptSchema). Lists every captured frame in playback order.",
+  "type": "object",
+  "required": ["schema_version", "recording_url", "frames"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "recording_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "frames": {
+      "type": "array",
+      "description": "Playback-ordered list of captured JPEG frames. May be empty if no frames were captured.",
+      "items": {
+        "$ref": "#/$defs/FrameEntry"
+      }
+    }
+  },
+  "$defs": {
+    "FrameEntry": {
+      "type": "object",
+      "required": ["timestamp_ms", "file_path"],
+      "additionalProperties": false,
+      "properties": {
+        "timestamp_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Playback position in milliseconds when this frame was captured."
+        },
+        "file_path": {
+          "type": "string",
+          "description": "Relative path (from cache root) to the JPEG file for this frame."
+        }
+      }
+    }
+  }
+}

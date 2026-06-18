@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "notetaker/transcript/1.0",
+  "title": "TranscriptSchema",
+  "description": "Output contract for the Capture stage. Contains all scraped utterances from the Zoom viewer transcript panel.",
+  "type": "object",
+  "required": ["schema_version", "recording_url", "captured_at", "utterances", "transcript_unavailable"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version. Increment MAJOR for breaking changes."
+    },
+    "recording_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Canonical (normalised, tracking-parameter-stripped) Zoom viewer URL."
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the capture session completed."
+    },
+    "transcript_unavailable": {
+      "type": "boolean",
+      "description": "True if the Zoom transcript panel was absent or empty during capture."
+    },
+    "utterances": {
+      "type": "array",
+      "description": "Time-ordered list of scraped utterances. Empty array if transcript_unavailable is true.",
+      "items": {
+        "$ref": "#/$defs/Utterance"
+      }
+    }
+  },
+  "$defs": {
+    "Utterance": {
+      "type": "object",
+      "required": ["start_seconds", "end_seconds", "speaker", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "start_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Playback position in seconds when this utterance began."
+        },
+        "end_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Playback position in seconds when this utterance ended. Must be > start_seconds."
+        },
+        "speaker": {
+          "type": "string",
+          "description": "Speaker display name from the Zoom transcript panel. Empty string if unknown."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Spoken text of the utterance."
+        }
+      }
+    }
+  }
+}

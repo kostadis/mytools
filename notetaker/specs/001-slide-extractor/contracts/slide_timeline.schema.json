@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "notetaker/slide_timeline/1.0",
+  "title": "SlideTimelineSchema",
+  "description": "Output contract for the Slide Extraction stage. Lists every slide occurrence in chronological order.",
+  "type": "object",
+  "required": ["schema_version", "recording_url", "slides"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "recording_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "slides": {
+      "type": "array",
+      "description": "Chronologically ordered slide occurrences. May be empty if no slides were detected.",
+      "items": {
+        "$ref": "#/$defs/SlideOccurrence"
+      }
+    }
+  },
+  "$defs": {
+    "SlideOccurrence": {
+      "type": "object",
+      "required": ["slide_id", "start_seconds", "end_seconds", "frame_path", "frame_hash", "frame_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "slide_id": {
+          "type": "string",
+          "pattern": "^s[0-9]{3,}$",
+          "description": "Stable identifier shared by all occurrences of the same unique slide (e.g. 's001')."
+        },
+        "start_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Playback time when this slide appeared."
+        },
+        "end_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Playback time when this slide was replaced or the recording ended."
+        },
+        "frame_path": {
+          "type": "string",
+          "description": "Relative path (from cache root) to the representative JPEG frame for this occurrence."
+        },
+        "frame_hash": {
+          "type": "string",
+          "description": "64-bit pHash hex string of the representative frame. Used for slide de-duplication."
+        },
+        "frame_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 hex digest of the frame image bytes. Used as vision model cache key."
+        }
+      }
+    }
+  }
+}
