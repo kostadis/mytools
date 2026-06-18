@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "notetaker/slide_content/1.0",
+  "title": "SlideContentSchema",
+  "description": "Output contract for the Slide Understanding stage. Contains extracted content for every unique slide.",
+  "type": "object",
+  "required": ["schema_version", "recording_url", "total_cost_usd", "budget_ceiling_usd", "slides"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "recording_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "total_cost_usd": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Cumulative vision API cost for this run's understanding stage."
+    },
+    "budget_ceiling_usd": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Budget ceiling that was in effect. 0 means no ceiling was configured."
+    },
+    "slides": {
+      "type": "array",
+      "description": "One entry per unique slide_id. Not per occurrence — de-duplicated.",
+      "items": {
+        "$ref": "#/$defs/SlideContent"
+      }
+    }
+  },
+  "$defs": {
+    "SlideContent": {
+      "type": "object",
+      "required": ["slide_id", "title", "bullets", "visual_description", "raw_ocr", "extraction_method", "estimated_cost_usd"],
+      "additionalProperties": false,
+      "properties": {
+        "slide_id": {
+          "type": "string",
+          "description": "Matches slide_id in SlideTimelineSchema."
+        },
+        "title": {
+          "type": "string",
+          "description": "Slide title extracted from the frame. Empty string if none detected."
+        },
+        "bullets": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Bullet point texts in document order. Empty array if no bullets."
+        },
+        "visual_description": {
+          "type": "string",
+          "description": "Plain-language description of charts, diagrams, or images. Empty string if text-only slide."
+        },
+        "raw_ocr": {
+          "type": "string",
+          "description": "All visible text on the slide in reading order."
+        },
+        "extraction_method": {
+          "type": "string",
+          "enum": ["vision", "ocr"],
+          "description": "'vision' if extracted via Claude vision API; 'ocr' if extracted via Tesseract fallback."
+        },
+        "estimated_cost_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Estimated API cost for this single slide extraction. 0.0 for OCR extractions."
+        }
+      }
+    }
+  }
+}

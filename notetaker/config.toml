@@ -1,0 +1,101 @@
+# notetaker default configuration
+# Copy to ~/.config/notetaker/config.toml and adjust as needed.
+# All values here are defaults that work on a typical Zoom Cloud Recording.
+
+[notes]
+# Default model for the post-capture notes render call. Override here to swap models.
+model = "claude-sonnet-4-6"
+# Output token cap for the single render call. 8192 is generous for a 1-hour meeting.
+max_output_tokens = 8192
+# How long working_doc.md and notes.md are retained inside <cache>/<hash>/notes/ .
+# Independent of cache.retention_days (which still purges frames + slide artifacts).
+# 0 = retain forever (constitution-compliant only when explicitly chosen by the user).
+retention_days = 365
+# Filename for the deterministic working doc inside <cache>/<hash>/notes/.
+working_doc_filename = "working_doc.md"
+# Legacy notes filename, retained as the fallback name detected during the lazy
+# migration to human-readable filenames. New runs write under
+# <YYYY-MM-DD>--<meeting>--<summary>.md inside the same notes/ subdirectory.
+notes_filename = "notes.md"
+# Emit a warning if projected (dry-run) or actual cost of the render call exceeds this.
+# Does not block the call. 0 disables the threshold.
+cost_warn_threshold_usd = 0.50
+# Model for the post-render summary call (one-line label used in the
+# human-readable notes filename). Haiku — single call, ~$0.001 per run.
+summary_model = "claude-haiku-4-5-20251001"
+# Defensive client-side cap on the summary length, matching FR-002 / SC-003.
+summary_max_chars = 50
+# Pricing for the summary call. Mirrors [understanding] for Haiku.
+summary_input_token_price_per_million = 0.80
+summary_output_token_price_per_million = 4.00
+# Total notes filename cap (excluding ".md"). Stays safely under the
+# 255-byte name limits common to ext4 / APFS.
+filename_max_chars = 200
+# Length of the URL-hash-prefix disambiguator appended when a within-entry
+# filename collision is detected (FR-007).
+filename_collision_suffix_chars = 8
+
+[capture]
+# CSS selector for the Zoom presentation area (the video element showing slides)
+slide_element_selector = ".vjs-tech"
+# CSS selector for the Zoom transcript panel container
+transcript_panel_selector = ".transcript-panel__content"
+# CSS selector for individual transcript line items within the panel
+transcript_line_selector = ".transcript-panel__content li"
+# Seconds between frame captures during playback (increase for long meetings to save disk)
+frame_sample_rate_seconds = 1
+# Absolute path to Chrome user-data-dir for Playwright persistent context.
+# Empty string = auto-detect system default Chrome profile.
+browser_profile_path = ""
+# CSS selector(s) tried in order when page.title() returns a generic Zoom title.
+# Comma-separated; first non-empty match wins. Used by the meeting-title scrape
+# during capture so the cache entry's meta.json carries a human-readable title.
+recording_title_selector = ".recording-topic, .topic-name, h1"
+
+[extraction]
+# Hamming distance threshold for slide change detection (0 = identical, 64 = opposite).
+# Frames within this threshold of the previous slide are grouped as the same slide.
+slide_change_threshold = 8
+# Process every Nth captured frame (1 = all frames; 2 = every other frame, etc.)
+sample_every_n_frames = 1
+
+[understanding]
+# Model to use for slide content extraction via the vision API
+vision_model = "claude-haiku-4-5-20251001"
+# Per-run budget ceiling in USD; 0.0 disables the ceiling (no limit)
+budget_ceiling_usd = 2.00
+# Claude Haiku input token price per million tokens (update when pricing changes)
+input_token_price_per_million = 0.80
+# Claude Haiku output token price per million tokens
+output_token_price_per_million = 4.00
+
+[api]
+# Number of retry attempts on transient API or network failures (does not include first attempt)
+retry_count = 3
+# Fixed delay in seconds between retry attempts
+retry_delay_seconds = 1
+
+[cache]
+# Root directory for all URL-keyed artifact caches (~ is expanded)
+cache_dir = "~/.local/share/notetaker/cache"
+# Delete cached artifacts older than this many days (0 = keep forever)
+retention_days = 30
+
+[logging]
+# Log level: DEBUG, INFO, WARNING, ERROR
+level = "INFO"
+# Console (stderr) format: "console" (human-readable) or "json" (machine-readable)
+format = "console"
+# Run log file directory. Each invocation writes to <log_dir>/<UTC-iso-basic>-<url-hash>.log
+# and updates a `latest.log` symlink in the same directory.
+log_dir = "~/.local/share/notetaker/logs"
+# File-sink format. "json" = one JSON object per line (machine-parseable, still tail-friendly).
+# Currently the only supported value; reserved for future logfmt support.
+file_format = "json"
+# Maximum seconds between consecutive log records during a healthy long-running stage.
+# A user observing silence longer than ~2x this can safely conclude the run is hung.
+heartbeat_interval_seconds = 15
+# Delete run log files older than this many days (0 = keep forever, matching cache.retention_days
+# convention — a value of 0 does NOT mean "purge all"). This is independent of cache.retention_days
+# but defaults to the same value for consistency.
+retention_days = 30

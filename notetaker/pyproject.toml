@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "notetaker"
+version = "0.1.0"
+description = "Extract slides and transcripts from streamed meeting recordings to produce structured summaries."
+requires-python = ">=3.11"
+dependencies = [
+    "playwright>=1.43",
+    "imagehash>=4.3",
+    "Pillow>=10.0",
+    "pytesseract>=0.3.10",
+    "anthropic>=0.27",
+    "pydantic>=2.0",
+    "structlog>=24.1",
+    "typer>=0.12",
+]
+
+[project.scripts]
+notetaker = "notetaker.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.12",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/notetaker"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "live_api: tests that call paid external APIs (deselected by default)",
+]
+addopts = "-m 'not live_api'"
+
+[tool.ruff]
+src = ["src"]
+line-length = 100

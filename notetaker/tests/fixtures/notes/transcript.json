@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "recording_url": "https://example.invalid/rec/play/synthetic-fixture-12345",
+  "captured_at": "2026-05-09T00:00:00+00:00",
+  "transcript_unavailable": false,
+  "utterances": [
+    {"start_seconds": 2.0, "end_seconds": 7.0, "speaker": "Alex", "text": "Welcome everyone. Let's go through the kick-off slides."},
+    {"start_seconds": 2.0, "end_seconds": 7.0, "speaker": "Alex", "text": "We're aiming to ship Phase 1 by end of next week."},
+    {"start_seconds": 30.0, "end_seconds": 35.0, "speaker": "Bo", "text": "Two of us full time should be enough if scope holds."},
+    {"start_seconds": 60.0, "end_seconds": 65.0, "speaker": "Alex", "text": "On to the architecture. It's a single-process CLI."},
+    {"start_seconds": 60.0, "end_seconds": 65.0, "speaker": "Alex", "text": "Cache is keyed by URL hash, same convention as today."},
+    {"start_seconds": 105.0, "end_seconds": 110.0, "speaker": "Cam", "text": "The block diagram on the next slide is the same one from the design doc."},
+    {"start_seconds": 150.0, "end_seconds": 155.0, "speaker": "Alex", "text": "Open question: what retention do we want for generated notes?"},
+    {"start_seconds": 165.0, "end_seconds": 170.0, "speaker": "Bo", "text": "I'd say keep them indefinitely. Frames can be purged on the existing schedule."},
+    {"start_seconds": 180.0, "end_seconds": 185.0, "speaker": "Cam", "text": "Agreed. We can make it configurable."},
+    {"start_seconds": 210.0, "end_seconds": 215.0, "speaker": "Alex", "text": "Last slide. Alex writes the spec, Bo prototypes the parser, Cam reviews end of week."},
+    {"start_seconds": 230.0, "end_seconds": 235.0, "speaker": "Bo", "text": "Sounds good."},
+    {"start_seconds": 232.0, "end_seconds": 237.0, "speaker": "Cam", "text": "Works for me."}
+  ]
+}
