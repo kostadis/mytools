@@ -2,3 +2,10 @@ __pycache__/
 *.py[cod]
 logs/
 .builder.pid
+
+# AI tool workspace
+.qwen/
+
+# Text extraction scratch artifacts
+cleric-spells-text.txt
+cleric.txt

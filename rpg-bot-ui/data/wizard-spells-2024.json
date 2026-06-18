@@ -1,0 +1,1813 @@
+{
+  "meta": {
+    "id": "wizard-spells-2024",
+    "name": "Wizard",
+    "edition": "2024"
+  },
+  "ui": {
+    "knownPerLevel": {
+      "cantrip": 3,
+      "level1": 6,
+      "level2": 4,
+      "level3": 4,
+      "level4": 4
+    }
+  },
+  "slots": {
+    "1": 2,
+    "2": 3,
+    "3": 4,
+    "4": 4,
+    "5": 4,
+    "6": 4,
+    "7": 4,
+    "8": 4,
+    "9": 4,
+    "10": 4,
+    "11": 4,
+    "12": 4,
+    "13": 4,
+    "14": 4,
+    "15": 4,
+    "16": 4,
+    "17": 4,
+    "18": 4,
+    "19": 4,
+    "20": 4
+  },
+  "cantrip": [
+    {
+      "n": "Acid Splash",
+      "r": "orange",
+      "d": "If you have allies using Push weapons, you may be able to use this to reliably hit multiple enemies. Otherwise, it’s rare to find enemies clustered enough to justify this and it’s only appealing if you can hit multiple targets. ezstandalone.cmd.push(function () { ezstandalone.showAds(178); });"
+    },
+    {
+      "n": "Blade Ward",
+      "r": "green",
+      "d": "At very low levels, this can be a good defensive option. As you gain levels and get more spell slots, you’ll want to reserve your Concentration for more impactful spells."
+    },
+    {
+      "n": "Booming Blade",
+      "r": "orange",
+      "d": "Excellent for Bladesingers, but most Wizards should never be in a position to use this."
+    },
+    {
+      "n": "Buzzing Bee",
+      "r": "red",
+      "d": "Long range, no save, and it inhibits stealth, Perception, and Concentration. It’s somehow both broadly useful but also very difficult to justify. Buzzing Bee prevents the target from benefiting from invisibility, which means that they can’t benefit from hiding. But you need to be able to see them, which means that most enemies that rely on invisiblity won’t care. This doesn’t allow a save like Faerie Fire does, but Faerie Fire also don’t require you to see the target, and Faerie Fire also works "
+    },
+    {
+      "n": "Chill Touch",
+      "r": "red",
+      "d": "Bad damage at touch range with a secondary effect that rarely matters."
+    },
+    {
+      "n": "Control Flames",
+      "r": "red",
+      "d": "Notably omitted from the function of Control Flames is the ability to create or extinguish them. Druidcraft and Prestidigitation both grant the ability to light or snuff out small flames. Control Flames will let you spread flames, extinguish them, change their color, etc., but if you want to light a torch you need to use flint and tinder like a commoner. You can use this to dramatically improve the effectiveness of torches, or to snuff out enemy light sources at a distance, but those are situati"
+    },
+    {
+      "n": "Create Bonfire",
+      "r": "green",
+      "d": "A low-budget area control spell. It does as much initial damage as most Cantrips, but the ongoing damage only applies when a creature enters the area or ends their turn there, so you can only get extra damage if you can force an enemy into the space or if you cast it on them and they remain in their space. If you have an ally who likes to grapple enemies, or if you need to block a narrow space like a hall or doorway, this is extremely useful if you’re not already committing Concentration to some"
+    },
+    {
+      "n": "Dancing Lights",
+      "r": "orange",
+      "d": "An amusing distraction, but you can usually accomplish the same thing using Mage Hand and a candle or torch."
+    },
+    {
+      "n": "Encode Thoughts",
+      "r": "red",
+      "d": "Interesting, but insanely situational. The only way to consume the thought strand is to cast this spell within the 8-hour duration, so this isn’t even a great option for communicating over long distances."
+    },
+    {
+      "n": "Fire Bolt",
+      "r": "green",
+      "d": "Great range and solid damage. A good go-to option when all you need is damage. Toll the Dead will do more damage and has a better damage type, but Fire Bolt has twice the range. At low levels, True Strike with a crossbow will be more effective."
+    },
+    {
+      "n": "Friends",
+      "r": "green",
+      "d": "High risk, high reward. This is great for dealing with brief social interactions with NPCs that you’ll never see again or that have no way to cause trouble for you, or who you might end up attacking anyway for whatever reason. There’s no Verbal component, so you can safely use this while hidden."
+    },
+    {
+      "n": "Frostbite",
+      "r": "orange",
+      "d": "Low damage for a Cantrip (d6-based), but the big appeal is Disadvantage on the target’s next weapon attack. Unfortunately, it works on Constitution saving throws, and those tend to be relatively high compared to other saving throws. If someone in your party is using Sap weapons, don’t take this."
+    },
+    {
+      "n": "Green-Flame Blade",
+      "r": "orange",
+      "d": "Excellent for Bladesingers, but most Wizards should never be in a position to use this."
+    },
+    {
+      "n": "Gust",
+      "r": "red",
+      "d": "If this scaled somehow, I would be interested. If it had more options, I would be interested. If it had better range, I would be interested. But, as it stands, this spell is almost totally useless."
+    },
+    {
+      "n": "Infestation",
+      "r": "red",
+      "d": "Low damage, unpredictable, and it targets Constitution saves."
+    },
+    {
+      "n": "Light",
+      "r": "green",
+      "d": "Disposable magic light is fantastic, but you’ll do fine with torches if you don’t have room for the Cantrip."
+    },
+    {
+      "n": "Lightning Lure",
+      "r": "orange",
+      "d": "Situational, but potentially useful for Bladesingers to pull enemies into melee or if you’re running Yolande’s Regal Presence. If you’re flying, you may even be able to pull enemies into the air to cause a small amount of falling damage."
+    },
+    {
+      "n": "Mage Hand",
+      "r": "blue",
+      "d": "The ability to move objects at a safe distance is profoundly useful. Use it to pull levers, open doors, sort your laundry, and all manner of other important but potentially hazardous tasks where you wouldn’t want to risk your own hands."
+    },
+    {
+      "n": "Mending",
+      "r": "orange",
+      "d": "Too situational. Short of Rust Monsters and a few oozes, nearly nothing in 5e deals damage to your equipment. If you’re playing Spelljammer, this is essential, but otherwise you can skip it."
+    },
+    {
+      "n": "Message",
+      "r": "orange",
+      "d": "Situational. Use this to send messages without revealing your position."
+    },
+    {
+      "n": "Mind Sliver",
+      "r": "blue",
+      "d": "Psychic damage on an Intelligence save is spectacular on its own. Intelligence saves are consistently among the lowest, and psychic damage resistance/immunity is rare (though it does exist, especially on mindless enemies like zombies). That alone makes Mind Sliver arguably the most reliable Cantrip damage in 5e, but it gets better from there. With only Verbal components, Mind Sliver works while you’re tied up or have your hands full, making it a great option for War Caster. It also imposes a -1d"
+    },
+    {
+      "n": "Minor Illusion",
+      "r": "blue",
+      "d": "Room for plenty of creative, deceptive uses. The 5-foot cube is easily enough to create something to hide behind, provided that your enemies don’t see you create the illusion."
+    },
+    {
+      "n": "Mold Earth",
+      "r": "red",
+      "d": "You know what else can do this? A shovel. Sure, shoveling will take a long time, but you get at most 4 Cantrips, and, if you can replace a Cantrip with a mundane item, it’s probably a bad Cantrip. The only important function is to create difficult terrain, but you’re limited to two ongoing effects, which means you only get two 5-foot squares. And, again, you could do that with a shovel. You’re about as likely to use this in combat as you are to use a shovel, too."
+    },
+    {
+      "n": "Poison Spray",
+      "r": "green",
+      "d": "Excellent damage on a spell attack, but the range isn’t great, and resistance/immunity to poison is common, so it can’t be your only attack option."
+    },
+    {
+      "n": "Prestidigitation",
+      "r": "blue",
+      "d": "Whenever you want to do something small and magical that’s not covered by another spell, it’s usually covered by prestidigitation. This spell is exceptionally versatile. For suggestions on how to use Prestidigitation to its fullest, see our Practical Guide to Prestidigitation ."
+    },
+    {
+      "n": "Ray of Frost",
+      "r": "green",
+      "d": "Stacking speed penalties is easy and very powerful in the 2024 DnD rules thanks to the addition of the Slow Weapon Mastery. By teaming up with an ally with a Slow weapon and Slasher, you can drop many creatures’ speeds to 0, leaving entirely unable to move."
+    },
+    {
+      "n": "Shape Water",
+      "r": "blue",
+      "d": "This is as abusable and versatile as Prestidigitation. Freeze a solid 5 foot cube of water and drop it on someone. Pour water into a lock, freeze it, and allow the ice expansion to break the lock. Put a dome of ice over something you’re protecting. Build a small bridge in 5-foot segments. Block a hallway. Freeze a door in place. The uses are numerous and fantastic. If you have a barrel of water and this Cantrip, you have a solution to most problems. Honestly the fact that this spell is so much b"
+    },
+    {
+      "n": "Shocking Grasp",
+      "r": "red",
+      "d": "Touch range, disappointing damage, unimpressive secondary effect."
+    },
+    {
+      "n": "Sword Burst",
+      "r": "blue",
+      "d": "If you are in a position where it makes sense to use this, you should probably be running away unless you’re a Bladesinger. For the Bladesinger, this is a fantastic way to handle crowds while you’re in melee. Other Wizards should avoid this."
+    },
+    {
+      "n": "Thunderclap",
+      "r": "red",
+      "d": "Thunder damage is worse than Sword Burst’s force damage, and Thunderclap uses Constitution saves, which tend to be high."
+    },
+    {
+      "n": "Toll the Dead",
+      "r": "green",
+      "d": "60 ft. range, the damage is measured in d12’s most of the time, and almost nothing will resist it since it’s Necrotic damage."
+    },
+    {
+      "n": "True Strike",
+      "r": "blue",
+      "d": "Your go-to attack Cantrip until at least level 5, but possibly until level 11. A crossbow with True Strike will do more damage and have better range than most damaging Cantrips until their damage has scaled at least once. If you increase your spellcasting modifier to +4 at level 4, a crossbow with True Strike will deal more damage (average 12) than d10-based Cantrips like Fire Bolt (average 11)."
+    }
+  ],
+  "level1": [
+    {
+      "n": "Absorb Elements",
+      "r": "blue",
+      "d": "A fantastic defensive option at any level, this will save your life when you encounter an unpredictable source of elemental damage like a trap or a spell. The bonus damage on your next attack is largely useless, but it still feels cool when you use it. ezstandalone.cmd.push(function () { ezstandalone.showAds(179); });"
+    },
+    {
+      "n": "Alarm",
+      "r": "blue",
+      "d": "Never prepare this, but cast this at least once as a Ritual any time that you take a Long Rest."
+    },
+    {
+      "n": "Burning Hands",
+      "r": "orange",
+      "d": "The cone is just 15 feet, so it’s unlikely that you’ll hit more than two targets. The 3d6 damage is fine, but it’s not enough to justify rushing into melee unless you have enough movement to retreat to safety after doing so."
+    },
+    {
+      "n": "Catapult",
+      "r": "green",
+      "d": "Equivalent damage to Chromatic Orb, but Chromatic Orb is more versatile, has better range, and can bounce. Where Catapult shines is its reliability: If a target passes their saving throw, the object continues moving until it hits something or runs out of range. If you can line up two or more targets, yout odds of hitting and dealing damage improve considerably. If your DM allows it, you might be able to Catapult items like Acid or Alchemist’s Fire to add additional damage. RAW, this has no addit"
+    },
+    {
+      "n": "Cause Fear",
+      "r": "green",
+      "d": "A decent low-level crowd control option, but it has some drawbacks and it becomes obsolete as other options come online. Frightened foes can’t move toward you, which is great for melee enemies which tend to have poor mental stats like many beasts and many non-caster humanoids at low levels. Still, targets are able to attack (albeit with Disadvantage) and cast spells, and resistance/immunity to fear is common."
+    },
+    {
+      "n": "Charm Person",
+      "r": "green",
+      "d": "If you can cast this on a target outside of combat without them noticing, this can be a great way to defuse a potentially hostile situation. However, the spell has some complications. Charm Person has no visual effect like a ball of fire, so there’s no visual indication that the spell succeeded or failed. The target doesn’t know that they’ve been targeted by the spell if they succeed on the saving throw, but you don’t know if they succeeded or failed unless your DM decides to tell you (and they "
+    },
+    {
+      "n": "Chromatic Orb",
+      "r": "green",
+      "d": "Solid damage with good range, and the ability to pick the damage type means that you can always avoid damage resistances if you know what the target is resistant to. The ability to jump to additional targets is nice, but the Wizard doesn’t have options like Metamagic to artificially boost their chance to roll doubles. For an example of how to put Chromatic Orb to good use, see our Draconic Sorcery Sorcerer Subclass Guide ."
+    },
+    {
+      "n": "Color spray",
+      "r": "red",
+      "d": "The effect is not powerful enough and the duration is not long enough to justify the spell slot."
+    },
+    {
+      "n": "Comprehend languages",
+      "r": "blue",
+      "d": "Cast this as a ritual. Unfortunately it’s a self-targeting spell so your communication will be one-way unless whatever you’re talking to also has a solution."
+    },
+    {
+      "n": "Detect Magic",
+      "r": "green",
+      "d": "Essential. If you’re not concentrating on anything else, it’s often a good idea to cast this as a ritual and walk around with it."
+    },
+    {
+      "n": "Disguise Self",
+      "r": "orange",
+      "d": "Learning a single spell is cheaper than proficiency in a Disguise Kit. Buying a scroll is even cheaper."
+    },
+    {
+      "n": "Earth Tremor",
+      "r": "orange",
+      "d": "Not nearly enough damage, and being prone isn’t enough of a problem in 5e. The difficult terrain effect is the real draw. It only works on “loose earth or stone”, but that covers nearly anything you’ll stand on except wood, so it’s an easy way to create difficult terrain. Unfortunately, it also affects you, so be careful not to trap yourself among enemies."
+    },
+    {
+      "n": "Elementalism",
+      "r": "red",
+      "d": "Very flavorful, but almost totally useless."
+    },
+    {
+      "n": "Expeditious Retreat",
+      "r": "red",
+      "d": "Situational and poorly named. Expeditious Retreat is great for chases and for running long distances, but those situations aren’t common enough to justify preparing this unless you know it’s going to happen. The duration is good and Dash as a bonus action offers a lot of extra speed, but since this requires Concentration you’ll almost always want a different buff instead."
+    },
+    {
+      "n": "False Life",
+      "r": "blue",
+      "d": "A great use for your low-level spell slots when they stop being effective in combat. 2d4+4 hit points is far more than most Wizards get from an extra hit die, which can make a huge difference for a class that’s typically very frail."
+    },
+    {
+      "n": "Feather Fall",
+      "r": "blue",
+      "d": "Someone in the party needs to have this at all times, and you’re someone. Falling damage is a silly, embarrassing way to die."
+    },
+    {
+      "n": "Find Familiar",
+      "r": "blue",
+      "d": "A familiar is a fantastically useful asset. It can’t attack, but it can still do other useful things like carrying items between party members, taking the Help action, and scouting for danger. Familiars have terribly few hit points, but you can always resummon them if you have the 10gp worth of components handy, so after very low levels your familiar’s death is more of an inconvenience than a real loss. You may also find specific buffs like Dragon Breath which you can cast on your familiar to tu"
+    },
+    {
+      "n": "Fog Cloud",
+      "r": "orange",
+      "d": "An excellent way to cover your escape, but you can’t see through the fog any better than anyone else, so don’t expect to fight in this without some other advantage most of the time. Fog Cloud can be a way to negate Advantage if your enemies have the upper hand, so if you’re facing enemies who are invisible, hidden, or have some other source of Advantage, Fog Cloud can take that away, effectively leveling the playing field so that no one can see each other. Such situations are rare, but it’s nice"
+    },
+    {
+      "n": "Frost Fingers",
+      "r": "red",
+      "d": "Burning Hands, but it’s cold damage and less damage on average. It does scale better than Burning Hands due to the larger damage die, but not by enough to make this worthwhile."
+    },
+    {
+      "n": "Grease",
+      "r": "red",
+      "d": "Even if creatures fall prone, that only eats half of their movement, and with a radius of just 10 feet most creatures can walk out unimpeded once they’re no longer prone. For the record: Grease was never flammable. The 2024 rules are now explicit about that."
+    },
+    {
+      "n": "Ice Knife",
+      "r": "orange",
+      "d": "The closest you’ll get to Fireball at this level. Allowing both an attack and a save seems weird, and while it makes it likely that foes will avoid partial damage, they’ll also likely take at least part of the damage. The only problem is that the splash damage radius is so small that Acid Splash can fill the same role until better spells come online."
+    },
+    {
+      "n": "Identify",
+      "r": "orange",
+      "d": "Only situationally useful. Even if you encounter a magic item, this typically isn’t necessary because you can usually identify a magic item by spending a Short Rest in contact with it. Some (but not all) cursed magic items can be identified using the Identify spell."
+    },
+    {
+      "n": "Illusory Script",
+      "r": "red",
+      "d": "A fun party trick, but 10 gp is expensive if you want to use this often."
+    },
+    {
+      "n": "Jim’s Magic Missile",
+      "r": "orange",
+      "d": "This spell is fun, but it’s risky unless you can mitigate the risks with Advantage on the attacks and/or with a way to negate natural 1’s like the Halfling’s Lucky trait. If you can get Advantage on all of the attacks (maybe by making the target Restrained) you can easily outdo the average damage of most other 1st-level spell since Jim’s Magic Missile does more damage than usual on a critical hit."
+    },
+    {
+      "n": "Jump",
+      "r": "green",
+      "d": "An excellent mobility boost. The 30-foot jump can be vertical, allowing you to reach high places and navigate around many obstacles, but remember that you still fall afterward."
+    },
+    {
+      "n": "Longstrider",
+      "r": "orange",
+      "d": "A helpful buff for highly mobile characters, and with an hour-long duration it can be a great use of low-level spell slots once your level 1 spells start lagging in combat."
+    },
+    {
+      "n": "Mage Armor",
+      "r": "green",
+      "d": "A great source of AC, but it provides a perpetual tax on your spell slots and 13+Dex will stop being effective as enemies’ attack bonuses scale while your Dexterity remains static so that you can focus on Intelligence. Mage Armor’s usefulness improves if you have other lightly-armored characters in the party. Learning Mage Armor just for yourself can feel like a waste, but when you’re casting it on bards, druids, fighters, rangers, rogues, and warlocks, suddenly learning and preparing one low-le"
+    },
+    {
+      "n": "Magic Missile",
+      "r": "blue",
+      "d": "A great option with long range and reliable damage of what is probably the best damage type in the game. The math is mildly complicated, but Magic Missile is the best single-target damage of any 1st-level spell ."
+    },
+    {
+      "n": "Protection From Evil and Good",
+      "r": "green",
+      "d": "An absolutely fantastic defensive option, but it’s technically situational."
+    },
+    {
+      "n": "Ray of Sickness",
+      "r": "green",
+      "d": "Less damage than other spells of the same level, but poisoning a target for a turn means Disadvantage on attacks and ability checks for the full turn. Against martial enemies that you can hit reliably, this can be a low-cost way to make them much less effective."
+    },
+    {
+      "n": "Shield",
+      "r": "blue",
+      "d": "The fact that you can cast this after hearing the result of the attack roll means that you can frequently turn a hit into a miss. On top of Mage Armor, you can effectively have an AC of 17+Dex so long as you have 1st-level spell slots to spend."
+    },
+    {
+      "n": "Silent Image",
+      "r": "blue",
+      "d": "While not nearly so powerful as Major Image, if you just want an object or a visual effect, Silent Image does the job just as well. Throw up a fake wall, door, or portcullis to slow pursuers. Create a piece of furniture, then hide inside it and stab people when they try to open it. Illusions are limited more by your creativity (and your DM’s willingness to play along) than by the spell’s text."
+    },
+    {
+      "n": "Silvery Barbs",
+      "r": "blue",
+      "d": "Extremely powerful, but also very complicated. See our blog post on Silvery Barbs for details on the numerous abuse cases which the spell allows."
+    },
+    {
+      "n": "Sleep",
+      "r": "blue",
+      "d": "Making your targets Incapacitated will rob them of most of their turn and break Concentration. You may get lucky and have targets fall asleep after the second save, especially if you can debuff their save with Mind Sliver or some other effect. This is an incredibly powerful save-or-suck spell that will work for your whole career and doesn’t need to be upcast. Sure, the AOE is tiny, but if this were a single-target spell it would still be really good."
+    },
+    {
+      "n": "Snare",
+      "r": "orange",
+      "d": "Good for setting a trap, or if you’re resting somewhere dangerous with a convenient choke point like a narrow hallway. Targets are restrained for at least one round, which is hopefully enough for you to fight your way out of your bedroll and grab a weapon."
+    },
+    {
+      "n": "Spellfire Flare",
+      "r": "blue",
+      "d": "2d10 damage is good for a level 1 spell, and the ability to ignore cover means that you can still use this in situations where you might otherwise use Magic Missile or a spells which calls for a saving throw. But if you’re only using this as a level 1 spell, you’re missing a lot of the value. Upcasting Spellfire Flare adds additional attacks much like Scorching Rays, but Spellfire Flare’s 2d10 damage better damage type, and ability to ignore partial cover make Spellfire Flare a much better choic"
+    },
+    {
+      "n": "Tasha’s Caustic Brew",
+      "r": "green",
+      "d": "This is a challenging spell; if you just want damage, cast Burning Hands. With a 1-minute duration and 2d4 damage each round, you can deal a total of 20d4 damage to each target (average 50) which is enough to kill many creatures up to CR 2 or 3 (ignore the table in the “creating a monster” rules in the DMG; real monster stats tend to have high “offensive CR” and low “defensive CR” so very few of them have hit points which line up with those rules). However, you’re almost certainly not going to g"
+    },
+    {
+      "n": "Tasha’s Hideous Laughter",
+      "r": "green",
+      "d": "A great low-level save or suck, but generally you want to use this on a creature then leave it alone until you’ve dealt with anything else in the encounter. The best comparison at this level is to Sleep. Sleep is an AOE (though a small one), and if your target fails the second save, they fall Unconscious. Sleep will be more impactful, but it’s also easier to remove."
+    },
+    {
+      "n": "Tenser’s Floating Disk",
+      "r": "orange",
+      "d": "While you can get off the ground with Floating Disk, you can’t ride it around without some very complicated shenanigans like have a second Wizard and casting Gust on each other repeatedly. Generally you’ll use this to carry heavy things like loot or unconscious party members. It’s very specifically written to have almost no use beyond carrying heavy objects for you, so you’ll likely never cast this unless you cast it as a ritual."
+    },
+    {
+      "n": "Thunderwave",
+      "r": "orange",
+      "d": "With the exception of Gust, this is one of your very few options for pushing enemies away from you. It’s especially appealing if you can push an enemy into an area control effect, but otherwise it’s not a good go-to option for damage output in combat."
+    },
+    {
+      "n": "Unseen Servant",
+      "r": "orange",
+      "d": "This has very limited utility in combat or in dangerous situations, but that doesn’t mean that it has none. With a 1-hour duration you can get a lot done with a single casting. Interacting with items can mean opening doors and chests, carrying items, using potions on allies, and other things which you might not have time or patience to do. 2 Strength isn’t enough to carry anything heavy or to break down a door, but it’s often enough to trigger traps."
+    },
+    {
+      "n": "Wardaway",
+      "r": "orange",
+      "d": "A weaker version of Tasha’s Mind Whip, Wardaway makes some huge trades to fit into a level 1 spell. The damage is obviously much worse, but that’s not why you’re here. The target still gets to move and act in the same turn, but halving their speed is still impactful. The biggest limitation is that Wardaway uses a Constitution save instead of a much more reliable Intelligence save. At low levels where enemies have very few saving throw proficiencies, Wardaway may be decently reliable. But enemies"
+    },
+    {
+      "n": "Witch Bolt",
+      "r": "green",
+      "d": "Spending the same spell slot on Magic Missile is frequently a better choice, but Witch Bolt is useful against large single foes, especially at low levels where you likely have few uses for your Bonus Action. You still get to use the Bonus Action effect even if your initial attack misses, so Witch Bolt can be very effective against enemies with high AC. However, the secondary damage doesn’t scale, so Witch Bolt will become obsolete quickly. It’s a good go-to spell at low levels, but I would drop "
+    }
+  ],
+  "level2": [
+    {
+      "n": "Aganazzar’s Scorcher",
+      "r": "orange",
+      "d": "Lines are frequently hard to aim, so you’re likely to only hit 2 creatures in most cases. With that same assumption, compare the 3d8 damage of Aganazzar’s Scorcher to the 3d6 damage of Burning Hands which will also likely only hit two targets. The difference in average damage is just 3 damage, so it’s not enough to justify the higher-level spell slot."
+    },
+    {
+      "n": "Air Bubble",
+      "r": "orange",
+      "d": "Only situationally useful, but the 24-hour duration means that you can cast it before a Long Rest and still enjoy the effect all day."
+    },
+    {
+      "n": "Alter Self",
+      "r": "orange",
+      "d": "Two situational effects and a combat buff that you can’t risk using. Until you get something more powerful like Polymorph, Alter Self allows you to handle breathing underwater and can replace the benefits of Disguise Self. If you’re eyeing the natural weapons, remember that True Strike also uses your spellcasting modifier."
+    },
+    {
+      "n": "Arcane Lock",
+      "r": "orange",
+      "d": "Easy to overlook and definitely situational, but very good at its intended purpose. With a permanent duration and the ability to designate creatures who can pass unimpeded and a verbal password, if your party has a permanent base, you should put this on every door and window. You could use this in dungeons to gradually claim space, but the the 25gp material component cost could become annoying."
+    },
+    {
+      "n": "Arcane Vigor",
+      "r": "red",
+      "d": "Casting False Life, even if you only cast it as a level 1 spell, will give you more Temporary Hit Points than a level 2 Arcane Vigor will heal on average. You only add your ability modifier once when using Arcane Vigor, so you’re losing efficiency from your Hit Point Dice in exchange for a panicked burst of healing."
+    },
+    {
+      "n": "Augury",
+      "r": "blue",
+      "d": "This is my absolute favorite divination spell because it allows players to politely ask their DM for hints. Castable as a ritual with a reusable material component, if you have time you can cast this repeatedly to questions all sorts of decisions."
+    },
+    {
+      "n": "Blindness/Deafness",
+      "r": "green",
+      "d": "Blindness is crippling, especially for enemies who fight at range like archers and spellcasters. It’s also helpful against melee enemies, but Constitution saves tend to be high, so it’s often best to use this on enemies which are more physically frail. Deafness is a mild annoyance."
+    },
+    {
+      "n": "Blur",
+      "r": "green",
+      "d": "A great defensive option, but with a short duration and it requires Concentration. If you’re considering Blur, also consider Warding Wind because they have similar effects."
+    },
+    {
+      "n": "Borrowed Knowledge",
+      "r": "green",
+      "d": "A great way to compensate for limited skill proficiencies, Borrowed Knowledge lasts and hour and doesn’t require Concentration, so you can combine it with Enhance Ability to become instantly excellent at any skill. Enhance Ability is more broadly useful because you can cast it on other allies to support them when their best skills come into play, but when there’s a gap in your party’s skillset, you can use this to come to the rescue."
+    },
+    {
+      "n": "Cloud of Daggers",
+      "r": "blue",
+      "d": "4d4 damage (average 10) isn’t great, and a 5-foot cloud is not a big AOE, but this applies the damage without a save, and you can apply it repeatedly over the spell’s duration. Since you can move this as an Action, you can cast this on your first turn and use it every turn for an entire fight, dealing comparable single-target damage to Magic Missile. Provided that you don’t need Concentration for something else, Cloud of Daggers is exceptionally reliable damage with very little resource cost com"
+    },
+    {
+      "n": "Continual Flame",
+      "r": "blue",
+      "d": "Having reliable, constant light is really nice. Cast this on a shield, a necklace, a weapon, or maybe a whole bunch of different things to guarantee that you always have adequate light without casting light or lighting a torch."
+    },
+    {
+      "n": "Crown of Madness",
+      "r": "red",
+      "d": "“The charmed target must use its Action before moving on each of its turns to make a melee attack”. Unless your enemies are dumb enough to stand next to their ally while they’re clearly under the effects of a harmful spell, you’re going to get maybe one attack out of this."
+    },
+    {
+      "n": "Darkness",
+      "r": "orange",
+      "d": "Situational. Typically you can solve the same challenges with Fog Cloud, and you don’t need to worry about the possibility of enemies being able to see through the effect using magic or by being devils or something. Fog Cloud also has 6 times the duration and a radius 5 feet larger and can be expanded using higher-level spell slots. Darkness’s one unique advantage over Fog Cloud is that it’s portable: you can cast Darkness on a rock and toss it into a room or stick it into your pocket to produce"
+    },
+    {
+      "n": "Darkvision",
+      "r": "blue",
+      "d": "Fantastic at any level. 8-hour duration, no Concentration, and almost nothing in the game can match 150 feet of Darkvision. If you can afford the spell slots, cast this on everyone in the party who doesn’t get it from their race."
+    },
+    {
+      "n": "Death Armor",
+      "r": "orange",
+      "d": "The damage is tiny, but the duration is decent and you can cast this on an ally. If you stack this with other options like Fire Shield and Armor of Agathys, you might be able to deal a lot of retaliatory damage. But for 50 gp per casting, I would look for any other source of retaliatory damage before you consider this."
+    },
+    {
+      "n": "Deryan’s Helpful Homunculi",
+      "r": "red",
+      "d": "Since you can cast this as a Ritual, you’re effectively turning gold into short-lived assistance while crafting an item. This is only useful if you’re leaning into the 2024 rules’ extremely lackluster crafting system, and even then it’s only useful if you’re in a hurry but also have a ton of extramoney lying around."
+    },
+    {
+      "n": "Detect Thoughts",
+      "r": "green",
+      "d": "Situational, but a clever player can use this to gather crucial information from enemies unwilling to share it. Wizards are naturally well-equipped to perform the opposed Intelligence checks to continue to read a specific creature’s thoughts, but look for help anyway. If you can, have an ally cast buffs like Guidance or Enhance Ability (Intelligence) on you to give yourself an edge."
+    },
+    {
+      "n": "Dragon’s Breath",
+      "r": "green",
+      "d": "Cast this on your familiar to turn it into a pet flamethrower. It’s a great way to get a bit of extra damage output without cutting into your own action economy, but it makes your familiar and their 1 hit point a massive target."
+    },
+    {
+      "n": "Dust Devil",
+      "r": "red",
+      "d": "Creatures can walk past or even through the effect unhindered."
+    },
+    {
+      "n": "Earthbind",
+      "r": "blue",
+      "d": "While it doesn’t force flying enemies to fall, it does force them to the ground which is often enough if you can’t cause your entire party to fly. This remains a useful option at any level, especially since you can maintain the spell for its full 1-minute duration and keep the target on the ground long enough to kill them."
+    },
+    {
+      "n": "Elminster’s Elusion",
+      "r": "orange",
+      "d": "Situational by design since you only need this against spells and magic effects, which not every enemy can produce. It also doesn’t protect your allies, who are hopefully drawing more attacks than you, so you may be better served by a different defensive spell in many situations."
+    },
+    {
+      "n": "Enhance Ability",
+      "r": "blue",
+      "d": "Fantastic and versatile. Using this to buff Charisma for your party’s Face will make any social situation go a lot better."
+    },
+    {
+      "n": "Enlarge/Reduce",
+      "r": "green",
+      "d": "A useful option both as a buff for melee allies and as a utility option, though I would rarely try using this to shrink enemies. You can use this on a small ally to make them small enough to smuggle in a pocket, or you can use this on an ally to give them an edge against enemies that rely on grappling. The bonus damage for being enlarged is nice, but not really worth the spell slot unless the target is making a huge number of weapon attacks like a high-level fighter."
+    },
+    {
+      "n": "Flaming Sphere",
+      "r": "green",
+      "d": "An interesting but sometimes difficult option, Flaming Sphere combines area control and regular damage output, but monopolizes both your bonus action and your Concentration for the 1-minute duration. In small areas where enemies can’t easily get away from the sphere, it can be a reliable source of ongoing damage while also helping control a small area. However, the sphere only applies damage when it rams a creature or when a creature ends its turn; in the intervening time creatures can run past "
+    },
+    {
+      "n": "Gentle Repose",
+      "r": "red",
+      "d": "Very situational, but it solves some interesting problems. Normally you can cremate a body to prevent it from becoming undead, but cremating a body takes an alarmingly large amount of fuel which you probably don’t have laying about. You can multilane the body, but that’s gross and in many campaign settings the gods view that sort of thing as evil. So if you need to maintain a body until you can give it a real burial, this is your best bet. Fortunately, you can cast it as a ritual. Gentle Repose "
+    },
+    {
+      "n": "Gift of Gab",
+      "r": "orange",
+      "d": "Another hilarious entry from Acquisitions Incorporated with dubious use in a typical game. The intent of having mechanics in place for social interactions is to detach your real-world social skills from your character’s social skills. If you say something foolish in real life, your DM should generally be kind enough to filter that through your character into something that would make sense for them to say. But if they don’t, this is a perfectly fine way to clean up a mistake. Keep in mind that i"
+    },
+    {
+      "n": "Gust of Wind",
+      "r": "orange",
+      "d": "Potentially a great way to shove enemies around, but at 15 ft. per round enemies will frequently be able to walk back the distance they were pushed without issue. Your best bet is to push enemies into area control effects, but since Gust of Wind requires your Concentration you may have trouble creating effects to use."
+    },
+    {
+      "n": "Hold Person",
+      "r": "orange",
+      "d": "On/off button for Humanoids. Humanoids are a tiny portion of DnD’s roster of enemies, so this spell is situational by design. Even some creatures which have historically been common Humanoid antagonists like Hoblins and Sahuagin have changed creature type in the 2024 rules, though there are more NPC stat blocks than in the 2014 rules, which might keep Humanoids a relevant threat in some campaigns. In encounters with multiple foes, you can up-cast Hold Person to paralyze multiple targets, so this"
+    },
+    {
+      "n": "Invisibility",
+      "r": "blue",
+      "d": "An essential scouting and infiltration tool, and as you get higher-level spell slots you can affect more of your party. The conditions which break the Invisibility spell are surprisingly narrow. While attacks and spells include most of the offensive things which a player does, those two things don’t include other offensive options like breath weapons, including those provided by spells like Dragon’s Breath, polymorph effects, or the Dragonborn’s breath weapon."
+    },
+    {
+      "n": "Jim’s Glowing Coin",
+      "r": "blue",
+      "d": "Enthrall, but way better since the affected creatures are distracted by a coin instead of the caster, it doesn’t require Concentration, and affected creatures also suffer Disadvantage on Initiative rolls."
+    },
+    {
+      "n": "Kinetic Jaunt",
+      "r": "green",
+      "d": "I would only take this on a Bladesinger so that you can do hit-and-run attacks with Booming Blade. For other Wizards, use staples like Misty Step if you need to get out of melee or out of a grapple."
+    },
+    {
+      "n": "Knock",
+      "r": "blue",
+      "d": "The primary reason to have proficiency with Thieves’ Tools is to handle locks. Knock doesn’t require a check. It just works. Make aggressive eye contact with your party’s rogue while you cast this just to rub it in."
+    },
+    {
+      "n": "Levitate",
+      "r": "green",
+      "d": "A low-level substitute for both telekinesis and flight, but somehow also a save-or-suck spell. Getting 20 feet off the ground doesn’t feel safe, but it’s high enough that you can’t be reached by most creatures which rely solely on melee attacks, a surprising number of creatures. If you’re happy fighting at range, you can comfortably snipe at your foes from relative safety. You can also use this to lift heavy objects, allowing you to bypass some obstacles by moving them out of the way temporarily"
+    },
+    {
+      "n": "Locate Object",
+      "r": "red",
+      "d": "Too situational, and too easy to counter. Anyone with any knowledge of magic that’s trying to hide something will wrap it in lead."
+    },
+    {
+      "n": "Magic Mouth",
+      "r": "orange",
+      "d": "Very situational, but it’s cast as a Ritual, so it’s easy to keep handy. This is more useful if you have a permanent base, but you can also place the effect on portable objects (like a piece of paper) in order to perform various shenanigans. Honestly, the most fun part of this spell is coming up with silly ways to abuse it. For example: if you can cast Thaumaturgy somehow, Magic Mouth still recites the message in the volume at which you originally spoke so you can turn a piece of paper into an e"
+    },
+    {
+      "n": "Magic Weapon",
+      "r": "green",
+      "d": "If your party doesn’t have access to magic weapons, this is a fantastic mathematical boost on your party’s martial characters. With a 1-hour duration and no Concentration, you can easily share this with an ally without cutting into your actions in combat."
+    },
+    {
+      "n": "Maximilian’s Earthen Grasp",
+      "r": "blue",
+      "d": "At 2nd spell level, this may as well be Hold Monster. The initial Strength save is fine, but after the initial save the target makes a Strength check to escape. Short of huge, strong creatures that you should never target with this spell anyway, targets are a massive disadvantage when attempting to escape. Spellcasters, Dexterity-based martial enemies, and most humanoids (including many strong ones) can’t easily escape this, and being Restrained makes them extremely vulnerable to attack. It’s no"
+    },
+    {
+      "n": "Melf’s Acid Arrow",
+      "r": "red",
+      "d": "At an average of 15 damage on a hit (2.5 on a miss), this deals less average damage than Chromatic Orb cast at the same level (avg. 18 compared to avg. 15), and Chromatic orb both lets you choose the damage type and doesn’t make you wait for a third of the damage. If you account for a 65% expected hit chance, Magic Missile is also a much better use for the same spell slot at an average damage of 14 compared to Melf’s Acid Arrow’s expected damage of 10.75 (15*0.66=9.75, 2.5*0.4=1 for the splash d"
+    },
+    {
+      "n": "Mind Spike",
+      "r": "red",
+      "d": "Extremely situational, and only as much damage as a 1st-level spell. If you can see the target to target them with Mind Spike, you should look for a way to debilitate or incapacitate them rather than just mitigating invisibility."
+    },
+    {
+      "n": "Mirror Image",
+      "r": "green",
+      "d": "A great defensive option, and it doesn’t require Concentration so you can easily use it alongside other great options like Fly. It’s easy to compare this to Blur since they’re the same level and fill the same niche. Blur applies Disadvantage, but Disadvantage is only useful if your AC is high enough that attackers have a reasonable chance to miss their attacks. When enemies’ attack bonuses have long outstripped the AC provided by Mage Armor and Shield, Mirror Image remains useful. However, since"
+    },
+    {
+      "n": "Misty Step",
+      "r": "blue",
+      "d": "Useful in all manner of problematic situations, and cast as a bonus action with only Verbal components."
+    },
+    {
+      "n": "Nathair’s Mischief",
+      "r": "red",
+      "d": "Amusing, but unpredictable and unreliable. Since the effect and the save change every round, you can’t choose the targets’ weak saves, and even if targets do fail their save they might still be able to fight unhindered. Targets do need to save every round (unless you roll the molasses option), but the effects simply aren’t powerful enough."
+    },
+    {
+      "n": "Nystul’s Magic aura",
+      "r": "orange",
+      "d": "Very situational, but there’s literally nothing else in the game that can do this. You can use this on creatures to make spells treat them as a different creature type, which can be a countermeasure against spells that target specific creature types like Hold Person and Dominate Beast."
+    },
+    {
+      "n": "Phantasmal Force",
+      "r": "blue",
+      "d": "Don’t cast this spell for the damage (though 20d8 single-target damage is really good for a level 2 spell); cast this to incapacitate the target somehow. For example: Create an illusion of the floor beneath the target sprouting teeth, rising up around the creature, and eating it like a venus fly trap. The creature “treats the phantasm as if it were real”, and, unless they know to use Intelligence (Investigation) to disbelieve the illusion, they’ll spend 10 rounds struggling against a non-existen"
+    },
+    {
+      "n": "Pyrotechnics",
+      "r": "orange",
+      "d": "Only situationally useful, slightly annoying to set up, and when it does work the effects aren’t good enough. The flame doesn’t need to be especially large, so a torch or even a candle will suffice. Drop a torch on the ground, run out of range, and cast the spell. The blinding effect isn’t spectacular because it only lasts on round and it’s on a Constitution save. The smoke cloud option is objectively worse than similar options like Fog Cloud or Darkness, but it doesn’t require Concentration whi"
+    },
+    {
+      "n": "Ray of Enfeeblement",
+      "r": "red",
+      "d": "Garbage. The targets you want to use this on will have good Constitution saves, so there is never a case where this is both impactful and reliable."
+    },
+    {
+      "n": "Rime’s Binding Ice",
+      "r": "orange",
+      "d": "Only as much damage as Burning Hands, and it’s on a Constitution save, and since those tend to be high it’s hard to make this reliable. Reducing targets’ speed to 0 is great, especially for melee-only enemies, but those are also the enemies most likely to pass the save."
+    },
+    {
+      "n": "Rope Trick",
+      "r": "orange",
+      "d": "In previous editions, this was a cheap option to create a magically safe place to rest overnight. The duration has been reduced to one hour, but that’s still sufficient to take a Short Rest. Tragically, this can’t be cast as a ritual, so unless your party has some other way to make Short Rests safe, you may want to keep this prepared while traveling anywhere dangerous in case you and your party need to suddenly vanish somewhere safe. Note that the rope can be up to 60 ft. long, and that the port"
+    },
+    {
+      "n": "Scorching Ray",
+      "r": "green",
+      "d": "Good damage split across three attacks. If you have Advantage on all of the attacks or have some other attack bonus like Bless the expected damage increases considerably, so when those opportunities arise be sure to take them. Making numerous attacks means that you’re likely to hit with at least some of them, but you’re also likely to miss with some of them and therefore deal only partial damage. The best way to think about stuff like this is to rely on averages: if you’re sticking to the Attack"
+    },
+    {
+      "n": "See Invisibility",
+      "r": "blue",
+      "d": "Easy, reliable counter to invisibility. No Concentration, no aiming an AOE like Faerie Fire, and, if you cast this ahead of time, no spending an Action in combat. The 1-hour duration is great, but expect to refresh this after short rests if you expect invisibility to be a frequent problem. The 2024 stealth rules make creatures hidden by giving them the Invisible condition. See Invisibility negates the Invisible condition. Therefore, you can see hidden creatures so long as they don’t have total c"
+    },
+    {
+      "n": "Shadow Blade",
+      "r": "orange",
+      "d": "This is an objectively great spell that you should never use unless you’re a Bladesinger. Melee is a terrifying place for most Wizards to be. You could throw this every round and use a bonus action to retrieve it, but there’s a very narrow level range where that will deal more damage than a Cantrip (levels 3 and 4 before Cantrips improve at 5th level). The best use cases for this are the Bladesinger Wizard and the Arcane Trickster."
+    },
+    {
+      "n": "Shatter",
+      "r": "green",
+      "d": "The poor man’s fireball. 3d8 damage in a 10-foot radius is enough to hit several targets and deal decent damage. However, the save is Constitution so many creatures will be able to resist easily. Disadvantage for creatures made of inorganic materials is really neat, but how often do you fight a group of animated armors or iron golems?"
+    },
+    {
+      "n": "Snilloc’s Snowball Swarm",
+      "r": "orange",
+      "d": "Compared to Shatter, this is less damage, a smaller area of effect, and a worse damage type. It does have 50% more range and a better save, but I don’t think that’s nearly enough to make this on par with Shatter."
+    },
+    {
+      "n": "Spider Climb",
+      "r": "green",
+      "d": "An inexpensive substitute for flight."
+    },
+    {
+      "n": "Spray of Cards",
+      "r": "orange",
+      "d": "Poor damage (though doing force damage is really nice), short range, and the blindness doesn’t last long enough that you can benefit in any way except moving out of melee. This could be useful if you get dragged into melee against you will, but Misty Step handles that situation much better."
+    },
+    {
+      "n": "Suggestion",
+      "r": "blue",
+      "d": "Extremely versatile and problematically powerful . You can use this to accomplish a lot of things. This is more effective, reliable, and immediate than Geas. However, the 8-hour duration requires Concentration. If you want to use this while adventuring, you’re committing a significant resource for a full day to get the full duration of the spell. This spell benefits greatly from your own creativity, so the more thought you put into its use, the more effective it will be. 25 words is generous, an"
+    },
+    {
+      "n": "Tasha’s Mind Whip",
+      "r": "green",
+      "d": "A complex spell, and definitely not a go-to offensive option, but it has several fantastic tactical uses. The most obvious is preventing Opportunity Attacks, which allows you and your allies to move away from the target(s) safely at the same spell slot cost of Misty Step. Misty Step will, of course, get you further and do more than just avoiding Opportunity Attacks, but Tasha’s Mind Whip’s benefits don’t stop there. Limiting the target’s actions on their turn to one thing from their choice of mo"
+    },
+    {
+      "n": "Vortex Warp",
+      "r": "blue",
+      "d": "Basically Misty Step but for anyone but you. The tactical benefits of teleporting an ally adjacent to a frail enemy or teleporting a frail enemy into a dangerous location are numerous. Keep in mind that this is a Constitution save, and those tend to be high, so choose your targets carefully."
+    },
+    {
+      "n": "Warding Wind",
+      "r": "green",
+      "d": "Being deafened is annoying but usually not impactful. The big draw here is the difficult terrain to deter melee enemies and Disadvantage to deter ranged attackers. This competes conceptually with Blur since both options impose Disadvantage, but there are some trade-offs. Blur only lasts 1 minute, but the Disadvantage applies to all attacks rather than just ranged attacks. Warding Wind lasts 10 minutes and makes it hard for enemies to move near you, potentially keeping them from reaching you in m"
+    },
+    {
+      "n": "Web",
+      "r": "blue",
+      "d": "Fantastic crowd control, but with some complications. This competes for space with Hold Person and Maximilian’s Earthen Grasp. Compared to Earthen Grasp, Web can affect more than one creature and has a much better duration, but Web may be easier to escape. Web requires an initial Dexterity saving throw, then creatures can make Strength (Athletics) checks to escape on later turns. Many creatures will have either high Strength or high Dexterity, so your ideal targets are creatures which are bad at"
+    },
+    {
+      "n": "Wither and Bloom",
+      "r": "green",
+      "d": "Wizards can’t provide magical healing, so the ability to heal other creatures (even if it’s by spending a hit die) is very exciting. The damage is horrible and uses a Constitution save, so consider that a minor added benefit on top of the healing."
+    }
+  ],
+  "level3": [
+    {
+      "n": "Animate Dead",
+      "r": "orange",
+      "d": "Undead are excellent replacements for living creatures in many ways. An undead guard never gets tired while keeping watch. An undead horse never tires of marching. An undead porter won’t complain about their back hurting from hauling your treasure. Sure, desecrating the bodies of the dead is “icky” or “evil” depending on who you ask, but you can’t pay peasants to work 24/7 in highly dangerous conditions far from home, so sometimes you need to compromise ethics in favor of effectiveness. ezstanda"
+    },
+    {
+      "n": "Antagonize",
+      "r": "orange",
+      "d": "Since your target can only attack creatures within its reach when you cast the spell, this is only situationally useful. There’s some functional overlap with Crown of Madness, too. The tiny amount of damage isn’t enough to be impactful, so don’t let that fool you into thinking this is an easy go-to spell. The scaling is terrible, too, so don’t bother upcasting this."
+    },
+    {
+      "n": "Ashardalon’s Stride",
+      "r": "green",
+      "d": "Bonus action casting time, and the damage doesn’t allow a save, but if you just need to get out of melee, Misty Step will work fine. This is a great spell for gish builds such as the Bladesinger, but other Wizards should look elsewhere."
+    },
+    {
+      "n": "Astral Flood",
+      "r": "blue",
+      "d": "Decent area damage with good secondary effects. Compare to Fireball’s 8d6 (avg. 28) damage, Astral Flood’s 4d10 (avg. 22) isn’t significantly worse, and the scaling is only slightly worse than Fireball’s. But the rider effects are the big selling point here. The Cold dmaage option imposes Disadvantage on a d20 test, which includes saving throws. If you have other allies with powerful save-or-suck spells, this can prime a whole group of enemies to be quickly incapacitated with spells like Sleep o"
+    },
+    {
+      "n": "Bestow Curse",
+      "r": "blue",
+      "d": "The effects are versatile enough that you can easily bring this into play in a variety of situations, and the scaling mechanism works well enough that this remains a viable option for higher-level spell slots. Use the third option against big tanky enemies with poor Wisdom, or use the first option against enemies that like to grapple. If you’re ever uncertain, use the third option. Robbing a creature of their turn on a failed saving throw is debilitating, and can take creatures almost completely"
+    },
+    {
+      "n": "Blink",
+      "r": "orange",
+      "d": "1-minute duration, cast an Action, it only has a 50% chance to work on any one turn, and you find out the results at the end of your turn when you no longer have the ability to do anything about it. I would prefer Blur or something similar over Blink, though admittedly Blink doesn’t require Concentration."
+    },
+    {
+      "n": "Catnap",
+      "r": "orange",
+      "d": "A Short Rest is typically one hour. In most campaigns, that will be fine most of the time unless the DM is deliberately creating a time crunch which prevents resting or otherwise sitting about wasting time. In those cases you might be able to squeeze in a Catnap, but more than likely the 10-minute duration will still be problematic. If danger is the driving concern, cast Rope Trick instead and spend an hour in a pocket dimension."
+    },
+    {
+      "n": "Clairvoyance",
+      "r": "blue",
+      "d": "With a 1-mile range and the ability to place the sensor in a place you can’t see, this is a fantastic way to safely scout dangerous places. If you have enough time to sit around and cast the spell repeatedly you can scout whole structures from the outside by gradually learning about more interior locations through previous castings."
+    },
+    {
+      "n": "Conjure Constructs",
+      "r": "green",
+      "d": "With a 10-minute duration, you can get a ton of mileage out of a single spell slot. However, damage is pitiful and the action economy is attrocious, so it’s hard to justify using this in combat. By comparison: levle 3 Flaming Sphere deals the same amount of damage, but can be moved and applied as a Bonus Action while also dealing ongoing damage to adjacent creatures. The ability to grant Temporary Hit Points is much more impactful. 1d6 + modifier isn’t much, but it’s comparable to False Life, an"
+    },
+    {
+      "n": "Counterspell",
+      "r": "blue",
+      "d": "Essential in any party. Targeting Con saves is frustrating, especially since they’re so high on average, but don’t let that stop you. There’s no reason to upcast this, so at high levels you’re spending one of your relatively low-level spell slots to potentially prevent an enemy from casting something horrible. Just remember that the range isn’t fantastic, so you’ll often need to move close to your enemies to keep them in Counterspell range."
+    },
+    {
+      "n": "Dispel Magic",
+      "r": "blue",
+      "d": "Every party needs someone who can cast Dispel Magic. It’s simply too important to forgo."
+    },
+    {
+      "n": "Enemies Abound",
+      "r": "blue",
+      "d": "Astoundingly few enemies have good Intelligence saves, especially big, scary melee monsters. Throw this on something tanky and horrifying that’s there to protect squishy enemies from you and your friends, and watch it freak out and kill its buddies for you. The duration is only a minute, and obviously this only works in an encounter with multiple enemies, but that doesn’t make the spell less awesome."
+    },
+    {
+      "n": "Erupting Earth",
+      "r": "orange",
+      "d": "2/3 as much damage as Fireball and a quarter the surface area, so it’s clearly for a different purpose: You’re using this spell for the difficult terrain. The damage is enough that you won’t regret casting it instead of a Cantrip, and even at higher levels it’s a great way to place some difficult terrain. The difficult terrain effect is nearly permanent, so, if you have time, you can use this to set up ambushes and choke points which can define encounters against anything that can’t fly."
+    },
+    {
+      "n": "Fast Friends",
+      "r": "green",
+      "d": "A fantastic non-lethal option for handling single targets, but it has some limitations. The target needs to be able to understand you, so you likely need to share a language. The spell requires Concentration, so you don’t want to maintain this during combat if you can avoid it. And of course, you don’t want to try casting this during combat. If you can isolate a single enemy outside of combat, you may be able to ply them for information or send them on errands which will save you trouble later. "
+    },
+    {
+      "n": "Fear",
+      "r": "green",
+      "d": "A great way to disable groups of opponents, but Fear resistance ad immunity are common, and the cone AOE can put you dangerously close to your enemies. This is especially effective against humanoid enemies since it forces them to drop what they’re holding, including things like weapons and spellcasting foci."
+    },
+    {
+      "n": "Feign Death",
+      "r": "red",
+      "d": "Very situational."
+    },
+    {
+      "n": "Fireball",
+      "r": "blue",
+      "d": "8d6 damage in a 20-foot radius with 150-foot range. Simple, effective, and reliable. Fireball is a good baseline for measuring other AOE damage spells because it’s so simple and so effective, and in many cases when you’re selecting a spell to cast you’ll want to ask yourself “Is this spell better than Fireball?”"
+    },
+    {
+      "n": "Flame Arrows",
+      "r": "red",
+      "d": "This is a waste of a spell slot. It amounts to at most 12d6 damage, which is a tragic waste of a 3rd-level spell slot. If you somehow manage to hit one target with all 12 arrows, you’ll do more damage than Fireball. But you have to somehow hit with a bunch of arrows or pass them off to someone who will, and following the typical attack vs. AC progression means that a player will hit something like 65% of the time, which means you’re getting 65% of the maximum damage, so something like 7d6. At th"
+    },
+    {
+      "n": "Fly",
+      "r": "blue",
+      "d": "It’s hard to overstate how powerful flight is. The only major drawback is that Fly requires Concentration."
+    },
+    {
+      "n": "Gaseous Form",
+      "r": "green",
+      "d": "Situational, but a fantastic way to safely infiltrate or scout an area. If you upcast this, you can affect your whole party in order to sneak them into an area. I’ve seen folks online suggest that you can cast this on an ally, then safely stow them in a bottle or other container so that you can covertly carry them around, then potentially throw the bottle to get them into position at the beginning of combat before ending the spell to return them to their normal form. I’m not entirely certain if "
+    },
+    {
+      "n": "Glyph of Warding",
+      "r": "orange",
+      "d": "Depending on how your DM handles it, this is either a situationally useful defensive measure or a reality-bending way to break the game from the comfort of your own home. See our Practical Guide to Glyph of Warding ."
+    },
+    {
+      "n": "Haste",
+      "r": "green",
+      "d": "An excellent buff for nearly any martial character, but the effect when it ends is pretty rough. This is great to throw on an allied martial before you charge into combat, but be very sure to maintain Concentration. As much fun as Haste is for your martial allies, Concentration is among your most precious resources, and it’s likely to be more effective if you use it on something else. For example: If you use Hypnotic Pattern, you can trivialize and entire encounter, greatly reducing the danger t"
+    },
+    {
+      "n": "Hypnotic Pattern",
+      "r": "blue",
+      "d": "I often say that spellcasters’ spells early in a fight should dictate the outcome of the fight, and Hypnotic Pattern is a great example of such a spell. Take a group of creatures out of a fight for a full minute on only one save. Targets don’t get another save, and the effect doesn’t end until the spell does or someone breaks targets out of the effect. This means that you can focus on enemies which pass the initial save, then gradually eliminate the remaining targets one at a time. This doesn’t "
+    },
+    {
+      "n": "Incite Greed",
+      "r": "orange",
+      "d": "This is a gamble. If targets fail their saves you can draw them into melee range with you and keep them there for up to a minute. You then need to find a way to capitalize on their position. You could walk your full speed away (affected targets can do nothing but move toward you, so they can’t take Reactions to perform an Opportunity Attack), drop Concentration, then hit them with a Fireball."
+    },
+    {
+      "n": "Intellect Fortress",
+      "r": "green",
+      "d": "Technically situational, but an absolutely spectacular defense against enemies which rely on spells or common effects like charm and fear effects. Unlike racial traits like the Gnome’s Cunning or the Satyr and Yuan-Ti Pureblood’s Magic Resistance, this applies to all Intelligence, Wisdom, and Charisma saving throws, providing broad and effective protection against many of the most dangerous save-or-suck effects in the game. You also get resistance to psychic damage, which is nice if you’re fight"
+    },
+    {
+      "n": "Laerel’s Silver Lance",
+      "r": "orange",
+      "d": "The damage type is fantastic, the Prone effect is great, very few area damage spells target Strength saves, and you can omit targets to avoid hitting friends. There’s definitely a niche here, but 3d10 (avg. 16.5) is very low compared to other level 3 spells. Lightning Bolt is 8d6 (avg. 28), and upcasting Laerel’s Silver Lance actually widens that gap. Preparing this and buying the 250 gp spell component feels like too much investment for the extremely narrow case where you can justify using this"
+    },
+    {
+      "n": "Leomund’s Tiny Hut",
+      "r": "blue",
+      "d": "With an 8-hour duration and the ability to cast it as a Ritual, Leomund’s Tiny Hut is useful both as an option for resting, and as a surprising utility and combat option. The hemisphere (the effect is a hemisphere, but the flavor text confusingly describes it as a done) which it creates is impenetrable and impassable like a wall of force, except for creatures which are inside the sphere when you cast the spell (your party, usually). Since it’s opaque, most low-level teleport effects like Misty s"
+    },
+    {
+      "n": "Life Transference",
+      "r": "red",
+      "d": "Unless you have regeneration or something, this is generally a terrible idea. Still, it’s one of the Wizard’s only ways to heal other creatures."
+    },
+    {
+      "n": "Lightning Bolt",
+      "r": "orange",
+      "d": "Regardless of its length, it is very hard to target more than two targets with a line like Lightning Bolt. That makes this Fireball but with worse range and fewer targets per spell."
+    },
+    {
+      "n": "Magic Circle",
+      "r": "orange",
+      "d": "With a 1-minute casting time, you can’t use this in combat unless you have time to prepare and your enemies are coming to you. Even then, using this in combat isn’t reliable protection because it doesn’t mitigate the effects of spells and abilities which don’t require attack rolls like breath weapons or fireballs. The best use case is generally to invert the effects and use a spell to summon a creature so that you can bargain with it without risk of the creature escaping. Even then, the 1-hour d"
+    },
+    {
+      "n": "Major Image",
+      "r": "blue",
+      "d": "Fantastically versatile, and creatures don’t make a saving throw. Instead, they need to know to make an Intelligence (Investigation) check, or they need to physically interact with the illusion. Even then, you can buy yourself a great deal of time while the target tries to figure out your illusion."
+    },
+    {
+      "n": "Melf’s Minute Meteors",
+      "r": "green",
+      "d": "This spell is difficult to assess. You get 2 meteors per spell level (6 at the default 3rd level), and you can generally only spend two per turn, though on the turn on which you cast the spell you could spend two meteors when the spell is cast then spend your Bonus Action to fire two more. Each meteor deals 2d6 damage, so at 6 meteors you can deal a total of 12d6 damage, beating Fireball by half. However, the 5-foot radius on the meteors is tiny so you’re lucky if you can hit just two creatures."
+    },
+    {
+      "n": "Nondetection",
+      "r": "green",
+      "d": "Good, but not totally essential. Divination spells include things like See Invisibility, so if you or your party relies on invisibility of any kind this protects from several magical countermeasures to both stealth and invisibility. However, most enemies aren’t spellcasters and won’t have access to those divination options, so you can’t justify casting this every day. The spell also has an expensive material component specifically to deter you from casting this all the time. Still, with an 8-hou"
+    },
+    {
+      "n": "Phantom Steed",
+      "r": "green",
+      "d": "A great way to travel long distances, but if you’re casting it as a ritual you’ll have trouble keeping your whole party mounted at once unless you cast while riding. With a total casting time of 11 minutes as a ritual, you can have at most 5 horses up and running at a time before the 1-hour duration starts to wear off and you lose a horse. If your party is larger than that, consider sharing horses, getting a wagon, or just buying a horse. If you have an ally in the party who is built for mounted"
+    },
+    {
+      "n": "Protection From Energy",
+      "r": "blue",
+      "d": "An important, staple defensive option, but it’s single-target and requires Concentration so you can’t afford to keep it running constantly."
+    },
+    {
+      "n": "Remove Curse",
+      "r": "orange",
+      "d": "Situational, but irreplaceable. Fortunately, you can usually wait a day to prepare this."
+    },
+    {
+      "n": "Sending",
+      "r": "green",
+      "d": "Not especially glamorous, but messaging over massive distances has a number of uses. Also, due to the wording of the spell, you can use it on creatures that don’t understand your speech and they’ll still understand your meaning, allowing you to use Sending in place of Tongues if you only need to convey brief messages."
+    },
+    {
+      "n": "Sleet Storm",
+      "r": "orange",
+      "d": "This spell is challenging. The area of effect is excellent, and combining difficult terrain, possibly falling Prone, breaking Concentration, and making the area Heavily Obscured makes it difficult for creatures to act effectively while in the area. They’re effectively blind, so they can’t easily attack or cast spells at targets outside of the area. They’ll likely need to move to exit the storm, which may require them to Dash or to move over multiple turns. However, beyond inconveniencing creatur"
+    },
+    {
+      "n": "Slow",
+      "r": "green",
+      "d": "Slow is a great debuff for martial enemies, but it has to compete with other Wisdom save options at the same spell level. Compared to Hypnotic Pattern, Slow severely handicaps targets, but they can still fight back. Hypnotic Pattern’s targets can’t act at all until they’re released from the effect, but it’s also a Charm effect which some creatures are immune or resistant to. The 25% chance to fail casting spells with Somatic components is interesting, but unreliable. If you want to prevent spell"
+    },
+    {
+      "n": "Speak with Plants",
+      "r": "orange",
+      "d": "Situational. If you encounter plant creatures, this may allow you to handle them nonviolently, but I don’t think this is useful enough to learn permanently on a class with a limited number of spells known."
+    },
+    {
+      "n": "Spirit Shroud",
+      "r": "orange",
+      "d": "An interesting choice for the Bladesinger. The extra damage works well if you’re making weapon attacks, but the limited range means that you’re only going to use it in melee or so close to melee that you’re basically in melee, which means that you need to be running Bladesong at the same time. At this level, you’re not very durable and you don’t have Song of Defense to save you in an emergency, so this is a big gamble compared to defensive buffs like Blur. The damage notably scales with spell le"
+    },
+    {
+      "n": "Stinking Cloud",
+      "r": "orange",
+      "d": "While this can rob targets of their Action and Bonus Action if they fail the save, the area is small and easy to escape. Given the choice between the two, I would go for Sleet Storm first."
+    },
+    {
+      "n": "Summon Lesser Demons",
+      "r": "red",
+      "d": "You can’t control the demons, and they’re probably not strong enough to win an encounter on their own. The material component may also be a problem since it has a 24 freshness timer. For more help, see our Practical Guide to Summoning Spells ."
+    },
+    {
+      "n": "Summon Fey",
+      "r": "orange",
+      "d": "Decent summons at this level, especially compared to Summon Lesser Demons, but upgrade to a better summon spell as soon as you can. For more help, see our Practical Guide to Summoning Spells ."
+    },
+    {
+      "n": "Summon Shadowspawn",
+      "r": "green",
+      "d": "Better combat options than Summon Fey, but mostly worse than Summon Undead. For more help, see our Practical Guide to Summoning Spells ."
+    },
+    {
+      "n": "Summon Undead",
+      "r": "blue",
+      "d": "Several excellent combat options, and the ghostly option can fly around and do stuff for you. For more help, see our Practical Guide to Summoning Spells ."
+    },
+    {
+      "n": "Syluné’s Viper",
+      "r": "blue",
+      "d": "Bonus Action casting time, 1-hour duration, no Concentration. The damage is horrid, and poison immunity is obviously a problem, but the ability to make a target Incapacitated on hit means that you can lock a single target out of a fight for as long as you can reliably hit them with attacks. The Incapacitation effect doesn’t allow a save, so even Legendary Resistance won’t protect enemies from this. You also get a climb speed so that you can climb out of reach and bite enemies from safety. The sp"
+    },
+    {
+      "n": "Thunder Step",
+      "r": "orange",
+      "d": "Amusing, but it takes an Action to cast, the AOE isn’t especially large, and the damage is poor for the spell level. Use Misty Step instead."
+    },
+    {
+      "n": "Tidal Wave",
+      "r": "orange",
+      "d": "Being knocked prone typically isn’t a problem in 5e because standing costs so little. However, being knocked prone while flying causes you to fall, potentially taking a bunch of damage. This spell notably doesn’t require that it be cast on the ground or on top of a body of water. You could cast this in mid-air, or even wholly underwater. Using it mid-air seems like a good way to counter multiple flying enemies. However, hitting more than two enemies with a line effect (even one that’s wide like "
+    },
+    {
+      "n": "Tiny Servant",
+      "r": "blue",
+      "d": "With an 8-hour duration, Tiny Servant is in many ways a temporary familiar. Unlike a familiar it has fixed stats and it can attack, but attacking is definitely not its intended function. With 60-foot blindsight, it’s a portable sentry. It’s not smart enough to follow complex commands and it can’t see, so it can’t discern invisible foes from visible ones, but you can command it to inform you of approaching creatures, or you could command it to chase a specific foe which you know to be present but"
+    },
+    {
+      "n": "Tongues",
+      "r": "blue",
+      "d": "Language can present a serious barrier. You may not want to pick this up when you first get access to level 3 spells, but consider picking it up later when using alevel 3 spell on a utility option is less daunting. Remember that you can cast this on other people, which is great since you are likely the worst person to cast this on."
+    },
+    {
+      "n": "Vampiric Touch",
+      "r": "orange",
+      "d": "Migrants from previous editions should note that this spell is no longer a single attack: The spell lasts a minute and you can repeat the attack every turn. Unfortunately because the range is “Self”, you can’t cast this through your familiar, so if you want to use this you’ll need to wade into melee. Be very cautious if you use this."
+    },
+    {
+      "n": "Wall of Sand",
+      "r": "orange",
+      "d": "Decent area control, but it only takes 30 feet of movement to move through so enemies may be able to do so and still act on their turns. Try to place the wall so that enemies need to expend more than their base movement to get through the wall, then drop AOE spells like Fireball in the air above the wall to strike targets on the other side."
+    },
+    {
+      "n": "Wall of Water",
+      "r": "red",
+      "d": "This is a really hard spell to use effectively, but if you have a spell like Ray of Frost which you can fire through the wall to make it solid to give yourself solid cover, then walk in and out of cover to cast other spells."
+    },
+    {
+      "n": "Water Breathing",
+      "r": "orange",
+      "d": "Unless you’re actively expecting to be around dangerous bodies of water, having this available as a ritual is sufficient."
+    }
+  ],
+  "level4": [
+    {
+      "n": "Arcane Eye",
+      "r": "blue",
+      "d": "One of the best scouting spells in the game. ezstandalone.cmd.push(function () { ezstandalone.showAds(186); });"
+    },
+    {
+      "n": "Backlash",
+      "r": "green",
+      "d": "Situational by design, and excellent at what it does, but you should not use this spell every round . The considerations and interactions here are complicated, and a level 4+ spell slot is a powerful resource. Strongly consider using Absorb Elements or Shield first, as both of those spells are considerably less expensive. But Retaliate can cover any damage source and also does retaliatory damage, so there is definitely a powerful niche use here. The primary function of Backlash is to reduce inco"
+    },
+    {
+      "n": "Banishment",
+      "r": "blue",
+      "d": "Among the most powerful save-or-suck spells in the game for several reasons. First, it’s a Charisma saving throw and very few creatures are good at those. Second, many powerful enemies like fiends are extraplanar, so you can easily remove them with a single spell (though a few of them can cast Plane Shift to come right back, so watch out for that). Finally, casting the spell at a higher level allows you to target additional creatures so you can remove big parts of an encounter for up to a minute"
+    },
+    {
+      "n": "Blight",
+      "r": "orange",
+      "d": "Not enough damage for a spell slot this level, and Constitution saves tend to be high."
+    },
+    {
+      "n": "Charm Monster",
+      "r": "green",
+      "d": "A great nonlethal way to deal with enemies. It doesn’t require that the target be able to understand you, but otherwise has the same complications which Charm Person does: the target is only friendly toward you, and when the spell ends they know that they were charmed."
+    },
+    {
+      "n": "Confusion",
+      "r": "red",
+      "d": "I’ve hated Confusion since 3rd edition. It’s unpredictable, unreliable, and makes combat take twice as long as it would normally. It’s great that it’s an AOE, and you might be able to make creatures attack their allies, but there are too many points of failure for it to be a reliable option."
+    },
+    {
+      "n": "Conjure Minor Elementals",
+      "r": "blue",
+      "d": "This spell is very powerful. Combined with Scorching Ray you can deal an insane amount of damage very quickly. Upcasting both spells as you progress grows your damage output geometrically (it curves upward) while enemies’ hp increases linearly (straight line up and to the right on a graph). If you’re working from printed books, Conjure Minor Elementals has recieved errata which reduces its damage scaling from 2d8 to 1d8. It’s still very powerful, but not quite as game breaking as it was before. "
+    },
+    {
+      "n": "Control Water",
+      "r": "orange",
+      "d": "All of the effects are situational, and there are some weird edge cases like using the Flood option on a puddle or a full bucket where it’s unclear what happens when the water overflows its container."
+    },
+    {
+      "n": "Dimension Door",
+      "r": "orange",
+      "d": "Misty step usually suffices, and Misty Step is cast as a Bonus Action."
+    },
+    {
+      "n": "Divination",
+      "r": "green",
+      "d": "Much more precise than Augury, and it works much further into the future. The 25gp component cost won’t hurt much at this level, but it’s enough to deter you from using this every time you have a question."
+    },
+    {
+      "n": "Elemental Bane",
+      "r": "green",
+      "d": "A great way to overcome damage resistance to your favorite spells. Note that the extra damage is per turn , so if your allies can deal the same type of damage you can pile up a lot of damage very quickly. Unfortunately, the save is Constitution-based and Constitution saves tend to be high."
+    },
+    {
+      "n": "Evard’s Black Tentacles",
+      "r": "green",
+      "d": "The 20-foot square area is relatively small, but the fact that the spell Restrains targets means that they’re trapped in the area taking continuous damage unless they spend an Action to attempt a Strength (Athletics) check (note that this is a check , not a saving throw). If they succeed, they get to move but little else. Strength checks will lag saving throws considerably and proficiency in Athletics is rare, so even creatures with good physical ability scores will have trouble passing the DC. "
+    },
+    {
+      "n": "Fabricate",
+      "r": "red",
+      "d": "I really wish that this spell was better, but it’s simply too situational. It only works on raw materials, so you can’t pull tricks like turning a door into toothpicks or something equally useful."
+    },
+    {
+      "n": "Fire Shield",
+      "r": "orange",
+      "d": "Potentially useful for Bladesingers, but other Wizards should stay out of harm’s way."
+    },
+    {
+      "n": "Greater Invisibility",
+      "r": "blue",
+      "d": "Invisibility in 5e is really good, and running around for a full minute being almost impossible to target is a huge advantage."
+    },
+    {
+      "n": "Hallucinatory Terrain",
+      "r": "orange",
+      "d": "Situational. Unless you specifically need the 24-hour duration and the massive area of effect, Major Image will suffice."
+    },
+    {
+      "n": "Ice Storm",
+      "r": "red",
+      "d": "This spell is terrible. Two types of damage dice for no readily apparent reason. Two types of damage, which makes sense but is still annoying to track. Compare this to Erupting Earth: ice Storm’s AOE is much bigger (20 ft. cube vs. 20 ft. radius cylinder), but it does an average of just 5 more damage, and the difficult terrain only lasts until the end of your next turn, so it’s nearly pointless. This simply isn’t good enough to justify being a spell level higher than Erupting Earth."
+    },
+    {
+      "n": "Leomund’s Secret Chest",
+      "r": "red",
+      "d": "Extremely situational. The best case I can think of to use this item is if you need to sneak a chest of items into a place. Unfortunately, the limited size of the chest makes it difficult to bring weapons or armor of any great size. A longsword could fit if placed diagonally (they’re typically up to 4 feet long, including the hilt), but longer weapons like a greataxe or a quarterstaff likely would not."
+    },
+    {
+      "n": "Locate Creature",
+      "r": "orange",
+      "d": "More effective than mundane tracking, but the 1,000-foot range can be a problem if the target is actively fleeing from you. If you’re going to use this, be sure that you’re moving faster than your target."
+    },
+    {
+      "n": "Mordenkainen’s Faithful Hound",
+      "r": "orange",
+      "d": "The primary appeal of this spell is to watch for invisible foes while you rest, but the hound takes up one square, can’t move, and can only attack creatures within 5 feet. Unless you can pin a foe in one place (maybe with Evard’s Black Tentacles or something) the hound is going to spend most of its time barking and doing nothing else."
+    },
+    {
+      "n": "Mordenkainen’s Private Sanctum",
+      "r": "red",
+      "d": "This is hard to justify. It’s great for protecting a “home base” of some kind if you have magically-inclined enemies, but it doesn’t block passage so enemies can still walk right into it. If you’re going to rely on this, you likely need to combine it with some other form of protection like a building or Leomund’s Tiny Hut."
+    },
+    {
+      "n": "Otiluke’s Resilient Sphere",
+      "r": "blue",
+      "d": "Single-target save or suck on a Dexterity save. Dexterity saves tend to be low for many enemies, so you can often take a target out of a fight for the duration while you deal with its allies or set up unpleasant traps for it."
+    },
+    {
+      "n": "Phantasmal Killer",
+      "r": "blue",
+      "d": "Despite how slowly it kills the target, this is a great single-target spell and the spell level scaling is absolutely spectacular. Against big burly foes which often have poor mental stats, the save will be hard to pass and the debuff will make their attacks and ability checks much less effective. Because casting Phantasmal Killer increases the damage by a d10 every time it deals damage (rather than just the on the first damage roll like many spells), this remains an effective option well beyond"
+    },
+    {
+      "n": "Polymorph",
+      "r": "blue",
+      "d": "Fantastic and versatile, but also very complicated. See our Practical Guide to Polymorph for detailed advice on how to get the most out of Polymorph. There was some ambiguity when the 2024 rules were first published, but errata has updated Polymorph to clarify that the Temporary Hit Points vanish when the spell ends."
+    },
+    {
+      "n": "Raulothim’s Psychic Lance",
+      "r": "green",
+      "d": "Situational by design. The damage is low for a spell of this level, especially for one that’s single-target, but the damage alone isn’t why you’re here. The save is Intelligence, and those tend to be among the lowest saves, even at very high levels, and the target is Incapacitated on a failed save, robbing them of a turn, so despite it being single-target with lackluster damage it’s a powerful tool against single foes. Even better, if you know the target’s name (often easy for named antagonists)"
+    },
+    {
+      "n": "Sickening Radiance",
+      "r": "blue",
+      "d": "This spell is very easy to overlook. The effects are complicated, and the 4d10 damage looks underwhelming, but don’t let that deter you. This is a great spell to cast into a room then shut the door, but, even if that’s not an option, it’s a fantastic way to handle crowds. With a 30-foot radius you can hit a huge number of targets, and with a 10-minute duration you can easily kill anything stuck in the area for an extended period. The 4d10 damage is fine, and negating invisibility is great, but t"
+    },
+    {
+      "n": "Spellfire Storm",
+      "r": "red",
+      "d": "The damage isn’t great and Constitution saves aren’t reliable, but the AOE is decently large and this can prevent enemies from casting spells. The Con save when casting a spell is identical to Counterspell, so you’re effectively countering every spell that enemies try to cast while in the area. I would only use when facing enemy spellcasters (the damage isn’t good enough otherwise), but with enemy spellcasters on the field this can easily define an encounter. We can also compare Spellfire Storm "
+    },
+    {
+      "n": "Spirit of Death",
+      "r": "green",
+      "d": "Summon Undead is generally better, but the spirit gets guaranteed Advantage, which is worth a lot. For more help, see our Practical Guide to Summoning Spells ."
+    },
+    {
+      "n": "Stone Shape",
+      "r": "blue",
+      "d": "This is one of the most useful spells in the game. Castles, dungeons, caves, mountains, and all manner of other locales include an abundance of stone. The ability to reshape that stone to your purposes in an instant is immensely useful. This is a spell limited only by your imagination. A 5-foot cube is plenty of space to wreak all kinds of havoc if you’re clever.."
+    },
+    {
+      "n": "Stoneskin",
+      "r": "green",
+      "d": "Expensive, but really good."
+    },
+    {
+      "n": "Storm Sphere",
+      "r": "red",
+      "d": "Sickening Radiance is considerably better. Bigger AOE, better damage, longer duration, and a better secondary effect. Even against a single target, the damage of Sickening Radiance (4d10, average 22) is better than the damage of Storm Cloud to a single target (6d6, average 21, including both the area damage and the lightning bolt)."
+    },
+    {
+      "n": "Summon Aberration",
+      "r": "blue",
+      "d": "Three diverse and effective combat options. For more help, see our Practical Guide to Summoning Spells ."
+    },
+    {
+      "n": "Summon Construct",
+      "r": "green",
+      "d": "Not as effective offensively as Summon Aberration, but all three summoned constructs are unusually durable for creatures summoned by similar spells. For more help, see our Practical Guide to Summoning Spells ."
+    },
+    {
+      "n": "Summon Elemental",
+      "r": "orange",
+      "d": "Summon Aberration is better offensively, and Summon Construct provides a more durable summon. Summon Elemental’s biggest advantage is that you can summon a creature that can fight effectively underwater, but even then it’s not a great summon. For more help, see our Practical Guide to Summoning Spells ."
+    },
+    {
+      "n": "Summon Greater Demon",
+      "r": "green",
+      "d": "Potentially very useful, but Summon Greater Demon is a double-edged sword. The demon is only under your control so long as it keeps failing Charisma saves, so you want to pick something with poor Charisma saves to keep it under your control as long as possible. In a pinch you can use the option to create a safe space and bottleneck the demon in a room full of enemies, then walk away and let the demon run wild. Even at this level a CR 5 is still decently powerful, and thanks to 5e’s flat math a C"
+    },
+    {
+      "n": "Vitriolic Sphere",
+      "r": "green",
+      "d": "Fireball, but a higher level and a different damage type. The same range, the same AOE, the same save, the same school. But Vitriolic Sphere deals acid damage, and instead of dealing the damage all up front, some of it is applied at the end of targets’ next turns. The initial damage exceeds Fireball’s initial damage by a few points, but on its own not by enough to justify the spell level difference. The big addition is that you get half of the initial damage at the end of targets’ next turns. Th"
+    },
+    {
+      "n": "Wall of Fire",
+      "r": "blue",
+      "d": "An absolutely fantastic area control option."
+    },
+    {
+      "n": "Watery Sphere",
+      "r": "orange",
+      "d": "If you just want to restrain creatures, cast Entangle. The primary appeal here is the ability to restrain the target, then drag them around for the spell’s duration."
+    }
+  ],
+  "level5": [
+    {
+      "n": "Alustriel’s Mooncloak",
+      "r": "green",
+      "d": "Situational by design, but really good at what it does. Half cover and three damage resistances is a ton of protection for yourself and your whole party. If your enemies depend on the covered damage types, this could change the course of a fight. Cover also provides a bonus to Dexterity saves, making this especially useful against area effects like breath weapons. There are two options to end the spell early, but try to avoid needing them. Once the fighting is done, use the healing option to squ"
+    },
+    {
+      "n": "Animate Objects",
+      "r": "green",
+      "d": "This spell is complicated, but it can be profoundly effective when it works. It works a bit like a summon spell, but requires conveniently placed objects for you to animate. A summon spell is typically both safer and more convenient, but placing multiple bodies on the battlefield means that you can block space and hold enemies in place more easily than you could with a single summon. The difference is size between potential objects is an important decision. Huge creatures are the most efficient "
+    },
+    {
+      "n": "Bigby’s Hand",
+      "r": "green",
+      "d": "Versatile and effective against a variety of enemies. The damage from both Clenched Fist and Grasping Hand is great, and scales well with spell level. By this level you have plenty of ways to handle single targets, but generally once the target passes a save they’re free of the effect. Bigby’s Hand sticks around for the spell’s duration, allowing you to repeatedly harass a target and move on to a new target once the previous one falls. Avoid Interposing Hand."
+    },
+    {
+      "n": "Circle of Power",
+      "r": "orange",
+      "d": "Great protection against enemy spellcasters, but it’s entirely passive and only matters if your enemies rely primarily on spells, so it’s situational by design."
+    },
+    {
+      "n": "Cloudkill",
+      "r": "orange",
+      "d": "Designed to be rolled through armies, this spell is hard to use in the small, tactical fights between a party of adventurers and a handful of monsters. The simple fact that the effect moves away from you makes the spell difficult to keep in place, and RAW it’s unclear if the effect stops if it hits a solid barrier or if it’s happy to roll straight through solid objects like castle walls. The spell moves away from you rather than from your original position when casting the spell, so you may be a"
+    },
+    {
+      "n": "Cone of Cold",
+      "r": "red",
+      "d": "Despite the larger total area of effect, I think this is worse than Fireball. Even with a 60-foot cone you have much less flexibility than a 20-foot-radius sphere with 150-foot range. Cone of Cold’s 8d8 damage only slightly exceeds Fireballs 8d6 damage (just 8 points more damage on average), and, if you cast Fireball as a Level 5 spell, Cone of Cold does just 1 point more damage on average while targeting a much less reliable save."
+    },
+    {
+      "n": "Conjure Elemental",
+      "r": "orange",
+      "d": "Unlike a typical summon spell, this conjures an immobile elemental that restrains your enemies. It might be effective if the elemental can reach everywhere within a room, or if you need to hold a choke point for an extended period, but otherwise you’ll do better with other area control spells like Sickening Radiance. If you’re working from printed books, Conjure Minor Elementals has recieved errata which reduces its damage scaling from 2 dice per spell level to 1 die per spell level."
+    },
+    {
+      "n": "Contact Other Plane",
+      "r": "green",
+      "d": "This is a fantastic divination. You can gain a ton of useful information from a handful of yes or no questions. Unlike literally every other spellcaster with access to this spell, and DC 15 Intelligence save is relatively easy for the Wizard. Even so, try to pad your save bonus however you can: Bardic Inspiration, Guidance, whatever you can get. Oh, and don’t cast this unless you can safely endure the 6d6 damage and spend the rest of the day Incapacitated."
+    },
+    {
+      "n": "Control Winds",
+      "r": "orange",
+      "d": "Inconvenience creatures relying on ranged weapon attacks, and slow enemies attempting to move in one particular direction. If you’re worried about ranged attacks, cast Warding Wind. If you’re worried about enemies moving around, consider something that creates difficult terrain like Erupting Earth. If you’re worried about flying enemies, cast Earthbind or something. My point is that there are lower-level spells which solve the same problems that Control Winds solves, and they usually do a better"
+    },
+    {
+      "n": "Creation",
+      "r": "blue",
+      "d": "This spell is limited by its maximum volume and by your creativity. It takes a full minute to cast so it’s not going to be useful in combat, but it’s an amazing utility option. A 5-foot cube may not sound like a lot, but that’s enough to get up to all sorts of mischief. Need to block a hallway? How about a 5-foot cube of wood or stone? Need a quick trap? 5-foot sphere of something heavy, roll it down a hill. Short on ammunition? Enough arrows to fill a 5-foot cube. Food? 5-foot cube of non-livin"
+    },
+    {
+      "n": "Danse Macabre",
+      "r": "red",
+      "d": "As a DM, I’m going to ask you a personal favor: Don’t cast this spell on anything except human corpses. The Monster Manual contains only a handful of skeleton and zombie stat blocks, and if you do something silly like raise a bunch of zombie wolves your DM is going to need to generate a new stat block for them in the middle of a game session. At some point I might write a “Big Book of Skeletons” and “Big Book of Zombies” to convert every living creature in the Monster Manual, but that’s a long w"
+    },
+    {
+      "n": "Dawn",
+      "r": "orange",
+      "d": "This is a mediocre area denial option. You can spend a Bonus Action to move it, which is really nice, but Constitution saves tend to be high, and the damage isn’t spectacular. Dawn’s single saving grace is that it specifically says “this light is sunlight”, which means that it hurts vampires very badly. If you can grapple a vampire to hold it in the radius of Dawn, you can kill them easily."
+    },
+    {
+      "n": "Dominate Person",
+      "r": "orange",
+      "d": "Humanoids stop being common enemies after low levels because high-CR humanoids are typically NPCs with names and backstories and things like that. Even then, the 2024 rules dramatically shrunk the number of humanoids, changing th Still, there’s no better off-switch for a humanoid than Dominate Person. Upcasting the spell increases the duration, allowing you to drag the target through a bunch of fights. However, the creature taking damage allows additional saves, so be sure to keep it out of harm"
+    },
+    {
+      "n": "Dream",
+      "r": "orange",
+      "d": "While this spell on its own can be very powerful, it’s only usable outside of combat, and there are a lot of limitations on its usage. This is a great option for NPCs to mess with players, but it’s rare that a player can employ this effectively against their enemies."
+    },
+    {
+      "n": "Enervation",
+      "r": "orange",
+      "d": "Remember Witch Bolt from all the way back at level 1? Enervation is the same idea: you hit once, then you spend every Action for a while dealing automatic damage. It’s a fine concept, but at just 4d8 damage it’s going to take a profoundly long time to kill any single target worthy of a Level 5 spell slot. Sure, the damage is guaranteed, but spells like Hunger of Hadar and Sickening Radiance will do similar damage in an AOE along with other benefits. Enervation simply isn’t good enough for the sp"
+    },
+    {
+      "n": "Far Step",
+      "r": "orange",
+      "d": "The teleportation is really nice, but you can teleport with Misty Step which is 3 spell levels lower. Sure, Far Step lets you go twice as far and you couldn’t teleport 10 times in a row with Misty Step without spending a huge number of spell slots, but situations where you need to teleport once every round should probably be addressed by things like flying or invisibility."
+    },
+    {
+      "n": "Geas",
+      "r": "orange",
+      "d": "This spell is situational by design. It has a 1-minute casting time and Verbal components, so you’re not going to break this out in combat or while sneaking around in a dungeon. You’re going to restrain the subject, and stand around chanting for a full minute and hope that they fail the save. Once that’s done, you need to give them a suitable command (read the spell description). Generally you’ll want it to be something that benefits you, but will also take the target most of the duration to kee"
+    },
+    {
+      "n": "Hold Monster",
+      "r": "blue",
+      "d": "A great example of a “save or suck” spell. With the exception of undead, this works on any creature type, and paralysis takes a creature out of a fight almost as much as killing them. If you have an ally who fights in melee, send them to follow up with melee attacks. Automatic critical hits are too hard to pass up many melee allies. Keep in mind that targets get another save at the end of each of their turns, so you need to act quickly while targets are still affected."
+    },
+    {
+      "n": "Immolation",
+      "r": "red",
+      "d": "Against a single target with a ton of hit points and terrible reflex saves, this is a passable use of a spell slot. But it’s also a slow way to kill the sort of high-CR creature which you typically want to use this on, and for the same spell slot you could cast Fireball and deal 10d6 damage to everything in an AOE rather than 8d6 to one target and maybe more damage the next round."
+    },
+    {
+      "n": "Infernal Calling",
+      "r": "orange",
+      "d": "If Summon Greater Demon was a frustrating gamble, Infernal Calling is even more difficult. You need to negotiate with your summoned devil, and, unless you’re playing to the devil’s nature or doing something actively evil, you may find the whole spell totally unreliable. Casting Summon Greater Demon will get you a creature of the same CR, which will likely be sufficient, and doesn’t require so much real-world work. There’s an option to summon individual devils using their talisman, but getting on"
+    },
+    {
+      "n": "Jallarzi’s Storm of Radiance",
+      "r": "green",
+      "d": "The AOE isn’t amazing, and the damage isn’t very good, but the debuffs are great, and the scaling is excellent. By comparison, Fireball scales at 1d6 per spell level (average 3.5), Circle of Death scales at 2d6 (average 7), and Jallarzi’s Storm of Radiance scales at 2d10 (average 11), so Storm of Radiance will do more damage than Fireball when you upcast both to Level 7. Even better, you can force enemies into the area to repeatedly take the damage. However, this targets Constitution saves, whic"
+    },
+    {
+      "n": "Legend Lore",
+      "r": "orange",
+      "d": "Situational, but potentially very useful. “Famous” is a bit subjective, but there’s easy room to argue that someone gaining notoriety in some fashion is famous enough to qualify. The spell calls out that you could learn “secret lore that has never been widely known,” which presents some interesting opportunities. You might be able to learn things like the identities of secretive, unknown enemies. The more you know already, the more detailed the information becomes, so repeated castings might lea"
+    },
+    {
+      "n": "Mislead",
+      "r": "orange",
+      "d": "Situational. Not an easy option in combat, but out of combat this provides a safe way to scout an area or to trick other creatures. If you do this in combat, you may be able to target enemies with spells while you’re safely behind total cover. You still measure range from your own body, but you can use the duplicate to see places that you normally can’t."
+    },
+    {
+      "n": "Modify Memory",
+      "r": "green",
+      "d": "The actual intent of the spell is very situational, but this spell is accidentally a really effective save-or-suck spell. Compare it to Hold Monster against a single target, which is the same level. Hold Monster allows additional saves every round, though admittedly Paralyzed is more lethal than Incapacitated. The target is unaware of its surroundings, so you can reasonably get Advantage on attack rolls against it, but, as long as it isn’t damaged, you could also fully restrain the target before"
+    },
+    {
+      "n": "Negative Energy Flood",
+      "r": "red",
+      "d": "Much like Danse Macabre, this requires the DM to produce zombie statistics for creatures on the fly, so I’ll politely ask you not to use this on anything which doesn’t already have published monster stats. On top of that, it’s really hard to time this so that you’ll get a zombie. Enervation is probably a better choice."
+    },
+    {
+      "n": "Passwall",
+      "r": "green",
+      "d": "Much faster than repeatedly casting Stone Shape, and it cleans up after itself so enemies won’t find your handiwork several days later. The 1-hour duration is typically plenty of time to go in, do some work, then retreat to safety and take a rest before suddenly opening a tunnel somewhere else. If you can, try to use divination spells to determine what’s going to be on the other side of the passage so you don’t accidentally burrow into a magma flow or a room full of heavily-armed demons or somet"
+    },
+    {
+      "n": "Planar Binding",
+      "r": "orange",
+      "d": "At the level you get this, 1,000gp is a steep price to pay for a spell that lasts 24 hours. Save this for higher levels when you can cast something like Gate to summon a powerful creature and bind it to your service for a long time. If you can somehow get two Level 9 Wizard Spells, you could summon a Balor or something equally powerful for a year and a day, then command it to conquer a continent for you or something. Most creatures won’t be happy about this form of servitude, of course, so be su"
+    },
+    {
+      "n": "Rary’s Telepathic bond",
+      "r": "blue",
+      "d": "Cast this as a ritual. The ability to communicate silently across limitless distance is a massive tactical advantage in most situations where other creatures are a problem. The fact that this has no range limit once it’s in effect means that you can use it to communicate with allies while they scout around, potentially including familiars and summoned creatures. This also neatly solves the challenge of language barriers, so, if you can get a target to sit around for 10 minutes, you no longer nee"
+    },
+    {
+      "n": "Scrying",
+      "r": "green",
+      "d": "Technically situational, but it’s a situation that comes up frequently. Any time that you want to know what the BBEG is up to, cast Scrying and take a look. The spell gets easier the more you know the target, and after one face-to-face encounter you could easily make off with something tying you to the target to penalize their saving throw."
+    },
+    {
+      "n": "Seeming",
+      "r": "orange",
+      "d": "Very situational, but hard to replace in situations where you need it."
+    },
+    {
+      "n": "Skill Empowerment",
+      "r": "blue",
+      "d": "Expertise for everyone! You won’t be throwing this on the Fighter for them to shove or grapple everything they meet (you have better combat buffs), but you can put this on a character before sneaking, before an important social situation, before investigating something important, or basically any other time that there’s an important skill check to be made and you have time to buff yourselves beforehand."
+    },
+    {
+      "n": "Songal’s Elemental Suffusion",
+      "r": "blue",
+      "d": "This could be good if you use it if you’re built to fight at close range, but back-row caster builds will find very little value here due to the 15-foot radius of the Emanation. The Action casting time and 1-minute duration also makes this really difficult to use in combat because the damage is so minor compared to other spells. If you’re using this, you really need to benefit from all three benefits if you want to justify the spell slot. Casting as a Circle Spell : Have the entire party partici"
+    },
+    {
+      "n": "Steel Wind Strike",
+      "r": "green",
+      "d": "The damage is decent, and since it’s on a spell attack you can score a critical hit, and if you have a way to get Advantage (such as by being invisible) the spell becomes much more reliable. You generally don’t want to end up within 5 feet of a target unless you’re a Bladesinger, but fortunately the teleportation is optional and you can teleport to a target that you’ve killed if you managed to do that. Fireball cast at the same level will do more damage, but Steel Wind Strike doesn’t hit your pa"
+    },
+    {
+      "n": "Summon Dragon",
+      "r": "green",
+      "d": "A sturdy, flying summon with several damage resistances, the draconic spirit can find invisible foes, serve as a flying mount (though it’s intelligent, so don’t go riding it into melee), and its attacks are good enough to do quite a bit of damage. Overall, it’s a solid, versatile summoning option, though it might not be as lethal as similar spells."
+    },
+    {
+      "n": "Synaptic Static",
+      "r": "green",
+      "d": "Start with Fireball. Shave 30 feet off the range, change the damage type to psychic, and change the saving throw to Intelligence. Very few creatures are good at intelligence saves, so expect most creatures to fail the save. The 8d6 damage feels underwhelming at this spell level, but subtracting a d6 from attack rolls and ability checks for a full minute is a significant debuff. This is a good option to start a fight with a large number of martial enemies because they’ll be impacted most by debuf"
+    },
+    {
+      "n": "Telekinesis",
+      "r": "blue",
+      "d": "Fantastically versatile. The utility capabilities alone are well worth the spell, and with 10 minutes to enjoy it per casting you can solve all manner of problems. Open doors, safely handle traps, move obstacles, retrieve items from under couches, aid in construction, or solve any number of problems which might require a crane in real life. Against enemies, lifting them into the air and making them Restrained can easily be a death sentence if you have other allies who can follow up with ranged a"
+    },
+    {
+      "n": "Teleportation Circle",
+      "r": "orange",
+      "d": "Situational, but generally one of the safest long-distance teleportation options, especially since it doesn’t have a cap on the number or size of creatures affected. However, how useful it is depends on the availability of convenient teleportation circles in your campaign. If your DM isn’t going to make such teleportation circles available and useful, look elsewhere."
+    },
+    {
+      "n": "Transmute Rock",
+      "r": "green",
+      "d": "In previous editions, this was two spells, and if you were quick you could transmute mud to rock, then back into rock once enemies had sunken into it. Now that combination is specifically prohibited, but transmuting rock to mud is still a decent combination. Adventuring frequently takes you to places with stone floors and ceilings like caves and castles, and even if you don’t use this to restrain enemies, you can use it for things like walking through walls, collapsing structures, or generally j"
+    },
+    {
+      "n": "Wall of Force",
+      "r": "blue",
+      "d": "Nearly impenetrable, and with a 1-Action casting time you can use this to neatly separate encounters, or to trap foes in a sphere or hemisphere until you’re ready to deal with them."
+    },
+    {
+      "n": "Wall of Light",
+      "r": "orange",
+      "d": "The damage is awful, but that’s not what this spell is for. The real benefit is blinding stuff. Creatures are only blinded if they’re in the wall when you create it, and creatures can move through the wall totally unaffected. The save is Constitution-based and Constitution saves tend to be high, and since creatures get another save every round you can’t count on the blindness to last more than a round or two. Even the ability to shoot rays from the wall is disappointing, dealing the same 4d8 dam"
+    },
+    {
+      "n": "Wall of Stone",
+      "r": "blue",
+      "d": "While it certainly isn’t glamorous, it’s difficult to overstate how effective a solid stone barrier can be at solving problems. Walling off some of the enemies an encounter can take one challenging counter and make it two very easy back-to-back encounters. You do need to maintain Concentration, but that also means that when you’re ready to deal with whatever you decided to wall off temporarily you can just drop Concentration rather than breaking down your own wall. Outside of a life of adventure"
+    },
+    {
+      "n": "Yolande’s Regal Presence",
+      "r": "blue",
+      "d": "Spirit Guardians, but it’s Psychic Damage and it knocks enemies Prone and pushes them away. For a squishy class like the Wizard, the ability to push enemies away en masse is pretty great. The AOE and the damage aren’t amazing, but they really don’t need to be."
+    }
+  ],
+  "level6": [
+    {
+      "n": "Arcane Gate",
+      "r": "red",
+      "d": "Very Situation. Cast Fly and have your party fly the 500 ft. distance instead. That obviously won’t scale to big groups if you need to do something like lead a village across a chasm or something, but how often do you actually need to do that? ezstandalone.cmd.push(function () { ezstandalone.showAds(189); });"
+    },
+    {
+      "n": "Chain Lightning",
+      "r": "green",
+      "d": "Fine damage at good range. You’ll be able to get more total damage from a normal AOE damage spell because you’ll likely be able to hit more targets, but that misses the primary appeal of Chain Lightning. Chain Lightning is good because you can cast into a crowded area which might include your own allies without any risk of friendly fire. The spell level scaling adds additional targets rather than additional damage, so you can easily cast this at a level that hits exactly as many targets as you f"
+    },
+    {
+      "n": "Circle of Death",
+      "r": "green",
+      "d": "Very slightly less damage than a level 6 Fireball. The big improvements are Circle of Death’s damage type and its absolutely massive 60-foot radius area of effect. With such a large area and a target-rich environment you could easily deal more total damage than with Fireball. The scaling is also unusually good, adding 2 dice per spell level rather than 1 like most spells do, including Fireball. However, it also targets Constitution saves, which are consistently high, so Fireball may continue to "
+    },
+    {
+      "n": "Contingency",
+      "r": "blue",
+      "d": "This is the ultimate insurance policy. The material component is very expensive, but this spell is phenomenally useful. If you’re unsure what to pick, go for conditions and spells which will keep you alive like “when I fall to 0 hit points, polymorph me into a giant eagle”, or “when I fall below half hit points but not to 0, cast Invisibility”. Remember that you actually cast your contingent spell when you cast Contingency, so you need to provide any material components (potentially consuming th"
+    },
+    {
+      "n": "Create Homunculus",
+      "r": "green",
+      "d": "If you don’t mind the 1,000gp component cost for a fancy dagger, this is a nice way to get another permanent pet. The homunculus has some advantages over familiars: darkvision, flight, a telepathic bond with you, and the ability to attack on its own. However, it’s still very frail and the only way to address that is to give it part of your hit points maximum. Wizards are notoriously frail, which makes that a terrifying gamble, especially considering that you can just recreate your homunculus by "
+    },
+    {
+      "n": "Create Undead",
+      "r": "orange",
+      "d": "If you just need something to ride around on or a minion to carry your treasure, use Animate Dead. If you want to have an intelligent thrall to handle complex tasks or to act as a bodyguard, use Create Undead. But remember: undead are evil and will murder you at the first opportunity, and generally DMs don’t like players dragging an undead army around behind them."
+    },
+    {
+      "n": "Disintegrate",
+      "r": "blue",
+      "d": "Among the most damaging single-target damage spells in the game, Disintegrate’s single-target damage is roughly equivalent to 21d6 (total average of 75). On a Dexterity save it’s tempting to use this against big, bulky foes who tend to have a lot of hit points to burn though. Ideally you can save-or-suck those sorts of creatures, but sometimes things like legendary resistances make that hard. You can also use disintegrate to remove problematic things like walls of force (or of anything else), al"
+    },
+    {
+      "n": "Drawmij’s Instant Summons",
+      "r": "orange",
+      "d": "Very situational, and very expensive. But for important items (your spellbook, favorite magic items, etc.) you might still want to use this. Keeping the sapphires wherever you hide your clones allows you to come back to life, grab your collection of sapphires, and start reclaiming your items (provided that no one has picked them up after your untimely demise)."
+    },
+    {
+      "n": "Elminster’s Effulgent Spheres",
+      "r": "orange",
+      "d": "This has two functions: resisting incoming energy damage like Absorb Elements and shooting enemies as a Bonus Action like Crown of Stars. Both use the same resource pool. If you want the damage, Crown of Stars does more damage an gives you more shots. More likely, you’re here for the Reaction to resist incoming elemental damage. Effulgent Spheres effectively provides 6 uses of Absorb Elements with a 1-hour expiration. If you’re facing enemies who can easily change damage type (spellcasters), thi"
+    },
+    {
+      "n": "Eyebite",
+      "r": "blue",
+      "d": "If you cast this, don’t expect to do anything else for the duration of the encounter. A save-or-suck to put targets to sleep every turn is hard to beat, and the fact that you can do it every turn is spectacular. Sure, targets only remain asleep until the spell ends, but that’s plenty of time for someone else in your party to walk over and deliver a guaranteed critical hit. When the target wakes from taking damage they’ll still be prone, and on your next turn you’re free to put them to sleep agai"
+    },
+    {
+      "n": "Fizban’s Platinum Shield",
+      "r": "green",
+      "d": "Fantastically versatile, this is a great defense against common area damage effects like breath weapons and fireballs. Remember that half cover provides +2 bonuses to both AC and Dexterity saves. The Bonus Action casting time is convenient, allowing you to easily slip this into a turn alongside a Cantrip. For yourself, Absorb Elements may be an easier choice since it’s so much lower level and only uses your Reaction."
+    },
+    {
+      "n": "Flesh to Stone",
+      "r": "red",
+      "d": "Single-target save-or suck, but they get multiple saves and Constitution saves tend to be high so you can’t count on this to work reliably. Even if the target does succumb to the spell, it takes at least three rounds."
+    },
+    {
+      "n": "Globe of Invulnerability",
+      "r": "blue",
+      "d": "You’ll only rarely need this, but against enemy spellcasters it’s irreplaceable. Once this is up, enemies can’t even cast Counterspell because it targets you and you’re inside the sphere, and Globe of Invulnerability cares about the spell’s base level rather than the level of the spell slot used to cast it. Even in fights with spellcasters who can cast Level 9 spell slots, you can cast this as a Level 9 spell and use Counterspell against any Level 9 Wizard Spells which they cast (though they’ll "
+    },
+    {
+      "n": "Guards and Wards",
+      "r": "orange",
+      "d": "Very situational. This spell is generally used by NPCs rather than by players since it’s so rare for players to stay in one place long enough to make the spell permanent, but if you have a permanent base and you’re a Wizard this is basically required. It’s like covering your mouth when you cough. You could choose to not do it, but I’ll think much less of you for it."
+    },
+    {
+      "n": "Investiture of Flame",
+      "r": "red",
+      "d": "You should never remain close enough to enemies for long enough that this is a good choice."
+    },
+    {
+      "n": "Investiture of Ice",
+      "r": "red",
+      "d": "You should never remain close enough to enemies for long enough that this is a good choice."
+    },
+    {
+      "n": "Investiture of Stone",
+      "r": "red",
+      "d": "You should never remain close enough to enemies for long enough that this is a good choice."
+    },
+    {
+      "n": "Investiture of Wind",
+      "r": "orange",
+      "d": "Combine the most important parts of Fly and Warding Wind, and you get an option to shove creatures around at range which you might use once or twice. Probably not good enough for the spell level, but potentially interesting."
+    },
+    {
+      "n": "Leomund’s Lamentable Belaborment",
+      "r": "blue",
+      "d": "10-foot burst save-or-suck on an Intelligence save. Targets become Charmed, have their speed reduced to 0, and are mostly Blind and Deafened for up to a full minute without Concentration. The targets can still see and hear you, but they’re also Charmed by you, so they can’t target you with hostile effects. Unlike nearly every other charm effect in the game, targets remain charmed even if they take damage. They don’t even get a follow-up save when taking damage (though they do get one at the end "
+    },
+    {
+      "n": "Magic Jar",
+      "r": "orange",
+      "d": "Risky, but potentially very powerful. Stealing the body of another humanoid means that you can masquerade as them without risks like having an illusion broken. If your enemy has considerably better physical stats than you, it might also be an upgrade from your existing body. But that potential power means considerable risk. Your body is catatonic, but it’s not in stasis. Your body still needs food, water, and air, and it doesn’t stop aging (all assuming that you haven’t solved those issues magic"
+    },
+    {
+      "n": "Mass Suggestion",
+      "r": "blue",
+      "d": "Suggestion is absurdly powerful, and this is even better. Unlike Suggestion you don’t need to maintain Concentration, and the base duration for Mass Suggestion is triple Suggestion’s duration with the option to extend it with higher-level spell slots. If you’ve had good results with Suggestion, consider replacing it with Mass Suggestion."
+    },
+    {
+      "n": "Mental Prison",
+      "r": "blue",
+      "d": "Excellent single-target save-or-suck. Almost nothing has good intelligence saves, which makes this a solid go-to option. The target can’t see or hear outside of the mental prison, but you’re free to shoot them to death while they’re restrained. It’s not quite as restrictive as being paralyzed by Hold Monster, but it’s considerably more reliable and the target doesn’t get additional saves every round. The target can technically still see and hear, but only within the illusion, and most offensive "
+    },
+    {
+      "n": "Move Earth",
+      "r": "orange",
+      "d": "Outside of adventuring, this spell would be profoundly useful, especially when combined with Stone Shape. But, for an adventurer, this has very limited usefulness."
+    },
+    {
+      "n": "Otiluke’s Freezing Sphere",
+      "r": "orange",
+      "d": "At 10d6 damage, Freezing Sphere exceeds Fireball by just 2 dice (which is sad because Fireball is three levels lower), but it has twice the range and a massive 60-foot radius. You also have the option to freeze the sphere and give it to an ally, so you could have an ally fire several from slings as an opening salvo in an encounter, dealing mass damage in an area. Freezing Sphere competes for space on the Wizard’s spell list with Circle of Death, which does less damage (but scales better), but us"
+    },
+    {
+      "n": "Otto’s Irresistible Dance",
+      "r": "green",
+      "d": "The primary appeal of Otto’s Irresistible Dance is that the target suffers the effects immediately, and doesn’t get to make a save until they have spent an Action to make the save, and since they must spend all of their movement dancing, they effectively lose at least one turn after being targeted (they still get a Bonus Action). This is a great way to sneak past Legendary Resistances, and if you’re positioned well in the initiative order your allies might get to spend their turns attacking the "
+    },
+    {
+      "n": "Programmed Illusion",
+      "r": "green",
+      "d": "This spell is weird and complicated and I love it. The casting time is 1 Action, so you can use it really quickly but somehow script a 5-minute performance in under 6 seconds. It has a 25gp expensive material component which it doesn’t consume for reasons I dopn’t understand. The 30-foot cube area is enough to fill a decently large stage, allowing you to script entire plays (albeit short ones). The triggering condition is flexible enough that you can use a separate casting of Programmed Illusion"
+    },
+    {
+      "n": "Scatter",
+      "r": "green",
+      "d": "Teleport your melee allies into melee combat and your ranged allies out of it. If you have remaining targets, use it to teleport enemies somewhere unpleasant like into an ongoing area effect."
+    },
+    {
+      "n": "Soul Cage",
+      "r": "green",
+      "d": "This is really good, provided that you’re fighting humanoids. You could technically use this on an ally (or a random humanoid you stumble upon), but I think as a DM I might frown upon that. I might not do anything about it, but there would be serious frowning. I’m also curious how this interacts with spells which raise the dead, as the spell makes no mention of how that’s handled."
+    },
+    {
+      "n": "Summon Fiend",
+      "r": "green",
+      "d": "Three perfectly fine summon options, but upcasting Summon Aberration or Summon Undead. Will get you creatures with more interesting offensive options. For more help, see our Practical Guide to Summoning Spells .guar"
+    },
+    {
+      "n": "Sunbeam",
+      "r": "red",
+      "d": "Constitution saves tend to be high, and lines are hard to aim so that you’ll hit more than one target. There are numerous better spells which could consume your Concentration for Sunbeam’s 1-minute duration."
+    },
+    {
+      "n": "Tasha’s Bubbling Cauldron",
+      "r": "blue",
+      "d": "Multiple free Common/Uncommon potions. The Potion of Growth and the Potion of Resistance both replicate buff spells which normally require Concentration. The Potion of Giant Strength (Hill) can buff someone’s Strength, though your party members should all have 20’s in their primary ability scores by now, so it may not be consistently useful. If you have a Monk in the party, the Potion of Pugilism is a nice buff. You could use this for Potions of Healing (Greater), but that’s the least interestin"
+    },
+    {
+      "n": "Tasha’s Otherworldly Guise",
+      "r": "orange",
+      "d": "A number of useful buffs, including flight and a bonus to AC among other more situational benefits. You also get the equivalent of Extra Attack. That’s a weird benefit since most Wizards have little business using weapons. So the biggest benefit of the spell is flight and defensive buffs on a Bonus Action casting time. There’s some appeal here for the Bladesinger, even when compared to Tenser’s Transformation. The Bonus Action casting time offers some appeal as a quick buff when the action econo"
+    },
+    {
+      "n": "Tenser’s Transformation",
+      "r": "orange",
+      "d": "I would only use this as a Bladesinger, but even then it has some problems. First, while you gain proficiency in armor and shields and weapons, you probably don’t just have decent armor and stuff laying around, and donning full plate takes longer than the spell lasts. Second, if you lose Concentration, you’re now in armor in which you’re likely not proficient, so you can’t cast spells. If you’re not already decent with a weapon, this won’t help. And on top of that, you gain a level of Exhaustion"
+    },
+    {
+      "n": "True Seeing",
+      "r": "blue",
+      "d": "You don’t always want this running, but you always want this available. For 1 hour you can see through illusions and invisibility, effectively negating them, and you can see into the Ethereal plane so that you can see creatures using options like Blink or walking around on the ethereal plane on their own like Phased Spiders. However, you can only see 120 feet away, so you’re not totally protected. Invisible creatures can maintain a safe distance while observing and even attacking you if there is"
+    },
+    {
+      "n": "Wall of Ice",
+      "r": "orange",
+      "d": "This attempts to combine the wall effect of Wall of Force with a little bit of damage. While the damage is nice, the fact that the wall is so frail means that it’s not a reliable way to wall off your enemies. Personally, I would much rather use Wall of Force and deal damage later. Wall of Ice is a good spell, but the existence of both Wall of Fire and Wall of Force on the Wizard’s spell list means that Wall of Ice is obsolete two levels before you can cast it."
+    }
+  ],
+  "level7": [
+    {
+      "n": "Create Magen",
+      "r": "red",
+      "d": "Too expensive for such low-level creatures if you intend to use them in combat, and this permanently reduces your hit point maximum. ezstandalone.cmd.push(function () { ezstandalone.showAds(191); });"
+    },
+    {
+      "n": "Crown of Stars",
+      "r": "green",
+      "d": "Similar in many ways to Melf’s Minute Meteors. Crown of Stars does considerably more damage per charge (2d6 vs. 4d12), but Crown of Stars only affects one target as opposed to a negligibly small AOE. Upcasting Minute Meteors gets you a total of 14 meteors for a total of 28d6 damage (assuming that nothing passes the save, of course). Crown of Stars will deal a total of 28d12 at the same spell level, and it’s delivered much faster over considerably fewer projectiles. If we ignore the possibility o"
+    },
+    {
+      "n": "Delayed Blast Fireball",
+      "r": "orange",
+      "d": "Situational and potentially very hard to use to its full effect, but if you can make it work the maximum of 22d6 damage (avg. 77) is hard to beat. The hardest part of getting this to work is charging it for a minute without enemies doing anything to stop you, either by breaking your Concentration or by meddling with the fireball. In some cases you may find that the fight is over or the combatants have all relocated before you can trigger the effect. Possibly your best option is for an ally who i"
+    },
+    {
+      "n": "Draconic Transformation",
+      "r": "blue",
+      "d": "Blindsight, flight, and a breath weapon that you get to use both immediately and as a Bonus Action on following turns. The breath weapon’s damage is as good as Fireball, so you’re getting as much damage as a 3rd-level fireball as a Bonus Action every turn. The only problem is that you want to use this early in a fight where an area control spell or crowd control spell would be more immediately impactful. Your best bet is to cast this right before combat starts or on a turn when you were already "
+    },
+    {
+      "n": "Dream of the Blue Veil",
+      "r": "orange",
+      "d": "This is more a plot point than a spell. Don’t learn this unless your DM tells you to."
+    },
+    {
+      "n": "Etherealness",
+      "r": "blue",
+      "d": "A profoundly effective scouting/escape option. Unless you’re fighting ethereal enemies, you’re untouchable. You can see and hear into the material plane (albeit at a limited distance), allowing you to spy on other creatures in person without their knowledge. The spell lasts 8 hours, which is sufficient to do a lot of things potentially including a Long Rest. Note that this only works on a plane bordering the Ethereal Plane, so it only works on the Material Plane, the Feywild, and the Shadowfell."
+    },
+    {
+      "n": "Finger of Death",
+      "r": "red",
+      "d": "This does less damage than Disintegrate (which is a spell level lower), and has a saving throw which enemies are more likely to resist. The only reason to cast this over Disintegrate is the free zombie if you kill the target, and if you just want zombies this is a slow way to build an army, even if the targets are permanently under your control."
+    },
+    {
+      "n": "Forcecage",
+      "r": "green",
+      "d": "An absolutely amazing way to isolate either your party or your enemies, but the 1,500 gp component will become expensive quickly. The duration is long enough to take a short rest, and there’s no save for enemies to resist it. Have an ally drop an AOE damage over time spell like Hunger of Hadar, then drop a Force Cage on top of it and you’re playing a magical game of “Will it Blend?”."
+    },
+    {
+      "n": "Mirage Arcane",
+      "r": "blue",
+      "d": "This is a difficult spell. The affectable area is huge, the distance is Sight (go climb a mountain on a clear day), and the effects of the illusion are tangible enough that you can physically interact with them, including picking up sticks or stones. But it’s unclear how far that goes: Can you burn the illusory wood to keep yourself warm? Can you smooth over difficult terrain in the same way that you can make smooth terrain difficult? Could you place stairs in the side of a clear cliff face? How"
+    },
+    {
+      "n": "Mordenkainen’s Magnificent Mansion",
+      "r": "green",
+      "d": "In the real world, learning to cast this spell would mean that you could comfortably retire. Each day you would walk out of the mansion, cast the spell again to recreate the house for 24 hours, then you would return to your invisible extraplanar abode to enjoy another 24 hours of abundant food, comfort, and nearly-invisible servants. The size of the mansion amounts to 5000 square feet, which is plenty to accommodate a party of adventurers and a sizeable retinue. The suggested 100 banquet guests "
+    },
+    {
+      "n": "Mordenkainen’s Sword",
+      "r": "red",
+      "d": "This is an objectively bad spell. Compare it to Bigby’s Hand, and it’s pretty clear. Bigby’s Hand can move twice as fast, it can do more than attack, and, when upcast to the same level as Mordenkainen’s Sword, it does considerably more damage of the same damage type. The fact that both spells are in the Player’s Handbook is ridiculous."
+    },
+    {
+      "n": "Plane Shift",
+      "r": "green",
+      "d": "Not quite as easy to use as Teleport, but hard to replace. Unfortunately, Plane Shift is very hard to use in combat because other creatures need to be holding hands in a circle. You also can’t go directly to locations on the same plane, so you may need to find a convenient place to stop on the way. Pick somewhere hospitable, safe, and ideally either unpopulated or populated by creatures you know and which are friendly to you."
+    },
+    {
+      "n": "Power Word Pain",
+      "r": "orange",
+      "d": "It’s hard to rely on this unless you have an ally who can follow up with a save-or-suck before the target’s next turn. But at that point, you might have better results leading with the save-or-suck unless the target has Legendary Resistances."
+    },
+    {
+      "n": "Prismatic Spray",
+      "r": "orange",
+      "d": "Unpredictable. The AOE is great, and effects 6, 7, and 8 are all great (any two rays would be spectacular), but the spell is unpredictable and I’m always reluctant to recommend unpredictable spells because unpredictable means unreliable. If you’ve historically enjoyed Cone of Cold and want an upgrade I could see an opportunity here."
+    },
+    {
+      "n": "Project Image",
+      "r": "orange",
+      "d": "Mislead with a massively longer duration and better range. The language used to describe the duplicate’s capabilities is nearly identical, but it’s much better than just that. The extra range, the ability to see through its senses, and the ability to move the image means that you’re effectively sending a flying, you-shaped illusion to sneak around. If you disguise your real body before casting the spell, you can scout an area disguised as someone else. If you’re caught, no problem: the illusion "
+    },
+    {
+      "n": "Reverse Gravity",
+      "r": "blue",
+      "d": "Fantastic because it’s so hard to resist. Even if targets grab onto something, they still need to hang onto it for the duration of the spell. Targets which can’t grab onto something will be mostly helpless unless they can fly, and while flight is common at this level it’s not universal by any means. The Tarrasque, for example, is largely helpless against this spell."
+    },
+    {
+      "n": "Sequester",
+      "r": "red",
+      "d": "This is typically something done as a plot point in the backstory of your campaign. It’s incredibly expensive, so it’s unlikely that you’re going to cast this on an ally unless it’s at the end of a campaign. If you want a cheaper version of this, use Flesh to Stone and leave a Spell Scroll of Stone to Flesh."
+    },
+    {
+      "n": "Simbul’s Synostodweomer",
+      "r": "orange",
+      "d": "This provides a 1-hour buff which allows spellcasters to spend their own Hit Point Dice when they cast spells with spell slots. It’s one of very few spells that let a Sorcerer/Wizard heal themselves, which is valuable, but you’re spending a very powerful spell slot to get access to healing that you could get from a Short Rest. Even worse: the target needs to spend Hit Point Dice equal to the level of the spell which they cast rather than up to . If your target doesn’t have enough Hit Point Dice,"
+    },
+    {
+      "n": "Simulacrum",
+      "r": "blue",
+      "d": "You could absolutely create a simulacrum and send it into combat in your stead, but it’s risky and you won’t gain experience for doing so. It also can’t recover spell slots, so its utility in combat diminished quickly, but it’s great for casting rituals, for using magic items, for keeping watch, and for downtime tasks. You can effectively double how much you can do so long as you’re not relying on spell slots. Unfortunately, healing the simulacrum is absurdly expensive, so it’s often best to cre"
+    },
+    {
+      "n": "Symbol",
+      "r": "red",
+      "d": "While many of the effects are wonderful, the inability to move the symbol and the high casting cost are prohibitive. Use Glyph of Warding."
+    },
+    {
+      "n": "Teleport",
+      "r": "blue",
+      "d": "With a 10-foot range and up to 8 targets you can easily teleport your entire party, and without the need to hold hands and form a circle you can often rescue the whole party in the midst of combat without too much trouble. However, Teleport has a complicated mechanic related to how familiar you are with the target destination and there’s often a possibility of mishap. Be sure to borrow a souvenir from new places so that you can easily return if necessary without the risk of a mishap."
+    },
+    {
+      "n": "Void Star",
+      "r": "orange",
+      "d": "Bad damage for the spell level, and the small amont of self healing doesn’t make up for it. There may be some useful combinations since this is both a Necromancy spell and an attack, but absent those options, this is a bad spell."
+    },
+    {
+      "n": "Whirlwind",
+      "r": "red",
+      "d": "If you want damage, look literally anywhere else. If you want to lift enemies off the floor, cast Reverse Gravity because it’s much more effective and reliable."
+    }
+  ],
+  "level8": [
+    {
+      "n": "Abi-Dalzim’s Horrid Wilting",
+      "r": "orange",
+      "d": "For such a fancy name, this spell is surprisingly simple. With the exception of the way it interacts with some creature types, it’s basically Fireball with a different AOE and better damage. Sunburst does roughly the same damage and blinds targets in an AOE with double the radius, so I think it’s a much better option."
+    },
+    {
+      "n": "Antimagic Field",
+      "r": "green",
+      "d": "Situational by design, but incredibly powerful. Even with such a small radius, removing magic from the game totally shifts the balance of the game. The biggest problem is that you are primarily a spellcaster, so you are turning off your biggest set of tools to use this. The best-case scenario is to use this when you are outmatched magically, but your allies can still fight without magic and defeat whatever you’re facing."
+    },
+    {
+      "n": "Antipathy/Sympathy",
+      "r": "green",
+      "d": "Difficult to use because it targets a single type of creature, but if you’re facing a homogenous group of enemies you can greatly hinder them with either option. Even against single creatures, using Sympathy to force an enemy to approach one of your party members (sympathy on a paladin to attract a lich) can force enemies into a situation which will end in their death."
+    },
+    {
+      "n": "Befuddlement",
+      "r": "blue",
+      "d": "Prevent spellcasting and the Magic Action is a huge problem for many high-level enemies, and Intelligence saves are consistently the lowest across the whole CR spectrum."
+    },
+    {
+      "n": "Clone",
+      "r": "blue",
+      "d": "Immortality! The components are expensive, but it’s well worth the cost. You can come back younger so you’ll never die of old age! Clone is more expensive than Raise Dead, but Clone doesn’t require that your body survive or that you have a friendly cleric around to raise you. If you’re budget-conscious, clone your party’s cleric, too, so that they can raise the rest of the party. Once you’ve used your clone, be sure to make another for next time. The containers are reusable, though the 1,000gp i"
+    },
+    {
+      "n": "Control Weather",
+      "r": "red",
+      "d": "Very situational, and kind of a pain for the DM. Go to your setting’s arctic equivalent, and raise the temperature to “Unbearable Heat” for 8 hours. That certainly won’t cause horrifying and potentially irreparable ecological damage that the DM will need to either totally disregard or track in some unpleasant fashion for the duration of the campaign."
+    },
+    {
+      "n": "Demiplane",
+      "r": "orange",
+      "d": "Despite the small size, the 30-foot cubic room is a nice, cozy home base. The 1-hour duration is enough to take a short rest, but that’s an awful use of an Level 8 spell. More realistically, you’ll use this when you need to lay low for a couple days, then emerge fresh, or if you need to store some stuff long-term in a place that’s largely inaccessible."
+    },
+    {
+      "n": "Dominate Monster",
+      "r": "green",
+      "d": "Arguably the best save-or-suck spell in the game, but the target gets Advantage on the save if you’re fighting it. This means that you want to cast it on your target outside of combat, but that presents a frustrating complication in the rules. As soon as you declare that you want to cast this, the DM should call for initiative to be rolled, at which point you’re now fighting the creature. You’ll need to talk to your DM about how they want to handle this, or your targets will always have Advantag"
+    },
+    {
+      "n": "Holy Star of Mystra",
+      "r": "orange",
+      "d": "Powerful, but the use case is very complicated, and even in situations where this could be useful, it might have reduced impact depending on how your DM runs enemies. Holy Star of Mystra is at its absolute best when you’re dueling with an enemy spellcaster. The ability to reflect single-target saving throw spells of level 7 and below means that enemies will be forced to use area damage spells or non-spell offensive options. Of course, in the 2024 DnD rules, most spellcaster enemies have powerful"
+    },
+    {
+      "n": "Illusory Dragon",
+      "r": "blue",
+      "d": "Frighten every enemy that can see the dragon (there is no range on this part), then spend the spell’s 1-minute duration flying the dragon around and breathing necrotic damage on everything around. You’re free to use your Bonus Action on the turn in which you cast Illusory Dragon, so you can get up to 11 breath weapons out of it before it ends at the end of your turn 10 turns later. The dragon isn’t limited by the spell’s range, and it doesn’t have a specific movement type, so you can move it thr"
+    },
+    {
+      "n": "Incendiary Cloud",
+      "r": "green",
+      "d": "Basically Cloudkill with a bunch of improvements. The damage is fully doubled, the damage type is improved (though fire is still one of the most commonly resisted damage types), and Dexterity saves are more effective than Constitution saves. The damage roughly matches a Fireball cast at the same level (avg. 45 vs. avg. 45.5 for Fireball), and the damage applies every round for the full 1-minute duration. However, Incendiary Cloud still retains some of Cloudkill’s biggest issues. First, the damag"
+    },
+    {
+      "n": "Maddening Darkness",
+      "r": "green",
+      "d": "10-minute duration, decent damage, 60-foot radius, and magical darkness which is nearly impossible to overcome. You still need a way to keep enemies inside the area, unfortunately, but if you have an ally that can cast a wall spell of some kind that’s typically sufficient."
+    },
+    {
+      "n": "Maze",
+      "r": "blue",
+      "d": "The target doesn’t get an initial save, and they need to make an Intelligence (Investigation) check to escape. If the creature has less than 10 Intelligence, it literally can’t escape. Even intelligent creatures rarely have proficiency in Investigation, so smart enemies may still struggle to escape."
+    },
+    {
+      "n": "Mighty Fortress",
+      "r": "red",
+      "d": "This looks like so much fun, but it’s the sort of spell that you cast when your Wizard retires at high level with a mountain of gold to spend. Fill some space in the keep with clones of yourself, then inhabit one any time that you die of old age, born again in a younger body to be waited on by a hundred invisible servants and a functionally bottomless supply of lavish food. But as an adventurer, stick to cheaper options like Leomund’s Tiny Hut."
+    },
+    {
+      "n": "Mind Blank",
+      "r": "orange",
+      "d": "Only situationally useful. Mind Fortress and Nondetection are typically sufficient, but sometimes you need even more protection."
+    },
+    {
+      "n": "Power Word Stun",
+      "r": "green",
+      "d": "Gambling on a creature’s current hit point total is hard, especially since you get so few spell slots at this level, but if you can time this to hit a wounded enemy (or an enemy with a low hit point maximum like many spellcasters) it can take them out of the encounter long enough for you to win largely unopposed."
+    },
+    {
+      "n": "Sunburst",
+      "r": "green",
+      "d": "Imagine Fireball with three times the radius and it blinds the targets. The targets get a Constitution save every turn to remove the blindness so you can’t expect it to stay in effect for long, but the save is at the end of their turns so they’ll spend at least one turn blinded if they fail the initial save, and that may be enough to determine the outcome of the encounter."
+    },
+    {
+      "n": "Telepathy",
+      "r": "red",
+      "d": "Rary’s telepathic bond is 3 levels lower, links up to eight creatures, and can be cast as a ritual. The only advantage of Telepathy is the unlimited range. But if range is an issue, you could easily use Sending or something to locate the target, then cast Teleport to go find them."
+    }
+  ],
+  "level9": [
+    {
+      "n": "Astral Projection",
+      "r": "orange",
+      "d": "A relatively safe way to explore the Astral Plane, but it has some complications. Avoid Githyanki at all cost; their silver swords can cut your astral cord and kill you outright. If things ever look bad for you, spend the Action to return everyone to their bodies. If any of your allies drop to 0 they’ll go back to their body unharmed, but if you don’t see it happen you may not know about it so you need to have a way for your party to contact your astral projection from wherever you hid your bodi"
+    },
+    {
+      "n": "Blade of Disaster",
+      "r": "green",
+      "d": "In almost every situation Meteor Swarm or Psychic Scream is a better damage option, but in long fights or enclosed spaces, the total damage output from Blade of Disaster may be more effective. It also has the added benefit of not killing your party in small quarters. Blade of Disaster got a significant buff between the 2014 and 2024 rules, increasing its damage from 4d12 (avg. 26) to 10d6 (avg. 35) per hit. It lost triple damage on a crit, but the overall damage increase is worth that trade. The"
+    },
+    {
+      "n": "Foresight",
+      "r": "green",
+      "d": "This is, without a doubt, the best buff in the game. With an 8-hour duration you can throw it on the lucky recipient and watch them laugh their way through nearly any challenge for a full day worth of adventuring."
+    },
+    {
+      "n": "Gate",
+      "r": "orange",
+      "d": "Travel to another plane: The simplest option, you open a door and you walk through to another plane, leaving the gate open for up to a minute for whoever else to walk through in either direction."
+    }
+  ]
+}

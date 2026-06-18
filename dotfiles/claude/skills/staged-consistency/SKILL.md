@@ -50,6 +50,36 @@ ls "$SESSION"/narration/*.md 2>/dev/null   # final narration if generated
 
 Tell the user which stages were found and what will be checked. Some sessions may be partial — e.g. gm-assist + session-summary done but scene extractions not yet generated. Run the check on whatever exists; don't try to generate missing artifacts (that's the pipeline's job, not this skill's).
 
+## Report format (mandatory at every stage)
+
+After each stage's check, **always** present findings as a severity-ranked table before asking about fixes:
+
+```
+● Stage N complete — M issues in <filename>. Going 1x1?
+
+  Quick preview:
+
+  ┌─────┬──────────┬──────────────────────────────────────────────────────┐
+  │  #  │ Severity │                        Issue                         │
+  ├─────┼──────────┼──────────────────────────────────────────────────────┤
+  │ 1   │ Critical │ <one-line description>                               │
+  │ 2   │ Moderate │ <one-line description>                               │
+  │ 3   │ Minor    │ <one-line description>                               │
+  │ 4   │ Trivial  │ <one-line description>                               │
+  └─────┴──────────┴──────────────────────────────────────────────────────┘
+```
+
+**Severity rubric:**
+
+| Level | Meaning |
+|---|---|
+| **Critical** | Contradicts established canon (NPC fates, event timing, faction state, established mechanics); would cause player confusion or DM embarrassment if it reaches narration. Must fix before narrating. |
+| **Moderate** | Framing drift — what happened is right but characterised wrongly; wrong kill attribution; characterisation that conflicts with the voice file; missing context that changes meaning. Should fix before narrating. |
+| **Minor** | Misspelling of a proper noun, wrong pronoun, single-word transcription error, inconsistency within the same document. Easy to fix; fix before narrating. |
+| **Trivial** | Stylistic quirk, table-chatter artifact, item you flagged as "leave as-is" in a prior stage, or flavour call that is defensible either way. Surface but do not push. |
+
+Sort the table by severity (Critical first, then Moderate, Minor, Trivial). Number issues sequentially across the whole table. If there are zero issues, say so in one line and advance automatically to the next stage.
+
 ### 2. Stage 0 — gm-assist check
 
 Delegate to `/consistency-check`:
@@ -58,7 +88,7 @@ Delegate to `/consistency-check`:
 
 Invoke the consistency-check skill workflow against `$SESSION/gm-assist.md`, passing `docs/party.md` and all prep files via `--context`. After it returns:
 
-- Surface the issue count and report.
+- Present the severity table (format above).
 - Ask: "Apply any of these fixes to `gm-assist.md` before moving to stage 1?"
 - If yes, edit `gm-assist.md` directly. If no, log what was deferred so it can be revisited.
 
@@ -70,7 +100,7 @@ Delegate to `/consistency-check`:
 
 > Stage 1 — running `/consistency-check $SESSION/session-summary.md` with prep as context.
 
-Same flow: invoke `/consistency-check`, surface findings, ask about applying fixes, edit if approved.
+Same flow: invoke `/consistency-check`, present the severity table (format above), ask about applying fixes, edit if approved.
 
 Pay particular attention at this stage to:
 - **Cross-section contradictions** (Summary prose vs. bulleted scene log)
@@ -80,7 +110,7 @@ Pay particular attention at this stage to:
 
 ### 4. Stage 2 — scene extractions check (the load-bearing one)
 
-For each scene extraction `$SESSION/scene_extractions_new/0N_*.md` (excluding `.prev` and `.scaffold` files), delegate to `/consistency-check`. Run them in numbered order so the user sees them in scene order.
+For each scene extraction `$SESSION/scene_extractions_new/0N_*.md` (excluding `.prev` and `.scaffold` files), delegate to `/consistency-check`. Run them in numbered order so the user sees them in scene order. Present a severity table (format above) per scene.
 
 This stage exists because **the scene extractions contain the verbatim quotes the narrator reads literally**. Fixes applied only at the session-summary layer get silently undone the next time the narrator runs.
 
@@ -94,7 +124,7 @@ After each scene's fixes, ask: "Continue to next scene, or revisit this one?" Do
 
 ### 5. Stage 3 — narration check (optional)
 
-If a final narration file exists (typically `$SESSION/narration/<something>.md` or the session_doc output), delegate to `/consistency-check` on it.
+If a final narration file exists (typically `$SESSION/narration/<something>.md` or the session_doc output), delegate to `/consistency-check` on it. Present a severity table (format above).
 
 At this stage the check is mostly catching narrator-layer voice drift and prose fabrications. Findings here are usually candidates for a narrator re-run (after fixing upstream) rather than direct edits, since editing final prose tends to fight the narrator's voice.
 

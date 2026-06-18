@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spell Builder · D&D</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg:   #0a0c10;
+  --s1:   #11141b;
+  --s2:   #181c26;
+  --s3:   #1f2330;
+  --bd:   #232737;
+  --bd2:  #313749;
+  --tx:   #ddd3bc;
+  --tx2:  #8a8070;
+  --tx3:  #4e4a41;
+  --gold: #c4973a;
+  --gold2:#7a5c1e;
+  --acc:  #7c3aed;
+
+  --rb:#1e40af; --rb-bg:#0c1a35; --rb-t:#93c5fd;
+  --rg:#15803d; --rg-bg:#0a2416; --rg-t:#86efac;
+  --ro:#c2410c; --ro-bg:#2c1005; --ro-t:#fdba74;
+  --rr:#b91c1c; --rr-bg:#280606; --rr-t:#fca5a5;
+
+  --sel-bg:#0d1b33; --sel-bd:#2563eb;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Crimson Pro',Georgia,serif;background:var(--bg);color:var(--tx);min-height:100vh;font-size:16px;line-height:1.5}
+
+header{background:var(--s1);border-bottom:1px solid var(--bd);padding:12px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100}
+.hicon{font-size:1.4rem;line-height:1}
+header h1{font-family:'Cinzel',serif;font-size:1.05rem;font-weight:700;letter-spacing:.12em;color:var(--gold)}
+header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
+.hlegend{margin-left:auto;display:flex;gap:6px;align-items:center;flex-shrink:0}
+
+.tabs{background:var(--s1);border-bottom:1px solid var(--bd);display:flex;padding:0 24px;overflow-x:auto;gap:0;-webkit-overflow-scrolling:touch}
+.tab{padding:9px 16px;cursor:pointer;border-bottom:2px solid transparent;color:var(--tx2);font-family:'Cinzel',serif;font-size:.7rem;letter-spacing:.09em;white-space:nowrap;transition:all .2s;display:flex;align-items:center;gap:5px}
+.tab:hover{color:var(--tx)}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.tbadge{background:var(--gold2);color:var(--gold);font-size:.6rem;padding:1px 5px;border-radius:3px;font-family:'JetBrains Mono',monospace}
+
+.content{padding:22px 24px 74px;max-width:1280px;margin:0 auto}
+.pane{display:none}
+.pane.active{display:block;animation:fi .18s ease}
+@keyframes fi{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+.sh{margin-bottom:18px}
+.sh h2{font-family:'Cinzel',serif;font-size:.95rem;font-weight:600;letter-spacing:.07em;margin-bottom:3px;color:var(--gold)}
+.sh p{font-size:.85rem;color:var(--tx2);font-style:italic}
+
+.badge{display:inline-flex;align-items:center;font-family:'JetBrains Mono',monospace;font-size:.6rem;font-weight:500;padding:2px 7px;border-radius:3px;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.badge-blue  {background:var(--rb-bg);color:var(--rb-t);border:1px solid var(--rb)}
+.badge-green {background:var(--rg-bg);color:var(--rg-t);border:1px solid var(--rg)}
+.badge-orange{background:var(--ro-bg);color:var(--ro-t);border:1px solid var(--ro)}
+.badge-red   {background:var(--rr-bg);color:var(--rr-t);border:1px solid var(--rr)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:12px 14px;cursor:pointer;transition:border-color .15s,background .15s,transform .1s;user-select:none}
+.card:hover{border-color:var(--bd2);background:var(--s2);transform:translateY(-1px)}
+.card.sel {border-color:var(--sel-bd);background:var(--sel-bg)}
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.card-name{font-family:'Cinzel',serif;font-size:.8rem;font-weight:600;letter-spacing:.04em}
+.card-note{font-size:.8125rem;color:var(--tx2);line-height:1.5}
+.card-state{margin-top:6px;font-size:.68rem}
+.card-state.selected{color:var(--rg-t)}
+
+.cbar{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:10px 18px;margin-bottom:14px;display:flex;gap:28px;align-items:center;flex-wrap:wrap}
+.citem{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:72px}
+.cnum{font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:500;color:var(--tx3);transition:color .2s}
+.cnum.ok  {color:var(--rg-t)}
+.cnum.done{color:var(--gold)}
+.clabel{font-size:.6rem;color:var(--tx3);text-transform:uppercase;letter-spacing:.09em;font-family:'Cinzel',serif}
+
+.fbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.fbtn{padding:4px 10px;border-radius:9999px;border:1px solid var(--bd);background:var(--s1);color:var(--tx2);cursor:pointer;font-size:.7rem;font-family:'JetBrains Mono',monospace;transition:all .15s}
+.fbtn:hover{color:var(--tx);border-color:var(--bd2)}
+.fbtn.fa.active{border-color:var(--gold2);color:var(--gold);background:#181408}
+.fbtn.fb.active{border-color:var(--rb);color:var(--rb-t);background:var(--rb-bg)}
+.fbtn.fg.active{border-color:var(--rg);color:var(--rg-t);background:var(--rg-bg)}
+.fbtn.fo.active{border-color:var(--ro);color:var(--ro-t);background:var(--ro-bg)}
+.fbtn.fr.active{border-color:var(--rr);color:var(--rr-t);background:var(--rr-bg)}
+.srch{padding:5px 11px;border-radius:5px;border:1px solid var(--bd);background:var(--s1);color:var(--tx);font-family:'Crimson Pro',serif;font-size:.875rem;flex:1;min-width:140px;max-width:240px;outline:none}
+.srch:focus{border-color:var(--bd2)}
+.srch::placeholder{color:var(--tx3)}
+
+.sblock{background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:16px 20px;margin-bottom:12px}
+.sblock h3{font-family:'Cinzel',serif;font-size:.67rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--bd)}
+.srow{display:flex;gap:10px;padding:4px 0;font-size:.875rem;border-bottom:1px solid var(--bd);align-items:flex-start}
+.srow:last-child{border-bottom:none}
+.skey{color:var(--tx2);min-width:135px;font-style:italic;flex-shrink:0}
+.sval{color:var(--tx)}
+.sval span{color:var(--gold)}
+.copybtn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:var(--s2);border:1px solid var(--gold2);color:var(--gold);border-radius:5px;cursor:pointer;font-family:'Cinzel',serif;font-size:.72rem;letter-spacing:.06em;transition:all .15s;margin-top:12px}
+.copybtn:hover{background:#181408}
+
+#sbar{position:fixed;bottom:0;left:0;right:0;background:var(--s1);border-top:1px solid var(--bd);padding:7px 24px;display:none;gap:18px;align-items:center;font-size:.72rem;z-index:100;overflow-x:auto;white-space:nowrap}
+.si{display:flex;align-items:center;gap:6px}
+.slbl{color:var(--tx3);font-family:'Cinzel',serif;font-size:.58rem;letter-spacing:.1em;text-transform:uppercase}
+.sval2{color:var(--tx);font-family:'JetBrains Mono',monospace;font-size:.68rem}
+.sval2.hi{color:var(--gold)}
+.sdiv{color:var(--bd2)}
+
+#loading{padding:48px 24px;color:var(--tx2);font-style:italic}
+#app{display:none}
+
+@media(max-width:640px){
+  .content{padding:14px 14px 74px}
+  .hlegend{display:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="hicon">⚔</span>
+  <div>
+    <h1 id="class-title">SPELL BUILDER</h1>
+    <div class="hsub" id="class-sub">Loading…</div>
+  </div>
+  <div class="hlegend">
+    <span class="badge badge-blue">Fantastic</span>
+    <span class="badge badge-green">Good</span>
+    <span class="badge badge-orange">Situational</span>
+    <span class="badge badge-red">Avoid</span>
+  </div>
+</header>
+
+<div id="loading">Loading spell data…</div>
+
+<div id="app">
+
+<nav class="tabs" id="tabs">
+  <div class="tab active" data-tab="cantrip">Cantrips</div>
+  <div class="tab" data-tab="level1">Level 1</div>
+  <div class="tab" data-tab="level2">Level 2</div>
+  <div class="tab" data-tab="level3">Level 3</div>
+  <div class="tab" data-tab="level4">Level 4</div>
+  <div class="tab" data-tab="level5">Level 5</div>
+  <div class="tab" data-tab="level6">Level 6</div>
+  <div class="tab" data-tab="level7">Level 7</div>
+  <div class="tab" data-tab="level8">Level 8</div>
+  <div class="tab" data-tab="level9">Level 9</div>
+  <div class="tab" data-tab="summary">Summary</div>
+</nav>
+
+<div class="content">
+
+  <div class="pane active" id="pane-cantrip">
+    <div class="sh"><h2>Cantrips</h2><p>Known: <span id="known-cantrip">0</span>/2</p></div>
+    <div class="fbar" id="filter-cantrip"></div>
+    <div class="grid" id="grid-cantrip"></div>
+  </div>
+
+  <div class="pane" id="pane-level1">
+    <div class="sh"><h2>Level 1 Spells</h2><p>Known: <span id="known-level1">0</span>/2 | Slots: <span id="slots-level1">0</span></p></div>
+    <div class="fbar" id="filter-level1"></div>
+    <div class="grid" id="grid-level1"></div>
+  </div>
+
+  <div class="pane" id="pane-level2">
+    <div class="sh"><h2>Level 2 Spells</h2><p>Known: <span id="known-level2">0</span>/2 | Slots: <span id="slots-level2">0</span></p></div>
+    <div class="fbar" id="filter-level2"></div>
+    <div class="grid" id="grid-level2"></div>
+  </div>
+
+  <div class="pane" id="pane-level3">
+    <div class="sh"><h2>Level 3 Spells</h2><p>Known: <span id="known-level3">0</span>/2 | Slots: <span id="slots-level3">0</span></p></div>
+    <div class="fbar" id="filter-level3"></div>
+    <div class="grid" id="grid-level3"></div>
+  </div>
+
+  <div class="pane" id="pane-level4">
+    <div class="sh"><h2>Level 4 Spells</h2><p>Known: <span id="known-level4">0</span>/2 | Slots: <span id="slots-level4">0</span></p></div>
+    <div class="fbar" id="filter-level4"></div>
+    <div class="grid" id="grid-level4"></div>
+  </div>
+
+  <div class="pane" id="pane-level5">
+    <div class="sh"><h2>Level 5 Spells</h2><p>Known: <span id="known-level5">0</span>/2 | Slots: <span id="slots-level5">0</span></p></div>
+    <div class="fbar" id="filter-level5"></div>
+    <div class="grid" id="grid-level5"></div>
+  </div>
+
+  <div class="pane" id="pane-level6">
+    <div class="sh"><h2>Level 6 Spells</h2><p>Known: <span id="known-level6">0</span>/2 | Slots: <span id="slots-level6">0</span></p></div>
+    <div class="fbar" id="filter-level6"></div>
+    <div class="grid" id="grid-level6"></div>
+  </div>
+
+  <div class="pane" id="pane-level7">
+    <div class="sh"><h2>Level 7 Spells</h2><p>Known: <span id="known-level7">0</span>/2 | Slots: <span id="slots-level7">0</span></p></div>
+    <div class="fbar" id="filter-level7"></div>
+    <div class="grid" id="grid-level7"></div>
+  </div>
+
+  <div class="pane" id="pane-level8">
+    <div class="sh"><h2>Level 8 Spells</h2><p>Known: <span id="known-level8">0</span>/2 | Slots: <span id="slots-level8">0</span></p></div>
+    <div class="fbar" id="filter-level8"></div>
+    <div class="grid" id="grid-level8"></div>
+  </div>
+
+  <div class="pane" id="pane-level9">
+    <div class="sh"><h2>Level 9 Spells</h2><p>Known: <span id="known-level9">0</span>/2 | Slots: <span id="slots-level9">0</span></p></div>
+    <div class="fbar" id="filter-level9"></div>
+    <div class="grid" id="grid-level9"></div>
+  </div>
+
+  <div class="pane" id="pane-summary">
+    <div class="sh"><h2>Spell Selection</h2><p>Your spell list.</p></div>
+    <div id="summary-content"></div>
+    <button class="copybtn" id="copy-btn">◆ Copy to Clipboard</button>
+  </div>
+
+</div><!-- .content -->
+</div><!-- #app -->
+
+<div id="sbar">
+  <div class="si"><span class="slbl">Cantrips</span><span class="sval2 hi" id="sb-cantrip">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 1</span><span class="sval2" id="sb-lvl1">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 2</span><span class="sval2" id="sb-lvl2">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 3</span><span class="sval2" id="sb-lvl3">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 4</span><span class="sval2" id="sb-lvl4">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 5</span><span class="sval2" id="sb-lvl5">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 6</span><span class="sval2" id="sb-lvl6">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 7</span><span class="sval2" id="sb-lvl7">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 8</span><span class="sval2" id="sb-lvl8">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 9</span><span class="sval2" id="sb-lvl9">0/2</span></div>
+</div>
+
+<script>
+// ─── Data (loaded from API) ───────────────────
+const D = {"cantrip": [{"n": "Guidance", "r": "blue", "d": "As long as you’re not concentrating on something with a long duration between fights, you should be constantly throwing this on your allies. Your Rogue should have Guidance for every skill check they make while searching, sneaking, handling traps, etc."}, {"n": "Light", "r": "green", "d": "Disposable magic light is fantastic, but if you don’t have room for the cantrip you’ll do fine with torches."}, {"n": "Mending", "r": "orange", "d": "Too situational. Short of Rust Monsters and a few oozes, nearly nothing in 5e deals damage to your equipment. If you’re playing Spelljammer this is essential, but otherwise you can skip it."}, {"n": "Resistance", "r": "orange", "d": "The amount of damage prevented is small and doesn’t scale, so committing Concentration to this is hard to justify beyond very low levels. This could be useful against low-CR elementals which you’ll face at levels 1 and 2, but 1d4 damage per turn just isn’t enough beyond that."}, {"n": "Sacred Flame", "r": "blue", "d": "Probably the best source of radiant damage in the game. It’s a reliable way to kill zombies, and since it requires a saving throw rather than an attack, you can use it against adjacent enemies without issue. The ability to ignore cover is nice on a spell which calls for a Dexterity save, but you could also switch to a different spell like Toll the Dead if cover becomes an issue."}, {"n": "Spare the Dying", "r": "orange", "d": "The only benefit to Spare the Dying is that it has 15-foot range, and that’s so little range that it’s hardly worth considering. Buy a Healer’s Kit and walk the 15 feet if you need to stabilize an ally as an Action."}, {"n": "Thaumaturgy", "r": "red", "d": "Thematically fun, but not especially useful. See our Practical Guide to Prestidigitation and Similar Cantrips for more."}, {"n": "Toll the Dead", "r": "blue", "d": "60 ft. range, the damage is measured in d12’s, and since it’s Necrotic damage, almost nothing will resist it."}, {"n": "Word of Radiance", "r": "green", "d": "A great way to handle crowds of multiple enemies. See our article on Melee Cantrips vs. Extra Attack for a breakdown of the math comparing melee Cantrips to normal martial attacks."}], "level1": [{"n": "Bane", "r": "orange", "d": "While the debuff is good, Bane is often difficult to justify. Against crowds, enemies will die too quickly to justify debuffing them. Against bigger enemies, it makes more sense to hit them with something more debilitating. However, Bane isn’t without merit. Since it targets Charisma saves, many enemies that are resistant to more common Constitution or Wisdom saves still have poor Charisma saves. It’s also especially useful against enemies with Legendary Resistance because it puts the DM into a "}, {"n": "Bless", "r": "blue", "d": "At low levels Bless can decide if you win or lose a fight, but even at very high levels adding 1d4 to attack rolls can dramatically improve your party’s damage output. This gets better as your party gains the ability to make more numerous attacks, so if you have fighters, warlocks, or characters who use two-weapon fighting, Crossbow Expert, or Polearm Master, this will get a ton of mileage. If you’re not concentrating on anything else, Bless is a great go-to option in nearly any case."}, {"n": "Ceremony", "r": "orange", "d": "This is a weird spell. The fact that it exists implies that spellcasters perform burial rites, wedding ceremonies, and rites of passage magically at a cost of 25gp each. It certainly feels cool to have a dedicated mechanic for performing these functions, but I don’t know why this isn’t just a Religion check or something. It also creates a bizarre economic divide because of the 25gp price tag between people who can and can’t afford to blow that gold on making a religious ceremony literally magic."}, {"n": "Command", "r": "green", "d": "Enough effects to be useful in many situations, but it’s a single-target spell and the effects only last one turn, so at low levels it’s hard to justify. Consider picking this up a few levels into your career once you have the ability to upcast it to affect multiple targets. The best uses of Command typically require support from your allies. Approach and Flee are great if you have melee allies who can make Opportunity Attacks when the target moves. Drop is great if someone in your party can qui"}, {"n": "Create or Destroy Water", "r": "green", "d": "The ability to magically create water has many uses. Few of them are combat-related, but this neatly solves a major component of any survival scenario."}, {"n": "Cure Wounds", "r": "green", "d": "Significantly more healing than Healing Word, but the action economy is worse in exchange. Save this for when you need a lot of hit points in a hurry. Ideally, you’ll heal an ally from 0 hp (or at least close to it) to full or nearly full hp. As a rule, healing in combat is a bad choice unless someone is unconscious or you can heal them enough to keep them conscious for multiple turns. If you heal an ally and they immediately take damage roughly equal to what you healed, you have spent an Action"}, {"n": "Detect Evil and Good", "r": "orange", "d": "Situationally useful, and you can use it to find invisible enemies or detect enemies through thin walls."}, {"n": "Detect Magic", "r": "green", "d": "Essential. If you’re not concentrating on anything else, it’s often a good idea to cast this as a ritual and walk around with it."}, {"n": "Detect Poison and Disease", "r": "red", "d": "Very situational, and unless you can also cast Protection From Poison there’s little you can do about it anyway. Fortunately, you can cast this as a ritual."}, {"n": "Guiding Bolt", "r": "blue", "d": "Great single-target damage for a 1st-level spell, and even though the Advantage only applies for one attack it’s easy to have an ally follow your Guiding Bolt with another spell or with a high-powered attack like a Sneak Attack."}, {"n": "Healing Word", "r": "blue", "d": "More important than Cure Wounds, especially at low levels. As a bonus action you can heal an unconscious ally enough to get them back into the fight, and you still have your action for Cantrips."}, {"n": "Inflict Wounds", "r": "red", "d": "Bad damage on a Constitution save at melee range."}, {"n": "Protection from Evil and Good", "r": "green", "d": "A great defensive option at any level, but Sanctuary will be more effective in melee and Sanctuary doesn’t care about creature type."}, {"n": "Purify Food and Drink", "r": "red", "d": "Cast this as a ritual and you’ll never need to worry about spoiled food again. One of many reasons that Dungeons and Dragons makes a terrible wilderness survival game."}, {"n": "Sanctuary", "r": "green", "d": "Potentially forcing enemies to give up an attack is great, and this doesn’t prevent the target from contributing via class features, the Help action, summoned creatures, pets, etc, though preventing spellcasting means that your target can’t spend the rest of the fight casting buffs and support spells. Sanctuary also has a Bonus Action casting time, so you can attack or cast a Cantrip in the same turn before casting Sanctuary on yourself. It doesn’t even require Concentration, so for the puny cos"}, {"n": "Shield of Faith", "r": "green", "d": "+2 AC is a significant boost, and the Bonus Action casting time means that you can easily wait to cast this until you get into combat. The spell lasts 10 minutes and it’s only level 1, so Shield of Faith remains an excellent buff on any character at any level. However, it requires Concentration, so in many cases Sanctuary will be more effective unless you’re running directly from one encounter to another and can benefit from Shield of Faith’s relatively long duration."}, {"n": "Wardaway", "r": "orange", "d": "A weaker version of Tasha’s Mind Whip, Wardaway makes some huge trades to fit into a level 1 spell. The damage is obviously much worse, but that’s not why you’re here. The target still gets to move and act in the same turn, but halving their speed is still impactful. The biggest limitation is that Wardaway uses a Constitution save instead of a much more reliable Intelligence save. At low levels where enemies have very few saving throw proficiencies, Wardaway may be decently reliable. But enemies"}], "level2": [{"n": "Aid", "r": "blue", "d": "With an 8-hour duration and three targets, this is a staple buff that’s worth casting literally every day. Keep in mind that this actually increases the targets’ hit point maximum, so temporary hit points can be added, too. Aid’s casting time allows it to be used in combat, which is unusual but offers an interesting option. With three targets and a 30-foot range, you can cast it to both buff and heal your allies during combat. Targets’ current hit points and hit point maximum both increase, so a"}, {"n": "Augury", "r": "blue", "d": "This is my absolute favorite divination spell because it allows players to politely ask their DM for hints. Castable as a ritual with a reusable material component, if you have time you can cast this repeatedly to question all sorts of decisions."}, {"n": "Blindness/Deafness", "r": "green", "d": "Blindness is crippling, especially for enemies who fight at range like archers and spellcasters. It’s also helpful against melee enemies, but Constitution saves tend to be high, so it’s often best to use this on enemies which are more physically frail. Deafness is a mild annoyance."}, {"n": "Borrowed Knowledge", "r": "green", "d": "A great way to cover skill proficiencies that your party doesn’t have, Borrowed Knowledge lasts an hour and doesn’t require Concentration, so you can combine it with Enhance Ability to become instantly excellent at any skill. Enhance Ability is more broadly useful because you can cast it on other allies to support them when their best skills come into play, but when there’s a gap in your party’s skillset, you can use this to come to the rescue."}, {"n": "Calm Emotions", "r": "green", "d": "Two situational but frequently useful effects. First, you can use this to temporarily suppress effects which charm or frighten your allies. Both effects are common, and many enemies can apply them to your whole party. Charm effects often include mind control effects, and suppressing them for a minute on a willing ally can easily buy you enough time to deal with whatever is trying to mind control your friends. Fear effects are often area effects, such as a dragon’s Frightful Presence, so suppress"}, {"n": "Continual Flame", "r": "blue", "d": "Having reliable, constant light is really nice. Cast this on a shield, a necklace, a weapon, or maybe a whole bunch of different things to guarantee that you always have adequate light without casting light or lighting a torch."}, {"n": "Deryan’s Helpful Homunculi", "r": "red", "d": "Since you can cast this as a Ritual, you’re effectively turning gold into short-lived assistance while crafting an item. This is only useful if you’re leaning into the 2024 rules’ extremely lackluster crafting system, and even then it’s only useful if you’re in a hurry but also have a ton of extra money lying around."}, {"n": "Enhance Ability", "r": "blue", "d": "Fantastic and versatile. Using this to buff Charisma for your party’s Face will make any social situation go a lot better."}, {"n": "Find Traps", "r": "red", "d": "Too expensive and too imprecise. Invest in Investigation."}, {"n": "Gentle Repose", "r": "red", "d": "Very situational, but it solves some interesting problems. Normally you can cremate a body to prevent it from becoming undead, but cremating a body takes an alarmingly large amount of fuel which you probably don’t have laying about. You can mutilate the body, but that’s gross and in many campaign settings the gods view that sort of thing as evil. So if you need to maintain a body until you can give it a real burial, this is your best bet. Fortunately, you can cast it as a ritual and you can typi"}, {"n": "Hold Person", "r": "orange", "d": "On/off button for Humanoids. Humanoids are a tiny portion of DnD’s roster of enemies, so this spell is situational by design. Even some creatures which have historically been common Humanoid antagonists like Hoblins and Sahuagin have changed creature type in the 2024 rules, though there are more NPC stat blocks than in the 2014 rules, which might keep Humanoids a relevant threat in some campaigns. In encounters with multiple foes, you can up-cast Hold Person to paralyze multiple targets, so this"}, {"n": "Lesser Restoration", "r": "green", "d": "Situational, but a situation that comes up often."}, {"n": "Locate Object", "r": "red", "d": "Too situational, and too easy to counter. Anyone with any knowledge of magic that’s trying to hide something will wrap it in lead."}, {"n": "Prayer of Healing", "r": "green", "d": "A Short Rest plus some extra healing for 5 targets. Useful if you’re pressed for time or if your party goes through hit points quickly and needs more healing than Hit Point Dice can provide."}, {"n": "Protection From Poison", "r": "green", "d": "Situational, but poison is common across the full CR range, so this is a fantastic defensive option at any level. The 1-hour duration means that you can get a lot of mileage out of a single spell slot even if you cast it ahead of time."}, {"n": "Searing Orb", "r": "green", "d": "The damage is dismal, but you’re here for the debuff. Unfortunately, Con saves ten to be high, so many enemies will be able to reliably pass the save. If you manage to catch a crowd of enemies (probably 3 or more), it may be worth the gamble."}, {"n": "Silence", "r": "blue", "d": "Verbal components are extremely common in spells, including many that spellcasters frequently use to escape dangerous situations. If you can trap an enemy spellcaster in place (such as by having an ally grapple them) and drop Silence around them, you’ll significantly limit their options. In the 2024 rules, spellcasting enemies will have combat actions that aren’t actually spells and which will ignore Silence, but you’ll still limit some of their best options."}, {"n": "Spiritual Weapon", "r": "green", "d": "Basically a summon spell without the advantage of a body to draw attacks, and the 1-minute duration and constant need to use your Bonus Action mean that it quickly becomes obsolete once real summon spells come online for other spellcasters when they get level 3 spells."}, {"n": "Warding Bond", "r": "orange", "d": "A dangerous, but interesting way to protect an ally. Generally you’ll find preventing them from taking damage with spells like Sanctuary will be more effective."}, {"n": "Zone of Truth", "r": "red", "d": "Situational and much less reliable than you would hope. Creatures are aware that they’re under the effect, and they can choose to “be evasive”, which means that they could give you true but useless answers or simply not answer. Creatures other than the caster also don’t know who passed or failed the save, so unless they already trust you other creatures might not believe you when you tell them that a creature is telling the truth. If a creature is willing to talk, they can prove that they are sa"}], "level3": [{"n": "Animate Dead", "r": "orange", "d": "Undead are excellent replacements for living creatures in many ways. An undead guard never gets tired while keeping watch. An undead horse never tires of marching. An undead porter won’t complain about their back hurting from hauling your treasure. Sure, desecrating the bodies of the dead is “icky” or “evil” depending on who you ask, but you likely can’t pay NPCs to work 24/7 in highly dangerous conditions far from home, so sometimes you need to compromise ethics in favor of effectiveness."}, {"n": "Astral Flood", "r": "blue", "d": "Decent area damage with good secondary effects. Compare to Fireball’s 8d6 (avg. 28) damage, Astral Flood’s 4d10 (avg. 22) isn’t significantly worse, and the scaling is only slightly worse than Fireball’s. But the rider effects are the big selling point here. The Cold dmaage option imposes Disadvantage on a d20 test, which includes saving throws. If you have other allies with powerful save-or-suck spells, this can prime a whole group of enemies to be quickly incapacitated with spells like Sleep o"}, {"n": "Aura of Vitality", "r": "green", "d": "Never use this in combat, but 20d6 healing for a level 3 spell is very efficient. That’s an average of 70 hit points, which matches Heal."}, {"n": "Beacon of Hope", "r": "red", "d": "Thematically, this is a really cool spell. Mechanically, it’s very hard to use. The best way to use this would be when a fight is going poorly so you throw up Beacon of Hope and start casting Mass Cure Wounds or Mass Healing Word to get your party back into the fight. But In those cases you typically just want your party above 0 hit points, and the difference of a few hit points on average won’t matter much. Also, you can’t cast two leveled spells in the same turn anyway, so that ideal scenario "}, {"n": "Bestow Curse", "r": "blue", "d": "The effects are versatile enough that you can easily bring this into play in a variety of situations, and the scaling mechanism works well enough that this remains a viable option for higher-level spell slots. Use the third option against big tanky enemies with poor Wisdom, or use the first option against enemies that like to grapple. If you’re ever uncertain, use the third option. Robbing a creature of their turn on a failed saving throw is debilitating, and can take creatures almost completely"}, {"n": "Clairvoyance", "r": "blue", "d": "With a 1-mile range and the ability to place the sensor in a place you can’t see, this is a fantastic way to safely scout dangerous places. If you have enough time to sit around and cast the spell repeatedly you can scout whole structures from the outside by gradually learning about more interior locations through previous castings."}, {"n": "Create Food and Water", "r": "orange", "d": "Rations are cheap, but it’s good that you can prepare this if you somehow find yourself somewhere without food for extended periods. This also lets you create 30 gallons of water, which is enough for a nice bath but not enough to fill a 5-foot cube."}, {"n": "Daylight", "r": "orange", "d": "A Continual Flame, Light, or even a torch is typically sufficient, but sometimes you need to light up larger areas like dark battlefields or massive caverns. This also dispels magical darkness of 3rd level or lower, which is great if you’re fighting enemies like drow which can produce magical darkness. Tragically, you can’t cast Daylight at a higher level to dispel magical darkness of higher levels."}, {"n": "Dispel Magic", "r": "blue", "d": "Every party needs someone who can cast Dispel Magic. It’s simply too important to forgo."}, {"n": "Fast Friends", "r": "green", "d": "A fantastic non-lethal option for handling single targets, but it has some limitations. The target needs to be able to understand you, so you likely need to share a language. The spell requires Concentration, so you don’t want to maintain this during combat if you can avoid it. And of course, you don’t want to try casting this during combat. If you can isolate a single enemy outside of combat, you may be able to ply them for information or send them on errands which will save you trouble later. "}, {"n": "Feign Death", "r": "red", "d": "Very situational."}, {"n": "Glyph of Warding", "r": "orange", "d": "Depending on how your DM handles it, this is either a situationally useful defensive measure or a reality-bending way to break the game from the comfort of your own home. See our Practical Guide to Glyph of Warding ."}, {"n": "Incite Greed", "r": "orange", "d": "This is a gamble. If targets fail their saves you can draw them into melee range with you and keep them there for up to a minute. You then need to find a way to capitalize on their position. You could walk your full speed away (affected targets can do nothing but move toward you, so they can’t take Reactions to perform an Opportunity Attack), drop Concentration, then hit them with a Fireball."}, {"n": "Laerel’s Silver Lance", "r": "orange", "d": "The damage type is fantastic, the Prone effect is great, very few area damage spells target Strength saves, and you can omit targets to avoid hitting friends. There’s definitely a niche here, but 3d10 (avg. 16.5) is very low compared to other level 3 spells. Lightning Bolt is 8d6 (avg. 28), and upcasting Laerel’s Silver Lance actually widens that gap. Preparing this and buying the 250 gp spell component feels like too much investment for the extremely narrow case where you can justify using this"}, {"n": "Life Transference", "r": "red", "d": "With the buffs to Cure Wounds, this is totally obsolete."}, {"n": "Magic Circle", "r": "orange", "d": "With a 1-minute casting time, you can’t use this in combat unless you have time to prepare and your enemies are coming to you. Even then, using this in combat isn’t reliable protection because it doesn’t mitigate the effects of spells and abilities which don’t require attack rolls like breath weapons or fireballs. The best use case is generally to invert the effects and use a spell to summon a creature so that you can bargain with it without risk of the creature escaping. Even then, the 1-hour d"}, {"n": "Mass Healing Word", "r": "orange", "d": "You never want to need this. It heals exactly as much as standard Healing Word at a much higher cost, but the ability to heal multiple targets means that you can bring multiple allies back into the fight and you still have your Action that turn. Also, the upcasting is terrible."}, {"n": "Meld into Stone", "r": "red", "d": "Very situational."}, {"n": "Motivational Speech", "r": "blue", "d": "This makes the Inspiring Leader somewhat obsolete. Inspiring Leader will provide considerably more temporary hit points, but this doesn’t require a feat and takes one tenth the time."}, {"n": "Protection From Energy", "r": "blue", "d": "An important, staple defensive option, but it’s single-target and requires Concentration so you can’t afford to keep it running constantly."}, {"n": "Remove Curse", "r": "orange", "d": "Situational, but irreplaceable. Fortunately, you can usually wait a day to prepare this."}, {"n": "Revivify", "r": "blue", "d": "(Optional): Everyone who is capable of casting this should keep it handy. It’s simply too good to forgo."}, {"n": "Spirit Guardians", "r": "blue", "d": "Among the Cleric’s most defining options, Spirit Guardians can win encounters and is rife with abuse cases. The tactics to multiply damage output from Spirit Guardians were defining in the 2014 DnD rules, and in the 2024 rules, they’re now a defining tactic for the character optimization meta as a whole. In an enclosed space, Spirit Guardians makes you the center of an extremely dangerous sphere. With a 15-foot radius, a Medium character can cover a sphere 35 ft. in diameter, easily filling many"}, {"n": "Spirit Shroud", "r": "red", "d": "Clerics never get Extra Attack, and you don’t have options like Scorching Rays to trigger this multiple times per turn unless you’re a Light Domain Cleric. Spirit Guardians is a much more effective use of a spell slot."}, {"n": "Tongues", "r": "blue", "d": "The second this spell becomes available to your party, all of their language proficiencies feel silly. The 1-hour duration is long enough to get through all but the lengthiest social situations, and if you’re in a situation where you need to re-cast Tongues you’re not likely to need your spell slots for much else (except Enhanced Ability (Eagle’s Splendor))."}, {"n": "Water Walk", "r": "orange", "d": "Usually flight is a better option than walking across a liquid, but at least you can cast this as a Ritual."}], "level4": [{"n": "Aura of Life", "r": "orange", "d": "Generally only useful if you know that you’re facing the types of undead which reduce your hit point maximum (there are several). The healing is numerically very efficient for the spell slot: 100 hit points to as many living creatures as you can fit into the 30-foot radius for the spell’s 10-minute duration. However, it only affects creatures at 0 hit points, so you’re never going to actually get that amount of healing unless you’re sprinting across an endless field of dying creatures. The more "}, {"n": "Aura of Purity", "r": "green", "d": "Technically situational, but the defenses are broad enough that you can cover a wide variety of situations. In most encounters it’s unlikely that you’ll be hit with more than one or two negative status conditions, but Aura of Purity provides broad enough protection that you’ll be able to counter many of the most common conditions with the same spell."}, {"n": "Banishment", "r": "blue", "d": "Among the most powerful save-or-suck spells in the game for several reasons. First, it’s a Charisma saving throw and very few creatures are good at those. Second, many powerful enemies like fiends are extraplanar, so you can easily remove them with a single spell (though many of them can cast Plane Shift to come right back, so watch out for that). Finally, casting the spell at a higher level allows you to target additional creatures so you can remove big parts of an encounter for up to a minute,"}, {"n": "Control Water", "r": "orange", "d": "All of the effects are situational, and there are some weird edge cases like using the Flood option on a puddle or a full bucket where it’s unclear what happens when the water overflows its container."}, {"n": "Death Ward", "r": "blue", "d": "With an 8-hour duration, this is a great insurance policy. It’s great to throw this on death-prone characters like your party’s Defender, but if you expect to face a high-level spellcast you should also consider putting this on your less-durable allies like wizards to protect them from things like Power Word Kill."}, {"n": "Divination", "r": "green", "d": "Much more precise than Augury, and it works much further into the future. The 25gp component cost won’t hurt much at this level, but it’s enough to deter you from using this every time you have a question."}, {"n": "Doomtide", "r": "red", "d": "The damage isn’t high, but it’s a good damage type and the save debuff is excellent. Magical darkness will force most enemies to exit the AOE on their turn so that you can force them back into it to trigger the effect again. But, unlike most ongoing area damage spells, the sphere moves away from you gradually, which can make it difficult to keep the spell in the area where you’re fighting. There’s also no word on what happens when the sphere hits cover, so it might run right through walls. Casti"}, {"n": "Freedom of Movement", "r": "orange", "d": "Situational, but a great way to handle being grappled if you have poor Strength and if you’re not proficient in either Athletics or Acrobatics."}, {"n": "Guardian of Faith", "r": "orange", "d": "Only useful because of the 8-hour duration. The cap of 60 damage means that it’s going to make 3 to 6 attacks (more if enemies have Evasion or Damage Resistance), which isn’t enough to justify this in combat. Instead, throw it up to protect yourself while your party is resting or as a trap that you’re going to drive your enemies into. Guardian of Faith is arguably a decent area control spell, and it doesn’t require Concentration like similar spells. But Guardian of Faith’s limited damage and abs"}, {"n": "Locate Creature", "r": "orange", "d": "More effective than mundane tracking, but the 1,000-foot range can be a problem if the target is actively fleeing from you. If you’re going to use this, be sure that you’re moving faster than your target."}, {"n": "Sticks to Snakes", "r": "red", "d": "This is effectively a summoning spell which summons 4 CR 1/8 creatures. By the time you can cast this, that’s utterly useless. The best-case scenario is using this on wooden items that enemies are carrying. You can’t use it on magic items, so you can’t use it on the enemy wizard’s magic staff, but you can use it on mundane enemy weapons like spears. Most enemies use nonmagical weapons even if their attacks are magic, so this could be occasionally useful through the whole level range. But that de"}, {"n": "Stone Shape", "r": "blue", "d": "Stone is an incredibly common material in dungeons, castles, and other structures, so the ability to reshape it is immensely powerful. Using this to pass through walls or seal doors are obvious options, but a clever player can do a lot of damage by sabotaging structures or altering natural stone terrain. Typically you can’t use this in combat, but you could shape a 5 ft. cube directly above an enemy so that it falls on them. Tragically, the 5e rules don’t specify how much damage is dealt by fall"}], "level5": [{"n": "Circle of Power", "r": "orange", "d": "Great protection against enemy spellcasters, but it’s entirely passive and only matters if your enemies rely primarily on spells, so it’s situational by design."}, {"n": "Commune", "r": "blue", "d": "A yes-or-no answer is enough to get a great deal of information if you ask your questions well. But you need to ask all three questions before the spell’s 1-minute duration expires, so your DM could (and probably should) set a real-world timer. If the DM needs time to think of the answers, pause the timer. Unlike Divination, this doesn’t consume the material component so if you can spare the prepared spell, you should consider casting this once every evening before you rest to see what you can l"}, {"n": "Contagion", "r": "green", "d": "Sage Advice made significant changes to how this spell works, so if you have a physical copy of the Player’s Handbook make sure you go download the latest version of the Sage Advice and Errata documents. If you hit the target with a melee spell attack, they’re poisoned for a minimum of 3 turns. Poisoned is an extremely effective debuff, though many creatures are resistant or immune to it. Even so, the Poisoned effect may be more significant than the disease. The target must fail a total of three"}, {"n": "Dawn", "r": "orange", "d": "This is a mediocre area denial option. You can spend a Bonus Action to move it, which is really nice, but Constitution saves tend to be high, and the damage isn’t spectacular. Compare this to casting Spirit Guardians as a level 5 spell: 5d8 damage (avg. 22.5) compared to 4d10 (avg. 22), but Spirit Guardians won’t hurt you or your allies, and if you need to move the effects, you can walk and spend your Bonus Action doing something like casting a Cantrip. Dawn’s single saving grace is that it spec"}, {"n": "Dispel Evil and Good", "r": "orange", "d": "In most cases, Protection from Evil and Good will do the trick, but Dispel Evil and Good has two additional effects. You can prematurely end the spell to end a charm/frighten/possession effect, or to attempt to banish creatures from other planes. They do still get a saving throw, and if the creatures are native to the plane they’re on, nothing happens. It’s very important to note that the banishment effect isn’t limited by the spell’s duration: creatures banished this way are sent to another pla"}, {"n": "Flame Strike", "r": "orange", "d": "Only as much damage as Fireball cast a spell level lower than whatever spell slot you use for Flame Strike. The big appeal is that there are two damage types, so creatures which are immune or resistant to one generally won’t be resistant or immune to both. But if you’re casting a 5th-level spell intending to only get partial damage, you’re wasting a 5th-level spell slot. If you want radiant damage, 5th-level Spirit guardians will deal 5d8 radiant damage (avg. 22.5) compared to 10d6 (avg. 25) fro"}, {"n": "Geas", "r": "orange", "d": "This spell is situational by design. It has a 1-minute casting time and Verbal components, so you’re not going to break this out in combat or while sneaking around in a dungeon. You’re going to restrain the subject, and stand around chanting for a full minute and hope that they fail the save. Once that’s done, you need to give them a suitable command (read the spell description). Generally you’ll want it to be something that benefits you, but will also take the target most of the duration to kee"}, {"n": "Greater Restoration", "r": "blue", "d": "If you don’t have a Cleric in the party, you need this."}, {"n": "Hallow", "r": "orange", "d": "Situational by design. This isn’t a spell that you just carry around. With a 24-hour casting time, this is a spell that you plan out well in advance, get comfortable for, and probably eat a hefty meal beforehand because you don’t want to stop for food or water until it’s done. The effects are powerful and versatile, and since they’re permanent until dispelled this spell can easily outlive you. Unfortunately, the spell is still susceptible to Dispel Magic, and watching some jerk repeatedly cast D"}, {"n": "Holy Weapon", "r": "green", "d": "1-hour duration and cast as a bonus action. The intent is that you’ll cast this and attack in the same turn, but Clerics never get Extra Attack (War Clerics get an extra attack as a bonus action a few times per day, but that isn’t enough to keep you busy for an hour) so that’s a horrible use of this spell. Put this on someone making a whole bunch of attacks with one weapon. A fighter is ideal, but someone using Polearm Master or Crossbow Expert will suffice. You want as many attacks as you can g"}, {"n": "Insect Plague", "r": "orange", "d": "An improvement over Dawn in some ways, but some of the same challenges. Creatures can still move out of the area to avoid the ongoing damage, but with a 20-foot radius of difficult terrain that’s slightly harder to accomplish than in the area of Dawn, but not by enough that Insect Plague is actually better."}, {"n": "Legend Lore", "r": "orange", "d": "Situational, but potentially very useful. “Famous” is a bit subjective, but there’s easy room to argue that someone gaining notoriety in some fashion is famous enough to qualify. The spell calls out that you could learn “secret lore that has never been widely known,” which presents some interesting opportunities. You might be able to learn things like the identities of secretive, unknown enemies. The more you know already, the more detailed the information becomes, so repeated castings might lea"}, {"n": "Mass Cure Wounds", "r": "orange", "d": "You shouldn’t need this. It doesn’t do enough healing to justify the spell slot, so the best use case is to cast it when you have more than one ally at 0 hit points. If you reach that point, things have gone very seriously wrong. Healing Word is a much more efficient way to get people conscious, and considering how little healing you’re getting out of Mass Cure Wounds your allies will probably go down again anyway if anything looks at them funny."}, {"n": "Planar Binding", "r": "red", "d": "At the level you get this, 1,000gp is a steep price to pay for a spell that lasts 24 hours. Save this for higher levels when you can cast something like Gate to summon a powerful creature and bind it to your service for a long time. If you can somehow get two 9th-level spells, you could summon a Balor or something equally powerful for a year and a day, then command it to conquer a continent for you or something. Most creatures won’t be happy about this form of servitude, of course, so be sure to"}, {"n": "Raise Dead", "r": "orange", "d": "Don’t bother preparing this unless someone is already dead. If your ally dies, they’ll still be dead the next day when you prepare Raise Dead."}, {"n": "Scrying", "r": "blue", "d": "Spy on the campaign’s antagonists at every opportunity. The material component is expensive, but it’s reusable so you can buy a fancy mirror once then spend the rest of your character’s career spying on people from afar. The target gets a saving throw to resist, but doesn’t know that they’re being targeted by the spell. The sensor works the same way that Clairvoyance does (uses your normal senses, invisible luminous orb, etc.), so generally creatures will never know that they’re being spied on u"}, {"n": "Summon Celestial", "r": "blue", "d": "Summon a pet fighter. Defender is a melee fighter that can grant temporary hit points. Avenger is a ranged fighter that shoots lasers from a bow. Both deal radiant damage and can fly. It’s pretty great. For more help, see my Practical Guide to Summoning Spells ."}], "level6": [{"n": "Blade Barrier", "r": "green", "d": "The AOE is good and the damage is good. The wall also provides 3/4 cover, which is great since Clerics almost never use spells that require ranged attacks. Casting a spell that targets creatures on the other side of the wall doesn’t care about cover unless the center of the AOE is on the wrong side for some reason. Unfortunately, there’s no spell level scaling, and aside from being difficult terrain, there’s very little preventing enemies from running through the wall, suffering the damage, and "}, {"n": "Create Undead", "r": "orange", "d": "If you just need something to ride around on or a minion to carry your treasure, use Animate Dead. If you want to have an intelligent thrall to handle complex tasks or to act as a bodyguard, use Create Undead. But remember: undead are evil and will murder you at the first opportunity, and generally DMs don’t like players dragging an undead army around behind them."}, {"n": "Dirge", "r": "blue", "d": "This is another one of those Spirit Guardians-style spells: Turn it on, walk into a room, blend your enemies. However, most of those spells have Emanations of 10 to 20 feet. Dirge has a staggering like radius of 60 feet, which will cover all by the largest combat encounters. It pays for that massive radius with a 1-minute duration (compared to 10 for similar spells) and only 3d10 damage (compared to 3d8 for level 3 Spirit Guardians). The secondary effect knocks foes prone of halves their speed, "}, {"n": "Find the Path", "r": "red", "d": "This is barely useful as it is, but the next spell level brings Plane Shift, which will immediately solve long-distance travel challenges."}, {"n": "Forbiddance", "r": "blue", "d": "This is a strange spell, and it’s very easy to abuse in ways that the designers likely didn’t intend. Since you can cast it as a ritual, it’s basically a 1,000gp cost to buy into the spell, then it’s free to cast any time after that unless you want to make it permanent. Forbiddance is intended to create areas where you can keep creatures of a specific type out of the area, so important holy sites could keep out undead and fiends, but potentially allow celestials. But as the spell is written the "}, {"n": "Harm", "r": "orange", "d": "14d6 averages to 49 damage, which is pretty good. But it’s a single-target spell with a Constitution saving throw, and Constitution saves tend to be high. By comparison, a 7th-level Spirit Guardians will deal 7d8 damage (average 31.5) to every enemy within 15 ft. of you on a save that’s usually lower than Constitution saves. If you deal damage even twice, that’s a better option than Harm, and Spirit Guardians lasts for 10 minutes. Harm’s biggest appeal is potentially reducing the target’s hit po"}, {"n": "Heal", "r": "blue", "d": "Among the best in-combat healing in the game, Heal restores a reliable, consistent 70 points of hp. That won’t bring a player from 0 to full hit points (except maybe wizards), but it’s enough to keep them in the fight for a while in most cases. It also removes some annoying status conditions, but not enough that it can replace Restoration."}, {"n": "Heroes’ Feast", "r": "orange", "d": "An absolutely amazing spell, the 1,000gp cost means that you need to save it for special occasions."}, {"n": "Planar Ally", "r": "red", "d": "Casting this spell is expensive, difficult, and confusing, and the creature that you summon counts as a member of the party and gets a share of the experience points that your party earns. Use this as an absolute last resort, or if you know a specific extraplanar creature which might be willing to help you for free."}, {"n": "Sunbeam", "r": "orange", "d": "Spirit Guardians will typically be a better offensive use of a spell slot."}, {"n": "True Seeing", "r": "blue", "d": "You don’t always want this running, but you always want this available. For 1 hour you can see through illusions and invisibility, effectively negating them, and you can see into the Ethereal plane so that you can see creatures using options like Blink or walking around on the ethereal plane on their own like Phased Spiders. However, you can only see 120 feet away, so you’re not totally protected. Invisible creatures can maintain a safe distance while observing and even attacking you if there is"}, {"n": "Word of Recall", "r": "blue", "d": "A great way to escape to somewhere safe if adventuring is going badly for you and your party. The cap on 5 other creatures may be hard if you have a large party or if members of your party have pets."}], "level7": [{"n": "Conjure Celestial", "r": "blue", "d": "All the damage of Spirit Guardians, but you steer the effect at range instead of standing in the middle of it, and it heals you and your allies. You can use all of the same tactics as everything else in the spirit guardians meta to repeatedly trigger the damage to your enemies and the healing to your allies. You can move this into an ally on your turn, then your ally can walk out and back in on their own turn to heal twice in a round. Like Spirit Guardians, the 10-minute duration is enough to ca"}, {"n": "Divine Word", "r": "green", "d": "Primarily this is written as a way to handle crowds of weak enemies, and while the spell does that well it’s actually more effective as a way to banish high-CR extraplanar enemies. Affected creatures are banished similar to Banishment, but there’s no numerical limit on the number of affected creatures and they can’t return for 24 hours without serious magic like Wish, so enemies can’t Plane Shift right back into the fight to express how little they enjoyed that time that you banished them."}, {"n": "Etherealness", "r": "blue", "d": "A profoundly effective scouting/escape option. Unless you’re fighting ethereal enemies, you’re untouchable. You can see and hear into the material plane (albeit at limited distance), allowing you to spy on other creatures in person without their knowledge. The spell lasts 8 hours, which is sufficient to do a lot of things potentially including a Long Rest."}, {"n": "Fire Storm", "r": "orange", "d": "Imagine a fireball that you got to cut up and shape in 10-foot cubes. That’s essentially what Fire Storm is. It’s a decent blast spell, but it doesn’t do nearly enough damage for a spell of this level."}, {"n": "Plane Shift", "r": "blue", "d": "Simultaneously a fantastic long-distance travel spell and a single-target save-or-suck. If you want to travel within the same plane you may need to cast this twice, so make sure that your lay-over is somewhere pleasant like Celestia or Elysium. If you use this to get rid of someone, send them somewhere really unpleasant like sending a demon to Celestia or a humanoid to the plane of fire. Unfortunately, you do need a specific tuning fork for each plane that you want to visit, so start a collectio"}, {"n": "Power Word Fortify", "r": "blue", "d": "A huge amount of Temporary Hit Points. There’s no specified duration, so these THP last until your next Long Rest, making it easy to cast this before walking into a dangerous situation."}, {"n": "Regenerate", "r": "green", "d": "Limb removal is exceptionally rare in DnD 5e, typically the subject of specific traps or house rules written by players who enjoy the thought of their characters losing limbs every time a sword comes out. Still, any amount of regeneration means that a character never stays Dying, and with a 1-hour duration this heals an impressive 600 hit points on top of the initial hit point restoration."}, {"n": "Resurrection", "r": "orange", "d": "Situational by design, and intentionally very expensive. You don’t want to need this spell, but sometimes things don’t work out as planned."}, {"n": "Symbol", "r": "red", "d": "While many of the effects are wonderful, the inability to move the symbol and the high casting cost are prohibitive."}, {"n": "Temple of the Gods", "r": "red", "d": "Very situational. The 1-hour casting time makes this rarely useful except for specific story points (celebrate a holy day, conduct a ceremony like a wedding, provide sanctuary against an attack that you know is coming), so you should be able to prepare and cast this well ahead of time. You can’t make this permanent, but you could technically recast the spell every day to keep it in existence if you were planning to retire in a permanent base and didn’t need a level 7 spell slot every day."}], "level8": [{"n": "Antimagic Field", "r": "green", "d": "Situational by design, but incredibly powerful. Even with such a small radius, removing magic from the game totally shifts the balance of the game. The biggest problem is that you are primarily a spellcaster, so you are turning off your biggest set of tools to use this. The best-case scenario is to use this when you are outmatched magically, but your allies can still fight without magic and defeat whatever you’re facing."}, {"n": "Control Weather", "r": "red", "d": "Very situational, and kind of a pain for the DM. Go to your setting’s arctic equivalent, and raise the temperature to “Unbearable Heat” for 8 hours. That certainly won’t cause horrifying and potentially irreparable ecological damage that the DM will need to either totally disregard or track in some unpleasant fashion for the duration of the campaign."}, {"n": "Earthquake", "r": "orange", "d": "A powerful area control spell, but you don’t want to be within the 100 ft. radius, and because you don’t get the control the appearance of fissures you also can’t risk placing it with enemies near the edges. You also don’t want to risk using it inside or in an area where a nearby structure will fall on you. So you need to center the effect on your targets as much as possible, you need to be at a safe distance from the center point, and you may need some extra space to avoid falling structures. I"}, {"n": "Holy Aura", "r": "blue", "d": "A great defensive buff. For one minute your party is incredibly difficult to harm. Fiends and Undead can be blinded, so Holy Aura is most useful against those enemies, but that’s such a minor part of the effect that it doesn’t matter much. Advantage on all saves and Disadvantage on all incoming attacks is a massive defense in any situation."}, {"n": "Holy Star of Mystra", "r": "orange", "d": "Powerful, but the use case is very complicated, and even in situations where this could be useful, it might have reduced impact depending on how your DM runs enemies. Holy Star of Mystra is at its absolute best when you’re dueling with an enemy spellcaster. The ability to reflect single-target saving throw spells of level 7 and below means that enemies will be forced to use area damage spells or non-spell offensive options. Of course, in the 2024 DnD rules, most spellcaster enemies have powerful"}, {"n": "Sunburst", "r": "green", "d": "Imagine fireball with three times the radius and it blinds the targets. The targets get a Constitution save every turn to remove the blindness so you can’t expect it to stay in effect for long, but the save is at the end of their turns so they’ll spend at least one turn blinded if they fail the initial save, and that may be enough to determine the outcome of the encounter."}], "level9": [{"n": "Astral Projection", "r": "orange", "d": "A relatively safe way to explore the Astral Plane, but it has some complications. Avoid Githyanki at all cost; their silver swords can cut your astral cord and kill you outright. If things ever look bad for you, spend the Action to return everyone to their bodies. If any of your allies drop to 0 they’ll go back to their body unharmed, but if you don’t see it happen you may not know about it so you need to have a way for your party to contact your astral projection from wherever you hid your bodi"}, {"n": "Gate", "r": "orange", "d": "Travel to another plane: The simplest option, you open a door and you walk through to another plane, leaving the gate open for up to a minute for whoever else to walk through in either direction."}], "meta": {"name": "Cleric", "edition": "2024"}, "ui": {"knownPerLevel": {"cantrip": 2, "level1": 2, "level2": 2, "level3": 2, "level4": 2, "level5": 2, "level6": 2, "level7": 2, "level8": 2, "level9": 2}}, "slots": {"1": 2, "2": 3, "3": 4, "4": 4, "5": 4, "6": 3, "7": 3, "8": 3, "9": 3}};
+
+// ─── State ───────────────────────────────────
+const S = {
+  spells: {
+    cantrip: [],
+    level1: [],
+    level2: [],
+    level3: [],
+    level4: [],
+    level5: [],
+    level6: [],
+    level7: [],
+    level8: [],
+    level9: []
+  },
+  filters: {
+    cantrip: { filt: 'all', search: '' },
+    level1: { filt: 'all', search: '' },
+    level2: { filt: 'all', search: '' },
+    level3: { filt: 'all', search: '' },
+    level4: { filt: 'all', search: '' },
+    level5: { filt: 'all', search: '' },
+    level6: { filt: 'all', search: '' },
+    level7: { filt: 'all', search: '' },
+    level8: { filt: 'all', search: '' },
+    level9: { filt: 'all', search: '' }
+  },
+  level: 3
+};
+
+// ─── Helpers ─────────────────────────────────
+function badge(r) {
+  const L = {blue:'★★★★', green:'★★★', orange:'★★', red:'★'};
+  return `<span class="badge badge-${r}">${L[r]}</span>`;
+}
+
+function knownCount(level) { return S.spells[level].length; }
+function maxKnown(level) { return D.ui?.knownPerLevel?.[level] ?? 2; }
+function slotCount(level) { return D.slots?.[String(level)] ?? 0; }
+
+// ─── Tabs ────────────────────────────────────
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('pane-'+t.dataset.tab).classList.add('active');
+    if (t.dataset.tab === 'summary') renderSummary();
+  });
+});
+
+// ─── Filter UI ───────────────────────────────
+function renderFilter(level) {
+  const bar = document.getElementById('filter-'+level);
+  if (!bar) return;
+  const ratings = [
+    {k:'all',l:'All',c:'fa'},{k:'blue',l:'Fantastic',c:'fb'},
+    {k:'green',l:'Good',c:'fg'},{k:'orange',l:'Situational',c:'fo'},{k:'red',l:'Avoid',c:'fr'}
+  ];
+  const f = S.filters[level];
+  bar.innerHTML = ratings.map(b => 
+    `<button class="fbtn ${b.c} ${f.filt===b.k?'active':''}" data-f="${b.k}" data-l="${level}">${b.l}</button>`
+  ).join('')
+    + `<input class="srch" id="fsrch-${level}" placeholder="Search…\" value="${f.search}">`;
+  
+  bar.querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => {
+    S.filters[b.dataset.l].filt = b.dataset.f;
+    renderFilter(b.dataset.l);
+    renderSpells(b.dataset.l);
+  }));
+  const searchInput = document.getElementById(`fsrch-${level}`);
+  if (searchInput) {
+    searchInput.addEventListener('input', e => {
+      S.filters[level].search = e.target.value;
+      renderSpells(level);
+    });
+  }
+}
+
+// ─── Spell Grid ──────────────────────────────
+function renderSpells(level) {
+  const g = document.getElementById('grid-'+level);
+  const f = S.filters[level];
+  const fq = f.search.toLowerCase();
+  const max = maxKnown(level);
+  const cur = knownCount(level);
+  
+  const vis = (D[level]||[]).filter(s => {
+    if (f.filt !== 'all' && s.r !== f.filt) return false;
+    if (fq && !s.n.toLowerCase().includes(fq) && !s.d.toLowerCase().includes(fq)) return false;
+    return true;
+  });
+  
+  if (!vis.length) {
+    g.innerHTML = '<div style="color:var(--tx3);font-style:italic;padding:8px 0">No spells match.</div>';
+    return;
+  }
+  
+  g.innerHTML = vis.map(s => {
+    const sel = S.spells[level].includes(s.n) ? 'sel' : '';
+    const st = sel ? '<div class="card-state selected">✓ Selected</div>' : '';
+    return `<div class="card ${sel}" data-l="${level}" data-s="${s.n}">
+      <div class="card-top">
+        <div class="card-name">${s.n}</div>
+        ${badge(s.r)}
+      </div>
+      <div class="card-note">${s.d}</div>
+      ${st}
+    </div>`;
+  }).join('');
+  
+  g.querySelectorAll('.card').forEach(c => c.addEventListener('click', () => {
+    const lvl = c.dataset.l, nm = c.dataset.s;
+    const idx = S.spells[lvl].indexOf(nm);
+    if (idx >= 0) {
+      S.spells[lvl].splice(idx, 1);
+    } else {
+      if (knownCount(lvl) >= max) return;
+      S.spells[lvl].push(nm);
+    }
+    updateCounts();
+    renderSpells(lvl);
+    updateSBar();
+    if (document.querySelector('.tab[data-tab="summary"]').classList.contains('active')) {
+      renderSummary();
+    }
+  }));
+}
+
+function updateCounts() {
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  levels.forEach(lvl => {
+    const el = document.getElementById('known-'+lvl);
+    if (el) el.textContent = knownCount(lvl);
+  });
+  
+  for (let i = 1; i <= 9; i++) {
+    const el = document.getElementById('slots-level'+i);
+    if (el) el.textContent = slotCount(i);
+  }
+}
+
+// ─── Summary ─────────────────────────────────
+function renderSummary() {
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  const lines = [];
+  
+  for (const level of levels) {
+    const spells = S.spells[level];
+    if (spells.length > 0) {
+      const max = maxKnown(level);
+      lines.push(`<div class="srow"><span class="skey">${level.toUpperCase()} (${spells.length}/${max})</span><span class="sval">${spells.map(n=>`<span>${n}</span>`).join(', ')}</span></div>`);
+    }
+  }
+  
+  if (lines.length === 0) {
+    lines.push('<div style="color:var(--tx3);padding:8px 0">No spells selected yet.</div>');
+  }
+  
+  document.getElementById('summary-content').innerHTML = lines.join('');
+}
+
+// ─── Status bar ──────────────────────────────
+function updateSBar() {
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  levels.forEach(lvl => {
+    const el = document.getElementById('sb-'+lvl.replace('level','lvl'));
+    if (el) el.textContent = `${knownCount(lvl)}/${maxKnown(lvl)}`;
+  });
+}
+
+// ─── Copy ────────────────────────────────────
+document.getElementById('copy-btn').addEventListener('click', () => {
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  const lines = [`=== ${D.meta.name} Spells (Level ${S.level}) ===`, ''];
+  
+  for (const level of levels) {
+    const spells = S.spells[level];
+    if (spells.length > 0) {
+      lines.push(`${level.toUpperCase()}:`);
+      lines.push(...spells.map(s => `  - ${s}`));
+      lines.push('');
+    }
+  }
+  
+  navigator.clipboard.writeText(lines.join('\n')).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = '◆ Copy to Clipboard'; }, 2000);
+  });
+});
+
+// ─── Init (called after D is loaded) ─────────
+function init() {
+  const ui = D.ui || {};
+  
+  // Initialize state from data
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  for (const level of levels) {
+    S.spells[level] = [];
+  }
+  
+  // Dynamic header
+  document.title = `${D.meta.name} Spell Builder · D&D ${D.meta.edition}`;
+  document.getElementById('class-title').textContent = `${D.meta.name.toUpperCase()} SPELL BUILDER`;
+  document.getElementById('class-sub').textContent   = `${D.meta.edition} D&D rules · RPGBOT guide`;
+  
+  updateCounts();
+  updateSBar();
+  
+  for (const level of levels) {
+    renderFilter(level);
+    renderSpells(level);
+  }
+  
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('sbar').style.display = 'flex';
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

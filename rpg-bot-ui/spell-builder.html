@@ -140,6 +140,11 @@ header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
   <div class="tab" data-tab="level2">Level 2</div>
   <div class="tab" data-tab="level3">Level 3</div>
   <div class="tab" data-tab="level4">Level 4</div>
+  <div class="tab" data-tab="level5">Level 5</div>
+  <div class="tab" data-tab="level6">Level 6</div>
+  <div class="tab" data-tab="level7">Level 7</div>
+  <div class="tab" data-tab="level8">Level 8</div>
+  <div class="tab" data-tab="level9">Level 9</div>
   <div class="tab" data-tab="summary">Summary</div>
 </nav>
 
@@ -175,6 +180,36 @@ header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
     <div class="grid" id="grid-level4"></div>
   </div>
 
+  <div class="pane" id="pane-level5">
+    <div class="sh"><h2>Level 5 Spells</h2><p>Known: <span id="known-level5">0</span>/2 | Slots: <span id="slots-level5">0</span></p></div>
+    <div class="fbar" id="filter-level5"></div>
+    <div class="grid" id="grid-level5"></div>
+  </div>
+
+  <div class="pane" id="pane-level6">
+    <div class="sh"><h2>Level 6 Spells</h2><p>Known: <span id="known-level6">0</span>/2 | Slots: <span id="slots-level6">0</span></p></div>
+    <div class="fbar" id="filter-level6"></div>
+    <div class="grid" id="grid-level6"></div>
+  </div>
+
+  <div class="pane" id="pane-level7">
+    <div class="sh"><h2>Level 7 Spells</h2><p>Known: <span id="known-level7">0</span>/2 | Slots: <span id="slots-level7">0</span></p></div>
+    <div class="fbar" id="filter-level7"></div>
+    <div class="grid" id="grid-level7"></div>
+  </div>
+
+  <div class="pane" id="pane-level8">
+    <div class="sh"><h2>Level 8 Spells</h2><p>Known: <span id="known-level8">0</span>/2 | Slots: <span id="slots-level8">0</span></p></div>
+    <div class="fbar" id="filter-level8"></div>
+    <div class="grid" id="grid-level8"></div>
+  </div>
+
+  <div class="pane" id="pane-level9">
+    <div class="sh"><h2>Level 9 Spells</h2><p>Known: <span id="known-level9">0</span>/2 | Slots: <span id="slots-level9">0</span></p></div>
+    <div class="fbar" id="filter-level9"></div>
+    <div class="grid" id="grid-level9"></div>
+  </div>
+
   <div class="pane" id="pane-summary">
     <div class="sh"><h2>Spell Selection</h2><p>Your spell list.</p></div>
     <div id="summary-content"></div>
@@ -187,13 +222,23 @@ header .hsub{font-size:.73rem;color:var(--tx2);font-style:italic;margin-top:1px}
 <div id="sbar">
   <div class="si"><span class="slbl">Cantrips</span><span class="sval2 hi" id="sb-cantrip">0/2</span></div>
   <span class="sdiv">|</span>
-  <div class="si"><span class="slbl">Level 1</span><span class="sval2" id="sb-lvl1">0/2</span></div>
+  <div class="si"><span class="slbl">Lvl 1</span><span class="sval2" id="sb-lvl1">0/2</span></div>
   <span class="sdiv">|</span>
-  <div class="si"><span class="slbl">Level 2</span><span class="sval2" id="sb-lvl2">0/2</span></div>
+  <div class="si"><span class="slbl">Lvl 2</span><span class="sval2" id="sb-lvl2">0/2</span></div>
   <span class="sdiv">|</span>
-  <div class="si"><span class="slbl">Level 3</span><span class="sval2" id="sb-lvl3">0/2</span></div>
+  <div class="si"><span class="slbl">Lvl 3</span><span class="sval2" id="sb-lvl3">0/2</span></div>
   <span class="sdiv">|</span>
-  <div class="si"><span class="slbl">Level 4</span><span class="sval2" id="sb-lvl4">0/2</span></div>
+  <div class="si"><span class="slbl">Lvl 4</span><span class="sval2" id="sb-lvl4">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 5</span><span class="sval2" id="sb-lvl5">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 6</span><span class="sval2" id="sb-lvl6">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 7</span><span class="sval2" id="sb-lvl7">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 8</span><span class="sval2" id="sb-lvl8">0/2</span></div>
+  <span class="sdiv">|</span>
+  <div class="si"><span class="slbl">Lvl 9</span><span class="sval2" id="sb-lvl9">0/2</span></div>
 </div>
 
 <script>
@@ -207,14 +252,24 @@ const S = {
     level1: [],
     level2: [],
     level3: [],
-    level4: []
+    level4: [],
+    level5: [],
+    level6: [],
+    level7: [],
+    level8: [],
+    level9: []
   },
   filters: {
     cantrip: { filt: 'all', search: '' },
     level1: { filt: 'all', search: '' },
     level2: { filt: 'all', search: '' },
     level3: { filt: 'all', search: '' },
-    level4: { filt: 'all', search: '' }
+    level4: { filt: 'all', search: '' },
+    level5: { filt: 'all', search: '' },
+    level6: { filt: 'all', search: '' },
+    level7: { filt: 'all', search: '' },
+    level8: { filt: 'all', search: '' },
+    level9: { filt: 'all', search: '' }
   },
   level: 3
 };
@@ -243,6 +298,7 @@ document.querySelectorAll('.tab').forEach(t => {
 // ─── Filter UI ───────────────────────────────
 function renderFilter(level) {
   const bar = document.getElementById('filter-'+level);
+  if (!bar) return;
   const ratings = [
     {k:'all',l:'All',c:'fa'},{k:'blue',l:'Fantastic',c:'fb'},
     {k:'green',l:'Good',c:'fg'},{k:'orange',l:'Situational',c:'fo'},{k:'red',l:'Avoid',c:'fr'}
@@ -258,10 +314,13 @@ function renderFilter(level) {
     renderFilter(b.dataset.l);
     renderSpells(b.dataset.l);
   }));
-  document.getElementById(`fsrch-${level}`).addEventListener('input', e => {
-    S.filters[level].search = e.target.value;
-    renderSpells(level);
-  });
+  const searchInput = document.getElementById(`fsrch-${level}`);
+  if (searchInput) {
+    searchInput.addEventListener('input', e => {
+      S.filters[level].search = e.target.value;
+      renderSpells(level);
+    });
+  }
 }
 
 // ─── Spell Grid ──────────────────────────────
@@ -315,23 +374,24 @@ function renderSpells(level) {
 }
 
 function updateCounts() {
-  document.getElementById('known-cantrip').textContent = knownCount('cantrip');
-  document.getElementById('known-level1').textContent = knownCount('level1');
-  document.getElementById('known-level2').textContent = knownCount('level2');
-  document.getElementById('known-level3').textContent = knownCount('level3');
-  document.getElementById('known-level4').textContent = knownCount('level4');
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  levels.forEach(lvl => {
+    const el = document.getElementById('known-'+lvl);
+    if (el) el.textContent = knownCount(lvl);
+  });
   
-  document.getElementById('slots-level1').textContent = slotCount(1);
-  document.getElementById('slots-level2').textContent = slotCount(2);
-  document.getElementById('slots-level3').textContent = slotCount(3);
-  document.getElementById('slots-level4').textContent = slotCount(4);
+  for (let i = 1; i <= 9; i++) {
+    const el = document.getElementById('slots-level'+i);
+    if (el) el.textContent = slotCount(i);
+  }
 }
 
 // ─── Summary ─────────────────────────────────
 function renderSummary() {
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
   const lines = [];
   
-  for (const level of ['cantrip','level1','level2','level3','level4']) {
+  for (const level of levels) {
     const spells = S.spells[level];
     if (spells.length > 0) {
       const max = maxKnown(level);
@@ -348,18 +408,19 @@ function renderSummary() {
 
 // ─── Status bar ──────────────────────────────
 function updateSBar() {
-  document.getElementById('sb-cantrip').textContent = `${knownCount('cantrip')}/${maxKnown('cantrip')}`;
-  document.getElementById('sb-lvl1').textContent = `${knownCount('level1')}/${maxKnown('level1')}`;
-  document.getElementById('sb-lvl2').textContent = `${knownCount('level2')}/${maxKnown('level2')}`;
-  document.getElementById('sb-lvl3').textContent = `${knownCount('level3')}/${maxKnown('level3')}`;
-  document.getElementById('sb-lvl4').textContent = `${knownCount('level4')}/${maxKnown('level4')}`;
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  levels.forEach(lvl => {
+    const el = document.getElementById('sb-'+lvl.replace('level','lvl'));
+    if (el) el.textContent = `${knownCount(lvl)}/${maxKnown(lvl)}`;
+  });
 }
 
 // ─── Copy ────────────────────────────────────
 document.getElementById('copy-btn').addEventListener('click', () => {
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
   const lines = [`=== ${D.meta.name} Spells (Level ${S.level}) ===`, ''];
   
-  for (const level of ['cantrip','level1','level2','level3','level4']) {
+  for (const level of levels) {
     const spells = S.spells[level];
     if (spells.length > 0) {
       lines.push(`${level.toUpperCase()}:`);
@@ -380,7 +441,8 @@ function init() {
   const ui = D.ui || {};
   
   // Initialize state from data
-  for (const level of ['cantrip','level1','level2','level3','level4']) {
+  const levels = ['cantrip','level1','level2','level3','level4','level5','level6','level7','level8','level9'];
+  for (const level of levels) {
     S.spells[level] = [];
   }
   
@@ -392,7 +454,7 @@ function init() {
   updateCounts();
   updateSBar();
   
-  for (const level of ['cantrip','level1','level2','level3','level4']) {
+  for (const level of levels) {
     renderFilter(level);
     renderSpells(level);
   }

@@ -1,0 +1,1111 @@
+{
+  "name": "Cleric",
+  "edition": "2024",
+  "ui": {
+    "skillPicks": 2,
+    "hasExpertise": false,
+    "optionalTitle": "Divine Order Options",
+    "optionalDesc": "Choose your Divine Order at level 1",
+    "subclassDesc": "Chosen at level 1. Divine Orders split clerics between front-line and back-line roles.",
+    "featDesc": "General Feats fill your ASI slots. Origin Feats come from your Background.",
+    "backgroundNote": "In 2024 D&D, your Background sets ability scores (+2/+1) and grants an Origin Feat. Wisdom is non-negotiable.",
+    "multiclassNote": "Clerics can multiclass well with many classes, but the healing focus works best alone.",
+    "weaponNote": "Clerics don't get Weapon Mastery slots. Simple or martial weapons depending on Divine Order.",
+    "armorNote": "Clerics are proficient in light, medium, and (if Protector) heavy armor, plus shields."
+  },
+  "subclasses": [
+    {
+      "name": "Protector",
+      "r": "orange",
+      "d": "Divine Order"
+    },
+    {
+      "name": "Thaumaturge",
+      "r": "orange",
+      "d": "For information and advice regarding Origin Feats, including those granted by your Background, see the Feats section, below. If you want to adapt a legacy background, see our guide to adapting DnD 5e backgrounds to DnD 5.5."
+    }
+  ],
+  "species": [
+    {
+      "n": "Aasimar",
+      "src": "PHB",
+      "r": "orange",
+      "d": "Two damage resistances, Darkvision, a once per day heal, and a once per day combat transformation. You\u2019re mostly here for the transformation, which could be appealing for melee builds. You can do..."
+    },
+    {
+      "n": "Changeling",
+      "src": "EFotA",
+      "r": "green",
+      "d": "Clerics generally can\u2019t afford to be good at Charisma, but Shapechanger\u2019s persistant Advantage on Charisma checks paired with two additional Face skills could offset relatively poor Charisma."
+    },
+    {
+      "n": "Dhampir",
+      "src": "ABoH",
+      "r": "green",
+      "d": "Spider Climb is a good substitute for flight, Darkvision is always great, and you get a damage resistance, but you\u2019ll get very little value from Vampiric Bite."
+    },
+    {
+      "n": "Dragonborn",
+      "src": "PHB",
+      "r": "green",
+      "d": "Darkvision, a damage resistance, and once per day flight are great, but you will likely never use the breath weapon beyond very low levels."
+    },
+    {
+      "n": "Dwarf",
+      "src": "PHB",
+      "r": "green",
+      "d": "Darkvision, resistance to the most common non-weapon damage type, and more hit points. Tremorsense is neat, but you have spells to handle invisible or hidden enemies. The durability is great for..."
+    },
+    {
+      "n": "Elf",
+      "src": "PHB",
+      "r": "green",
+      "d": "Darkvision and an extra skill are both great, plus you can get access to some spells from outside of the Cleric\u2019s spell list. The Drow\u2019s Faerie Fire gives you a great offensive support option, the..."
+    },
+    {
+      "n": "Gnome",
+      "src": "PHB",
+      "r": "green",
+      "d": "Darkvision and Gnomish Cunning are both great, and the added cantrips from Gnomish Lineage offer some interesting utility options. Paired with good Wisdom and proficiency in Wisdom saves, failing..."
+    },
+    {
+      "n": "Goliath",
+      "src": "PHB",
+      "r": "green",
+      "d": "Giant Heritage offers some great options. Cloud Jaunt offers teleportation, which normally isn\u2019t an option for the Cleric. Stone\u2019s Endurance offers some excellent damage mitigation. Other options..."
+    },
+    {
+      "n": "Halfling",
+      "src": "PHB",
+      "r": "blue",
+      "d": "Lucky is the only part of the Halfling\u2019s traits which will be consistently useful. Brave is great, but you already have fantastic Wisdom saves. Halfling Nimbleness is rarely useful; if you need to..."
+    },
+    {
+      "n": "Human",
+      "src": "PHB",
+      "r": "orange",
+      "d": "An additional skill and origin feat are an easy choice on any build."
+    },
+    {
+      "n": "Kalashtar",
+      "src": "EFotA",
+      "r": "orange",
+      "d": "Dual Mind makes the Kalashtar comparable to the Gnome, but you trade Advantage on Intelligense saves for Resistance to Psychic damage."
+    },
+    {
+      "n": "Khoravar",
+      "src": "EFotA",
+      "r": "orange",
+      "d": "Very versatile. The additional Cantrip may remove the need for Magic Initiate if you wanted to grab Cantrips from another class, and the additional proficiency will give you more options without..."
+    },
+    {
+      "n": "Orc",
+      "src": "PHB",
+      "r": "green",
+      "d": "Adrenaline Rush is an excellent option for getting out of dangerous positions quickly without a spell, and the Temporary Hit Points are great. If you\u2019re running Spirit Guardians, Adrenaline Rush..."
+    },
+    {
+      "n": "Shifter",
+      "src": "EFotA",
+      "r": "orange",
+      "d": "Beasthide and Swiftstride could be very helpful when you\u2019re running Spirit Guardians."
+    },
+    {
+      "n": "Tiefling",
+      "src": "PHB",
+      "r": "green",
+      "d": "Darkvision, a damage resistance, and some innate spellcasting almost entirely from outside of the Cleric\u2019s spell list. The spell choices aren\u2019t crazy, but there are some consistently useful options..."
+    },
+    {
+      "n": "Warforged",
+      "src": "EFotA",
+      "r": "green",
+      "d": "Durable and versatile. A good fit for literally any class."
+    }
+  ],
+  "arrays": [],
+  "abilityNotes": [
+    {
+      "s": "Str",
+      "r": "orange",
+      "n": "15 for heavy armor. You\u2019ll probably use this for weapons, if you use weapons at all. Don\u2019t expect to increase your Strength beyond 15."
+    },
+    {
+      "s": "Dex",
+      "r": "orange",
+      "n": "Dump."
+    },
+    {
+      "s": "Con",
+      "r": "orange",
+      "n": "Hit points and saving throws, including Concentration."
+    },
+    {
+      "s": "Int",
+      "r": "green",
+      "n": "A few useful skills, but you\u2019ll be fine if you dump this."
+    },
+    {
+      "s": "Wis",
+      "r": "orange",
+      "n": "Your primary ability score."
+    },
+    {
+      "s": "Cha",
+      "r": "orange",
+      "n": "Dump."
+    },
+    {
+      "s": "Str",
+      "r": "orange",
+      "n": "Dump."
+    },
+    {
+      "s": "Dex",
+      "r": "orange",
+      "n": "14 to max out medium armor."
+    },
+    {
+      "s": "Int",
+      "r": "green",
+      "n": "A few useful skills."
+    },
+    {
+      "s": "Cha",
+      "r": "orange",
+      "n": "Persuasion is on the Cleric\u2019s skill list, so you could technically play your party\u2019s Face."
+    }
+  ],
+  "skills": [
+    {
+      "n": "History",
+      "r": "green",
+      "d": "A useful knowledge skill, but skip it if anyone else in the party takes it."
+    },
+    {
+      "n": "Insight",
+      "r": "green",
+      "d": "Helpful for a Face, and you have the Wisdom to back it up. Since many Faces tend to have low Wisdom, it\u2019s a very good idea for you to pick this up even if you\u2019re not your party\u2019s Face."
+    },
+    {
+      "n": "Medicine",
+      "r": "blue",
+      "d": "This skill is useless. Medicine is best done magically."
+    },
+    {
+      "n": "Persuasion",
+      "r": "red",
+      "d": "Crucial for a Face, but you can skip it if someone in the party has more Charisma than you."
+    },
+    {
+      "n": "Religion",
+      "r": "blue",
+      "d": "The Cleric\u2019s best Knowledge skill, and important to the theme of the class. Thaumaturge Clerics also get to add their Wisdom modifier to Intelligence (Religion) checks, making this an easy choice."
+    }
+  ],
+  "backgrounds": [
+    {
+      "n": "Acolyte",
+      "r": "orange",
+      "d": "Better skills than Sage, but Sage\u2019s ability scores are better, and you already get Cleric spellcasting."
+    },
+    {
+      "n": "Archaeologist",
+      "r": "green",
+      "d": "A potential fit for Trickery Clerics. The additionals proficiencies from Skilled, plus good ability scores make a great basis for a high-Dexterity build. Unfortunately, the built-in skills aren\u2019t a..."
+    },
+    {
+      "n": "Artisan",
+      "r": "red",
+      "d": "Bad all around."
+    },
+    {
+      "n": "Carouser",
+      "r": "red",
+      "d": "Bad ability scores, and Charisma-based skills are hard for most Clerics."
+    },
+    {
+      "n": "Charlatan",
+      "r": "green",
+      "d": "Maybe a good choice for Trickery Clerics, but lacking a Wisdom increase is hard to justify. Chondathan Freebooter is a better option if you want Skilled."
+    },
+    {
+      "n": "Chondathan Freebooter",
+      "r": "blue",
+      "d": "An easy choice for Trickery Clerics. Grab increases in Dexterity and Wisdom, then use Skilled to cover whatever proficiencies you need to cover for a Rogue. You already get Sleight of Hand, which is..."
+    },
+    {
+      "n": "Criminal",
+      "r": "green",
+      "d": "Maybe a good choice for Trickery Clerics, but lacking a Wisdom increase is hard to justify."
+    },
+    {
+      "n": "Dead Magic Dweller",
+      "r": "green",
+      "d": "Good ability scores, but you don\u2019t need Healer, and the skills are bad."
+    },
+    {
+      "n": "Dragon Cultist",
+      "r": "green",
+      "d": "Cult of the Dragon Initiatiate is a great feat for the Cleric, but the ability scores and skills only work well for a Trickery Cleric, and you can\u2019t get a Wisdom increase."
+    },
+    {
+      "n": "Emerald Enclave Caretaker",
+      "r": "orange",
+      "d": "The feat is attrocious."
+    },
+    {
+      "n": "Entertainer",
+      "r": "green",
+      "d": "Musician is great, but it\u2019s not enough."
+    },
+    {
+      "n": "Farmer",
+      "r": "green",
+      "d": "Excellent ability scores for the Cleric, and more hit points never hurt, but the skills aren\u2019t great."
+    },
+    {
+      "n": "Flaming Fist Mercenary",
+      "r": "orange",
+      "d": "No Wisdom increase, but otherwise a passable option for a melee build."
+    },
+    {
+      "n": "Genie Touched",
+      "r": "green",
+      "d": "Comparable to Sage. Good ability scores, workable skills, and Magic Initiate ."
+    },
+    {
+      "n": "Guard",
+      "r": "orange",
+      "d": "Excellent for front-line builds intending to use weapons."
+    },
+    {
+      "n": "Guide",
+      "r": "blue",
+      "d": "Excellent for melee clerics. You can increase Constitution and Wisdom and grab Shillelagh from the Druid\u2019s spell list. The skills aren\u2019t fantastic unless you\u2019re going for Trickery Domain to use..."
+    },
+    {
+      "n": "Harper",
+      "r": "red",
+      "d": "Bad all around."
+    },
+    {
+      "n": "Hermit",
+      "r": "orange",
+      "d": "Decent ability scores, but the skills are middling, and there\u2019s little reason for Healer when you can cast Healing Word."
+    },
+    {
+      "n": "House Agent",
+      "r": "red",
+      "d": "Bad ability scores and skills. If you want Lucky, look elsewhere."
+    },
+    {
+      "n": "Ice Fisher",
+      "r": "red",
+      "d": "Bad ability scores and skills. If you want Alert, look elsewhere."
+    },
+    {
+      "n": "Inquisitive",
+      "r": "red",
+      "d": "Bad ability scores and skills. If you want Alert, look elsewhere."
+    },
+    {
+      "n": "Knight of the Gauntlet",
+      "r": "red",
+      "d": "Bad feat, bad skills, mediocre ability scores. Lords\u2019 Alliance Vassal : Bad all around."
+    },
+    {
+      "n": "Lorwyn Expert",
+      "r": "green",
+      "d": "Good ability scores, you can get Faerie Fire, and the skills are passable. Magic Initiate will typically be more impactful than Child of the Sun, so consider Guide or Moonwell Pilgrim instead."
+    },
+    {
+      "n": "Merchant",
+      "r": "red",
+      "d": "Bad ability scores, bad skills."
+    },
+    {
+      "n": "Moonwell Pilgrim",
+      "r": "green",
+      "d": "Good ability scores, one decent skill, and Magic Initiate"
+    },
+    {
+      "n": "Mulhorandi Tomb Raider",
+      "r": "green",
+      "d": "No Wisdom increase, but otherwise good."
+    },
+    {
+      "n": "Mythalkeeper",
+      "r": "orange",
+      "d": "Crafter is an awful feat."
+    },
+    {
+      "n": "Noble",
+      "r": "orange",
+      "d": "No Wisdom increase and both skills are based on dump stats for the Cleric."
+    },
+    {
+      "n": "Purple Dragon Squire",
+      "r": "green",
+      "d": "Decent ability scores, one good skill, and Purple Dragon Rook is a great feat."
+    },
+    {
+      "n": "Rashemi Wanderer",
+      "r": "red",
+      "d": "No Wisdom increase, bad skills."
+    },
+    {
+      "n": "Sage",
+      "r": "green",
+      "d": "Great ability scores, decent skills despite being Intelligence-based, and Magic Initiate . You might enjoy some of the Wizard\u2019s spells like True Strike and Find Familiar or Shield."
+    },
+    {
+      "n": "Sailor",
+      "r": "blue",
+      "d": "Decent ability scores for a melee build, plus one good skill, but you\u2019re absolutely not going to use Tavern Brawler."
+    },
+    {
+      "n": "Scribe",
+      "r": "green",
+      "d": "A good choice for Trickery Domain. Be sure to pick up proficiency in Thieves\u2019 Tools with Skilled."
+    },
+    {
+      "n": "Shadowmasters Exile",
+      "r": "orange",
+      "d": "No Wisdom increase, and most Clerics will rarely benefit from Savage Attacker since Clerics do so little with weapons."
+    },
+    {
+      "n": "Shadowmoor Expert",
+      "r": "green",
+      "d": "The appeal here is getting Hex, which the Cleric doesn\u2019t have a great way to use."
+    },
+    {
+      "n": "Soldier",
+      "r": "orange",
+      "d": "No Wisdom increase, and most Clerics will rarely benefit from Savage Attacker since Clerics do so little with weapons."
+    },
+    {
+      "n": "Spellfire Initiate",
+      "r": "orange",
+      "d": "You already have tons of options for radiant damage, and this doesn\u2019t offer a Wisdom increase."
+    },
+    {
+      "n": "Vampire Devotee",
+      "r": "red",
+      "d": "Bad all around."
+    },
+    {
+      "n": "Vampire Survivor",
+      "r": "green",
+      "d": "Decent, but Vampire Hunter isn\u2019t a good feat."
+    },
+    {
+      "n": "Wayfarer",
+      "r": "green",
+      "d": "A good choice for Trickery Domain."
+    },
+    {
+      "n": "Zhentarim Mercenary",
+      "r": "red",
+      "d": "Bad all around."
+    }
+  ],
+  "feats": [
+    {
+      "n": "Alert",
+      "r": "green",
+      "cat": "origin",
+      "d": "Great for starting big area control spells like Spirit Guardians or Blade Barrier or for dropping big area damage spells before allies get in the way or enemies get into melee range."
+    },
+    {
+      "n": "Child of the Sun",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Decent, but Magic Initiate offers both more spellcasting and more choices."
+    },
+    {
+      "n": "Crafter",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Neat, but not especially impactful. Crafting mundane gear stops being impactful early in the game as players quickly accumulate enough to afford nearly anything in the Player\u2019s Handbook. This notably omits the Herbalist Kit as a choice, so you can\u2019t even use this to craft Potions of Healing."
+    },
+    {
+      "n": "Cult of the Dragon Initiate",
+      "r": "orange",
+      "cat": "origin",
+      "d": "An easy fear effect with a Wisdom-based DC. An easy fit for the Cleric."
+    },
+    {
+      "n": "Emerald Enclave Fledgling",
+      "r": "red",
+      "cat": "origin",
+      "d": "Bad. Take Ritual Caster if you want to talk to animals."
+    },
+    {
+      "n": "Harper Agent",
+      "r": "green",
+      "cat": "origin",
+      "d": "The Help Action isn\u2019t useful enough to justify this unless you\u2019re a Hobgoblin."
+    },
+    {
+      "n": "Harper Agent",
+      "r": "green",
+      "cat": "origin",
+      "d": "The Help Action isn\u2019t useful enough to justify this unless you\u2019re a Hobgoblin."
+    },
+    {
+      "n": "Lucky",
+      "r": "green",
+      "cat": "origin",
+      "d": "An easy choice on any character. It won\u2019t directly impact your build, but it\u2019s a great default if you don\u2019t need anything else."
+    },
+    {
+      "n": "Magic Initiate",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Druid spells to get Shillelagh for melee builds or Wizard spells to get options like Fire Bolt and Shield can both have a huge impact."
+    },
+    {
+      "n": "Musician",
+      "r": "green",
+      "cat": "origin",
+      "d": "A great way to contribute to any party."
+    },
+    {
+      "n": "Purple Dragon Rook",
+      "r": "blue",
+      "cat": "origin",
+      "d": "The ability to give your whole party Heroic Inspiration once per Long Rest is amazing. The extra skill is nice, too, but Insight is the only good choice for the Cleric."
+    },
+    {
+      "n": "Savage Attacker",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Not impactful enough even if you\u2019re building to use weapons."
+    },
+    {
+      "n": "Shadowmoor Hexer",
+      "r": "green",
+      "cat": "origin",
+      "d": "Clerics don\u2019t make enough attack rolls to make Hex useful."
+    },
+    {
+      "n": "Skilled",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Decent, but you can probably get all of the skills you want between your Background and your class skills unless you\u2019re trying to fill in for a Rogue, which is a possibility or Trickery Domain."
+    },
+    {
+      "n": "Spellfire Spark",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Clerics have plenty of options to deal Radiant damage, and using Sacred Flame as a Bonus Action a few times per day isn\u2019t impactful enough to justify the cost."
+    },
+    {
+      "n": "Tavern Brawler",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Clerics have very little business making Unarmed Strikes."
+    },
+    {
+      "n": "Tireless Reveler",
+      "r": "green",
+      "cat": "origin",
+      "d": "A great choice on literally any character. While it doesn\u2019t set you up for any specific build, Heroic Inspiration is always useful."
+    },
+    {
+      "n": "Tough",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Helpful for keeping your party\u2019s healer alive."
+    },
+    {
+      "n": "Tyro of the Gauntlet",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Only worthwhile if you Ready actions frequently."
+    },
+    {
+      "n": "Aberrant Dragonmark",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Very similar to Magic Initiate if you could select Sorcerer, but you trade one Cantrip for a buff to Con saves and the THP/damage thing. To maximize the value of Aberrant Surge, you want to select a level 1 spell which you\u2019ll cast frequently in combat, so pick a staple option like Absorb Elements or Shield which will remain equally effective for your whole career."
+    },
+    {
+      "n": "Mark of Detection",
+      "r": "blue",
+      "cat": "origin",
+      "d": "The skills and spells are decent, but not amazing. You get both See Invisibility and Arcane Eye, which are both great and not on your spell list, but that\u2019s not enough to make this an easy choice."
+    },
+    {
+      "n": "Mark of Finding",
+      "r": "green",
+      "cat": "origin",
+      "d": "Most of the spells that aren\u2019t already on the Cleric\u2019s spell list come from the Druid, and they\u2019re not great."
+    },
+    {
+      "n": "Mark of Handling",
+      "r": "green",
+      "cat": "origin",
+      "d": "The most appealing thing here is Find Familiar. At that point, just take Magic Initiate. Animal Friendship of low-Intelligence Monstrosities is neat, but not useful enough to make a difference."
+    },
+    {
+      "n": "Mark of Healing",
+      "r": "orange",
+      "cat": "origin",
+      "d": "You already get all of these spells."
+    },
+    {
+      "n": "Mark of Hospitality",
+      "r": "green",
+      "cat": "origin",
+      "d": "A good mix of spells, several of which aren\u2019t on the Cleric\u2019s spell list."
+    },
+    {
+      "n": "Mark of Making",
+      "r": "green",
+      "cat": "origin",
+      "d": "You get most of the spells already, and Magic Weapon won\u2019t be useful enough to make this appealing."
+    },
+    {
+      "n": "Mark of Passage",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Access to some excellent spells including Misty Step, Find Steed, Pass Without Trace, and Phantom Steed."
+    },
+    {
+      "n": "Mark of Scribing",
+      "r": "green",
+      "cat": "origin",
+      "d": "The most interesting things here will only be useful for characters good at Charisma-based skills, and that\u2019s not you."
+    },
+    {
+      "n": "Mark of Sentinel",
+      "r": "green",
+      "cat": "origin",
+      "d": "Good skills and excellent defensive options like Shield and Counterspell. Vigilant Guardian can also help you rescue an injured ally, but watch out for your d8 hit dice."
+    },
+    {
+      "n": "Mark of Shadow",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Works very well with Trickery Domain. There is some overlap since both provide Disguise Self, Invisibility, and Pass Without Trace, but there is still value here."
+    },
+    {
+      "n": "Mark of Storm",
+      "r": "orange",
+      "cat": "origin",
+      "d": "Mostly mediocre. Conjure Minor Elementals is on the spell list, but Clerics don\u2019t get an easy way to make it impactful. Look for wars to get Spellfire Flare or Scorching Rays."
+    },
+    {
+      "n": "Actor",
+      "r": "green",
+      "cat": "general",
+      "d": "Not useful for the Cleric."
+    },
+    {
+      "n": "Charger",
+      "r": "orange",
+      "cat": "general",
+      "d": "Clerics almost never take the Attack action."
+    },
+    {
+      "n": "Cold Caster",
+      "r": "green",
+      "cat": "general",
+      "d": "The save debuff is great, but Clerics don\u2019t have any built-in options to make attack rolls which deal Cold damage, and Ray of Frost generally isn\u2019t enough on its own."
+    },
+    {
+      "n": "Crossbow Expert",
+      "r": "orange",
+      "cat": "general",
+      "d": "Clerics don\u2019t rely on weapons enough for this to make sense."
+    },
+    {
+      "n": "Crusher",
+      "r": "orange",
+      "cat": "general",
+      "d": "A simple and easy way to control enemies\u2019 positions in combat if you plan to use weapons."
+    },
+    {
+      "n": "Dual Wielder",
+      "r": "orange",
+      "cat": "general",
+      "d": "Clerics don\u2019t get the sort of damage boost which makes two-weapon fighting worthwhile."
+    },
+    {
+      "n": "Durable",
+      "r": "orange",
+      "cat": "general",
+      "d": "Cast Healing Word."
+    },
+    {
+      "n": "Elemental Adept",
+      "r": "orange",
+      "cat": "general",
+      "d": "Most Clerics don\u2019t rely enough on elemental damage for this to have any impact. Light Domain is a notable exception since so much of their damage is fire."
+    },
+    {
+      "n": "Enclave Magic",
+      "r": "red",
+      "cat": "general",
+      "d": "Terrible."
+    },
+    {
+      "n": "Fairy Trickster",
+      "r": "orange",
+      "cat": "general",
+      "d": "Interesting, but not an easy fit. You can\u2019t get a Wisdom increase, which is already hard, and you need to hit with an attack to trigger the debuff. A Dexterity-based War Cleric might be able to use this to attack as a Bonus Action, then follow it with a big save-or-suck spell."
+    },
+    {
+      "n": "Fey Touched",
+      "r": "green",
+      "cat": "general",
+      "d": "Two more prepared spells and access to some 1st-level spells from outside of your spell list. Misty Step is great on any spellcaster."
+    },
+    {
+      "n": "Genie Magic",
+      "r": "orange",
+      "cat": "general",
+      "d": "The Sorcerer\u2019s spell list includes a lot of spells that aren\u2019t on the Cleric\u2019s spell list, and having broad access to the Sorcerer\u2019s level 1 spells on a moment\u2019s notice offers a ton of flexibility."
+    },
+    {
+      "n": "Grappler",
+      "r": "orange",
+      "cat": "general",
+      "d": "Clerics aren\u2019t build for grappling."
+    },
+    {
+      "n": "Great Weapon Master",
+      "r": "orange",
+      "cat": "general",
+      "d": "Clerics don\u2019t make enough attack rolls to make this impactful."
+    },
+    {
+      "n": "Harper Teamwork",
+      "r": "orange",
+      "cat": "general",
+      "d": "The Harper Agent feat is too heavy a text to justify this."
+    },
+    {
+      "n": "Heavily Armored",
+      "r": "orange",
+      "cat": "general",
+      "d": "If you\u2019re going for heavy armor, either choose Divine Order (Protector) or take a level of Fighter."
+    },
+    {
+      "n": "Heavy Armor Master",
+      "r": "green",
+      "cat": "general",
+      "d": "If you\u2019re in heavy armor, this is a huge amount of damage reduction. The reduced damage will also reduce the DC for Concentration saves since you\u2019re taking less damage. Since this can\u2019t increase Wisdom, you shouldn\u2019t rush to take this at low levels, but it\u2019s a good option once you\u2019ve hit 20 Wisdom."
+    },
+    {
+      "n": "Inspiring Leader",
+      "r": "orange",
+      "cat": "general",
+      "d": "A massive amount of temporary hit points."
+    },
+    {
+      "n": "Keen Mind",
+      "r": "green",
+      "cat": "general",
+      "d": "Only situationally useful."
+    },
+    {
+      "n": "Light Bringer",
+      "r": "green",
+      "cat": "general",
+      "d": "Only situationally useful. I would only consider this in a campaign that takes place in the Underdark or in a game with vampires as common enemies."
+    },
+    {
+      "n": "Lightly Armored",
+      "r": "orange",
+      "cat": "general",
+      "d": "A 1-level class dip into Fighter is almost always a better idea unless you\u2019re expecting to reach 20th level."
+    },
+    {
+      "n": "Lordly Resolve",
+      "r": "orange",
+      "cat": "general",
+      "d": "The Bonus Action buff is neat, but not enough without a Wisdom increase."
+    },
+    {
+      "n": "Love Bites",
+      "r": "orange",
+      "cat": "general",
+      "d": "Clerics don\u2019t do enough with attack rolls to justify this. Even War Clerics may find this hard to justify."
+    },
+    {
+      "n": "Mage Slayer",
+      "r": "green",
+      "cat": "general",
+      "d": "Clerics are already proficient in two mental saves, and they\u2019re really good at Wisdom saves, which is the important one, so the benefits here are minimal."
+    },
+    {
+      "n": "Martial Weapon Training",
+      "r": "orange",
+      "cat": "general",
+      "d": "A 1-level class dip into Fighter is almost always a better idea unless you\u2019re expecting to reach 20th level."
+    },
+    {
+      "n": "Medium Armor Master",
+      "r": "orange",
+      "cat": "general",
+      "d": "Borderline worthless. Put +2 into Dexterity and wear light armor."
+    },
+    {
+      "n": "Moderately Armored",
+      "r": "orange",
+      "cat": "general",
+      "d": "A 1-level class dip into Fighter is almost always a better idea unless you\u2019re expecting to reach 20th level."
+    },
+    {
+      "n": "Mounted Combatant",
+      "r": "orange",
+      "cat": "general",
+      "d": "With no way to get a special mount of any kind, there\u2019s no reliable way to make this work."
+    },
+    {
+      "n": "Mythal Touched",
+      "r": "orange",
+      "cat": "general",
+      "d": "Unpredictable, dangerous, and self-destructive."
+    },
+    {
+      "n": "Piercer",
+      "r": "orange",
+      "cat": "general",
+      "d": "You should not be using weapons enough to justify using this."
+    },
+    {
+      "n": "Poisoner",
+      "r": "green",
+      "cat": "general",
+      "d": "Clerics don\u2019t have good options for dealing Poison damage."
+    },
+    {
+      "n": "Polearm Master",
+      "r": "green",
+      "cat": "general",
+      "d": "Clerics should not be taking the Attack action enough to make this useful."
+    },
+    {
+      "n": "Potent Dragonmark",
+      "r": "blue",
+      "cat": "general",
+      "d": "Basically a Pact Magic spell slot and 10 additional prepared spells. If you took a Dragonmark feat and the spell list is even remotely useful, this is amazing."
+    },
+    {
+      "n": "Purple Dragon Commandant",
+      "r": "orange",
+      "cat": "general",
+      "d": "This is what your spellcasting is for."
+    },
+    {
+      "n": "Putrefy",
+      "r": "orange",
+      "cat": "general",
+      "d": "You have surprisingly few options to trigger this. Most of the Cleric\u2019s sourced of Necrotic damage call for saving throws."
+    },
+    {
+      "n": "Rebuke",
+      "r": "green",
+      "cat": "general",
+      "d": "You could use this with Guiding Bolt, but that\u2019s not a good enough combo to make this an easy choice."
+    },
+    {
+      "n": "Resilient",
+      "r": "orange",
+      "cat": "general",
+      "d": "high Constitution saves are crucial for maintaining Concentration. War Caster may be better if you\u2019re building for the front lines so that you can use Reactive Spell, but, if you only care about Concentration, Resilient is better."
+    },
+    {
+      "n": "Ritual Caster",
+      "r": "green",
+      "cat": "general",
+      "d": "There are some great level 1 Ritual spells like Comprehend Languages and Find Familiar, but the fact that this only lets you get level 1 spells significantly limits its usefulness. Getting rituals from outside of your own spell list is nice, but unless there are specific Rituals that you want, this isn\u2019t worth a feat."
+    },
+    {
+      "n": "Sharpshooter",
+      "r": "orange",
+      "cat": "general",
+      "d": "Clerics don\u2019t make enough attack rolls to justify this."
+    },
+    {
+      "n": "Shield Master",
+      "r": "green",
+      "cat": "general",
+      "d": "Clerics shouldn\u2019t take the Attack action often enough to make this useful."
+    },
+    {
+      "n": "Skill Expert",
+      "r": "green",
+      "cat": "general",
+      "d": "There are some great Wisdom-based skills that might be worth Expertise."
+    },
+    {
+      "n": "Skulker",
+      "r": "orange",
+      "cat": "general",
+      "d": "Without Cunning Action to allow you to Hide as a Bonus Action, you lose much of the benefit."
+    },
+    {
+      "n": "Slasher",
+      "r": "orange",
+      "cat": "general",
+      "d": "You should not be using weapons enough to justify using this."
+    },
+    {
+      "n": "Speedy",
+      "r": "orange",
+      "cat": "general",
+      "d": "Potentially helpful for reaching allies quickly, or for running Spirit Guardians through crowds of enemies."
+    },
+    {
+      "n": "Spell Sniper",
+      "r": "orange",
+      "cat": "general",
+      "d": "Very few cleric spells involve ranged spell attacks."
+    },
+    {
+      "n": "Spellfire Adept",
+      "r": "blue",
+      "cat": "general",
+      "d": "There is no spellcaster better suited to use this feat than the Cleric. Note that the damage only applies to one damage roll of the spell, so you get the best results from instantaneaous spells like Guiding Bolt, Flame Strike (by the gods, we found a use for it! Not a good one, but it\u2019s there!), and Sunburst."
+    },
+    {
+      "n": "Street Justice",
+      "r": "orange",
+      "cat": "general",
+      "d": "Clerics aren\u2019t build for grappling."
+    },
+    {
+      "n": "Telekinetic",
+      "r": "orange",
+      "cat": "general",
+      "d": "An easy choice on any spellcaster. Telekinetic Shove will compete for your Bonus Action with options like Healing Word and Spiritual Weapon, but you won\u2019t be able to use it effectively every turn, so it\u2019s not really an issue. Remember that creatures can willingly fail saving throws, allowing you to use this on allies in order to move them out of dangerous positions, break grapples, or otherwise help them."
+    },
+    {
+      "n": "Telepathic",
+      "r": "orange",
+      "cat": "general",
+      "d": "Very cool, but usually talking works fine."
+    },
+    {
+      "n": "Treacherous Allure",
+      "r": "green",
+      "cat": "general",
+      "d": "Charm Person is not good enough to justify a feat, and Clerics don\u2019t rely enough on attacks to capitalize on attacking charmed enemies."
+    },
+    {
+      "n": "Vampire Touched",
+      "r": "green",
+      "cat": "general",
+      "d": "Access to some great spells from other spell lists. Most Clerics have almost no Illusion options, and there are many great Enchantment spells on other spells lists which will remain useful for your whole career."
+    },
+    {
+      "n": "Weapon Master",
+      "r": "blue",
+      "cat": "general",
+      "d": "You should not be using weapons enough to justify using this unless you\u2019re going for War Domain, and even then it\u2019s not a fantastic choice. Take a level of Fighter."
+    }
+  ],
+  "epicBoons": [
+    {
+      "n": "Boon of Blazing Dawn",
+      "r": "green",
+      "d": "Immunity to Radiant damage is great, but you\u2019re not going to get much out of the attack stuff."
+    },
+    {
+      "n": "Boon of Bloodshed",
+      "r": "orange",
+      "d": "Clerics don\u2019t make enough attacks to justify this even if you\u2019re a War Cleric."
+    },
+    {
+      "n": "Boon of Bountiful Health",
+      "r": "green",
+      "d": "The Temporary Hit Points benefit could be useful. Clerics have a lot of options for THP, so you could get a lot of mileage here, but you might not be casting them often enough to make it worthwhile."
+    },
+    {
+      "n": "Boon of Combat Prowess",
+      "r": "red",
+      "d": "Nice for War Domain, but otherwise skip it."
+    },
+    {
+      "n": "Boon of Communication",
+      "r": "orange",
+      "d": "Clerics are not built to be a Face."
+    },
+    {
+      "n": "Boon of Desperate Resilience",
+      "r": "orange",
+      "d": "You\u2019re probably your party\u2019s primarily healer, and not dying makes it a lot easier to be a healer."
+    },
+    {
+      "n": "Boon of Energy Resistance",
+      "r": "orange",
+      "d": "A powerful defense on any character."
+    },
+    {
+      "n": "Boon of Exquisite Radiance",
+      "r": "blue",
+      "d": "Clerics have many of the best options for dealing Radiant damage, so this is an easy boost. Unfortunately, it only works once per day."
+    },
+    {
+      "n": "Boon of Fate",
+      "r": "blue",
+      "d": "2d4 averages to 5. Adding +5/-5 to a saving throw can rescue you or an ally, or it can cause an enemy to fail a save. On a d20 scale, 5 means that there\u2019s a 25% chance on any given roll that this will have an impact. Granted, it is still a dice roll, so the smaller the gap, the safer this is to use. On a full caster where save-or-suck spells are such a huge part of your arsenal, this is devastatingly effective. The fact that you can use it once per encounter is amazing."
+    },
+    {
+      "n": "Boon of Fluid Forms",
+      "r": "orange",
+      "d": "Clerics don\u2019t have other built-in shapechanging options, so it\u2019s hard to get consistent value out of this."
+    },
+    {
+      "n": "Boon of Irresistible Offense",
+      "r": "orange",
+      "d": "You should not be using weapons enough to justify this."
+    },
+    {
+      "n": "Boon of Looming Shadows",
+      "r": "green",
+      "d": "You won\u2019t use the Attack part often, but Dodge as a Bonus Action can be very useful for spellcasters since most big spells are an Action."
+    },
+    {
+      "n": "Boon of Misty Escape",
+      "r": "green",
+      "d": "Great insurance for any character. Compare this to Boon of Recovery."
+    },
+    {
+      "n": "Boon of Poison Mastery",
+      "r": "green",
+      "d": "Immunity to poison is great, but you\u2019re not likely to benefit from the damage reroll."
+    },
+    {
+      "n": "Boon of Recovery",
+      "r": "green",
+      "d": "The Last Stand feature is great insurance, but definitely not enough to justify your first Epic Boon. Try to get someone to cast Death Ward on you."
+    },
+    {
+      "n": "Boon of Revelry",
+      "r": "green",
+      "d": "Otto\u2019s Irresistible Dance is a great save-or-suck spell, and it\u2019s not on the Cleric\u2019s spell list."
+    },
+    {
+      "n": "Boon of Siberys",
+      "r": "green",
+      "d": "Yes, the spells come from your spell list, but you can cast it without components and it\u2019s usable once per Short Rest. Heroes\u2019 Feast is a passable default because the effect is so good and the component cost is so high, but you don\u2019t benefit from using it every Short Rest. If you want a combat option, you can get Maze from Mark of Warding, or Dominate Monster or Power Word Stun from the Sorcerer spell list."
+    },
+    {
+      "n": "Boon of Skill",
+      "r": "green",
+      "d": "Potentially useful in a small party with poor skill coverage."
+    },
+    {
+      "n": "Boon of Speed",
+      "r": "orange",
+      "d": "Take Boon of Dimensional Travel instead."
+    },
+    {
+      "n": "Boon of Spell Recall",
+      "r": "orange",
+      "d": "This gives you a 25% chance to retain your spell slot when casting spells of up to level 4. You get 4 level 1 spell slots and 3 of each of levels 2, 3, and 4. On average, you get 1 extra level 1 spell slot, and slightly less than 1 for levels 2, 3, and 4. This is fine, but definitely don\u2019t make it your first boon."
+    },
+    {
+      "n": "Boon of Terror",
+      "r": "orange",
+      "d": "Charisma is a dump stat for Clerics, which makes this hard to choose."
+    },
+    {
+      "n": "Boon of the Bright Sun",
+      "r": "green",
+      "d": "Give yourself and your allies 10 Temporary Hit Points each turn. Boon of Bountiful Health is a a good complement to this, giving you extra THP whenever you gain any."
+    },
+    {
+      "n": "Boon of the Furious Storm",
+      "r": "orange",
+      "d": "The damage resistance/immunity is nice, but Clerics don\u2019t have many spells which rely on Lightning or Thunder damage."
+    },
+    {
+      "n": "Boon of the Night Spirit",
+      "r": "orange",
+      "d": "Be invisible at all times outside of combat. Take advantage of invisibility at the start of combat, then look for ways to become invisible as frequently as possible. Even if you\u2019re not making attack rolls (and you almost certainly aren\u2019t doing so often), the defensive benefits of invisibility are massive. However, remember that a lot of things are an Action, so it\u2019s very easy to break this invisibility. Notable examples that people easily overlook include Hide, Search, and Study."
+    },
+    {
+      "n": "Boon of the Soul Drinker",
+      "r": "orange",
+      "d": "You\u2019re only here for the damage resistance. The healing is negligible on a class that can cast Heal."
+    }
+  ],
+  "classFeatures": [
+    {
+      "lv": 1,
+      "n": "Divine Order",
+      "r": "green",
+      "d": "Divine Order splits clerics between front-line clerics and back-line clerics, at least in concept. The reality is that Protector gets +1 AC, but Thaumaturge gets a cantrip and they\u2019re actually good at Religion. A difference of 1 AC shouldn\u2019t stop you from wading into melee. Protector: Heavy armor..."
+    },
+    {
+      "lv": 5,
+      "n": "Sear Undead",
+      "r": "orange",
+      "d": "Not a ton of damage, but this is here to kill low-CR enemies, not as a way to attack big undead enemies. 5d8 averages to 22.5, which is just enough to kill a standard Zombie with 22 hp."
+    },
+    {
+      "lv": 7,
+      "n": "Blessed Strikes",
+      "r": "green",
+      "d": "Your choice here also locks you into Improved Blessed Strikes at level 14. Divine Strike: Your cantrips will still deal more damage, and using a weapon effectively will require you to invest in Strength or Dexterity enough that you\u2019re neglecting spellcasting. Even if you have a greataxe and 20..."
+    },
+    {
+      "lv": 14,
+      "n": "Improved Blessed Strikes",
+      "r": "blue",
+      "d": "Remember that your choice at level 7 locks you into your choice here, too. Divine Strike: More damage, but not nearly enough to make weapons viable for the Cleric. By now cantrips are dealing 3 dice of damage, which will easily outpace weapons even with Divine Strike. Potent Cantrips: Absolutely..."
+    },
+    {
+      "lv": 0,
+      "n": "Divine Spark",
+      "r": "orange",
+      "d": "Divine Spark is the default use for your Channel Divinity. It\u2019s not as much healing as Cure Wounds when you first get this, but as you gain more Channel Divinity uses and as Divine Spark\u2019s healing..."
+    }
+  ],
+  "weapons": [
+    {
+      "n": "Crossbow, Light",
+      "r": "green",
+      "d": "This may do more damage than your Cantrips at low levels because weapons add your ability bonus to damage. If you have good Dexterity, consider a crossbow until your cantrips scale at 5th level."
+    },
+    {
+      "n": "Javelin",
+      "r": "orange",
+      "d": "Same logic as the Light Crossbow, but Strength-based."
+    }
+  ],
+  "armor": [
+    {
+      "n": "Leather",
+      "r": "orange",
+      "d": "If you have 18 Dexterity, this will match Scale Mail. Otherwise Scale Mail is strictly better starting armor."
+    },
+    {
+      "n": "Scale Mail",
+      "r": "orange",
+      "d": "Starting gear for most Clerics."
+    },
+    {
+      "n": "Chain Mail",
+      "r": "orange",
+      "d": "Starting armor for Clerics who get heavy armor proficiency from their domain."
+    },
+    {
+      "n": "Half plate",
+      "r": "orange",
+      "d": "Most Clerics will max out at Half plate."
+    },
+    {
+      "n": "Shield",
+      "r": "orange",
+      "d": "You can put your holy symbol on your shield, so there is almost no reason not to have one."
+    }
+  ]
+}
