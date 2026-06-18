@@ -28,15 +28,17 @@ def apply(text: str, replacements: list[tuple[str, str]]) -> tuple[str, list[tup
     log: list[tuple[str, str, int]] = []
     # Sort longest-first so multi-word forms replace before subword forms
     for wrong, right in sorted(replacements, key=lambda x: -len(x[0])):
-        # Exact wrong form (may include 's already)
-        pattern = re.compile(r"\b" + re.escape(wrong) + r"\b")
+        # Case-insensitive match so mid-sentence lowercase forms are caught
+        # (VTT transcripts capitalise at sentence start; wrong-forms in the
+        # glossary are Title Case but appear lowercase mid-sentence in the VTT)
+        pattern = re.compile(r"\b" + re.escape(wrong) + r"\b", re.IGNORECASE)
         new_text, n = pattern.subn(right, text)
         if n:
             log.append((wrong, right, n))
             text = new_text
         # Possessive auto-extension: only if the wrong form doesn't already end in 's
         if not wrong.endswith("'s"):
-            poss_pattern = re.compile(r"\b" + re.escape(wrong) + r"'s\b")
+            poss_pattern = re.compile(r"\b" + re.escape(wrong) + r"'s\b", re.IGNORECASE)
             new_text, n = poss_pattern.subn(right + "'s", text)
             if n:
                 log.append((wrong + "'s", right + "'s", n))
