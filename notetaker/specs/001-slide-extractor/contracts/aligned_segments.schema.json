@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "notetaker/aligned_segments/1.0",
+  "title": "AlignedSegmentsSchema",
+  "description": "Intermediate output of the Synthesis stage. Pairs each slide occurrence with the transcript text spoken during it.",
+  "type": "object",
+  "required": ["schema_version", "recording_url", "segments"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "recording_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "segments": {
+      "type": "array",
+      "description": "Time-ordered segments. Includes 'general_discussion' entries for transcript content not anchored to any slide.",
+      "items": {
+        "$ref": "#/$defs/AlignedSegment"
+      }
+    }
+  },
+  "$defs": {
+    "AlignedSegment": {
+      "type": "object",
+      "required": ["slide_id", "occurrence_index", "slide_content", "transcript_text", "duration_seconds", "start_seconds"],
+      "additionalProperties": false,
+      "properties": {
+        "slide_id": {
+          "type": ["string", "null"],
+          "description": "Matches slide_id in SlideTimelineSchema. Null for 'general_discussion' segments."
+        },
+        "occurrence_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "0-based index of this occurrence within a slide's appearances. 0 for general_discussion."
+        },
+        "slide_content": {
+          "oneOf": [
+            {"$ref": "#/$defs/SlideContentRef"},
+            {"type": "null"}
+          ],
+          "description": "Slide content for this segment. Null for general_discussion segments."
+        },
+        "transcript_text": {
+          "type": "string",
+          "description": "Concatenated utterance text for the slide's time window. May be empty if no transcript was available."
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Length of this segment's on-screen time in seconds."
+        },
+        "start_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Playback position when this segment started."
+        }
+      }
+    },
+    "SlideContentRef": {
+      "type": "object",
+      "description": "Inlined SlideContent for this segment (copy from SlideContentSchema for self-contained segment records).",
+      "required": ["slide_id", "title", "bullets", "visual_description", "raw_ocr", "extraction_method"],
+      "properties": {
+        "slide_id": {"type": "string"},
+        "title": {"type": "string"},
+        "bullets": {"type": "array", "items": {"type": "string"}},
+        "visual_description": {"type": "string"},
+        "raw_ocr": {"type": "string"},
+        "extraction_method": {"type": "string", "enum": ["vision", "ocr"]}
+      }
+    }
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "notetaker/summary/1.0",
+  "title": "SummarySchema",
+  "description": "Final output contract for the Synthesis stage. Machine-readable form of the meeting summary; the human-readable form is summary.md.",
+  "type": "object",
+  "required": ["schema_version", "recording_url", "generated_at", "overall_summary", "per_slide_summaries", "action_items", "decisions"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "recording_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when this summary was generated."
+    },
+    "overall_summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "2–5 sentence high-level narrative of the meeting."
+    },
+    "per_slide_summaries": {
+      "type": "array",
+      "description": "One entry per aligned segment (slide or general discussion), in time order.",
+      "items": {
+        "$ref": "#/$defs/PerSlideSummary"
+      }
+    },
+    "action_items": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Action items extracted from across the full meeting. Empty array if none identified."
+    },
+    "decisions": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Key decisions recorded during the meeting. Empty array if none identified."
+    }
+  },
+  "$defs": {
+    "PerSlideSummary": {
+      "type": "object",
+      "required": ["slide_id", "slide_title", "summary", "key_points"],
+      "additionalProperties": false,
+      "properties": {
+        "slide_id": {
+          "type": ["string", "null"],
+          "description": "Matches slide_id in SlideTimelineSchema. Null for general discussion sections."
+        },
+        "slide_title": {
+          "type": "string",
+          "description": "Slide title or 'General Discussion' for unanchored segments."
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "description": "2–4 sentence summary of the discussion during this slide."
+        },
+        "key_points": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Notable statements, facts, or conclusions from this slide's discussion."
+        }
+      }
+    }
+  }
+}
