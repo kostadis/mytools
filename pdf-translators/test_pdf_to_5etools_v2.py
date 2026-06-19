@@ -1113,7 +1113,7 @@ class TestBestiaryMeta:
 class TestBuildBestiary:
     def test_empty_input_returns_empty_bestiary(self):
         out = _mon.build_bestiary(
-            client=MagicMock(), statblocks=[],
+            backend=MagicMock(), statblocks=[],
             source_id="TESTb",
             source_meta={"json": "TESTb", "abbreviation": "TESTb",
                          "full": "Test (Bestiary)", "version": "1.0.0",
@@ -1130,7 +1130,7 @@ class TestBuildBestiary:
                 {"name": "A", "source": "PLACEHOLDER", "cr": "1"},
             ]
             out = _mon.build_bestiary(
-                client=MagicMock(), statblocks=statblocks,
+                backend=MagicMock(), statblocks=statblocks,
                 source_id="TESTb",
                 source_meta={"json": "TESTb"},
                 model="claude-haiku-4-5-20251001",
@@ -1149,7 +1149,7 @@ class TestBuildBestiary:
                 [{"name": "A", "cr": "2"}],
             ]
             out = _mon.build_bestiary(
-                client=MagicMock(), statblocks=statblocks,
+                backend=MagicMock(), statblocks=statblocks,
                 source_id="TESTb",
                 source_meta={"json": "TESTb"},
                 model="claude-haiku-4-5-20251001",
