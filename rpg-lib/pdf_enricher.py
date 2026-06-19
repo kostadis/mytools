@@ -1309,7 +1309,7 @@ def main():
 
     # Provider dispatch: pick the LLM module and resolve the model id.
     if args.provider == "dgx":
-        from lib import dgxlib as llm
+        import dgxlib as llm  # shared package (github.com/kostadis/dgx-fun)
         endpoint = args.endpoint or llm.DEFAULT_ENDPOINT
         if args.model:
             model = args.model
