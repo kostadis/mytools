@@ -28,6 +28,24 @@ def add_common_args(
     """Add CLI arguments shared by all three converters."""
     parser.add_argument("pdf", type=Path, help="Input PDF file")
     parser.add_argument(
+        "--provider",
+        choices=["claude", "dgx"],
+        default="claude",
+        help=(
+            "LLM backend (default: claude). 'claude' calls the Anthropic API; "
+            "'dgx' calls the OpenAI-compatible vLLM endpoint on the DGX Spark. "
+            "Batch (--batch) and dry-run cost estimation are Anthropic-only."
+        ),
+    )
+    parser.add_argument(
+        "--endpoint",
+        default=None,
+        help=(
+            "DGX OpenAI-compatible base URL (dgx provider only). "
+            "Default: http://192.168.1.147:8001/v1"
+        ),
+    )
+    parser.add_argument(
         "--type",
         choices=["adventure", "book"],
         default="adventure",
@@ -59,7 +77,8 @@ def add_common_args(
         "--output-dir", type=Path, default=None, dest="output_dir",
         help="Directory to write output file(s) into (default: same folder as the PDF)",
     )
-    parser.add_argument("--api-key", default=None, help="Anthropic API key")
+    parser.add_argument("--api-key", default=None,
+                        help="Anthropic API key (claude provider only)")
     parser.add_argument(
         "--pages-per-chunk",
         type=int,
@@ -69,8 +88,11 @@ def add_common_args(
     )
     parser.add_argument(
         "--model",
-        default=default_model,
-        help=f"Claude model (default: {default_model})",
+        default=None,
+        help=(
+            f"Model id. For claude, defaults to {default_model}. "
+            "For dgx, auto-discovered from /v1/models if omitted."
+        ),
     )
     parser.add_argument(
         "--batch",
@@ -115,8 +137,9 @@ def add_common_args(
         action="store_true",
         dest="dry_run_only",
         help=(
-            "Count tokens and estimate API cost without calling Claude. "
-            "Requires an API key (token counting is free)."
+            "Estimate the job without calling the model. For claude: counts "
+            "tokens and estimates API cost (needs an API key; counting is free). "
+            "For dgx: prints chunk/char/token-estimate only (no cost)."
         ),
     )
     parser.add_argument("--verbose", action="store_true")

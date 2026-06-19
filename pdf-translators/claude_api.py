@@ -12,11 +12,12 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
-
-import anthropic
+from typing import Any, TYPE_CHECKING
 
 from adventure_model import BuildContext, ValidationMode, parse_entry
+
+if TYPE_CHECKING:
+    from llm_backend import Backend
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -52,6 +53,28 @@ would navigate to. Rules for headers[]:
 encounter-group names (e.g. "Klaven Shocktroopers (2)", "Maulvorge")."""
 
 MAX_VALIDATION_RETRIES = 1   # how many times to retry when validation finds errors
+
+
+# ---------------------------------------------------------------------------
+# Provider helper
+# ---------------------------------------------------------------------------
+
+def _require_anthropic(backend: "Backend", feature: str):
+    """Return the raw Anthropic client, or raise if *backend* is not Anthropic.
+
+    The Batch API and ``count_tokens`` cost estimation have no DGX/vLLM
+    equivalent, so the functions that use them require the Anthropic backend.
+    Callers should also gate on ``backend.supports_batch`` at the CLI layer to
+    fail fast; this is the last-line guard.
+    """
+    client = getattr(backend, "anthropic_client", None)
+    if client is None:
+        raise RuntimeError(
+            f"{feature} is only available with the Anthropic provider "
+            f"(got provider {getattr(backend, 'kind', '?')!r}). "
+            f"Re-run without --batch, or use --provider claude."
+        )
+    return client
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +163,62 @@ def _recover_partial_json(raw: str) -> list[Any]:
     return []
 
 
+def _repair_doubled_braces(raw: str) -> str:
+    """Repair the doubled-brace model glitch in a raw JSON response.
+
+    Claude occasionally doubles braces in two ways:
+
+    * Structural object delimiters — ``{{ ... }}`` where ``{ ... }`` was meant.
+      The leading ``{{`` makes ``json.loads`` fail with "Expecting property
+      name enclosed in double quotes" because an object cannot start with ``{``.
+    * Inline tag closes — ``{@creature x}}`` where ``{@creature x}`` was meant.
+      These parse fine but leave a stray ``}`` in the rendered 5etools tag.
+
+    The repair is quote-aware so it never confuses the two contexts:
+
+    * Outside JSON strings, collapse runs of *adjacent* identical structural
+      braces (``{{`` -> ``{``, ``}}`` -> ``}``).  Legit nested closes in
+      pretty-printed output sit on separate lines, so they are never adjacent
+      and stay untouched.
+    * Inside JSON strings, drop any ``}`` with no matching ``{`` in the same
+      string, which removes a doubled tag-close while leaving properly nested
+      tags such as ``{@i {@creature x}}`` balanced and intact.
+
+    Conservative by construction: the caller must re-validate the result with
+    ``json.loads`` and discard it if it still does not parse, so a mis-repair
+    can never produce a worse outcome than the existing recovery path.
+    """
+    out: list[str] = []
+    in_string = False
+    escape = False
+    brace_depth = 0  # only meaningful inside a string
+    prev = ""
+    for ch in raw:
+        if escape:
+            out.append(ch); escape = False; prev = ch; continue
+        if in_string and ch == "\\":
+            out.append(ch); escape = True; prev = ch; continue
+        if ch == '"':
+            in_string = not in_string
+            brace_depth = 0
+            out.append(ch); prev = ch; continue
+        if in_string:
+            if ch == "{":
+                brace_depth += 1
+            elif ch == "}":
+                if brace_depth == 0:
+                    prev = ch  # stray tag-close — drop it
+                    continue
+                brace_depth -= 1
+            out.append(ch); prev = ch; continue
+        # outside a string: collapse adjacent identical structural braces
+        if ch in "{}" and ch == prev:
+            prev = ch
+            continue
+        out.append(ch); prev = ch
+    return "".join(out)
+
+
 def _parse_claude_response(raw: str, verbose: bool,
                             debug_dir: Path | None = None,
                             chunk_id: str = "") -> tuple[list[Any], bool]:
@@ -166,6 +245,24 @@ def _parse_claude_response(raw: str, verbose: bool,
             )
         return result, True
     except json.JSONDecodeError as e:
+        # A known model glitch is doubled braces ({{ }} delimiters and {@tag x}}
+        # closes). Try a quote-aware collapse and re-validate before giving up.
+        repaired = _repair_doubled_braces(raw)
+        if repaired != raw:
+            try:
+                result = json.loads(repaired)
+                if not isinstance(result, list):
+                    result = [result]
+                print(f"    [REPAIR] Collapsed doubled braces in {chunk_id}; "
+                      f"recovered {len(result)} entries.", flush=True)
+                if debug_dir:
+                    (debug_dir / f"{chunk_id}-parsed.json").write_text(
+                        json.dumps(result, indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                return result, True
+            except json.JSONDecodeError:
+                pass  # repair didn't help — fall through to partial recovery
         print(f"    [WARN] JSON parse error in {chunk_id}: {e}", flush=True)
         print(f"    Raw response (first 400 chars): {raw[:400]}", flush=True)
         if debug_dir:
@@ -183,13 +280,13 @@ def _parse_claude_response(raw: str, verbose: bool,
 # Core API call with retry logic
 # ---------------------------------------------------------------------------
 
-def call_claude(client: anthropic.Anthropic, chunk_text: str,
+def call_claude(backend: "Backend", chunk_text: str,
                 model: str, system_prompt: str, verbose: bool,
                 debug_dir: Path | None = None,
                 chunk_id: str = "chunk-0000",
                 _retry_count: int = 0,
                 validate: bool = True) -> list[Any]:
-    """Send *chunk_text* to Claude and return a parsed JSON list of entries.
+    """Send *chunk_text* to the provider and return a parsed JSON list of entries.
 
     Handles two truncation scenarios automatically:
 
@@ -209,19 +306,16 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
     would crash the adventure-entry validator.
     """
     if verbose:
-        print(f"    Sending {len(chunk_text):,} chars to Claude...", flush=True)
+        print(f"    Sending {len(chunk_text):,} chars to {backend.kind}...", flush=True)
     if debug_dir:
         debug_dir.mkdir(parents=True, exist_ok=True)
         (debug_dir / f"{chunk_id}-input.txt").write_text(chunk_text, encoding="utf-8")
 
-    message = client.messages.create(
-        model=model,
-        max_tokens=MAX_OUTPUT_TOKENS,
-        system=system_prompt,
-        messages=[{"role": "user", "content": chunk_text}],
+    raw_text, stop_reason = backend.complete(
+        system_prompt, chunk_text, model, MAX_OUTPUT_TOKENS,
     )
     result, parse_ok = _parse_claude_response(
-        message.content[0].text, verbose, debug_dir=debug_dir, chunk_id=chunk_id
+        raw_text, verbose, debug_dir=debug_dir, chunk_id=chunk_id
     )
 
     half = len(chunk_text) // 2
@@ -239,32 +333,32 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
                 continue
             sub_id = f"{chunk_id}-part{part_idx}"
             print(f"      Retrying {sub_id} ({len(part):,} chars)...", flush=True)
-            result.extend(call_claude(client, part, model, system_prompt, verbose,
+            result.extend(call_claude(backend, part, model, system_prompt, verbose,
                                       debug_dir=debug_dir, chunk_id=sub_id,
                                       validate=validate))
 
-    if message.stop_reason == 'max_tokens':
+    if stop_reason == 'max_tokens':
         if result:
             # Valid JSON but output was cut off — re-process only the tail.
             print(f"    [WARN] {chunk_id} hit max_tokens with {len(result)} entries captured"
                   f" — re-processing tail to recover missing content...", flush=True)
             tail = chunk_text[split_point:]
             if tail.strip():
-                result.extend(call_claude(client, tail, model, system_prompt, verbose,
+                result.extend(call_claude(backend, tail, model, system_prompt, verbose,
                                           debug_dir=debug_dir, chunk_id=f"{chunk_id}-tail",
                                           validate=validate))
         else:
             _split_retry("hit max_tokens with no parseable output")
     elif not parse_ok and not result:
-        # JSON-shaped response that failed to parse — could be end_turn misreported
-        # or genuine malformation.  Retry if it looks like JSON; warn if refusal.
-        raw_text = message.content[0].text
+        # JSON-shaped response that failed to parse — could be a misreported
+        # natural stop or genuine malformation.  Retry if it looks like JSON;
+        # warn if refusal.
         stripped = re.sub(r"^```(?:json)?\s*", "", raw_text.strip())
         if stripped.startswith('[') or stripped.startswith('{'):
-            _split_retry(f"returned malformed JSON (stop_reason={message.stop_reason!r})")
+            _split_retry(f"returned malformed JSON (stop_reason={stop_reason!r})")
         else:
             print(f"    [WARN] {chunk_id} returned no parseable JSON "
-                  f"(stop_reason={message.stop_reason!r}).", flush=True)
+                  f"(stop_reason={stop_reason!r}).", flush=True)
             print(f"    Response preview: {raw_text[:300]!r}", flush=True)
             if not debug_dir:
                 print("    [TIP]  Re-run with --debug-dir DIR to save full API responses.",
@@ -273,9 +367,9 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
         print(f"    [WARN] {chunk_id} JSON was truncated; partial recovery kept "
               f"{len(result)} entries. Some content may be missing.", flush=True)
     elif not result:
-        raw_preview = message.content[0].text[:300] if message.content else "(empty)"
+        raw_preview = raw_text[:300] if raw_text else "(empty)"
         print(f"    [WARN] {chunk_id} returned no parseable JSON "
-              f"(stop_reason={message.stop_reason!r}).", flush=True)
+              f"(stop_reason={stop_reason!r}).", flush=True)
         print(f"    Response preview: {raw_preview!r}", flush=True)
         if not debug_dir:
             print("    [TIP]  Re-run with --debug-dir DIR to save full API responses.",
@@ -308,14 +402,14 @@ def call_claude(client: anthropic.Anthropic, chunk_text: str,
 
             elif tag_errs:
                 result = _retry_tag_fixes(
-                    client, result, tag_errs, model, system_prompt,
+                    backend, result, tag_errs, model, system_prompt,
                     verbose, debug_dir, chunk_id, _retry_count,
                 )
 
     return result
 
 
-def _retry_tag_fixes(client: anthropic.Anthropic,
+def _retry_tag_fixes(backend: "Backend",
                      original_result: list[Any],
                      tag_errors: list[str],
                      model: str, system_prompt: str, verbose: bool,
@@ -363,7 +457,7 @@ def _retry_tag_fixes(client: anthropic.Anthropic,
         )
 
     retry_result = call_claude(
-        client, correction_prompt, model, system_prompt, verbose,
+        backend, correction_prompt, model, system_prompt, verbose,
         debug_dir=debug_dir, chunk_id=f"{chunk_id}-fix",
         _retry_count=_retry_count + 1,
     )
@@ -399,7 +493,7 @@ def _model_tier(model: str) -> str:
 # ---------------------------------------------------------------------------
 
 def fetch_claude_batch_results(
-    client: anthropic.Anthropic,
+    backend: "Backend",
     batch_id: str,
     num_chunks: int,
     *,
@@ -415,8 +509,9 @@ def fetch_claude_batch_results(
     Use when a batch run completed its API calls but crashed before the
     caller could consume them (network, post-processing bug, etc.).
     Anthropic retains batch results for ~29 days, so recovery within
-    that window is free.
+    that window is free. Anthropic-only — the Batch API has no DGX equivalent.
     """
+    client = _require_anthropic(backend, "the Batch API")
     print(f"  Fetching results from existing batch {batch_id}...", flush=True)
     batch = client.messages.batches.retrieve(batch_id)
     status = batch.processing_status
@@ -454,7 +549,7 @@ def fetch_claude_batch_results(
 
 
 def call_claude_batch(
-    client: anthropic.Anthropic,
+    backend: "Backend",
     chunks: list[str],
     model: str,
     system_prompt: str,
@@ -466,12 +561,13 @@ def call_claude_batch(
 
     Polls until complete, then returns results in chunk order.
 
-    See :func:`call_claude` for the ``validate`` parameter — pass
-    ``validate=False`` for bestiary monster payloads whose ``type`` field
-    is a dict.
+    Anthropic-only — vLLM/DGX has no Batch API. See :func:`call_claude` for the
+    ``validate`` parameter — pass ``validate=False`` for bestiary monster
+    payloads whose ``type`` field is a dict.
     """
     import time as _time
 
+    client = _require_anthropic(backend, "the Batch API")
     print(f"  Submitting {len(chunks)} requests to Batch API...", flush=True)
 
     if debug_dir:
@@ -563,8 +659,54 @@ def call_claude_batch(
 # Dry-run cost estimator
 # ---------------------------------------------------------------------------
 
+def _dry_run_dgx(
+    chunk_texts: list[str],
+    chunks: list,
+    model: str,
+    verbose: bool,
+) -> None:
+    """Local-model dry-run: chunk/char counts + a rough token estimate, no cost.
+
+    vLLM has no ``count_tokens`` endpoint and the local model is free, so there
+    is no price to estimate. We approximate input tokens at ~4 chars/token just
+    to give a sense of scale.
+    """
+    print(f"\n[DRY-RUN] Chunk + size estimate (DGX / local model)")
+    print(f"  Model  : {model}")
+    print()
+
+    total_chars = 0
+    skipped = 0
+    for i, chunk_text in enumerate(chunk_texts):
+        if not chunk_text.strip():
+            skipped += 1
+            continue
+        total_chars += len(chunk_text)
+        if verbose or len(chunk_texts) <= 12:
+            try:
+                if chunks and hasattr(chunks[i][0], "__getitem__"):
+                    page_nums = [p["page_num"] for p in chunks[i]]
+                else:
+                    page_nums = [p for p, _ in chunks[i]]
+                label = f"pages {page_nums[0]}–{page_nums[-1]}"
+            except Exception:
+                label = f"chunk {i}"
+            print(f"  chunk-{i:04d}  ({label})  →  {len(chunk_text):,} chars "
+                  f"(~{len(chunk_text) // 4:,} tokens)")
+
+    print()
+    print(f"  ─────────────────────────────────────────")
+    print(f"  Chunks          : {len(chunk_texts) - skipped} ({skipped} empty/skipped)")
+    print(f"  Total input     : {total_chars:,} chars  (~{total_chars // 4:,} tokens)")
+    print(f"  ─────────────────────────────────────────")
+    print(f"  Local model — no API cost.")
+    print(f"  ─────────────────────────────────────────")
+    print()
+    print("  No inference was performed. Remove --dry-run to convert.")
+
+
 def dry_run(
-    client: anthropic.Anthropic,
+    backend: "Backend",
     chunk_texts: list[str],
     chunks: list,
     model: str,
@@ -572,7 +714,16 @@ def dry_run(
     use_batch: bool,
     verbose: bool,
 ) -> None:
-    """Count tokens for every chunk and print a cost estimate. No inference."""
+    """Count tokens for every chunk and print a cost estimate. No inference.
+
+    For the DGX/local provider there is no ``count_tokens`` endpoint and no API
+    cost, so this delegates to :func:`_dry_run_dgx` (size estimate only).
+    """
+    if getattr(backend, "anthropic_client", None) is None:
+        _dry_run_dgx(chunk_texts, chunks, model, verbose)
+        return
+
+    client = backend.anthropic_client
     tier     = _model_tier(model)
     prices   = _PRICE.get(tier, _PRICE["sonnet"])
     discount = 0.5 if use_batch else 1.0

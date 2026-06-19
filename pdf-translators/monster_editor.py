@@ -125,7 +125,7 @@ def _extraction_worker(sess: dict, selected_indices: list[int],
                        name_overrides: dict, model: str,
                        output_filename: str, batch_size: int,
                        merge: bool = False):
-    import anthropic
+    import llm_backend as _lb
 
     progress = sess["extraction_progress"]
     try:
@@ -142,13 +142,13 @@ def _extraction_worker(sess: dict, selected_indices: list[int],
                    for i in range(0, len(texts), batch_size)]
 
         progress["total"] = len(batches)
-        client = anthropic.Anthropic()
+        backend = _lb.anthropic_backend()
         new_monsters: list = []
 
         for batch_idx, batch in enumerate(batches):
             combined = "\n\n---\n\n".join(batch)
             monsters = _api.call_claude(
-                client, combined, model, SYSTEM_PROMPT,
+                backend, combined, model, SYSTEM_PROMPT,
                 False, None, f"monsters-{batch_idx:04d}",
             )
             for m in monsters:

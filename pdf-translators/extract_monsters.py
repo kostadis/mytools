@@ -17,9 +17,8 @@ import textwrap
 import time
 from pathlib import Path
 
-import anthropic
-
 import claude_api as _api
+import llm_backend as _lb
 
 # ---------------------------------------------------------------------------
 # System prompt for monster conversion
@@ -431,7 +430,7 @@ def extract_markdown_statblocks(md_text: str, header_scan_lines: int = 2):
 # ---------------------------------------------------------------------------
 
 def build_bestiary(
-    client: anthropic.Anthropic,
+    backend: "_lb.Backend",
     statblocks: list[dict],
     *,
     source_id: str,
@@ -471,7 +470,7 @@ def build_bestiary(
         # into batches of `batch_size` per call for context efficiency.
         prompts = ["\n\n---\n\n".join(b) for b in batches]
         per_batch_results = _api.call_claude_batch(
-            client, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
+            backend, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
             validate=False,
         )
         for monsters in per_batch_results:
@@ -484,7 +483,7 @@ def build_bestiary(
                 print(f"  monster batch {batch_idx + 1}/{len(batches)} "
                       f"({len(batch)} stat blocks)...", flush=True)
             monsters = _api.call_claude(
-                client, combined, model, SYSTEM_PROMPT,
+                backend, combined, model, SYSTEM_PROMPT,
                 verbose, debug_dir, f"monsters-{batch_idx:04d}",
                 validate=False,
             )
@@ -585,9 +584,17 @@ def main():
     parser.add_argument("input", type=Path, help="Adventure JSON file")
     parser.add_argument("--out", "-o", type=Path, default=None,
                         help="Output bestiary JSON file (default: bestiary-<input>.json)")
-    parser.add_argument("--model", default="claude-sonnet-4-6",
-                        help="Claude model to use (default: claude-sonnet-4-6)")
-    parser.add_argument("--api-key", default=None, help="Anthropic API key")
+    parser.add_argument("--provider", choices=["claude", "dgx"], default="claude",
+                        help="LLM backend (default: claude). 'dgx' calls the "
+                             "OpenAI-compatible vLLM endpoint on the DGX Spark.")
+    parser.add_argument("--endpoint", default=None,
+                        help="DGX base URL (dgx provider only). "
+                             "Default: http://192.168.1.147:8001/v1")
+    parser.add_argument("--model", default=None,
+                        help="Model id. For claude, defaults to claude-sonnet-4-6. "
+                             "For dgx, auto-discovered from /v1/models if omitted.")
+    parser.add_argument("--api-key", default=None,
+                        help="Anthropic API key (claude provider only)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Just list found stat blocks, don't call Claude")
     parser.add_argument("--verbose", "-v", action="store_true")
@@ -630,8 +637,16 @@ def main():
         print("No stat blocks found — nothing to do.")
         return
 
-    # Set up Claude client
-    client = anthropic.Anthropic(api_key=args.api_key)
+    # Set up the LLM backend and resolve the model id
+    if args.provider == "dgx":
+        endpoint = args.endpoint or _lb.DEFAULT_ENDPOINT
+        model = args.model or _lb.discover_model(endpoint)
+        if not args.model:
+            print(f"[dgx] auto-discovered model: {model}")
+        backend = _lb.dgx_backend(endpoint)
+    else:
+        model = args.model or "claude-sonnet-4-6"
+        backend = _lb.anthropic_backend(args.api_key)
 
     # Convert stat blocks to text and batch them
     texts = [statblock_to_text(sb) for sb in statblocks]
@@ -640,7 +655,7 @@ def main():
     batch_size = args.batch_size
     batches = [texts[i:i + batch_size] for i in range(0, len(texts), batch_size)]
 
-    print(f"\nSending {len(batches)} batch(es) to Claude ({args.model})...")
+    print(f"\nSending {len(batches)} batch(es) to {backend.kind} ({model})...")
 
     for batch_idx, batch in enumerate(batches):
         combined = "\n\n---\n\n".join(batch)
@@ -648,7 +663,7 @@ def main():
               flush=True)
 
         monsters = _api.call_claude(
-            client, combined, args.model, SYSTEM_PROMPT,
+            backend, combined, model, SYSTEM_PROMPT,
             args.verbose, None, f"monsters-{batch_idx:04d}"
         )
 

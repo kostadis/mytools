@@ -38,7 +38,14 @@ PORT=8080 python3 app.py
 python3 pdf_to_5etools_v2.py input.pdf [options]
 ```
 
-Requires `ANTHROPIC_API_KEY` env var or `--api-key KEY`. Default model: `claude-haiku-4-5-20251001`. Marker pipeline also requires the `marker-env/` virtualenv (see setup below).
+Requires `ANTHROPIC_API_KEY` env var or `--api-key KEY` (claude provider only). Default model: `claude-haiku-4-5-20251001`. Marker pipeline also requires the `marker-env/` virtualenv (see setup below).
+
+**LLM provider:** `--provider {claude,dgx}` (default `claude`). `claude` calls the Anthropic API; `dgx` calls the OpenAI-compatible vLLM endpoint on the DGX Spark (`--endpoint`, default `http://192.168.1.147:8001/v1`). For `dgx` the served model id is auto-discovered from `/v1/models` unless `--model` is given, and no API key is needed. Provider dispatch and the transport seam live in `llm_backend.py` (see below); `--batch` and dry-run cost estimation are Anthropic-only.
+
+```bash
+python3 pdf_to_5etools_v2.py input.pdf --provider dgx           # local Spark model
+python3 pdf_to_5etools_v2.py input.pdf --provider dgx --endpoint http://HOST:8001/v1
+```
 
 **Routing:** `profile_pdf()` inspects the PDF at startup:
 - Has bookmarks AND selectable text → **PyMuPDF fast path**. Chunks by bookmark tree. ~100× faster than Marker.
@@ -66,16 +73,31 @@ A CUDA GPU is strongly recommended (4080 or similar: ~5 s/page; CPU: 10–30 s/p
 ### Shared CLI layer — `cli_args.py`
 
 `pdf_to_5etools_v2.py` imports from `cli_args.py` for its argparse setup:
-- `add_common_args(parser, *, default_chunk, default_model)` — adds every shared argument (`--type`, `--output-mode`, `--id`, `--author`, `--out`, `--output-dir`, `--api-key`, `--pages-per-chunk`, `--model`, `--batch`, `--extract-monsters`, `--monsters-only`, `--debug-dir`, `--dry-run`, `--verbose`, `--no-toc-hint`, `--pages`, `--page`). Note `--id` uses `dest="short_id"`; `--batch` uses `dest="use_batch"`.
+- `add_common_args(parser, *, default_chunk, default_model)` — adds every shared argument (`--provider`, `--endpoint`, `--type`, `--output-mode`, `--id`, `--author`, `--out`, `--output-dir`, `--api-key`, `--pages-per-chunk`, `--model`, `--batch`, `--extract-monsters`, `--monsters-only`, `--debug-dir`, `--dry-run`, `--verbose`, `--no-toc-hint`, `--pages`, `--page`). Note `--id` uses `dest="short_id"`; `--batch` uses `dest="use_batch"`. `--model` defaults to `None` (resolved per-provider in `main()`); `--provider` defaults to `claude`.
 - `add_ocr_args(parser, *, default_dpi)` — legacy helper retained for `cli_args`-style extension by downstream tools; not currently used by v2 (Marker handles OCR internally, no DPI/language knobs).
 
 v2 adds one unique arg: `--force-marker` (bypass fast path).
 
 **When adding or changing any shared CLI argument, edit `cli_args.py` only.**
 
+### Provider/transport layer — `llm_backend.py`
+
+`claude_api.py` no longer touches the Anthropic SDK directly. It calls a small provider-agnostic `Backend` object that wraps one of two shared transport libraries:
+- **`lib/claudelib.py`** (`../lib`, shared with rpg-lib/CampaignGenerator) — the Anthropic Messages API.
+- **`dgxlib`** (editable install, github.com/kostadis/dgx-fun) — the DGX Spark's OpenAI-compatible vLLM endpoint, with a per-model request registry (`models.yaml`) and `/v1/models` discovery.
+
+This mirrors the provider-dispatch pattern in `rpg-lib/pdf_enricher.py`, applied at the transport seam so pdf-translators keeps its own 5etools-specific retry/recovery/validation on top.
+
+`llm_backend.py` exports:
+- `Backend.complete(system, user, model, max_tokens) -> (text, stop_reason)` — the uniform call both providers implement. `stop_reason` is normalised by the shared libs to **`"max_tokens"`** (truncated) vs **`"stop"`** — the one distinction `call_claude` needs for its tail/split retry. (Anthropic `end_turn`→`stop`; vLLM `length`→`max_tokens`.)
+- `Backend.kind` (`"claude"`/`"dgx"`), `Backend.supports_batch` (Anthropic only), `Backend.anthropic_client` (raw client for the Batch/`count_tokens` paths; `None` for DGX).
+- `anthropic_backend(api_key=None)` / `dgx_backend(endpoint=None)` constructors; `discover_model` / `DEFAULT_ENDPOINT` passthroughs. The DGX backend forces `thinking=False` so reasoning slots never wrap output in `<think>` tags.
+
+To enrich the transport (e.g. expose more of the response), add a richer call to **both** `claudelib` and `dgxlib` (`call_api_full` is the precedent), then surface it through `Backend`. The libs return only a normalised `stop_reason`; provider-specific strings never leak into `claude_api.py`.
+
 ### Shared API layer — `claude_api.py`
 
-All converters delegate Claude API calls to `claude_api.py`, which owns:
+All converters delegate LLM calls to `claude_api.py`, which talks to a `Backend` (see `llm_backend.py` above) rather than the Anthropic SDK directly. It owns:
 - `MAX_OUTPUT_TOKENS = 20_000` — single place to change the output token budget
 - `MAX_VALIDATION_RETRIES = 1` — how many times to retry when validation finds structural errors in parsed output
 - `COMMON_TAG_RULES` — shared prompt fragment listing all valid `{@tag}` references; injected into every converter's `SYSTEM_PROMPT` via f-string. Update here when the set of supported 5etools inline tags changes.
@@ -83,10 +105,10 @@ All converters delegate Claude API calls to `claude_api.py`, which owns:
 - `validate_entries(entries, chunk_id)` — validates parsed JSON entries through the `adventure_model` data model; returns list of error messages (empty = valid)
 - `_parse_claude_response` — strips markdown fences, parses JSON, returns `(list, bool)`
 - `_recover_partial_json` — salvages complete entries from truncated/malformed responses
-- `call_claude(client, chunk_text, model, system_prompt, verbose, debug_dir, chunk_id)` — full retry logic: tail retry on `max_tokens` with partial output, split retry on `max_tokens` or `end_turn` with malformed JSON. After parsing, runs `validate_entries` and retries with a correction prompt if structural errors are found (unknown tags, missing fields, etc.). Controlled by `MAX_VALIDATION_RETRIES`.
-- `call_claude_batch(client, chunks, model, system_prompt, verbose, debug_dir)` — submits all chunks as a single Batch API request (50% cheaper, async); polls every 15 s until complete; returns results in chunk order. Validates all results post-batch and reports errors (no automatic retry in batch mode — re-run without `--batch` to enable retry).
-- `dry_run(client, chunk_texts, chunks, model, system_prompt, use_batch, verbose)` — calls `count_tokens` for every non-empty chunk and prints a cost estimate; no inference
-- `_model_tier(model)` / `_PRICE` — maps model name to haiku/sonnet/opus tier and pricing for cost estimates
+- `call_claude(backend, chunk_text, model, system_prompt, verbose, debug_dir, chunk_id)` — full retry logic: tail retry on `max_tokens` with partial output, split retry on `max_tokens` or a malformed-JSON natural stop. After parsing, runs `validate_entries` and retries with a correction prompt if structural errors are found (unknown tags, missing fields, etc.). Controlled by `MAX_VALIDATION_RETRIES`. Works with either provider via `backend.complete`.
+- `call_claude_batch(backend, chunks, model, system_prompt, verbose, debug_dir)` — **Anthropic-only** (vLLM has no Batch API; gated via `_require_anthropic`). Submits all chunks as a single Batch API request (50% cheaper, async); polls every 15 s; returns results in chunk order. Validates post-batch and reports errors (no auto-retry in batch mode). The CLI rejects `--batch --provider dgx` up front.
+- `dry_run(backend, chunk_texts, chunks, model, system_prompt, use_batch, verbose)` — for claude, calls `count_tokens` per chunk and prints a cost estimate (`_dry_run_dgx` handles the DGX branch: chunk/char counts + a `chars/4` token estimate, no cost). No inference either way.
+- `_model_tier(model)` / `_PRICE` — maps model name to haiku/sonnet/opus tier and pricing for the claude cost estimate.
 
 Each converter's `call_claude` is a thin wrapper that passes its own `SYSTEM_PROMPT` and handles any converter-specific preprocessing (1e: `_CHUNK_PREFIX + _neutralize_triggers + _sanitize_text`) or error handling (1e: `BadRequestError` → `None`). Future fixes to retry/parse/prompt logic go in `claude_api.py` only.
 
