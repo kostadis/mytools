@@ -104,6 +104,17 @@ def add_common_args(
         ),
     )
     parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help=(
+            "Number of chunks to send concurrently on the streaming (non-batch) "
+            "path. Default: 1 for claude, 8 for dgx (vLLM serves many requests "
+            "at once — concurrency is the main throughput lever on the Spark). "
+            "Ignored under --batch."
+        ),
+    )
+    parser.add_argument(
         "--extract-monsters",
         action="store_true",
         dest="extract_monsters",

@@ -566,6 +566,31 @@ def call_claude_for_chunk(
     )
 
 
+def _map_chunks_ordered(chunks: list, run_fn, concurrency: int) -> list:
+    """Run ``run_fn(i, chunk)`` over *chunks*, returning results in chunk order.
+
+    ``concurrency == 1`` runs sequentially (preserving the original log
+    interleaving). ``> 1`` uses a thread pool — vLLM serves many requests at
+    once, so firing chunks in parallel is the main throughput lever on the
+    Spark — but results are written back **by index**, so the returned list is
+    always in chunk order regardless of completion order (TOC/data alignment
+    depends on it). Each ``run_fn`` call is independent and uses a unique
+    chunk_id, so per-chunk debug-file writes never collide and the per-chunk
+    recursive retry logic runs within its own thread.
+    """
+    conc = max(1, min(concurrency, len(chunks))) if chunks else 1
+    if conc == 1:
+        return [run_fn(i, c) for i, c in enumerate(chunks)]
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    results: list = [None] * len(chunks)
+    with ThreadPoolExecutor(max_workers=conc) as ex:
+        futs = {ex.submit(run_fn, i, c): i for i, c in enumerate(chunks)}
+        for fut in as_completed(futs):
+            results[futs[fut]] = fut.result()
+    return results
+
+
 def _unwrap_self_named_wrapper(entries: list, section_name: str) -> list:
     """If ``entries`` is a single ``{"type":"entries","name":...}`` block whose
     name matches ``section_name``, return the inner entries instead.
@@ -855,6 +880,7 @@ def convert(
     monsters_only: bool = False,
     resume_batch: str | None = None,
     replay_responses: Path | None = None,
+    concurrency: int = 1,
 ) -> Path:
     """Drive the end-to-end v2 conversion. Returns the output JSON path.
 
@@ -1003,14 +1029,19 @@ def convert(
         for spec, entries in zip(chunks, batch):
             chunk_results.append((spec, entries))
     else:
-        for i, spec in enumerate(chunks):
-            cid = f"{i+1:03d}-{re.sub(r'[^a-z0-9]+', '-', spec.target_node.title.lower())[:30]}"
+        def _run_chunk(i: int, spec: ChunkSpec) -> list | None:
+            slug = re.sub(r'[^a-z0-9]+', '-', spec.target_node.title.lower())[:30]
+            cid = f"{i+1:03d}-{slug}"
             if verbose:
-                print(f"[chunk {cid}] calling Claude ({len(spec.body)} chars)")
+                print(f"[chunk {cid}] calling {backend.kind} ({len(spec.body)} chars)")
             prompt = build_prompt(spec.target_node, spec.body)
-            entries = call_claude_for_chunk(
-                backend, prompt, model, verbose, debug_dir, cid,
-            )
+            return call_claude_for_chunk(backend, prompt, model, verbose, debug_dir, cid)
+
+        conc = max(1, min(concurrency, len(chunks)))
+        if conc > 1:
+            print(f"[concurrency] sending {len(chunks)} chunks, {conc} at a time")
+        results = _map_chunks_ordered(chunks, _run_chunk, conc)
+        for spec, entries in zip(chunks, results):
             chunk_results.append((spec, entries))
 
     # ---- 5. Assemble ----
@@ -1129,6 +1160,14 @@ def main(argv: list[str] | None = None) -> int:
         model = args.model or DEFAULT_MODEL
         backend = _lb.anthropic_backend(api_key)
 
+    # Concurrency for the streaming chunk loop. Default: 1 for claude, 8 for dgx
+    # (vLLM serves many requests at once; concurrency is the Spark throughput
+    # lever). Explicit --concurrency overrides. Ignored under --batch.
+    if args.concurrency is not None:
+        concurrency = max(1, args.concurrency)
+    else:
+        concurrency = 8 if args.provider == "dgx" else 1
+
     try:
         convert(
             pdf_path=args.pdf,
@@ -1148,6 +1187,7 @@ def main(argv: list[str] | None = None) -> int:
             monsters_only=args.monsters_only,
             resume_batch=args.resume_batch,
             replay_responses=args.replay_responses,
+            concurrency=concurrency,
         )
     except RuntimeError as e:
         print(f"error: {e}")
