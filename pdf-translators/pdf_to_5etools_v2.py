@@ -42,12 +42,12 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-import anthropic
 import fitz  # PyMuPDF
 
 import cli_args as _cli
 import claude_api as _api
 import extract_monsters as _mon
+import llm_backend as _lb
 from adventure_model import (
     BuildContext, SectionEntry, EntriesEntry, parse_entry,
     HomebrewAdventure,
@@ -547,7 +547,7 @@ def build_prompt(node: TocNode, body: str) -> str:
 # ---------------------------------------------------------------------------
 
 def call_claude_for_chunk(
-    client: anthropic.Anthropic,
+    backend: "_lb.Backend",
     chunk_text: str,
     model: str,
     verbose: bool,
@@ -556,7 +556,7 @@ def call_claude_for_chunk(
 ) -> list | None:
     """Thin wrapper delegating to claude_api.call_claude."""
     return _api.call_claude(
-        client,
+        backend,
         chunk_text,
         model=model,
         system_prompt=SYSTEM_PROMPT,
@@ -741,7 +741,7 @@ def _bestiary_path(out: Path) -> Path:
 
 
 def write_bestiary(
-    client: anthropic.Anthropic,
+    backend: "_lb.Backend",
     statblocks: list[dict],
     *,
     adventure_name: str,
@@ -762,7 +762,7 @@ def write_bestiary(
         print("[monsters] nothing to extract; skipping bestiary write")
         return out_path
     bestiary = _mon.build_bestiary(
-        client, statblocks,
+        backend, statblocks,
         source_id=bestiary_source,
         source_meta=source_meta,
         model=model,
@@ -785,7 +785,7 @@ def convert_monsters_only(
     author: str,
     out_path: Path | None,
     output_dir: Path | None,
-    client: anthropic.Anthropic,
+    backend: "_lb.Backend",
     model: str,
     use_batch: bool,
     debug_dir: Path | None,
@@ -812,7 +812,7 @@ def convert_monsters_only(
 
     if dry_run_only:
         chunks = [(_synth_node(sb["name"]), sb["text"]) for sb in statblocks]
-        _api.dry_run(client, [sb["text"] for sb in statblocks], chunks,
+        _api.dry_run(backend, [sb["text"] for sb in statblocks], chunks,
                      model, _mon.SYSTEM_PROMPT, use_batch, verbose)
         return pdf_path
 
@@ -825,7 +825,7 @@ def convert_monsters_only(
         bestiary_out = target_dir / f"{pdf_path.stem}-bestiary.json"
 
     return write_bestiary(
-        client, statblocks,
+        backend, statblocks,
         adventure_name=name, adventure_source=short_id, author=author,
         out_path=bestiary_out, model=model, use_batch=use_batch,
         debug_dir=debug_dir, verbose=verbose,
@@ -844,7 +844,7 @@ def convert(
     author: str,
     out_path: Path | None,
     output_dir: Path | None,
-    api_key: str | None,
+    backend: "_lb.Backend",
     model: str,
     use_batch: bool,
     debug_dir: Path | None,
@@ -854,11 +854,13 @@ def convert(
     extract_monsters: bool = False,
     monsters_only: bool = False,
     resume_batch: str | None = None,
+    replay_responses: Path | None = None,
 ) -> Path:
-    """Drive the end-to-end v2 conversion. Returns the output JSON path."""
-    client = anthropic.Anthropic(api_key=api_key) if api_key \
-        else anthropic.Anthropic()
+    """Drive the end-to-end v2 conversion. Returns the output JSON path.
 
+    ``backend`` is a :class:`llm_backend.Backend` (Anthropic or DGX); ``None`` is
+    permitted only for the dry-run paths that the caller resolves up front.
+    """
     # Default source/name derivation
     if short_id is None:
         short_id = re.sub(r"[^A-Z0-9]", "", pdf_path.stem.upper())[:8] or "HOMEBREW"
@@ -883,7 +885,7 @@ def convert(
         return convert_monsters_only(
             pdf_path=pdf_path, short_id=short_id, name=name, author=author,
             out_path=out_path, output_dir=output_dir,
-            client=client, model=model, use_batch=use_batch,
+            backend=backend, model=model, use_batch=use_batch,
             debug_dir=debug_dir, dry_run_only=dry_run_only, verbose=verbose,
         )
 
@@ -958,17 +960,37 @@ def convert(
     # ---- 3. Dry run ----
     if dry_run_only:
         chunk_texts = [build_prompt(c.target_node, c.body) for c in chunks]
-        _api.dry_run(client, chunk_texts, chunks, model,
+        _api.dry_run(backend, chunk_texts, chunks, model,
                      SYSTEM_PROMPT, use_batch, verbose)
         return pdf_path  # nothing written
 
     # ---- 4. Claude pass ----
     chunk_results: list[tuple[ChunkSpec, list | None]] = []
-    if resume_batch:
+    if replay_responses:
+        # Rebuild from previously saved {cid}-response.txt files instead of
+        # calling Claude. Chunking above is deterministic, so the sorted
+        # response files line up 1:1 with chunks in submission order. Use this
+        # to recover a run after a parser fix without re-billing the API.
+        resp_files = sorted(Path(replay_responses).glob("*-response.txt"))
+        if len(resp_files) != len(chunks):
+            raise RuntimeError(
+                f"[replay] {len(resp_files)} saved responses in "
+                f"{replay_responses} != {len(chunks)} chunks; chunking must "
+                f"match the original run for the mapping to be correct"
+            )
+        print(f"[replay] rebuilding from {len(resp_files)} saved responses in "
+              f"{replay_responses} — no Claude calls")
+        for spec, rf in zip(chunks, resp_files):
+            raw = rf.read_text(encoding="utf-8")
+            entries, _ok = _api._parse_claude_response(
+                raw, verbose, debug_dir=None, chunk_id=rf.stem,
+            )
+            chunk_results.append((spec, entries))
+    elif resume_batch:
         print(f"[resume] skipping Claude submission — fetching batch "
               f"{resume_batch}")
         batch = _api.fetch_claude_batch_results(
-            client, resume_batch, len(chunks),
+            backend, resume_batch, len(chunks),
             verbose=verbose, debug_dir=debug_dir,
         )
         for spec, entries in zip(chunks, batch):
@@ -976,7 +998,7 @@ def convert(
     elif use_batch:
         prompts = [build_prompt(c.target_node, c.body) for c in chunks]
         batch = _api.call_claude_batch(
-            client, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
+            backend, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
         )
         for spec, entries in zip(chunks, batch):
             chunk_results.append((spec, entries))
@@ -987,7 +1009,7 @@ def convert(
                 print(f"[chunk {cid}] calling Claude ({len(spec.body)} chars)")
             prompt = build_prompt(spec.target_node, spec.body)
             entries = call_claude_for_chunk(
-                client, prompt, model, verbose, debug_dir, cid,
+                backend, prompt, model, verbose, debug_dir, cid,
             )
             chunk_results.append((spec, entries))
 
@@ -1025,7 +1047,7 @@ def convert(
             print(f"[monsters] found italic={len(italic_blocks)} "
                   f"table={len(table_blocks)}")
         write_bestiary(
-            client, all_blocks,
+            backend, all_blocks,
             adventure_name=name, adventure_source=short_id, author=author,
             out_path=_bestiary_path(out),
             model=model, use_batch=use_batch,
@@ -1057,15 +1079,55 @@ def main(argv: list[str] | None = None) -> int:
              "Marker + chunking to map custom_ids back to chunks; chunking "
              "must be deterministic for the mapping to be correct.",
     )
+    parser.add_argument(
+        "--replay-responses", metavar="DIR", dest="replay_responses",
+        type=Path, default=None,
+        help="Rebuild the output from the {cid}-response.txt files saved by a "
+             "previous run (the <stem>-responses/ directory) instead of calling "
+             "Claude. Re-runs PDF extraction + chunking (free) and parses the "
+             "saved responses in order. Use to recover a run after a parser fix "
+             "without re-billing the API. Chunking must be deterministic so the "
+             "responses map back to chunks correctly.",
+    )
     args = parser.parse_args(argv)
 
-    api_key = args.api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        print("error: ANTHROPIC_API_KEY not set and --api-key not provided")
-        return 1
     if not args.pdf.exists():
         print(f"error: {args.pdf} does not exist")
         return 1
+
+    # ---- Provider dispatch: build the backend and resolve the model id ----
+    # Mirrors rpg-lib/pdf_enricher.py. The backend is None only for a DGX
+    # dry-run (no client needed); claude_api.dry_run handles None as the local
+    # no-cost estimate path.
+    if args.provider == "dgx":
+        if args.use_batch:
+            print("error: --batch is Anthropic-only; the DGX/vLLM endpoint has "
+                  "no Batch API. Re-run without --batch.")
+            return 1
+        if args.resume_batch:
+            print("error: --resume-batch is Anthropic-only; not available with "
+                  "--provider dgx.")
+            return 1
+        endpoint = args.endpoint or _lb.DEFAULT_ENDPOINT
+        try:
+            if args.model:
+                model = args.model
+            elif args.dry_run_only:
+                model = "<auto-discover-at-runtime>"
+            else:
+                model = _lb.discover_model(endpoint)
+                print(f"[dgx] auto-discovered model: {model}")
+            backend = None if args.dry_run_only else _lb.dgx_backend(endpoint)
+        except RuntimeError as e:
+            print(f"error: {e}")
+            return 1
+    else:
+        api_key = args.api_key or os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            print("error: ANTHROPIC_API_KEY not set and --api-key not provided")
+            return 1
+        model = args.model or DEFAULT_MODEL
+        backend = _lb.anthropic_backend(api_key)
 
     try:
         convert(
@@ -1075,8 +1137,8 @@ def main(argv: list[str] | None = None) -> int:
             author=args.author,
             out_path=args.out,
             output_dir=args.output_dir,
-            api_key=api_key,
-            model=args.model,
+            backend=backend,
+            model=model,
             use_batch=args.use_batch,
             debug_dir=args.debug_dir,
             dry_run_only=args.dry_run_only,
@@ -1085,6 +1147,7 @@ def main(argv: list[str] | None = None) -> int:
             extract_monsters=args.extract_monsters,
             monsters_only=args.monsters_only,
             resume_batch=args.resume_batch,
+            replay_responses=args.replay_responses,
         )
     except RuntimeError as e:
         print(f"error: {e}")

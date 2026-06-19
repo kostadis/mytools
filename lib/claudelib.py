@@ -12,14 +12,29 @@ import time
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
 
 
-def make_client():
-    """Return an Anthropic client, exiting with a helpful message if not installed."""
+def make_client(api_key: str | None = None):
+    """Return an Anthropic client, exiting with a helpful message if not installed.
+
+    ``api_key`` overrides the ``ANTHROPIC_API_KEY`` env var when provided;
+    otherwise the SDK reads the key from the environment as usual.
+    """
     try:
         import anthropic
     except ImportError:
         print("Error: anthropic not installed. Run: pip install anthropic", file=sys.stderr)
         sys.exit(1)
-    return anthropic.Anthropic()
+    return anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+
+
+def _norm_stop_reason(stop_reason: str | None) -> str:
+    """Normalise an Anthropic ``stop_reason`` to the shared two-value vocabulary.
+
+    ``"max_tokens"`` means the response was truncated by the output-token cap;
+    everything else (``"end_turn"``, ``"stop_sequence"``, ``"tool_use"``, ...)
+    collapses to ``"stop"``. Callers only need to distinguish truncation from a
+    natural finish; mirrors dgxlib's finish-reason normalisation.
+    """
+    return "max_tokens" if stop_reason == "max_tokens" else "stop"
 
 
 def _is_retryable(exc) -> bool:
@@ -51,9 +66,14 @@ def _is_retryable(exc) -> bool:
     return False
 
 
-def call_api(client, system: str, content, model: str = DEFAULT_MODEL,
-             max_tokens: int = 8096) -> str:
-    """Non-streaming API call. Returns full response text.
+def call_api_full(client, system: str, content, model: str = DEFAULT_MODEL,
+                  max_tokens: int = 8096) -> tuple[str, str]:
+    """Non-streaming API call. Returns ``(text, stop_reason)``.
+
+    ``stop_reason`` is normalised to the shared vocabulary: ``"max_tokens"`` when
+    the response was truncated by the output-token cap, else ``"stop"`` (see
+    :func:`_norm_stop_reason`). Callers that need to detect truncation — e.g. to
+    re-process a tail — use the second element; :func:`call_api` discards it.
 
     content — a string or a list of content blocks (for multimodal/vision calls).
     Retries on transient errors with exponential backoff (3 retries: 10/20/40s).
@@ -72,11 +92,22 @@ def call_api(client, system: str, content, model: str = DEFAULT_MODEL,
                 system=system,
                 messages=messages,
             )
-            return response.content[0].text
+            return response.content[0].text, _norm_stop_reason(response.stop_reason)
         except Exception as e:
             if _is_retryable(e) and attempt < len(delays):
                 continue
             raise
+
+
+def call_api(client, system: str, content, model: str = DEFAULT_MODEL,
+             max_tokens: int = 8096) -> str:
+    """Non-streaming API call. Returns full response text.
+
+    Thin wrapper over :func:`call_api_full` that drops the stop-reason — kept for
+    callers that only want the text (e.g. CampaignGenerator, pdf_enricher).
+    """
+    text, _ = call_api_full(client, system, content, model, max_tokens)
+    return text
 
 
 def stream_api(client, system: str, user: str, model: str = DEFAULT_MODEL,
