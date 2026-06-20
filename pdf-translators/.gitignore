@@ -13,3 +13,6 @@ marker-env/
 
 # Local secrets — ANTHROPIC_API_KEY etc.
 .env
+
+# Per-run batch conversion logs (one .log per module).
+ddex3-logs/
