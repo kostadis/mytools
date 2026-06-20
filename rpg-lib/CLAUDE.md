@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Database backup rule (ALWAYS)
+
+Whenever you merge/push this repo to origin (e.g. merging a PR or pushing `main`), first back up the SQLite databases to Google Drive by running:
+
+```bash
+./backup_db.sh
+```
+
+This backs up both `rpg_library.db` and `user_data.db` to `/mnt/g/My Drive/Kickstarter/` via `sqlite3 .backup` (consistent snapshot, not `cp`). Dated filenames keep one backup per day; same-day runs overwrite that day's files. Run it before the push completes, not after. The script also takes an optional destination dir: `./backup_db.sh /some/other/dir`.
+
 ## What This Is
 
 A full-stack RPG PDF library: Python scripts index PDFs from disk into SQLite, the Claude API enriches them with metadata (game system, tags, description), and a FastAPI + Vue 3 web UI lets you search and browse them.

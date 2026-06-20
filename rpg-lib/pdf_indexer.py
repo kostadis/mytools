@@ -602,6 +602,10 @@ def main():
     print(f"Database: {total_books} books ({with_bm} with bookmarks), "
           f"{total_bm} bookmarks, {total_err} errors")
 
+    if success:
+        print("\n*** Reminder: the database changed — back it up with "
+              "./backup_db.sh (or run the full ./refresh_library.sh) ***")
+
     conn.close()
 
 
