@@ -40,19 +40,33 @@ python3 pdf_to_5etools_v2.py input.pdf [options]
 
 Requires `ANTHROPIC_API_KEY` env var or `--api-key KEY` (claude provider only). Default model: `claude-haiku-4-5-20251001`. Marker pipeline also requires the `marker-env/` virtualenv (see setup below).
 
-**LLM provider:** `--provider {claude,dgx}` (default `claude`). `claude` calls the Anthropic API; `dgx` calls the OpenAI-compatible vLLM endpoint on the DGX Spark (`--endpoint`, default `http://192.168.1.147:8001/v1`). For `dgx` the served model id is auto-discovered from `/v1/models` unless `--model` is given, and no API key is needed. Provider dispatch and the transport seam live in `llm_backend.py` (see below); `--batch` and dry-run cost estimation are Anthropic-only.
+**LLM provider:** `--provider {claude,dgx,claude-code}` (default `claude`). `claude` calls the Anthropic API; `dgx` calls the OpenAI-compatible vLLM endpoint on the DGX Spark (`--endpoint`, default `http://192.168.1.147:8001/v1`); `claude-code` shells out to the local `claude` CLI and spends your **Claude Code subscription** quota instead of billing the API. For `dgx` the served model id is auto-discovered from `/v1/models` unless `--model` is given, and no API key is needed. Provider dispatch and the transport seam live in `llm_backend.py` (see below); `--batch` and dry-run cost estimation are Anthropic-only.
 
 ```bash
 python3 pdf_to_5etools_v2.py input.pdf --provider dgx           # local Spark model
 python3 pdf_to_5etools_v2.py input.pdf --provider dgx --endpoint http://HOST:8001/v1
+python3 pdf_to_5etools_v2.py input.pdf --provider claude-code   # your Claude subscription
 ```
+
+**`claude-code` provider (subscription):** routes every chunk through `claude -p --output-format json` via the `claudecodelib.py` transport, so conversions draw down your Claude Code subscription rather than API credits. Requirements and constraints:
+- The `claude` CLI must be installed and logged in (`claude login`) with a subscription. The transport **scrubs `ANTHROPIC_API_KEY`** from the child env so Claude Code uses the subscription login rather than silently falling back to API billing.
+- **No `max_tokens` control and no truncation signal** — the CLI caps at the model's own max and reports `end_turn`. So `call_claude`'s tail/split *truncation* retry never fires for this provider (its validation/malformed-JSON retry still does). Truncation is unlikely at normal chunk sizes but won't be auto-detected.
+- **No Batch API / no `count_tokens`** (like `dgx`): `--batch` and `--resume-batch` are rejected up front; `--dry-run` uses the local size estimate (no cost figure).
+- Each chunk spawns a CLI subprocess in a neutral temp cwd (so it doesn't load a project `CLAUDE.md`) and shares one subscription rate limit, so concurrency defaults to **1**. If you hit your usage cap mid-run the call errors out cleanly — resume later with `--reuse-responses` (the saved responses are reused regardless of provider).
 
 **Routing:** `profile_pdf()` inspects the PDF at startup:
 - Has bookmarks AND selectable text → **PyMuPDF fast path**. Chunks by bookmark tree. ~100× faster than Marker.
 - Anything else (scans, un-bookmarked digital) → **Marker path**. Runs Marker to produce markdown with `#`/`##`/`###` headings; synthesises a `TocNode` tree from those headings (with the keyed-room heuristic flattening numbered rooms to a common level); chunks the same way as the fast path.
 - `--force-marker` bypasses the fast path and always uses Marker. Useful when the PDF has bookmarks but the text layer is unreliable (OCR'd-to-PDF scans, broken embedded fonts).
 
-**Common flags:** `--dry-run` (estimate cost, no API calls), `--batch` (50% cheaper via Batch API, async), `--output-mode server` (two-file permanent install), `--extract-monsters`/`--monsters-only` (bestiary extraction, see below), `--debug-dir DIR` (save raw chunk I/O), `--verbose`. See `cli_args.py` for the full shared argument set.
+**Common flags:** `--dry-run` (estimate cost, no API calls), `--batch` (50% cheaper via Batch API, async, Anthropic-only), `--concurrency N` (send N chunks at once on the streaming path), `--reuse-responses` (resume a crashed streaming run from saved responses, see below), `--output-mode server` (two-file permanent install), `--extract-monsters`/`--monsters-only` (bestiary extraction, see below), `--debug-dir DIR` (save raw chunk I/O), `--verbose`. See `cli_args.py` for the full shared argument set.
+
+**Concurrency (`--concurrency N`):** on the streaming (non-batch) path, chunks are sent through a thread pool `N` at a time instead of one-by-one. Default is **1 for claude, 8 for dgx** — vLLM serves many requests concurrently (the Spark slot runs `--max-num-seqs 20`; ~20 tok/s single-stream vs ~130 tok/s at 20 concurrent), so concurrency is the main throughput lever there. Results are written back by index, so TOC/data ordering is preserved regardless of completion order; per-chunk retry and debug-file writes are unaffected (unique `chunk_id`s). Ignored under `--batch`. The ordered runner is `_map_chunks_ordered` in `pdf_to_5etools_v2.py`.
+
+**Resuming / reusing a run:** every run auto-saves each chunk's raw provider output to `<out_stem>-responses/{cid}-response.txt` (the `chunk_id` is `{index:03d}-{slugified-title}`; respects `--debug-dir`). Chunking is deterministic, so three recovery flags can reuse that work without re-billing/re-inferring:
+- `--reuse-responses` — **mid-run resume on either path.** For each chunk, loads its saved `{cid}-response.txt` from the responses dir if present *and it parses to real entries*; only the missing or unusable chunks are re-sent to the provider. Tolerates a **partial** set, so this is the flag for finishing a run that died midway (e.g. DGX dropped). Works on the streaming path (`_run_chunk`) **and** under `--batch` (the batch branch in `convert()` loads cached chunks and submits only the rest to the Batch API, then merges by index). The cache key is `{index:03d}-{slug}` only — **not** model-aware — so a `claude --batch --reuse-responses` run will reuse chunks a prior `dgx` streaming run produced (cross-provider/model reuse is intentional here). Both paths share `_chunk_cid` / `_load_cached_response`. Re-run the original command verbatim with `--reuse-responses` added; keep the same output target so the responses dir resolves to the same place, and don't change anything that alters chunking (PDF, page selection, `--force-marker`) or the index↔file mapping breaks. (Note: the batch path's own per-chunk debug files are named `chunk-NNNN-*`, so an interrupted *batch* run is resumed with `--resume-batch`, not by re-reading those files.)
+- `--replay-responses DIR` — rebuild the output purely from a **complete** set of saved responses (no provider calls at all). Hard-requires `len(responses) == len(chunks)`; raises otherwise. Use to re-parse a fully-finished run after a parser fix, not to resume a crash.
+- `--resume-batch BATCH_ID` — Anthropic-only; fetch results from an already-completed Batch API run instead of submitting a new batch.
 
 **Bestiary extraction:**
 - `--extract-monsters`: after the adventure conversion, run a second Claude pass that pulls stat blocks out of the generated JSON. Writes `<stem>-bestiary.json` next to the adventure file with source ID `{SOURCE}b` (separate so both homebrews can be loaded together without conflicting). Detects both italic-string stat lines (the v2 prompt's default format: `{@i Name: AC X, MV Y, ...}`) and legacy table stat blocks. Inherits `--model` and `--batch` from the main pass.
@@ -82,18 +96,19 @@ v2 adds one unique arg: `--force-marker` (bypass fast path).
 
 ### Provider/transport layer — `llm_backend.py`
 
-`claude_api.py` no longer touches the Anthropic SDK directly. It calls a small provider-agnostic `Backend` object that wraps one of two shared transport libraries:
+`claude_api.py` no longer touches the Anthropic SDK directly. It calls a small provider-agnostic `Backend` object that wraps one of three transport libraries:
 - **`lib/claudelib.py`** (`../lib`, shared with rpg-lib/CampaignGenerator) — the Anthropic Messages API.
 - **`dgxlib`** (editable install, github.com/kostadis/dgx-fun) — the DGX Spark's OpenAI-compatible vLLM endpoint, with a per-model request registry (`models.yaml`) and `/v1/models` discovery.
+- **`claudecodelib.py`** (local) — the `claude` CLI in headless mode (`claude -p --output-format json`), spending the **Claude Code subscription** quota. Passes the user content on stdin and the system prompt as `--system-prompt`, scrubs `ANTHROPIC_API_KEY` from the child env (so it uses the subscription login, not API billing), runs in a neutral temp cwd, and disables all tools (`--allowedTools ''`). `stop_reason` is always `"stop"` (the CLI gives no `max_tokens` signal).
 
 This mirrors the provider-dispatch pattern in `rpg-lib/pdf_enricher.py`, applied at the transport seam so pdf-translators keeps its own 5etools-specific retry/recovery/validation on top.
 
 `llm_backend.py` exports:
-- `Backend.complete(system, user, model, max_tokens) -> (text, stop_reason)` — the uniform call both providers implement. `stop_reason` is normalised by the shared libs to **`"max_tokens"`** (truncated) vs **`"stop"`** — the one distinction `call_claude` needs for its tail/split retry. (Anthropic `end_turn`→`stop`; vLLM `length`→`max_tokens`.)
-- `Backend.kind` (`"claude"`/`"dgx"`), `Backend.supports_batch` (Anthropic only), `Backend.anthropic_client` (raw client for the Batch/`count_tokens` paths; `None` for DGX).
-- `anthropic_backend(api_key=None)` / `dgx_backend(endpoint=None)` constructors; `discover_model` / `DEFAULT_ENDPOINT` passthroughs. The DGX backend forces `thinking=False` so reasoning slots never wrap output in `<think>` tags.
+- `Backend.complete(system, user, model, max_tokens) -> (text, stop_reason)` — the uniform call all providers implement. `stop_reason` is normalised by the transport libs to **`"max_tokens"`** (truncated) vs **`"stop"`** — the one distinction `call_claude` needs for its tail/split retry. (Anthropic `end_turn`→`stop`; vLLM `length`→`max_tokens`; Claude Code always `"stop"`, so its truncation retry is effectively disabled.)
+- `Backend.kind` (`"claude"`/`"dgx"`/`"claude-code"`), `Backend.supports_batch` (Anthropic only), `Backend.anthropic_client` (raw client for the Batch/`count_tokens` paths; `None` for DGX and Claude Code).
+- `anthropic_backend(api_key=None)` / `dgx_backend(endpoint=None)` / `claude_code_backend(binary=None)` constructors; `discover_model` / `DEFAULT_ENDPOINT` passthroughs. The DGX backend forces `thinking=False` so reasoning slots never wrap output in `<think>` tags.
 
-To enrich the transport (e.g. expose more of the response), add a richer call to **both** `claudelib` and `dgxlib` (`call_api_full` is the precedent), then surface it through `Backend`. The libs return only a normalised `stop_reason`; provider-specific strings never leak into `claude_api.py`.
+To enrich the transport (e.g. expose more of the response), add a richer call to **all** transport libs (`call_api_full` is the precedent), then surface it through `Backend`. The libs return only a normalised `stop_reason`; provider-specific strings never leak into `claude_api.py`.
 
 ### Shared API layer — `claude_api.py`
 

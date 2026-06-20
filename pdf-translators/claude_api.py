@@ -367,13 +367,11 @@ def call_claude(backend: "Backend", chunk_text: str,
         print(f"    [WARN] {chunk_id} JSON was truncated; partial recovery kept "
               f"{len(result)} entries. Some content may be missing.", flush=True)
     elif not result:
-        raw_preview = raw_text[:300] if raw_text else "(empty)"
-        print(f"    [WARN] {chunk_id} returned no parseable JSON "
-              f"(stop_reason={stop_reason!r}).", flush=True)
-        print(f"    Response preview: {raw_preview!r}", flush=True)
-        if not debug_dir:
-            print("    [TIP]  Re-run with --debug-dir DIR to save full API responses.",
-                  flush=True)
+        # Reached only when parsing SUCCEEDED (the not-parse_ok cases are handled
+        # above) but the array was empty — the model returned a valid `[]`. That
+        # is a legitimate "nothing to convert" for prose-only / wrapper / map-only
+        # nodes, not a failure, so log it as INFO rather than a scary WARN.
+        print(f"    [INFO] {chunk_id} produced no entries (empty array).", flush=True)
 
     # --- Validation retry: narrowly auto-fix unknown tags, surface the rest --
     # See plan: tag errors are deterministic substitutions and safe to delegate
