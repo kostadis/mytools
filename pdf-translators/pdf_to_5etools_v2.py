@@ -566,6 +566,36 @@ def call_claude_for_chunk(
     )
 
 
+def _chunk_cid(i: int, spec: "ChunkSpec") -> str:
+    """Deterministic chunk id used for the saved ``{cid}-response.txt`` name.
+
+    ``{1-based index:03d}-{slugified section title}``. Identical on the
+    streaming and batch reuse paths so ``--reuse-responses`` finds the same
+    files regardless of which transport originally produced them.
+    """
+    slug = re.sub(r'[^a-z0-9]+', '-', spec.target_node.title.lower())[:30]
+    return f"{i+1:03d}-{slug}"
+
+
+def _load_cached_response(
+    cid: str, debug_dir: Path | None, verbose: bool,
+) -> list | None:
+    """Return parsed entries from a saved ``{cid}-response.txt`` if it exists
+    *and* parses to real entries; else ``None`` (missing or unusable). Shared
+    by the streaming and batch ``--reuse-responses`` paths.
+    """
+    if debug_dir is None:
+        return None
+    cached = debug_dir / f"{cid}-response.txt"
+    if not cached.exists():
+        return None
+    raw = cached.read_text(encoding="utf-8")
+    entries, _ok = _api._parse_claude_response(
+        raw, verbose, debug_dir=None, chunk_id=cid,
+    )
+    return entries or None
+
+
 def _map_chunks_ordered(chunks: list, run_fn, concurrency: int) -> list:
     """Run ``run_fn(i, chunk)`` over *chunks*, returning results in chunk order.
 
@@ -862,6 +892,29 @@ def _synth_node(title: str) -> TocNode:
     return TocNode(level=1, title=title, start_page=1, end_page=1)
 
 
+def _unwrap_singleton_root(roots: list[TocNode], verbose: bool = False) -> list[TocNode]:
+    """Promote a document-title wrapper's children to top-level sections.
+
+    Most published modules (DDEX/DDAL, etc.) carry a single level-1 bookmark
+    — the cover title — with every real chapter nested one level below it.
+    "One chunk per top-level root" would then emit the entire module as a
+    single chunk/section, which both defeats ``--concurrency`` and hands
+    Claude the whole-document structure decision. When the tree is exactly
+    one root *with* children, descend so the chapters become the top-level
+    sections (each its own chunk, assembled in bookmark order — no merge).
+
+    The wrapper node's own prose (text before its first child, e.g. the
+    cover/credits page) is dropped; we log it so the loss isn't silent.
+    """
+    if len(roots) != 1 or not roots[0].children:
+        return roots
+    wrapper = roots[0]
+    print(f"[toc] single document-title root '{wrapper.title}' — promoting "
+          f"its {len(wrapper.children)} children to top-level sections "
+          f"(wrapper's own prose on p{wrapper.start_page} dropped)")
+    return wrapper.children
+
+
 def convert(
     pdf_path: Path,
     output_type: str,
@@ -880,6 +933,7 @@ def convert(
     monsters_only: bool = False,
     resume_batch: str | None = None,
     replay_responses: Path | None = None,
+    reuse_responses: bool = False,
     concurrency: int = 1,
 ) -> Path:
     """Drive the end-to-end v2 conversion. Returns the output JSON path.
@@ -944,6 +998,7 @@ def convert(
             toc_roots = get_toc_tree(pdf_path, max_level=3)
             if not toc_roots:
                 raise RuntimeError("fast path selected but get_toc_tree returned no roots")
+            toc_roots = _unwrap_singleton_root(toc_roots, verbose)
             chunks = build_chunks_from_toc(toc_roots, doc)
         finally:
             doc.close()
@@ -958,6 +1013,7 @@ def convert(
                 raise RuntimeError(
                     "printed-ToC path selected but no TocNode tree produced"
                 )
+            toc_roots = _unwrap_singleton_root(toc_roots, verbose)
             chunks = build_chunks_from_toc(toc_roots, doc)
         finally:
             doc.close()
@@ -968,6 +1024,7 @@ def convert(
         headings, lines = parse_markdown_headings(md_text)
         headings = normalise_numbered_rooms(headings)
         toc_roots = build_synthetic_toc(headings, total_lines=len(lines))
+        toc_roots = _unwrap_singleton_root(toc_roots, verbose)
         chunks = build_chunks_from_markdown(toc_roots, lines)
 
     # Count distinct top-level roots for user-visible reporting
@@ -1022,16 +1079,50 @@ def convert(
         for spec, entries in zip(chunks, batch):
             chunk_results.append((spec, entries))
     elif use_batch:
-        prompts = [build_prompt(c.target_node, c.body) for c in chunks]
-        batch = _api.call_claude_batch(
-            backend, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
-        )
-        for spec, entries in zip(chunks, batch):
+        # --reuse-responses on the batch path: load any chunk that already has a
+        # usable saved {cid}-response.txt, and submit only the missing ones to
+        # the Batch API. Cached + freshly-batched results are merged back in
+        # chunk order. Reads the same {index:03d}-{slug} names the streaming
+        # path writes, so a crashed streaming/dgx run can be finished cheaply
+        # under --batch.
+        cached: dict[int, list] = {}
+        if reuse_responses:
+            for i, c in enumerate(chunks):
+                entries = _load_cached_response(_chunk_cid(i, c), debug_dir, verbose)
+                if entries is not None:
+                    cached[i] = entries
+            if cached:
+                print(f"[reuse] {len(cached)}/{len(chunks)} chunks loaded from "
+                      f"cache; batching the remaining {len(chunks) - len(cached)}")
+
+        todo = [(i, c) for i, c in enumerate(chunks) if i not in cached]
+        batched: list = []
+        if todo:
+            prompts = [build_prompt(c.target_node, c.body) for _, c in todo]
+            batched = _api.call_claude_batch(
+                backend, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
+            )
+        batch_iter = iter(batched)
+        for i, spec in enumerate(chunks):
+            entries = cached[i] if i in cached else next(batch_iter)
             chunk_results.append((spec, entries))
     else:
         def _run_chunk(i: int, spec: ChunkSpec) -> list | None:
-            slug = re.sub(r'[^a-z0-9]+', '-', spec.target_node.title.lower())[:30]
-            cid = f"{i+1:03d}-{slug}"
+            cid = _chunk_cid(i, spec)
+            # Mid-run resume: if a previous run already saved this chunk's raw
+            # response, parse it from disk instead of re-calling the backend.
+            # Chunking is deterministic, so {cid}-response.txt lines up 1:1 with
+            # this chunk. Only reuse a response that parses to real entries;
+            # missing or unusable files fall through to a live call.
+            if reuse_responses:
+                entries = _load_cached_response(cid, debug_dir, verbose)
+                if entries is not None:
+                    print(f"[reuse] chunk {cid}: {len(entries)} entries from "
+                          f"cached response — no {backend.kind} call")
+                    return entries
+                if debug_dir is not None and (debug_dir / f"{cid}-response.txt").exists():
+                    print(f"[reuse] chunk {cid}: cached response unusable — "
+                          f"re-calling {backend.kind}")
             if verbose:
                 print(f"[chunk {cid}] calling {backend.kind} ({len(spec.body)} chars)")
             prompt = build_prompt(spec.target_node, spec.body)
@@ -1120,6 +1211,16 @@ def main(argv: list[str] | None = None) -> int:
              "without re-billing the API. Chunking must be deterministic so the "
              "responses map back to chunks correctly.",
     )
+    parser.add_argument(
+        "--reuse-responses", action="store_true", dest="reuse_responses",
+        help="Resume a crashed run: for each chunk, load its saved "
+             "{cid}-response.txt from the responses dir if present (and it "
+             "parses to real entries) instead of re-calling the provider; only "
+             "the missing/unusable chunks are re-sent. Unlike --replay-responses "
+             "this tolerates a partial set, so use it to finish a run that died "
+             "midway. Works on both the streaming and --batch paths (under "
+             "--batch only the missing chunks are submitted to the Batch API).",
+    )
     args = parser.parse_args(argv)
 
     if not args.pdf.exists():
@@ -1152,6 +1253,24 @@ def main(argv: list[str] | None = None) -> int:
         except RuntimeError as e:
             print(f"error: {e}")
             return 1
+    elif args.provider == "claude-code":
+        # Spends the Claude Code subscription quota via the local CLI. No Batch
+        # API and no count_tokens; dry-run uses the local size estimate (backend
+        # left None, like the DGX dry-run path).
+        if args.use_batch:
+            print("error: --batch is Anthropic-only; the Claude Code CLI has no "
+                  "Batch API. Re-run without --batch.")
+            return 1
+        if args.resume_batch:
+            print("error: --resume-batch is Anthropic-only; not available with "
+                  "--provider claude-code.")
+            return 1
+        model = args.model or DEFAULT_MODEL
+        try:
+            backend = None if args.dry_run_only else _lb.claude_code_backend()
+        except RuntimeError as e:
+            print(f"error: {e}")
+            return 1
     else:
         api_key = args.api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
@@ -1160,9 +1279,11 @@ def main(argv: list[str] | None = None) -> int:
         model = args.model or DEFAULT_MODEL
         backend = _lb.anthropic_backend(api_key)
 
-    # Concurrency for the streaming chunk loop. Default: 1 for claude, 8 for dgx
-    # (vLLM serves many requests at once; concurrency is the Spark throughput
-    # lever). Explicit --concurrency overrides. Ignored under --batch.
+    # Concurrency for the streaming chunk loop. Default: 8 for dgx (vLLM serves
+    # many requests at once; concurrency is the Spark throughput lever), 1 for
+    # claude (API) and claude-code (each call spawns a CLI subprocess and shares
+    # one subscription rate limit, so fan-out is risky). Explicit --concurrency
+    # overrides. Ignored under --batch.
     if args.concurrency is not None:
         concurrency = max(1, args.concurrency)
     else:
@@ -1187,6 +1308,7 @@ def main(argv: list[str] | None = None) -> int:
             monsters_only=args.monsters_only,
             resume_batch=args.resume_batch,
             replay_responses=args.replay_responses,
+            reuse_responses=args.reuse_responses,
             concurrency=concurrency,
         )
     except RuntimeError as e:

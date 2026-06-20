@@ -29,11 +29,13 @@ def add_common_args(
     parser.add_argument("pdf", type=Path, help="Input PDF file")
     parser.add_argument(
         "--provider",
-        choices=["claude", "dgx"],
+        choices=["claude", "dgx", "claude-code"],
         default="claude",
         help=(
             "LLM backend (default: claude). 'claude' calls the Anthropic API; "
-            "'dgx' calls the OpenAI-compatible vLLM endpoint on the DGX Spark. "
+            "'dgx' calls the OpenAI-compatible vLLM endpoint on the DGX Spark; "
+            "'claude-code' shells out to the local `claude` CLI and spends your "
+            "Claude Code subscription quota instead of billing the API. "
             "Batch (--batch) and dry-run cost estimation are Anthropic-only."
         ),
     )
