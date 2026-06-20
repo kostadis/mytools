@@ -1343,6 +1343,10 @@ def main():
     with_series = conn.execute("SELECT COUNT(*) FROM books WHERE series IS NOT NULL").fetchone()[0]
     print(f"\nDatabase: {enriched}/{total} enriched, {with_series} with series")
 
+    if not args.dry_run:
+        print("\n*** Reminder: the database changed — back it up with "
+              "./backup_db.sh (or run the full ./refresh_library.sh) ***")
+
     conn.close()
 
 
