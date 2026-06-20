@@ -1,11 +1,13 @@
 """llm_backend.py — provider-agnostic completion backend for pdf-translators.
 
 `claude_api.py` no longer talks to the Anthropic SDK directly. It calls a small
-``Backend`` object that wraps one of the two shared transport libraries:
+``Backend`` object that wraps one of the three transport libraries:
 
 * :mod:`lib.claudelib` — the Anthropic Messages API (``../lib`` in this repo).
 * :mod:`dgxlib` — the DGX Spark's OpenAI-compatible vLLM endpoint
   (editable install, github.com/kostadis/dgx-fun).
+* :mod:`claudecodelib` — the local ``claude`` CLI in headless mode, which spends
+  the Claude Code **subscription** quota instead of billing the API.
 
 This mirrors the provider-dispatch pattern in ``rpg-lib/pdf_enricher.py``, but
 applied at the transport seam so pdf-translators keeps its own 5etools-specific
@@ -32,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import claudelib  # noqa: E402
 
 import dgxlib  # noqa: E402  (editable install — github.com/kostadis/dgx-fun)
+import claudecodelib  # noqa: E402  (local — Claude Code CLI subscription transport)
 
 # Re-export DGX discovery helpers so the entry point can resolve the served model
 # id without importing dgxlib itself.
@@ -46,7 +49,7 @@ class Backend:
     instantiate directly.
 
     Attributes:
-        kind: ``"claude"`` or ``"dgx"``.
+        kind: ``"claude"``, ``"dgx"``, or ``"claude-code"``.
         anthropic_client: the raw ``anthropic.Anthropic`` client for the Batch /
             ``count_tokens`` paths, or ``None`` for DGX.
         supports_batch: ``True`` only for the Anthropic backend.
@@ -116,4 +119,27 @@ def dgx_backend(endpoint: str | None = None) -> Backend:
         anthropic_client=None,
         supports_batch=False,
         label=f"DGX Spark ({endpoint})",
+    )
+
+
+def claude_code_backend(binary: str | None = None) -> Backend:
+    """Build a Backend backed by the local Claude Code CLI (``claudecodelib``).
+
+    Spends the logged-in Claude Code subscription quota rather than the Anthropic
+    API. No Batch API and no ``count_tokens`` (``anthropic_client`` is ``None``,
+    so dry-run uses the local size estimate). See :mod:`claudecodelib` for the
+    constraints (no ``max_tokens``/truncation signal, API-key scrubbing).
+    """
+    client = claudecodelib.make_client(binary)
+
+    def _complete(system: str, user: str, model: str,
+                  max_tokens: int) -> tuple[str, str]:
+        return claudecodelib.call_api_full(client, system, user, model, max_tokens)
+
+    return Backend(
+        "claude-code",
+        complete_fn=_complete,
+        anthropic_client=None,
+        supports_batch=False,
+        label="Claude Code (subscription)",
     )
