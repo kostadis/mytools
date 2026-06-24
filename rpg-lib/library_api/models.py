@@ -150,3 +150,16 @@ class GraphEdge(BaseModel):
 class GraphResponse(BaseModel):
     nodes: list[GraphNode]
     edges: list[GraphEdge]
+
+
+# ── Bulk flag resolution (consumed by pdf-translators/batch_convert) ───────────
+
+class ResolveRequest(BaseModel):
+    filepaths: list[str]
+
+
+class ResolveFlags(BaseModel):
+    is_old_version: bool
+    is_duplicate: bool
+    is_draft: bool
+    is_printer_friendly: bool

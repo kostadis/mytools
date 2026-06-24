@@ -433,6 +433,42 @@ def get_books_by_ids(conn: sqlite3.Connection, book_ids: list[int]) -> list[dict
     return [_row_to_summary(r) for r in rows]
 
 
+def resolve_flags(conn: sqlite3.Connection,
+                  filepaths: list[str]) -> dict[str, dict]:
+    """Map each absolute filepath to its library flags from the books table.
+
+    Joins on ``books.filepath`` (the absolute path, which is UNIQUE). Returns
+    ``{filepath: {is_old_version, is_duplicate, is_draft, is_printer_friendly}}``
+    for matched paths; unmatched paths are omitted (caller treats a missing key
+    as "no flags"). Chunks the IN-list (batch of 500) to stay well under
+    SQLite's ~999 variable limit — mirrors ``flag_content_duplicates``.
+
+    Consumed by pdf-translators/batch_convert, which posts ~1300 paths so the
+    library, not the converter, decides which file of each product is canonical.
+    """
+    out: dict[str, dict] = {}
+    if not filepaths:
+        return out
+    batch_size = 500
+    for i in range(0, len(filepaths), batch_size):
+        batch = filepaths[i:i + batch_size]
+        placeholders = ",".join("?" * len(batch))
+        rows = conn.execute(
+            f"""SELECT filepath, is_old_version, is_duplicate,
+                       is_draft, is_printer_friendly
+                FROM books WHERE filepath IN ({placeholders})""",
+            batch,
+        ).fetchall()
+        for r in rows:
+            out[r["filepath"]] = {
+                "is_old_version": bool(r["is_old_version"]),
+                "is_duplicate": bool(r["is_duplicate"]),
+                "is_draft": bool(r["is_draft"]),
+                "is_printer_friendly": bool(r["is_printer_friendly"]),
+            }
+    return out
+
+
 def get_book(conn: sqlite3.Connection, book_id: int) -> dict | None:
     """Get full book detail including bookmarks."""
     row = conn.execute(
