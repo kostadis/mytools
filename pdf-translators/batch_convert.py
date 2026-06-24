@@ -43,11 +43,14 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from collections import Counter, defaultdict, deque
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from batch_state import StateDB
 
 HERE = Path(__file__).resolve().parent
 CONVERTER = HERE / "pdf_to_5etools_v2.py"
@@ -82,29 +85,26 @@ SCAN_PAGE_CAP = 2000            # don't read text past this many pages
 
 
 # --------------------------------------------------------------------------
-# Canonical-file selection (dedup) — reuse rpg-lib's library DB, then collapse
-# format/version variants the library leaves alone.
+# Canonical-file selection (dedup) — rpg-lib is the AUTHORITY, reached via its
+# HTTP API (never the SQLite DB directly).
 #
-# rpg-lib (../rpg-lib/rpg_library.db, table `books`) already computes, for the
-# same DriveThru tree, is_old_version / is_draft / is_duplicate (exact-content
-# duplicate). We reuse those flags directly. rpg-lib deliberately does NOT
-# collapse PrintFriendly/Optimized/full_res or v1.4-vs-v2 siblings (it treats
-# versions as intentional variants), so we add that here: within one folder +
-# normalized title we keep a single canonical file. The printer-friendly
-# edition is preferred because its stripped-down layout yields a cleaner text
-# layer for the converter. Maps booklets, Pathfinder (-PF) editions, and
-# Preview/Promo teasers are skipped as separate, non-target content.
+# rpg-lib computes is_old_version / is_draft / is_duplicate / is_printer_friendly
+# for the same DriveThru tree and elects the latest version of each product.
+# batch_convert POSTs the file list to /api/library/resolve and consumes those
+# flags: Pass A drops old/draft/duplicate; Pass B keeps ONE file per product when
+# rpg-lib left several current (same-version FORMAT variants — e.g. plain vs
+# Quick Load — which it intentionally doesn't collapse), preferring the
+# printer-friendly edition (rpg-lib's is_printer_friendly) for its cleaner text
+# layer. Version dedup is NOT done here anymore — that's rpg-lib's job. Maps
+# booklets, Pathfinder (-PF) editions, and Preview/Promo teasers are skipped as
+# separate, non-target content.
 # --------------------------------------------------------------------------
-DEFAULT_LIBRARY_DB = HERE.parent / "rpg-lib" / "rpg_library.db"
 
-# Format tokens (cleaned out of the title key so variants group together) and
-# the rank that decides which format wins (lower = preferred canonical).
-# Includes the noise token "pdf" (common in "Optimized_PDF") so it doesn't leak
-# into the grouping key. Only affects _variant_title_key, never the rank.
-# Format / layout tokens stripped from the grouping key so the same content in
-# different exports (printer-friendly, optimized, low-res, 2-page spreads, etc.)
-# collapses to one product. The English-word tokens (pages/spreads/final/hd/sd)
-# are word-bounded so they don't strip mid-word ("Rampage", "Shadowdale").
+# Format / version tokens stripped from the grouping key so the same content in
+# different exports/versions GROUPS together (winner selection no longer uses
+# format or version ranking — that comes from rpg-lib's flags). The English-word
+# tokens (pages/spreads/final/hd/sd) are word-bounded so they don't strip
+# mid-word ("Rampage", "Shadowdale").
 _FMT_RE = re.compile(
     r"printer[\s_\-]?friendly|print[\s_\-]?friendly|printfriendly"
     r"|optimi[sz]ed|full[\s_\-]?res|hi[\s_\-]?res|high[\s_\-]?res"
@@ -115,29 +115,9 @@ _FMT_RE = re.compile(
     r"|pdf",
     re.I,
 )
-_FMT_PREFERRED_RE = re.compile(
-    r"printer[\s_\-]?friendly|print[\s_\-]?friendly|printfriendly|accessibl?e", re.I
-)
-# Disfavored (least-preferred) exports: heavy/optimized/low-quality layouts —
-# Quick Load (flattened fast-loading), low-res, SD, 2-page spreads, page-layout
-# and form-fillable "selectable" variants. Used only to pick a winner, never to
-# group; printer-friendly/plain beats these.
-_FMT_DISFAVORED_RE = re.compile(
-    r"optimi[sz]ed|full[\s_\-]?res|hi[\s_\-]?res|high[\s_\-]?res|compressed"
-    r"|quick[\s_\-]?load"
-    r"|low[\s_\-]?res|lowres|selectable|\bspreads?\b|\d+[\s_\-]?page|\bpages?\b|\bsd\b",
-    re.I,
-)
-# A version token, matched two ways (each captured in its own group):
-#   (1) v/ver prefix + digits        -> v1.4, ver1_5, v_2, v2_7_1, v3_0
-#   (2) BARE multi-segment dotted    -> 1.0.1, 1.0.2, 1.1, 2024.01 (>= 2 parts)
-# DriveThru stamps versions as bare dotted numbers ("Manual_of_the_Planes_1.0.2"),
-# with no v/ver prefix, so branch (1) alone missed them and left every version as
-# a distinct product. Branch (2) requires at least two numeric segments and a
-# non-digit before it (negative lookbehind), so a single bare number that is real
-# title content ("100 NPCs", "5MWD", "Volume 2") is still NOT stripped — only
-# things that actually look like a version are. Used for both grouping
-# (_variant_title_key) and winner selection (_parse_version).
+# Version token (v-prefixed OR bare multi-segment dotted) — stripped from the
+# title key so version variants of one product share a group. Used by
+# _variant_title_key ONLY (grouping); the latest-version decision is rpg-lib's.
 _VER_RE = re.compile(
     r"v(?:er)?[\s_.\-]?(\d+(?:[._]\d+)*)"     # (1) v-prefixed
     r"|(?<!\d)(\d+(?:[._]\d+)+)",             # (2) bare, >= 2 segments
@@ -161,31 +141,6 @@ def _variant_title_key(filename: str) -> str:
     return stem
 
 
-def _format_rank(filename: str) -> int:
-    """0 = printer-friendly/accessible (preferred), 1 = plain, 2 = optimized/
-    full-res/compressed (least preferred)."""
-    if _FMT_PREFERRED_RE.search(filename):
-        return 0
-    if _FMT_DISFAVORED_RE.search(filename):
-        return 2
-    return 1
-
-
-def _parse_version(filename: str) -> tuple[int, ...]:
-    """Comparable version tuple from the last version token; (0,) if none.
-
-    Strips the product-ID prefix first so a numeric product ID can't be mistaken
-    for a version, then takes the last _VER_RE match (whichever branch matched —
-    v-prefixed group 1 or bare-dotted group 2)."""
-    matches = list(_VER_RE.finditer(_strip_product_id(filename)))
-    if not matches:
-        return (0,)
-    token = next((g for g in matches[-1].groups() if g), "")
-    parts = re.split(r"[._]", token)
-    nums = tuple(int(p) for p in parts if p.isdigit())
-    return nums or (0,)
-
-
 # Companion / non-target files skipped outright (separate deliverables, not
 # format variants of the main book). Boundaries avoid mid-word matches.
 _MAPS_RE = re.compile(
@@ -205,48 +160,52 @@ def _companion_kind(filename: str) -> str | None:
     return None
 
 
-def load_library_flags(db_path, root: Path, docs: dict) -> dict:
-    """Map each manifest relpath to (is_old_version, is_draft, is_duplicate)
-    from rpg-lib's books table. Join on absolute filepath. Missing/unreadable
-    DB -> empty dict (caller falls back to converting everything)."""
-    import sqlite3
+class LibraryAPIError(RuntimeError):
+    """rpg-lib API was unreachable or returned an error on a fresh pull."""
 
-    flags: dict[str, tuple[int, int, int]] = {}
+
+def resolve_flags_via_api(api_base: str, root: Path, docs: dict) -> dict:
+    """POST the docs' absolute filepaths to rpg-lib's /api/library/resolve and
+    map the per-file flags back to relpaths.
+
+    Returns ``{rel: {is_old_version, is_duplicate, is_draft, is_printer_friendly}}``
+    for files the library knows. Raises :class:`LibraryAPIError` if the API is
+    unreachable or returns non-200 — the caller ERRORS OUT (no silent
+    "convert everything" fallback). rpg-lib is the authority; we never touch its
+    SQLite DB directly."""
     abs_to_rel = {os.path.normpath(str(root / rel)): rel for rel in docs}
+    payload = json.dumps({"filepaths": list(abs_to_rel.keys())}).encode()
+    url = api_base.rstrip("/") + "/api/library/resolve"
+    req = urllib.request.Request(
+        url, data=payload, method="POST",
+        headers={"Content-Type": "application/json"})
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    except Exception as e:  # noqa: BLE001
-        print(f"[dedup] cannot open library DB {db_path} ({e}); converting all files")
-        return flags
-    try:
-        cur = conn.execute(
-            "SELECT filepath, is_old_version, is_draft, is_duplicate FROM books"
-        )
-        for fp, old, draft, dup in cur:
-            rel = abs_to_rel.get(os.path.normpath(fp))
-            if rel is not None:
-                flags[rel] = (int(old or 0), int(draft or 0), int(dup or 0))
-    except Exception as e:  # noqa: BLE001
-        print(f"[dedup] library DB query failed ({e}); converting all files")
-        flags = {}
-    finally:
-        conn.close()
-    print(f"[dedup] library DB matched {len(flags)}/{len(docs)} manifest files")
+        with urllib.request.urlopen(req, timeout=60) as r:
+            if r.status != 200:
+                raise LibraryAPIError(f"{url} -> HTTP {r.status}")
+            body = json.loads(r.read())
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        raise LibraryAPIError(f"rpg-lib API unreachable at {url}: {e}") from e
+    flags: dict[str, dict] = {}
+    for abspath, fl in body.items():
+        rel = abs_to_rel.get(os.path.normpath(abspath))
+        if rel is not None:
+            flags[rel] = fl
+    print(f"[dedup] rpg-lib API matched {len(flags)}/{len(docs)} files")
     return flags
 
 
 def select_canonical(docs: dict, flags: dict) -> dict:
     """Mark non-canonical docs status='skipped' with a reason. Two passes:
-    (A) rpg-lib flags + companion files; (B) collapse remaining same-title
-    variants to one canonical (newest version, then printer-friendly, then
-    most text/pages/newest). Mutates *docs*; returns per-reason counts.
+    (A) rpg-lib flags (old/duplicate/draft) + companion files; (B) when rpg-lib
+    left several current files for one product (same-version FORMAT variants),
+    keep the printer-friendly one and mark the rest `variant:superseded`.
+    Mutates *docs*; returns per-reason counts.
 
-    Version election is AUTHORITATIVE in rpg-lib (pdf_indexer.elect_latest_versions
-    sets is_old_version on superseded versions), consumed here via Pass A's
-    `library:old_version`. Pass B's version ranking (`_parse_version`) is now a
-    defensive fallback for files the library DB hasn't indexed yet; its real job
-    is the same-version FORMAT tiebreak (printer-friendly > Quick Load), which
-    rpg-lib intentionally leaves to the consumer. Keep both."""
+    *flags* is ``{rel: {is_old_version, is_duplicate, is_draft,
+    is_printer_friendly}}`` from rpg-lib. The latest-version decision is rpg-lib's
+    (Pass A `library:old_version`); Pass B is a FORMAT tiebreak only — no version
+    or format ranking is computed here."""
     counts: Counter[str] = Counter()
 
     def _skip(ent: dict, reason: str) -> None:
@@ -258,17 +217,20 @@ def select_canonical(docs: dict, flags: dict) -> dict:
     for rel, ent in docs.items():
         if ent.get("status") == "skipped":
             continue
-        old, draft, dup = flags.get(rel, (0, 0, 0))
-        if old:
+        fl = flags.get(rel, {})
+        if fl.get("is_old_version"):
             _skip(ent, "library:old_version")
-        elif dup:
+        elif fl.get("is_duplicate"):
             _skip(ent, "library:duplicate")
-        elif draft:
+        elif fl.get("is_draft"):
             _skip(ent, "library:draft")
         elif (kind := _companion_kind(os.path.basename(rel))):
             _skip(ent, f"variant:{kind}")
+        else:
+            # Survivor — record rpg-lib's printer-friendly flag for the Pass B tiebreak.
+            ent["is_pf"] = 1 if fl.get("is_printer_friendly") else 0
 
-    # Pass B — collapse same-title variants within a folder.
+    # Pass B — collapse same-title format variants within a folder to one file.
     groups: dict[tuple, list] = defaultdict(list)
     for rel, ent in docs.items():
         if ent.get("status") == "skipped":
@@ -282,16 +244,14 @@ def select_canonical(docs: dict, flags: dict) -> dict:
 
         def _rank(rel: str):
             ent = docs[rel]
-            name = os.path.basename(rel)
-            # max() picks the canonical: newest version, then printer-friendly
-            # (rank 0 -> negate so it sorts highest), then richest/newest file.
+            # max() picks the canonical: rpg-lib's printer-friendly edition
+            # first, then richest/newest file, then shortest name.
             return (
-                _parse_version(name),
-                -_format_rank(name),
+                ent.get("is_pf", 0),
                 ent.get("text_chars", 0),
                 ent.get("pages", 0),
                 ent.get("mtime", 0),
-                -len(name),
+                -len(os.path.basename(rel)),
             )
 
         winner = max(rels, key=_rank)
@@ -423,10 +383,11 @@ class Endpoint:
 
 
 class Dispatcher:
-    def __init__(self, args, docs: dict, root: Path):
+    def __init__(self, args, docs: dict, root: Path, state=None):
         self.args = args
         self.docs = docs
         self.root = root
+        self.state = state          # StateDB | None (None in unit tests)
         self.lock = threading.Lock()
         self.big: deque[str] = deque()    # spark1-only (oversized for small box)
         self.small: deque[str] = deque()  # fits the small box too
@@ -544,7 +505,11 @@ class Dispatcher:
             done = self.counts["done"]
             failed = self.counts["failed"]
             total = self.counts["total"]
-            self._persist_locked()
+            if self.state:
+                self.state.update_progress(
+                    rel, status=ent["status"], endpoint=ep.name,
+                    attempts=attempts, exit=last_exit, duration_s=dur,
+                    log=str(log))
         flag = "OK " if ok else "FAIL"
         print(f"[{time.strftime('%H:%M:%S')}] {flag} {done+failed}/{total} "
               f"({ep.name}, {dur}s, try {attempts}) {rel}", flush=True)
@@ -565,17 +530,14 @@ class Dispatcher:
         print(f"[dispatch] {ep.name} online — {ep.pool} workers ({ep.url})")
 
     # ---- persistence --------------------------------------------------------
-    def _persist_locked(self):
-        path = Path(self.args.manifest)
-        tmp = path.with_suffix(".tmp")
-        payload = {"root": str(self.root), "saved_at": int(time.time()),
-                   "docs": self.docs}
-        tmp.write_text(json.dumps(payload, indent=1))
-        tmp.replace(path)
-
     def persist(self):
+        """Bulk-save the current plan (statuses + routing) to the state DB.
+        Called after enqueue and at shutdown; per-doc progress is written
+        incrementally by run_doc via state.update_progress."""
+        if not self.state:
+            return
         with self.lock:
-            self._persist_locked()
+            self.state.save_docs(self.docs)
 
 
 # --------------------------------------------------------------------------
@@ -643,16 +605,27 @@ def parse_args(argv=None):
     p.add_argument("--health-interval", type=int, default=60,
                    help="Seconds between re-checks of a down endpoint.")
     p.add_argument("--scan-workers", type=int, default=8)
-    p.add_argument("--library-db", type=Path,
-                   default=(DEFAULT_LIBRARY_DB if DEFAULT_LIBRARY_DB.exists() else None),
-                   help="rpg-lib SQLite DB to reuse for canonical-file selection "
-                        "(skips old-version/draft/exact-duplicate files, then collapses "
-                        "format/version variants to one printer-friendly canonical per "
-                        f"product). Default: {DEFAULT_LIBRARY_DB} if present, else none.")
+    p.add_argument("--library-api", default="http://127.0.0.1:8000",
+                   help="rpg-lib API base. On a fresh pull the docs' filepaths are "
+                        "POSTed to /api/library/resolve for canonical/dedup flags "
+                        "(old/draft/duplicate + printer-friendly). A fresh pull "
+                        "ERRORS OUT if the API is unreachable (no convert-everything "
+                        "fallback). rpg-lib is the authority — its SQLite DB is never "
+                        "read directly.")
     p.add_argument("--no-dedup", action="store_true",
-                   help="Disable canonical-file selection; convert every content PDF "
-                        "(old versions, format variants, maps, etc.) as before.")
-    p.add_argument("--manifest", default=str(HERE / "dmsguild-manifest.json"))
+                   help="Disable canonical-file selection (no API call); convert every "
+                        "content PDF (old versions, format variants, maps, etc.).")
+    p.add_argument("--state-db", default=str(HERE / "dmsguild-state.db"),
+                   help="SQLite state DB: the conversion plan + per-doc progress. "
+                        "batch_convert writes it; batch_status reads it. Replaces the "
+                        "old JSON manifest.")
+    p.add_argument("--plan", choices=["ask", "fresh", "reuse"], default="ask",
+                   help="On restart (state DB already populated): 'fresh' re-scans + "
+                        "re-pulls rpg-lib flags + re-runs dedup (preserving done/failed "
+                        "progress for unchanged docs); 'reuse' continues from the "
+                        "existing DB with NO API call (works when rpg-lib is down); "
+                        "'ask' prompts. Non-interactive runs with an existing DB MUST "
+                        "pass fresh or reuse.")
     p.add_argument("--skiplist", default=str(HERE / "dmsguild-skiplist.tsv"))
     p.add_argument("--logdir", default=str(HERE / "dmsguild-logs"))
     p.add_argument("--force", action="store_true",
@@ -671,7 +644,7 @@ def parse_args(argv=None):
     p.add_argument("--rescan", action="store_true",
                    help="Ignore cached scan entries and re-classify every PDF.")
     p.add_argument("--list", action="store_true",
-                   help="Scan + classify + plan, write manifest/skiplist, then exit.")
+                   help="Scan + classify + plan, write state DB + skiplist, then exit.")
     return p.parse_args(argv)
 
 
@@ -694,25 +667,56 @@ def main(argv=None):
     if args.skip_failed and args.only_failed:
         sys.exit("error: --skip-failed and --only-failed are mutually exclusive")
 
-    prior = {}
-    mpath = Path(args.manifest)
-    if mpath.exists() and not args.rescan:
-        try:
-            prior = json.loads(mpath.read_text()).get("docs", {})
-        except Exception as e:  # noqa: BLE001
-            print(f"[warn] could not read prior manifest ({e}); rescanning")
+    state = StateDB(args.state_db)
+    legacy_manifest = HERE / "dmsguild-manifest.json"
 
-    docs = build_manifest(root, prior, args.scan_workers)
+    # Decide the startup mode. A populated state DB + restart -> ask the user
+    # (or honor --plan). 'reuse' is the only path that works with rpg-lib down.
+    if not state.exists_with_docs():
+        mode = "fresh"
+    elif args.rescan:
+        mode = "fresh"
+    else:
+        mode = args.plan
+        if mode == "ask":
+            if not sys.stdin.isatty():
+                sys.exit("error: state DB exists and this run is non-interactive; "
+                         "pass --plan fresh or --plan reuse (cron/unattended must "
+                         "not block on the restart prompt).")
+            ans = input(f"State DB {args.state_db} exists. "
+                        f"[f]resh pull from rpg-lib or [r]euse existing DB? "
+                        ).strip().lower()
+            mode = "fresh" if ans.startswith("f") else "reuse"
 
-    # Canonical-file selection: reuse rpg-lib's old/draft/duplicate flags, then
-    # collapse format/version variants to one printer-friendly canonical per
-    # product. Marks rejects status='skipped' (reason library:* / variant:*) so
-    # they flow to the skiplist and are never enqueued. No DB / --no-dedup ->
-    # convert everything (prior behavior).
+    # Canonical-file selection comes from rpg-lib via its HTTP API: Pass A drops
+    # old/draft/duplicate; Pass B keeps the printer-friendly file when several
+    # remain for one product. A fresh pull errors out if the API is down.
     dedup_counts = {}
-    if not args.no_dedup and args.library_db:
-        flags = load_library_flags(args.library_db, root, docs)
-        dedup_counts = select_canonical(docs, flags)
+    if mode == "reuse":
+        print("[plan] reuse — loading existing state DB (no rpg-lib call, no rescan)")
+        docs = state.load_docs()
+    else:  # fresh
+        prior = {} if args.rescan else state.load_docs()
+        if not prior and not args.rescan and legacy_manifest.exists():
+            try:  # one-time migration: keep the costly scan cache + prior progress
+                prior = json.loads(legacy_manifest.read_text()).get("docs", {})
+                print(f"[migrate] seeded scan cache from {legacy_manifest.name} "
+                      f"({len(prior)} docs)")
+            except Exception as e:  # noqa: BLE001
+                print(f"[warn] could not read legacy manifest ({e})")
+        docs = build_manifest(root, prior, args.scan_workers)
+        state.save_docs(docs)  # persist scan cache BEFORE the API call
+        if not args.no_dedup:
+            try:
+                flags = resolve_flags_via_api(args.library_api, root, docs)
+            except LibraryAPIError as e:
+                state.close()
+                sys.exit(f"error: {e}\n"
+                         f"(a fresh pull needs rpg-lib running; start it, or "
+                         f"resume the existing plan with --plan reuse)")
+            dedup_counts = select_canonical(docs, flags)
+        state.save_docs(docs)
+    state.set_meta(root=str(root), source=mode, api_base=args.library_api)
 
     # Endpoints.
     # Both boxes are now equally prompt-capped (40K), so both accept any doc and
@@ -730,7 +734,7 @@ def main(argv=None):
         spark2 = Endpoint("spark2", args.spark2, args.spark2_ctx, takes_big=True,
                           pool=pool2, max_prompt_tokens=args.prompt_cap)
 
-    disp = Dispatcher(args, docs, root)
+    disp = Dispatcher(args, docs, root, state=state)
     disp.enqueue(small_endpoint=spark2)
 
     n_skip = write_skiplist(docs, args.skiplist)
@@ -758,9 +762,9 @@ def main(argv=None):
             print(f"      {reason}: {dedup_counts[reason]}")
     elif args.no_dedup:
         print("  deduped (canonical): disabled (--no-dedup)")
-    elif not args.library_db:
-        print("  deduped (canonical): no library DB found; converting all variants")
-    print(f"  manifest           : {args.manifest}")
+    elif mode == "reuse":
+        print("  deduped (canonical): from existing state DB (reuse)")
+    print(f"  state db           : {args.state_db}  (mode: {mode})")
     print(f"  logs               : {args.logdir}")
     print(f"  prompt cap (both)  : {args.prompt_cap} tok in (HARD ERROR -> doc fails, "
           f"no JSON); output cap {args.output_cap} tok; chunk cap "
@@ -773,9 +777,11 @@ def main(argv=None):
 
     if args.list:
         print("[--list] plan only; not converting.")
+        state.close()
         return 0
     if disp.counts["total"] == 0:
         print("Nothing to convert.")
+        state.close()
         return 0
 
     # Signal handling: stop spawning, let in-flight docs finish, persist.
@@ -832,9 +838,10 @@ def main(argv=None):
     c = disp.counts
     print(f"\n=== done === converted {c['done']}, failed {c['failed']}, "
           f"already {c['already']}, skipped {c['skipped']}.")
-    print(f"manifest: {args.manifest}")
+    print(f"state db: {args.state_db}")
     if c["failed"]:
         print("Re-run the same command to retry failed docs (resumable).")
+    state.close()
     return 1 if c["failed"] else 0
 
 

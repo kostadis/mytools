@@ -18,6 +18,7 @@ from library_api.db import (
     get_related_books,
     get_topic,
     nlq_search,
+    resolve_flags,
     search_books,
     search_facets,
     _row_to_summary,
@@ -94,15 +95,16 @@ def add_book(conn, id, filename, *, display_title=None, publisher=None,
              game_system=None, product_type=None, series=None, tags=None,
              description=None, page_count=100, is_old_version=0,
              is_draft=0, is_duplicate=0, is_printer_friendly=0,
-             collection=None, date_enriched=None):
+             collection=None, date_enriched=None, filepath=None):
     conn.execute(
         """INSERT INTO books
-               (id, filename, display_title, publisher, collection, game_system,
-                product_type, series, tags, description, page_count,
+               (id, filename, filepath, display_title, publisher, collection,
+                game_system, product_type, series, tags, description, page_count,
                 is_old_version, is_draft, is_duplicate, is_printer_friendly,
                 date_enriched)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (id, filename, display_title or filename.replace(".pdf", ""),
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (id, filename, filepath if filepath is not None else f"/lib/{filename}",
+         display_title or filename.replace(".pdf", ""),
          publisher, collection, game_system, product_type, series,
          json.dumps(tags) if tags is not None else None,
          description, page_count, is_old_version, is_draft, is_duplicate,
@@ -938,6 +940,54 @@ class TestPrinterFriendlyRepresentative(unittest.TestCase):
         rep = result["results"][0]
         self.assertIsNone(rep["printer_friendly_variant_id"])
         self.assertEqual(rep["id"], 1)  # first in title sort order
+
+
+class TestResolveFlags(unittest.TestCase):
+    """POST /resolve's db layer: bulk filepath -> library flags."""
+
+    def _db(self):
+        conn = make_db(with_wiki_tables=False)
+        add_book(conn, 1, "a.pdf", filepath="/lib/a.pdf", is_old_version=1)
+        add_book(conn, 2, "b.pdf", filepath="/lib/b.pdf", is_printer_friendly=1)
+        add_book(conn, 3, "c.pdf", filepath="/lib/c.pdf",
+                 is_duplicate=1, is_draft=1)
+        return conn
+
+    def test_returns_flags_for_known_paths(self):
+        conn = self._db()
+        out = resolve_flags(conn, ["/lib/a.pdf", "/lib/b.pdf", "/lib/c.pdf"])
+        self.assertEqual(out["/lib/a.pdf"]["is_old_version"], True)
+        self.assertEqual(out["/lib/a.pdf"]["is_printer_friendly"], False)
+        self.assertEqual(out["/lib/b.pdf"]["is_printer_friendly"], True)
+        self.assertEqual(out["/lib/c.pdf"]["is_duplicate"], True)
+        self.assertEqual(out["/lib/c.pdf"]["is_draft"], True)
+
+    def test_omits_unknown_paths(self):
+        conn = self._db()
+        out = resolve_flags(conn, ["/lib/a.pdf", "/lib/missing.pdf"])
+        self.assertEqual(set(out), {"/lib/a.pdf"})
+
+    def test_empty_list(self):
+        self.assertEqual(resolve_flags(self._db(), []), {})
+
+    def test_values_are_bools(self):
+        out = resolve_flags(self._db(), ["/lib/b.pdf"])
+        for v in out["/lib/b.pdf"].values():
+            self.assertIsInstance(v, bool)
+
+    def test_chunks_over_999(self):
+        # Exercise the 500-batch loop across the boundary: 1100 known paths.
+        conn = make_db(with_wiki_tables=False)
+        paths = []
+        for i in range(1100):
+            p = f"/lib/book{i}.pdf"
+            add_book(conn, i + 1, f"book{i}.pdf", filepath=p,
+                     is_old_version=(i % 2))
+            paths.append(p)
+        out = resolve_flags(conn, paths + ["/lib/nope.pdf"])
+        self.assertEqual(len(out), 1100)
+        self.assertEqual(out["/lib/book3.pdf"]["is_old_version"], True)
+        self.assertEqual(out["/lib/book4.pdf"]["is_old_version"], False)
 
 
 # ── search_facets contract tests ──────────────────────────────────────────────
