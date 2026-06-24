@@ -62,6 +62,7 @@ def make_db(with_wiki_tables: bool = True) -> sqlite3.Connection:
             display_title   TEXT,
             is_draft        INTEGER NOT NULL DEFAULT 0,
             is_duplicate    INTEGER NOT NULL DEFAULT 0,
+            is_printer_friendly INTEGER NOT NULL DEFAULT 0,
             min_level       INTEGER,
             max_level       INTEGER
         );
@@ -92,18 +93,20 @@ def make_db(with_wiki_tables: bool = True) -> sqlite3.Connection:
 def add_book(conn, id, filename, *, display_title=None, publisher=None,
              game_system=None, product_type=None, series=None, tags=None,
              description=None, page_count=100, is_old_version=0,
-             is_draft=0, is_duplicate=0, date_enriched=None):
+             is_draft=0, is_duplicate=0, is_printer_friendly=0,
+             collection=None, date_enriched=None):
     conn.execute(
         """INSERT INTO books
-               (id, filename, display_title, publisher, game_system, product_type,
-                series, tags, description, page_count, is_old_version, is_draft,
-                is_duplicate, date_enriched)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, filename, display_title, publisher, collection, game_system,
+                product_type, series, tags, description, page_count,
+                is_old_version, is_draft, is_duplicate, is_printer_friendly,
+                date_enriched)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (id, filename, display_title or filename.replace(".pdf", ""),
-         publisher, game_system, product_type, series,
+         publisher, collection, game_system, product_type, series,
          json.dumps(tags) if tags is not None else None,
          description, page_count, is_old_version, is_draft, is_duplicate,
-         date_enriched),
+         is_printer_friendly, date_enriched),
     )
     conn.commit()
 
@@ -895,6 +898,46 @@ class TestRowToSummaryContract(unittest.TestCase):
         self.assertGreater(len(rows), 0)
         for row in rows:
             self._assert_summary_shape(row, "nlq_search(LIKE fallback)")
+
+
+class TestPrinterFriendlyRepresentative(unittest.TestCase):
+    """Grouped search elects the printer-friendly edition as the representative."""
+
+    def _db(self):
+        conn = make_db(with_wiki_tables=False)
+        # One product (same publisher+collection), two current format variants.
+        # The plain edition sorts first by title; the PF edition must still win.
+        add_book(conn, 1, "Manual_1.1.pdf", display_title="Manual of the Planes",
+                 publisher="DMsGuild", collection="Manual of the Planes",
+                 is_printer_friendly=0)
+        add_book(conn, 2, "Manual_1.1_printer_friendly.pdf",
+                 display_title="Manual of the Planes",
+                 publisher="DMsGuild", collection="Manual of the Planes",
+                 is_printer_friendly=1)
+        return conn
+
+    def test_representative_is_printer_friendly(self):
+        conn = self._db()
+        result = search_books(conn, grouped=True)
+        self.assertEqual(len(result["results"]), 1)
+        rep = result["results"][0]
+        self.assertEqual(rep["id"], 2)                      # PF edition is the rep
+        self.assertTrue(rep["is_printer_friendly"])
+        self.assertEqual(rep["variant_count"], 2)
+        self.assertEqual(rep["printer_friendly_variant_id"], 2)
+        self.assertCountEqual(rep["variant_ids"], [1, 2])
+
+    def test_no_pf_member_falls_back_to_first(self):
+        conn = make_db(with_wiki_tables=False)
+        add_book(conn, 1, "Manual_1.1.pdf", display_title="Manual of the Planes",
+                 publisher="DMsGuild", collection="Manual of the Planes")
+        add_book(conn, 2, "Manual_1.1_optimized.pdf",
+                 display_title="Manual of the Planes",
+                 publisher="DMsGuild", collection="Manual of the Planes")
+        result = search_books(conn, grouped=True)
+        rep = result["results"][0]
+        self.assertIsNone(rep["printer_friendly_variant_id"])
+        self.assertEqual(rep["id"], 1)  # first in title sort order
 
 
 # ── search_facets contract tests ──────────────────────────────────────────────
