@@ -6,7 +6,12 @@ import unittest
 
 from pdf_indexer import (
     DB_SCHEMA,
+    elect_latest_versions,
     flag_content_duplicates,
+    normalize_title_key,
+    parse_filename_metadata,
+    parse_printer_friendly,
+    parse_version_tuple,
 )
 
 
@@ -20,15 +25,17 @@ def _make_db():
 
 def _insert(conn, *, id, filename, filepath, page_count=100,
             pdf_title=None, pdf_author=None, is_old_version=0,
-            is_draft=0, is_duplicate=0):
+            is_draft=0, is_duplicate=0, product_id=None, collection=None):
+    pid, pver = parse_filename_metadata(filename)
     conn.execute(
         """INSERT INTO books
                (id, filename, filepath, relative_path, page_count,
                 pdf_title, pdf_author, is_old_version, is_draft, is_duplicate,
-                date_indexed)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '2026-01-01')""",
+                product_id, product_version, collection, date_indexed)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '2026-01-01')""",
         (id, filename, filepath, filepath, page_count,
-         pdf_title, pdf_author, is_old_version, is_draft, is_duplicate),
+         pdf_title, pdf_author, is_old_version, is_draft, is_duplicate,
+         product_id if product_id is not None else pid, pver, collection),
     )
     conn.commit()
 
@@ -194,6 +201,149 @@ class TestFlagContentDuplicates(unittest.TestCase):
         self.assertEqual(_is_duplicate(conn, 4), 0)
         self.assertEqual(_is_duplicate(conn, 5), 1)
         self.assertEqual(_is_duplicate(conn, 6), 0)
+
+
+class TestParseVersionTuple(unittest.TestCase):
+    def test_bare_dotted(self):
+        self.assertEqual(parse_version_tuple("Manual_1.0.2.pdf"), (1, 0, 2))
+        self.assertEqual(parse_version_tuple("Manual_1.1.pdf"), (1, 1))
+
+    def test_v_prefixed(self):
+        self.assertEqual(parse_version_tuple("Foo_v1.4.pdf"), (1, 4))
+        self.assertEqual(parse_version_tuple("Foo_ver2_7_1.pdf"), (2, 7, 1))
+
+    def test_product_id_not_eaten(self):
+        # The numeric DriveThru product-ID prefix must not be read as a version.
+        self.assertEqual(
+            parse_version_tuple("2327454-Manual_of_the_Planes_1.0.2.pdf"), (1, 0, 2))
+
+    def test_update_and_date(self):
+        self.assertEqual(parse_version_tuple("BeneBads_update6(Final).pdf"), (6,))
+        self.assertEqual(parse_version_tuple("GreatDale-20191023-hi.pdf"),
+                         (2019, 10, 23))
+
+    def test_single_integer_is_not_a_version(self):
+        self.assertEqual(parse_version_tuple("100_NPCs.pdf"), ())
+        self.assertEqual(parse_version_tuple("Tome_Volume_2.pdf"), ())
+        self.assertEqual(parse_version_tuple("plain_book.pdf"), ())
+
+    def test_ordering(self):
+        self.assertGreater(parse_version_tuple("x_1.1.pdf"),
+                           parse_version_tuple("x_1.0.2.pdf"))
+        self.assertGreater(parse_version_tuple("x_update6.pdf"),
+                           parse_version_tuple("x_update2.pdf"))
+
+
+class TestPrinterFriendly(unittest.TestCase):
+    def test_matches_printer_friendly(self):
+        self.assertEqual(parse_printer_friendly("x_printer_friendly.pdf"), 1)
+        self.assertEqual(parse_printer_friendly("x_PrintFriendly.pdf"), 1)
+        self.assertEqual(parse_printer_friendly("x_(screen-reader_friendly).pdf"), 1)
+        self.assertEqual(parse_printer_friendly("x_accessible.pdf"), 1)
+
+    def test_does_not_match_pathfinder_or_plain(self):
+        # "-PF" is a Pathfinder conversion (pdf_enricher's concern), NOT printer-friendly.
+        self.assertEqual(parse_printer_friendly("925821-DDAL-DRW06-PF.pdf"), 0)
+        self.assertEqual(parse_printer_friendly("plain_book.pdf"), 0)
+
+
+def _old(conn, book_id):
+    return conn.execute(
+        "SELECT is_old_version FROM books WHERE id = ?", (book_id,)
+    ).fetchone()[0]
+
+
+class TestElectLatestVersions(unittest.TestCase):
+    def _manual_db(self):
+        conn = _make_db()
+        # product 2327454, one title — version + format variants
+        _insert(conn, id=1, filename="2327454-Manual_of_the_Planes_1.0.1.pdf",
+                filepath="/x/1.pdf", product_id="2327454", collection="MotP")
+        _insert(conn, id=2,
+                filename="2327454-Manual_of_the_Planes_1.0.1_printer_friendly.pdf",
+                filepath="/x/2.pdf", product_id="2327454", collection="MotP")
+        _insert(conn, id=3, filename="2327454-Manual_of_the_Planes_1.0.2.pdf",
+                filepath="/x/3.pdf", product_id="2327454", collection="MotP")
+        _insert(conn, id=4, filename="2327454-Manual_of_the_Planes_1.1.pdf",
+                filepath="/x/4.pdf", product_id="2327454", collection="MotP")
+        _insert(conn, id=5,
+                filename="2327454-Manual_of_the_Planes_1.1_(Quick_Load).pdf",
+                filepath="/x/5.pdf", product_id="2327454", collection="MotP")
+        return conn
+
+    def test_manual_case_collapses_to_latest(self):
+        conn = self._manual_db()
+        elect_latest_versions(conn)
+        # 1.0.1 / 1.0.1-pf / 1.0.2 are superseded by 1.1
+        self.assertEqual(_old(conn, 1), 1)
+        self.assertEqual(_old(conn, 2), 1)
+        self.assertEqual(_old(conn, 3), 1)
+        # 1.1 and 1.1 Quick Load are the SAME version (format variants) — both stay
+        self.assertEqual(_old(conn, 4), 0)
+        self.assertEqual(_old(conn, 5), 0)
+
+    def test_bundle_safety_distinct_titles_under_one_product(self):
+        # A DriveThru product_id is often a bundle of DISTINCT works; election must
+        # not mark one title old because a different title has a higher version.
+        conn = self._manual_db()
+        _insert(conn, id=10, filename="2327454-Tashas_Crucible_v1.1.1.pdf",
+                filepath="/x/10.pdf", product_id="2327454", collection="MotP")
+        _insert(conn, id=11, filename="2327454-Tashas_Crucible_v2.0.1.pdf",
+                filepath="/x/11.pdf", product_id="2327454", collection="MotP")
+        _insert(conn, id=12, filename="2327454-Expanded_Options.pdf",
+                filepath="/x/12.pdf", product_id="2327454", collection="MotP")
+        elect_latest_versions(conn)
+        self.assertEqual(_old(conn, 10), 1)  # Tashas v1.1.1 superseded by v2.0.1
+        self.assertEqual(_old(conn, 11), 0)  # Tashas v2.0.1 current
+        self.assertEqual(_old(conn, 12), 0)  # Expanded_Options: lone, no version
+        # Manual group unaffected by the bundle siblings
+        self.assertEqual(_old(conn, 4), 0)
+
+    def test_dry_run_writes_nothing(self):
+        conn = self._manual_db()
+        preview = elect_latest_versions(conn, dry_run=True)
+        self.assertEqual(len(preview), 3)
+        for bid in (1, 2, 3, 4, 5):
+            self.assertEqual(_old(conn, bid), 0)
+
+    def test_idempotent(self):
+        conn = self._manual_db()
+        elect_latest_versions(conn)
+        self.assertEqual(len(elect_latest_versions(conn)), 0)
+
+    def test_old_rename_rows_untouched(self):
+        # .old files are already flagged by parse_version and must be left alone.
+        conn = _make_db()
+        _insert(conn, id=1, filename="Book_1.1.pdf", filepath="/x/1.pdf",
+                collection="C")
+        _insert(conn, id=2, filename="Book_1.0.old-001.pdf", filepath="/x/2.pdf",
+                is_old_version=1, collection="C")
+        elect_latest_versions(conn)
+        self.assertEqual(_old(conn, 1), 0)
+        self.assertEqual(_old(conn, 2), 1)  # unchanged
+
+    def test_collection_fallback_when_no_product_id(self):
+        # No product_id → group by collection; same title collapses, different
+        # collections stay independent.
+        conn = _make_db()
+        _insert(conn, id=1, filename="Hoard_1.0.pdf", filepath="/a/1.pdf",
+                collection="A")
+        _insert(conn, id=2, filename="Hoard_2.0.pdf", filepath="/a/2.pdf",
+                collection="A")
+        _insert(conn, id=3, filename="Hoard_1.0.pdf", filepath="/b/3.pdf",
+                collection="B")
+        elect_latest_versions(conn)
+        self.assertEqual(_old(conn, 1), 1)  # superseded within collection A
+        self.assertEqual(_old(conn, 2), 0)
+        self.assertEqual(_old(conn, 3), 0)  # different collection, untouched
+
+    def test_title_key_groups_manual_variants(self):
+        keys = {normalize_title_key(f) for f in [
+            "2327454-Manual_of_the_Planes_1.0.1_printer_friendly.pdf",
+            "2327454-Manual_of_the_Planes_1.0.2.pdf",
+            "2327454-Manual_of_the_Planes_1.1_(Quick_Load).pdf",
+        ]}
+        self.assertEqual(len(keys), 1)
 
 
 if __name__ == "__main__":

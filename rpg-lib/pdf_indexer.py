@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS books (
     version_generation INTEGER,
     is_draft INTEGER NOT NULL DEFAULT 0,
     is_duplicate INTEGER NOT NULL DEFAULT 0,
+    is_printer_friendly INTEGER NOT NULL DEFAULT 0,
     product_id TEXT,
     product_version TEXT,
     first_page_text TEXT,
@@ -88,6 +89,7 @@ def migrate_db(conn: sqlite3.Connection, scan_root: str, source: str | None) -> 
         "version_generation": "INTEGER",
         "is_draft": "INTEGER NOT NULL DEFAULT 0",
         "is_duplicate": "INTEGER NOT NULL DEFAULT 0",
+        "is_printer_friendly": "INTEGER NOT NULL DEFAULT 0",
         "product_id": "TEXT",
         "product_version": "TEXT",
     }
@@ -138,21 +140,11 @@ def migrate_db(conn: sqlite3.Connection, scan_root: str, source: str | None) -> 
                     (gen, book_id),
                 )
 
-    # Backfill product_id and product_version from filenames
-    rows = conn.execute(
-        "SELECT id, filename FROM books WHERE product_id IS NULL AND product_version IS NULL"
-    ).fetchall()
-    backfilled = 0
-    for book_id, filename in rows:
-        pid, pver = parse_filename_metadata(filename)
-        if pid or pver:
-            conn.execute(
-                "UPDATE books SET product_id=?, product_version=? WHERE id=?",
-                (pid, pver, book_id),
-            )
-            backfilled += 1
-    if backfilled:
-        print(f"  Backfilling product_id/product_version for {backfilled} books...")
+    # Backfill product_id and product_version from filenames (now also catches
+    # bare-dotted DriveThru versions like "Manual_1.0.2.pdf" — see
+    # parse_filename_metadata) and the printer-friendly flag.
+    backfill_product_metadata(conn)
+    backfill_printer_friendly(conn)
 
     # Backfill is_draft and is_duplicate from filenames
     draft_rows = conn.execute(
@@ -235,15 +227,104 @@ def extract_first_pages_text(doc: fitz.Document, max_pages: int = 2) -> str:
     return combined[:4000] if combined else None
 
 
+_PRODUCT_ID_PREFIX_RE = re.compile(r'^\d{4,}-')
+
+# A version token, matched four ways (each in its own capture group):
+#   (1) v/ver prefix + digits       -> v1.4, ver1_5, v_2, v2_7_1
+#   (2) DriveThru "update<N>"       -> update6, update_3 (BeneBads-style)
+#   (3) bare date YYYYMMDD          -> 20191023 (optionally separated)
+#   (4) BARE multi-segment dotted   -> 1.0.1, 1.0.2, 1.1 (>= 2 numeric segments)
+# DriveThru stamps versions as bare dotted numbers with NO v prefix
+# ("Manual_of_the_Planes_1.0.2"), which the old v-only regex missed entirely,
+# leaving product_version NULL and every version looking like a distinct product.
+# Branch (4) requires >= 2 numeric segments and a non-digit before it, so a single
+# bare integer that is real title content ("100 NPCs", "Volume 2") is NOT a
+# version. The product-ID prefix is stripped before matching so the numeric ID is
+# never mistaken for a version.
+_VERSION_TOKEN_RE = re.compile(
+    r'v(?:er)?[\s_.\-]?(\d+(?:[._]\d+)*)'                  # (1) v-prefixed
+    r'|update[\s_\-]?(\d+)'                                # (2) update<N>
+    r'|(?<!\d)(20\d{2})[._\-]?(\d{2})[._\-]?(\d{2})(?!\d)'  # (3) date YYYYMMDD
+    r'|(?<!\d)(\d+(?:[._]\d+)+)',                          # (4) bare dotted
+    re.I,
+)
+
+# Printer-friendly / accessible editions — the cleanest text layer for
+# conversion. Mirrors pdf-translators/batch_convert._FMT_PREFERRED_RE. Must NOT
+# match "-PF" (Pathfinder conversion); pdf_enricher owns that distinct concept.
+_PRINTER_FRIENDLY_RE = re.compile(
+    r'printer[\s_\-]?friendly|print[\s_\-]?friendly|printfriendly'
+    r'|accessibl?e|screen[\s_\-]?reader',
+    re.I,
+)
+
+# Format / layout tokens stripped from the title key so the same content in
+# different exports collapses to one product. Mirrors batch_convert._FMT_RE
+# (+ "digital", a DriveThru export label). Word-bounded English tokens avoid
+# mid-word strips ("Rampage", "Shadowdale").
+_FORMAT_TOKEN_RE = re.compile(
+    r'printer[\s_\-]?friendly|print[\s_\-]?friendly|printfriendly'
+    r'|optimi[sz]ed|full[\s_\-]?res|hi[\s_\-]?res|high[\s_\-]?res'
+    r'|accessibl?e|compressed|colou?r|phone|image[\s_\-]?only'
+    r'|quick[\s_\-]?load|digital'
+    r'|low[\s_\-]?res|lowres|screen[\s_\-]?reader|selectable'
+    r'|\bspreads?\b|\d+[\s_\-]?page|\bpages?\b|\bhd\b|\bsd\b|\bfinal\b'
+    r'|pdf',
+    re.I,
+)
+
+
+def parse_version_tuple(filename: str) -> tuple[int, ...]:
+    """Comparable version tuple from a filename, or () if it carries no version.
+
+    Strips the extension and product-ID prefix first, then takes the LAST
+    version token (so a title's own numbers don't shadow a trailing version).
+    Returns () — not (0,) — when there is no version, so callers can tell
+    "unversioned" apart from "version 0". Mirrors the proven
+    pdf-translators/batch_convert._parse_version logic, extended with the
+    update<N> and YYYYMMDD forms.
+    """
+    name = _PRODUCT_ID_PREFIX_RE.sub('', filename.rsplit('.', 1)[0])
+    last = None
+    for last in _VERSION_TOKEN_RE.finditer(name):
+        pass
+    if last is None:
+        return ()
+    g = last.groups()  # (v, update, year, month, day, bare)
+    if g[2] is not None:  # date branch
+        return (int(g[2]), int(g[3]), int(g[4]))
+    token = g[0] or g[1] or g[5] or ''
+    nums = tuple(int(p) for p in re.split(r'[._]', token) if p.isdigit())
+    return nums
+
+
+def parse_printer_friendly(filename: str) -> int:
+    """1 if the filename marks a printer-friendly / accessible edition, else 0."""
+    return int(bool(_PRINTER_FRIENDLY_RE.search(filename)))
+
+
+def normalize_title_key(filename: str) -> str:
+    """Group key for true variants of ONE product: drop extension, product-ID
+    prefix, version tokens, and format tokens, then collapse separators. Two
+    files share a key iff they are version/format variants of the same title.
+    Mirrors batch_convert._variant_title_key."""
+    stem = filename.rsplit('.', 1)[0]
+    stem = _PRODUCT_ID_PREFIX_RE.sub('', stem)
+    stem = _FORMAT_TOKEN_RE.sub(' ', stem)
+    stem = _VERSION_TOKEN_RE.sub(' ', stem)
+    stem = re.sub(r'[\(\)\[\]_\-\s.]+', ' ', stem).strip().lower()
+    return stem
+
+
 def parse_filename_metadata(filename: str) -> tuple[str | None, str | None]:
-    """Extract product ID and version from filename.
+    """Extract product ID and version string from filename.
 
     Examples:
       1549348-Adaptable_NPCs_(v1.4).pdf      -> ("1549348", "v1.4")
       925821-DDAL-DRW03_(v1.3).pdf            -> ("925821", "v1.3")
       1341626-Manual_(v2_0).pdf               -> ("1341626", "v2_0")
+      2327454-Manual_of_the_Planes_1.0.2.pdf  -> ("2327454", "1.0.2")  # bare dotted
       Battlelords_V1.23_-_MOBILE.pdf          -> (None, "V1.23")
-      Optimized_PDF_Monsters_v1.2.pdf         -> (None, "v1.2")
       plain_book.pdf                          -> (None, None)
     """
     # Product ID: numeric prefix before first hyphen
@@ -252,15 +333,16 @@ def parse_filename_metadata(filename: str) -> tuple[str | None, str | None]:
     if m:
         product_id = m.group(1)
 
-    # Version: (vN.N) in parens, or _vN.N / _VN.N outside parens
+    # Version: last version token (v-prefixed, bare-dotted, update<N>, or date),
+    # stored verbatim for display. Product ID is stripped first so it can't be
+    # read as a version.
     product_version = None
-    m = re.search(r'\((v[\d._]+)[^)]*\)', filename, re.IGNORECASE)
-    if m:
-        product_version = m.group(1)
-    else:
-        m = re.search(r'[_\s](v\d+[\._]\d+(?:\.\d+)?)', filename, re.IGNORECASE)
-        if m:
-            product_version = m.group(1)
+    name = _PRODUCT_ID_PREFIX_RE.sub('', filename.rsplit('.', 1)[0])
+    last = None
+    for last in _VERSION_TOKEN_RE.finditer(name):
+        pass
+    if last is not None:
+        product_version = last.group(0)
 
     return product_id, product_version
 
@@ -287,6 +369,51 @@ def parse_draft_status(filename: str) -> tuple[int, int]:
     is_draft = int(bool(_DRAFT_KEYWORDS.search(filename)))
     is_duplicate = int(bool(_DUPLICATE_SUFFIX.search(filename)))
     return is_draft, is_duplicate
+
+
+def backfill_product_metadata(conn: sqlite3.Connection) -> int:
+    """(Re)extract product_id / product_version for rows missing either.
+
+    Re-runnable: rows that legitimately have no version keep product_version
+    NULL and are re-checked cheaply on each run; only rows whose computed value
+    changed are written. Catches bare-dotted DriveThru versions that the old
+    v-prefix-only regex left NULL even when product_id was already set."""
+    rows = conn.execute(
+        "SELECT id, filename, product_id, product_version FROM books "
+        "WHERE product_id IS NULL OR product_version IS NULL"
+    ).fetchall()
+    n = 0
+    for book_id, filename, pid0, pver0 in rows:
+        pid, pver = parse_filename_metadata(filename)
+        if (pid or pver) and (pid, pver) != (pid0, pver0):
+            conn.execute(
+                "UPDATE books SET product_id=?, product_version=? WHERE id=?",
+                (pid, pver, book_id),
+            )
+            n += 1
+    if n:
+        print(f"  Backfilling product_id/product_version for {n} books...")
+    conn.commit()
+    return n
+
+
+def backfill_printer_friendly(conn: sqlite3.Connection) -> int:
+    """Set is_printer_friendly=1 for rows whose filename marks a printer-friendly
+    / accessible edition. Re-runnable; only flips 0 -> 1."""
+    rows = conn.execute(
+        "SELECT id, filename FROM books WHERE is_printer_friendly = 0"
+    ).fetchall()
+    n = 0
+    for book_id, filename in rows:
+        if parse_printer_friendly(filename):
+            conn.execute(
+                "UPDATE books SET is_printer_friendly=1 WHERE id=?", (book_id,)
+            )
+            n += 1
+    if n:
+        print(f"  Backfilling is_printer_friendly for {n} books...")
+    conn.commit()
+    return n
 
 
 def flag_content_duplicates(conn: sqlite3.Connection, dry_run: bool = False) -> int:
@@ -346,6 +473,82 @@ def flag_content_duplicates(conn: sqlite3.Connection, dry_run: bool = False) -> 
     return len(to_flag)
 
 
+def elect_latest_versions(
+    conn: sqlite3.Connection, dry_run: bool = False
+) -> list[tuple[int, str, str | None, str]]:
+    """Elect the latest version of each product and mark superseded ones old.
+
+    DriveThru ships many files per product, e.g. ``Manual_of_the_Planes`` at
+    ``1.0.1`` / ``1.0.2`` / ``1.1``. Only the newest should surface (and be
+    converted). This clusters the current, non-draft, non-duplicate books that
+    are NOT already ``.old`` renames, and within each cluster marks every file
+    below the highest version ``is_old_version=1``.
+
+    Clustering key is ``(product_id or 'coll:'+collection, normalize_title_key)``
+    — product_id PLUS normalized title. This is critical: a DriveThru product_id
+    is often a BUNDLE of distinct works (one id can hold 14 different adventures),
+    so grouping on product_id alone would mark distinct titles as old. Requiring
+    the same normalized title means only true version-variants of the SAME work
+    collapse.
+
+    Same-version format variants (``1.1`` vs ``1.1 Quick Load``) share a version
+    tuple and are NOT marked old — both stay current; the format choice (prefer
+    printer-friendly) is made downstream by the API representative and
+    batch_convert. Files with no detectable version are left untouched.
+
+    ``version_generation`` on a flagged row is its rank among the losers (0 = the
+    newest loser), distinct from the ``.old``-rename counter (those rows are
+    excluded here). Idempotent: already-flagged rows fall out of the WHERE, so a
+    second run flags nothing.
+
+    Returns a preview list of ``(id, filename, product_version, winner_filename)``
+    for every row it flags. With ``dry_run=True`` it returns the same preview and
+    writes nothing.
+    """
+    from collections import defaultdict
+
+    rows = conn.execute(
+        """SELECT id, filename, product_id, collection, product_version
+           FROM books
+           WHERE is_old_version = 0 AND is_draft = 0 AND is_duplicate = 0
+             AND filename NOT LIKE '%.old%pdf'"""
+    ).fetchall()
+
+    clusters: dict[tuple, list] = defaultdict(list)
+    for row_id, filename, product_id, collection, product_version in rows:
+        group_key = product_id if product_id else f"coll:{collection or ''}"
+        clusters[(group_key, normalize_title_key(filename))].append(
+            (row_id, filename, product_version, parse_version_tuple(filename))
+        )
+
+    preview: list[tuple[int, str, str | None, str]] = []
+    to_flag: list[tuple[int, int]] = []  # (id, generation)
+    for members in clusters.values():
+        versioned = [m for m in members if m[3]]  # m[3] = version tuple, () = none
+        distinct = {m[3] for m in versioned}
+        if len(distinct) < 2:
+            continue  # nothing to supersede (one version, or only format variants)
+        max_ver = max(distinct)
+        winner = max(versioned, key=lambda m: m[3])[1]  # a max-version filename
+        losers = sorted((m for m in versioned if m[3] < max_ver),
+                        key=lambda m: m[3], reverse=True)
+        for gen, (row_id, filename, product_version, _vt) in enumerate(losers):
+            to_flag.append((row_id, gen))
+            preview.append((row_id, filename, product_version, winner))
+
+    if dry_run or not to_flag:
+        return preview
+
+    batch_size = 500
+    for i in range(0, len(to_flag), batch_size):
+        conn.executemany(
+            "UPDATE books SET is_old_version=1, version_generation=? WHERE id=?",
+            [(gen, row_id) for row_id, gen in to_flag[i:i + batch_size]],
+        )
+    conn.commit()
+    return preview
+
+
 def parse_version(filename: str) -> tuple[int, int | None]:
     """Detect old versions and assign a generation number.
 
@@ -390,6 +593,7 @@ def extract_pdf(filepath: str, scan_root: str, source: str | None) -> dict:
     relative_path = os.path.relpath(filepath, scan_root)
     is_old_version, version_generation = parse_version(filename)
     is_draft, is_duplicate = parse_draft_status(filename)
+    is_printer_friendly = parse_printer_friendly(filename)
     product_id, product_version = parse_filename_metadata(filename)
 
     doc = fitz.open(filepath)
@@ -418,6 +622,7 @@ def extract_pdf(filepath: str, scan_root: str, source: str | None) -> dict:
             "version_generation": version_generation,
             "is_draft": is_draft,
             "is_duplicate": is_duplicate,
+            "is_printer_friendly": is_printer_friendly,
             "product_id": product_id,
             "product_version": product_version,
             "first_page_text": first_page_text,
@@ -441,16 +646,16 @@ def save_pdf(conn: sqlite3.Connection, data: dict) -> None:
            (filename, filepath, relative_path, source, publisher, collection,
             pdf_title, pdf_author, pdf_creator,
             page_count, has_bookmarks, is_old_version, version_generation,
-            is_draft, is_duplicate,
+            is_draft, is_duplicate, is_printer_friendly,
             product_id, product_version, first_page_text, date_indexed)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data["filename"], data["filepath"], data["relative_path"],
             data["source"], data["publisher"], data["collection"],
             data["pdf_title"], data["pdf_author"], data["pdf_creator"],
             data["page_count"], data["has_bookmarks"],
             data["is_old_version"], data["version_generation"],
-            data["is_draft"], data["is_duplicate"],
+            data["is_draft"], data["is_duplicate"], data["is_printer_friendly"],
             data["product_id"], data["product_version"],
             data["first_page_text"], now,
         ),
@@ -503,9 +708,18 @@ def main():
              "Does not scan; runs against the existing DB.",
     )
     parser.add_argument(
+        "--recompute-variants",
+        action="store_true",
+        help="Against the existing DB (no scan): backfill product_version / "
+             "is_printer_friendly, then elect the latest version per "
+             "(product_id-or-collection, title) and mark superseded files "
+             "is_old_version=1. Idempotent. Pair with --dry-run to review first.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="With --dedup-content: report what would change without writing",
+        help="With --dedup-content or --recompute-variants: report what would "
+             "change without writing.",
     )
     args = parser.parse_args()
 
@@ -521,8 +735,35 @@ def main():
         conn.close()
         return
 
+    if args.recompute_variants:
+        if not os.path.exists(args.db_path):
+            print(f"Error: database not found: {args.db_path}", file=sys.stderr)
+            sys.exit(1)
+        conn = sqlite3.connect(args.db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        # Ensure the is_printer_friendly column exists, then backfill the
+        # metadata the election reads/surfaces. These write regardless of
+        # --dry-run (they only populate, never hide); the election is what
+        # --dry-run gates.
+        existing = {r[1] for r in conn.execute("PRAGMA table_info(books)").fetchall()}
+        if "is_printer_friendly" not in existing:
+            conn.execute("ALTER TABLE books ADD COLUMN is_printer_friendly "
+                         "INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+        if not args.dry_run:
+            backfill_product_metadata(conn)
+            backfill_printer_friendly(conn)
+        preview = elect_latest_versions(conn, dry_run=args.dry_run)
+        verb = "Would mark" if args.dry_run else "Marked"
+        print(f"{verb} {len(preview)} file(s) as superseded (old version):")
+        for _bid, fn, pver, winner in preview:
+            print(f"  old: {fn}  (v={pver}) -> winner: {winner}")
+        conn.close()
+        return
+
     if not args.scan_folder:
-        parser.error("scan_folder is required unless --dedup-content is set")
+        parser.error("scan_folder is required unless --dedup-content or "
+                     "--recompute-variants is set")
 
     scan_folder = os.path.abspath(args.scan_folder)
     if not os.path.isdir(scan_folder):
@@ -591,6 +832,13 @@ def main():
 
     elapsed = time.monotonic() - t0
     print(f"\nDone in {elapsed:.1f}s — {success} indexed, {failed} errors")
+
+    # Elect the latest version per product so superseded editions are hidden
+    # (and not re-converted downstream). Idempotent; safe to run every scan.
+    elected = elect_latest_versions(conn)
+    if elected:
+        print(f"Elected latest versions — marked {len(elected)} superseded "
+              f"file(s) as old.")
 
     # Summary stats
     total_books = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
