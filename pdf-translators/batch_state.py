@@ -118,15 +118,20 @@ class StateDB:
             )
             self._touch_saved_at()
 
-    def update_progress(self, rel: str, *, status: str, endpoint: str,
-                        attempts: int, exit: int | None, duration_s: float,
-                        log: str) -> None:
-        """Single-row UPDATE of a doc's progress after a conversion attempt."""
+    def update_progress(self, rel: str, *, status: str, reason: str = "",
+                        endpoint: str, attempts: int, exit: int | None,
+                        duration_s: float, log: str) -> None:
+        """Single-row UPDATE of a doc's progress after a conversion attempt.
+
+        ``reason`` is the machine-readable failure cause (e.g.
+        ``chunk_too_big:cap=20000``, ``timeout``, ``partial``) so a later run can
+        tell a deterministic, won't-improve-on-rerun failure from a transient one.
+        Empty on success."""
         with self.conn:
             self.conn.execute(
-                "UPDATE docs SET status=?, endpoint=?, attempts=?, exit=?, "
-                "duration_s=?, log=? WHERE rel=?",
-                (status, endpoint, attempts, exit, duration_s, log, rel),
+                "UPDATE docs SET status=?, reason=?, endpoint=?, attempts=?, "
+                "exit=?, duration_s=?, log=? WHERE rel=?",
+                (status, reason, endpoint, attempts, exit, duration_s, log, rel),
             )
             self._touch_saved_at()
 
