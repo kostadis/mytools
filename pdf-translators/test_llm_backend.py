@@ -10,7 +10,7 @@ network access or an API key. They verify:
 from unittest.mock import patch
 
 import llm_backend as lb
-from lib import claudelib
+import claudelib
 import dgxlib
 
 

@@ -3,7 +3,7 @@
 `claude_api.py` no longer talks to the Anthropic SDK directly. It calls a small
 ``Backend`` object that wraps one of the three transport libraries:
 
-* :mod:`lib.claudelib` — the Anthropic Messages API (``../lib`` in this repo).
+* :mod:`claudelib` — the Anthropic Messages API (``../lib`` in this repo).
 * :mod:`dgxlib` — the DGX Spark's OpenAI-compatible vLLM endpoint
   (editable install, github.com/kostadis/dgx-fun).
 * :mod:`claudecodelib` — the local ``claude`` CLI in headless mode, which spends
@@ -29,9 +29,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-# lib/ lives in the parent mytools/ directory (shared with rpg-lib, CampaignGenerator).
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from lib import claudelib  # noqa: E402
+import claudelib  # noqa: E402
 
 import dgxlib  # noqa: E402  (editable install — github.com/kostadis/dgx-fun)
 import claudecodelib  # noqa: E402  (local — Claude Code CLI subscription transport)
@@ -85,7 +83,7 @@ class Backend:
 
 
 def anthropic_backend(api_key: str | None = None) -> Backend:
-    """Build a Backend backed by the Anthropic Messages API (``lib.claudelib``)."""
+    """Build a Backend backed by the Anthropic Messages API (``claudelib``)."""
     client = claudelib.make_client(api_key)
 
     def _complete(system: str, user: str, model: str,

@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claudelib"
+version = "0.1.0"
+description = "Shared Anthropic Claude API client helpers (retry, stop-reason normalisation) for mytools"
+requires-python = ">=3.11"
+dependencies = ["anthropic"]
+
+[tool.setuptools]
+py-modules = ["claudelib"]
