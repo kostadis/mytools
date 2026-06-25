@@ -382,6 +382,31 @@ class Endpoint:
             return False
 
 
+# Deterministic over-cap reasons -> the run-arg that, when raised, can fix them.
+_CAP_REASONS = {"chunk_too_big:cap=": "chunk_token_cap",
+                "prompt_too_big:cap=": "prompt_cap"}
+
+
+def _stuck_under_caps(reason: str, args) -> bool:
+    """True iff *reason* is a deterministic over-cap failure the current caps
+    can't fix. Each such reason is tagged ``<kind>:cap=<N>`` with the cap value
+    it tripped; if the current matching cap (--chunk-token-cap / --prompt-cap) is
+    no larger, a verbatim re-run fails identically, so skip it. A current cap of
+    0 disables that guard entirely (the chunk/doc would be sent this time), so
+    never auto-skip then. Raising the cap above the tripped value re-queues it."""
+    for prefix, arg_name in _CAP_REASONS.items():
+        if reason.startswith(prefix):
+            cur_cap = getattr(args, arg_name, 0)
+            if cur_cap <= 0:
+                return False
+            try:
+                tripped = int(reason.split("=", 1)[1])
+            except (ValueError, IndexError):
+                return True  # right kind, cap unparseable -> treat as stuck
+            return cur_cap <= tripped
+    return False
+
+
 class Dispatcher:
     def __init__(self, args, docs: dict, root: Path, state=None):
         self.args = args
@@ -394,7 +419,7 @@ class Dispatcher:
         self.stop = threading.Event()
         self.counts = {"done": 0, "failed": 0, "skipped": 0,
                        "already": 0, "total": 0,
-                       "carried_failed": 0, "deferred": 0}
+                       "carried_failed": 0, "deferred": 0, "unfixable": 0}
         self.logdir = Path(args.logdir)
         self.logdir.mkdir(parents=True, exist_ok=True)
 
@@ -411,6 +436,19 @@ class Dispatcher:
             if out.exists() and not self.args.force:
                 ent["status"] = "done"
                 self.counts["already"] += 1
+                continue
+            # Deterministic-failure filter: a doc the last run failed with an
+            # over-cap reason (chunk_too_big / prompt_too_big) fails identically
+            # on a verbatim re-run — the caps are uniform across boxes, so routing
+            # won't help; only raising the matching cap will. Auto-skip it unless
+            # the current cap is *higher* than the one it tripped (then it might
+            # fit now) or --retry-too-big forces a re-attempt. Saves burning a doc
+            # slot re-failing into the same wall every run.
+            if (prior_status == "failed"
+                    and not getattr(self.args, "retry_too_big", False)
+                    and _stuck_under_caps(ent.get("reason", ""), self.args)):
+                ent["status"] = "failed"           # carry the failure forward
+                self.counts["unfixable"] += 1
                 continue
             # Prior-failure filters: a doc with no JSON is either a never-tried
             # doc or one the last run marked 'failed'. By default both are
@@ -496,23 +534,56 @@ class Dispatcher:
                 time.sleep(min(60, 5 * attempts))  # linear backoff, capped
 
         dur = round(time.monotonic() - t0, 1)
+        reason = "" if ok else self._failure_reason(log, last_exit)
         with self.lock:
             ent = self.docs[rel]
-            ent.update(status="done" if ok else "failed", endpoint=ep.name,
-                       attempts=attempts, exit=last_exit, duration_s=dur,
-                       log=str(log))
+            ent.update(status="done" if ok else "failed", reason=reason,
+                       endpoint=ep.name, attempts=attempts, exit=last_exit,
+                       duration_s=dur, log=str(log))
             self.counts["done" if ok else "failed"] += 1
             done = self.counts["done"]
             failed = self.counts["failed"]
             total = self.counts["total"]
             if self.state:
                 self.state.update_progress(
-                    rel, status=ent["status"], endpoint=ep.name,
+                    rel, status=ent["status"], reason=reason, endpoint=ep.name,
                     attempts=attempts, exit=last_exit, duration_s=dur,
                     log=str(log))
         flag = "OK " if ok else "FAIL"
+        why = f" [{reason}]" if reason else ""
         print(f"[{time.strftime('%H:%M:%S')}] {flag} {done+failed}/{total} "
-              f"({ep.name}, {dur}s, try {attempts}) {rel}", flush=True)
+              f"({ep.name}, {dur}s, try {attempts}) {rel}{why}", flush=True)
+
+    def _failure_reason(self, log: Path, last_exit: int | None) -> str:
+        """Classify a doc failure into a machine-readable reason string.
+
+        The key distinction is *deterministic* (a verbatim re-run fails the same
+        way — pointless to retry until a cap is raised) vs *transient* (worth a
+        retry). The two deterministic, cap-tagged reasons are:
+          * ``chunk_too_big:cap=<N>`` — the per-chunk soft cap (exit 3 partial,
+            log shows ``[chunk-too-big]``); fixed by raising --chunk-token-cap.
+          * ``prompt_too_big:cap=<N>`` — the prompt HARD cap (exit 1, the whole
+            doc aborts with no JSON); fixed by raising --prompt-cap (and a box
+            whose context window accepts it).
+        Tagging each with the cap it tripped lets enqueue re-queue it
+        automatically once the relevant cap is raised. Transient reasons:
+        ``timeout`` (read-timeout), ``interrupted`` (Ctrl-C / killed by signal,
+        never a real failure), ``partial`` (some other exit-3), ``exit<N>``."""
+        if last_exit == 124:
+            return "timeout"
+        if last_exit is not None and last_exit < 0:
+            return "interrupted"          # killed by signal (e.g. SIGINT) — retry
+        try:
+            tail = log.read_text(errors="replace")[-20000:]
+        except OSError:
+            tail = ""
+        if last_exit == 3:
+            if "[chunk-too-big]" in tail:
+                return f"chunk_too_big:cap={self.args.chunk_token_cap}"
+            return "partial"
+        if last_exit == 1 and "prompt cap; aborting" in tail:
+            return f"prompt_too_big:cap={self.args.prompt_cap}"
+        return f"exit{last_exit}"
 
     def worker(self, ep: Endpoint):
         while not self.stop.is_set():
@@ -641,6 +712,14 @@ def parse_args(argv=None):
                         "everything else). The remediation pass: re-run the "
                         "timed-out docs alone, e.g. with --pool 2 on a faster box. "
                         "Cached chunks are reused via --reuse-responses.")
+    p.add_argument("--retry-too-big", action="store_true",
+                   help="Re-queue docs the prior run failed over a cap "
+                        "(chunk_too_big / prompt_too_big) even when the current "
+                        "--chunk-token-cap / --prompt-cap is no larger than the one "
+                        "they tripped. By default those are auto-skipped (a verbatim "
+                        "re-run fails identically); raising the matching cap "
+                        "re-queues them automatically, so this flag is only for "
+                        "forcing a re-attempt at the same caps.")
     p.add_argument("--rescan", action="store_true",
                    help="Ignore cached scan entries and re-classify every PDF.")
     p.add_argument("--list", action="store_true",
@@ -753,6 +832,11 @@ def main(argv=None):
     if disp.counts["deferred"]:
         print(f"  deferred (not fail): {disp.counts['deferred']}  "
               f"(--only-failed: only prior failures attempted)")
+    if disp.counts["unfixable"]:
+        print(f"  skipped (cap-bound): {disp.counts['unfixable']}  "
+              f"(prior chunk_too_big/prompt_too_big at >= current caps "
+              f"--chunk-token-cap {args.chunk_token_cap} / --prompt-cap "
+              f"{args.prompt_cap}; raise the matching cap or --retry-too-big)")
     print(f"  skipped (total)    : {n_skip}  -> {args.skiplist}"
           f"  (non-content + dedup)")
     if dedup_counts:
