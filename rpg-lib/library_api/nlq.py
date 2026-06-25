@@ -11,9 +11,7 @@ import os
 import re
 import sys
 
-# claudelib lives in mytools/lib/; two levels up from library_api/
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-from lib.claudelib import make_client, call_api  # noqa: E402
+from claudelib import make_client, call_api  # noqa: E402
 
 MODEL = "claude-haiku-4-5-20251001"
 

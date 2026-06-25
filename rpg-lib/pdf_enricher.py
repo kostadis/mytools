@@ -20,8 +20,6 @@ import sys
 import time
 from datetime import datetime, timezone
 
-# lib/ lives in the parent mytools/ directory
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Default model for the Claude provider only. The DGX provider auto-discovers
 # the currently-served model from /v1/models — see lib/dgxlib.py.
@@ -1320,7 +1318,7 @@ def main():
             print(f"DGX auto-discovered model: {model}")
         client = None if args.dry_run else llm.make_client(endpoint)
     else:
-        from lib import claudelib as llm
+        import claudelib as llm
         model = args.model or CLAUDE_DEFAULT_MODEL
         client = None if args.dry_run else llm.make_client()
 
