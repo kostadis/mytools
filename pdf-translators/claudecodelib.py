@@ -1,6 +1,6 @@
 """claudecodelib.py — drive a Claude *subscription* via the Claude Code CLI.
 
-Third transport for pdf-translators, alongside ``lib.claudelib`` (the Anthropic
+Third transport for pdf-translators, alongside ``claudelib`` (the Anthropic
 Messages API) and ``dgxlib`` (the DGX Spark vLLM endpoint). Instead of billing
 the Anthropic API per token, this shells out to the locally-installed ``claude``
 CLI in headless print mode (``claude -p --output-format json``), which spends the

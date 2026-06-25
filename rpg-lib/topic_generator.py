@@ -21,8 +21,7 @@ import sys
 import os
 from datetime import datetime, timezone
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from lib.claudelib import make_client, call_api
+from claudelib import make_client, call_api
 
 MODEL = "claude-haiku-4-5-20251001"
 

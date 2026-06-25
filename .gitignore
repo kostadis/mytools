@@ -33,3 +33,7 @@ pdf-translators/728848-*.json
 testfile.py
 replace_in_files.py
 pdf-translators/count_r_in_strawberry.py
+*.egg-info/
+build/
+dist/
+*.whl

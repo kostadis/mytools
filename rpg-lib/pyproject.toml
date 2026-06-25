@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rpg-lib"
+version = "1.0.0"
+description = "RPG Library — FastAPI backend (library_api) + server + indexing/enrichment toolchain for an RPG PDF library"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "pydantic",
+  "claudelib",   # first-party (installed by mneme before rpg_lib; not on PyPI)
+]
+
+[project.scripts]
+rpg-library = "library_server:main"
+
+[tool.setuptools]
+# The API package plus every top-level tool module (each runnable via `python -m <name>`).
+# Test modules (test_*.py) are excluded from the installed surface.
+packages = ["library_api"]
+py-modules = [
+  "library_server",
+  "library_mcp",
+  "pdf_indexer",
+  "pdf_enricher",
+  "topic_generator",
+  "generate_obsidian",
+  "relation_builder",
+  "wiki_setup",
+  "import_enrichment",
+  "export_enrichment",
+  "fivetools_symlink_farm",
+]
