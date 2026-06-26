@@ -76,6 +76,41 @@ pub enum GoogleCommands {
         #[arg(long, short)]
         execute: bool,
     },
+    /// Export a native Google Doc/Sheet/Slide as text (files.export)
+    Export {
+        /// File ID to export
+        file_id: String,
+        /// Output path (default: stdout)
+        #[arg(long)]
+        out: Option<String>,
+        /// Export MIME type
+        #[arg(long, default_value = "text/plain")]
+        mime: String,
+    },
+    /// Download raw file content (binary-safe) to a file or stdout (alt=media)
+    Cat {
+        /// File ID to download
+        file_id: String,
+        /// Output path (default: stdout)
+        #[arg(long)]
+        out: Option<String>,
+    },
+    /// Set app-private appProperties (tags) on a file (files.update)
+    Tag {
+        /// File ID to tag
+        file_id: String,
+        /// key=value pair to set; repeat for multiple (e.g. --set a=b --set c=d)
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        set: Vec<String>,
+        /// Actually execute (dry-run by default)
+        #[arg(long, short)]
+        execute: bool,
+    },
+    /// Read a file's metadata + appProperties as JSON (files.get)
+    Get {
+        /// File ID
+        file_id: String,
+    },
 }
 
 #[derive(Parser)]
