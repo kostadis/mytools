@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Project data + outputs (never commit drive content, tokens, or reports)
+data/
+reports/
+*.jsonl
+.env
+
+# Model cache (sentence-transformers / huggingface)
+.cache/
+models/
+
+# Never commit secrets
+*token*.json
+credentials.json
