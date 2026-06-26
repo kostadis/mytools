@@ -135,6 +135,18 @@ class StateDB:
             )
             self._touch_saved_at()
 
+    def mark_running(self, rel: str, endpoint: str) -> None:
+        """Mark a doc as in-flight on ``endpoint``. The encode phase runs the
+        converter in-process (worker threads), so there is no longer a converter
+        subprocess for ``batch_status.py`` to pgrep — it reads ``status='running'``
+        from here instead to show which docs are currently converting. Overwritten
+        by :meth:`update_progress` when the attempt finishes."""
+        with self.conn:
+            self.conn.execute(
+                "UPDATE docs SET status='running', endpoint=? WHERE rel=?",
+                (endpoint, rel))
+            self._touch_saved_at()
+
     @staticmethod
     def _coerce(col: str, val):
         if val is None:

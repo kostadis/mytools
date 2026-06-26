@@ -363,6 +363,8 @@ class Endpoint:
     max_prompt_tokens: int | None = None  # per-request prompt cap; None = no cap
     active: bool = False
     threads: list = field(default_factory=list)
+    backend: object = None                # llm_backend.Backend (built lazily)
+    model: str | None = None              # served model id for this endpoint
 
     def safe_input_chars(self) -> int:
         """Max whole-doc text (chars) routable here, with system-prompt headroom.
@@ -407,6 +409,107 @@ def _stuck_under_caps(reason: str, args) -> bool:
     return False
 
 
+# --------------------------------------------------------------------------
+# In-process converter (encode phase) + thread-aware logging
+# --------------------------------------------------------------------------
+# The encode phase runs pdf_to_5etools_v2 IN-PROCESS — one set of imports shared
+# across every worker thread — instead of spawning a subprocess per doc. That is
+# the whole point of the two-phase split: the converter's ~53 MB/worker import
+# footprint (PyMuPDF + modules) is paid once, not N times, so concurrency is
+# bounded by the Spark endpoints rather than driver RAM.
+#
+# pdf_to_5etools_v2 / claude_api read their token-cap ceilings from PDF2E_* env
+# at import time, so the converter is imported lazily *after* those are set from
+# args (see _load_converter).
+_v2 = None      # pdf_to_5etools_v2 module
+_cc = None      # chunk_cache module
+_lb = None      # llm_backend module
+
+
+def _load_converter(args):
+    """Set the converter's token-cap env from args, then import it. Idempotent."""
+    global _v2, _cc, _lb
+    if _v2 is not None:
+        return
+    os.environ["PDF2E_MAX_CHUNK_CHARS"] = str(args.max_chunk_chars)
+    os.environ["PDF2E_MAX_PROMPT_TOKENS"] = str(args.prompt_cap)
+    os.environ["PDF2E_MAX_CHUNK_TOKENS"] = str(args.chunk_token_cap)
+    os.environ["PDF2E_MAX_OUTPUT_TOKENS"] = str(args.output_cap)
+    import pdf_to_5etools_v2 as v2
+    import chunk_cache as cc
+    import llm_backend as lb
+    _v2, _cc, _lb = v2, cc, lb
+
+
+class _ThreadStdoutRouter:
+    """A stdout/stderr proxy that routes writes to a per-thread target file when
+    one is set, else to the real stream. Lets each encode worker thread capture
+    the converter's prints into its own per-doc logfile while sharing one
+    process — preserving the per-doc logs the subprocess model gave for free, and
+    keeping _failure_reason's log-tail classification working. (doc_concurrency>1
+    spawns child chunk threads that don't inherit the target; their prints fall
+    back to the console — acceptable, and the default doc_concurrency is 1.)"""
+    def __init__(self, real):
+        self._real = real
+        self._local = threading.local()
+
+    def set_target(self, fileobj):
+        self._local.target = fileobj
+
+    def clear(self):
+        self._local.target = None
+
+    def write(self, s):
+        target = getattr(self._local, "target", None)
+        (target or self._real).write(s)
+
+    def flush(self):
+        target = getattr(self._local, "target", None)
+        (target or self._real).flush()
+
+    def __getattr__(self, name):  # delegate isatty(), fileno(), encoding, ...
+        return getattr(self._real, name)
+
+
+_STDOUT_ROUTER = None
+_STDERR_ROUTER = None
+
+
+def _install_thread_routers():
+    """Replace sys.stdout/stderr with thread-aware routers (idempotent)."""
+    global _STDOUT_ROUTER, _STDERR_ROUTER
+    if _STDOUT_ROUTER is None:
+        _STDOUT_ROUTER = _ThreadStdoutRouter(sys.stdout)
+        _STDERR_ROUTER = _ThreadStdoutRouter(sys.stderr)
+        sys.stdout = _STDOUT_ROUTER
+        sys.stderr = _STDERR_ROUTER
+
+
+def _extract_one(path_str: str, root_str: str, output_type: str, force: bool):
+    """Process-pool worker: structural extraction of one PDF into
+    ``<stem>-extract.json``. Imports the converter inside the worker (a fresh,
+    short-lived process — RAM is released on exit, the whole reason extraction is
+    a separate pool). Fast/printed-ToC only; a doc that routes to Marker is
+    reported ``needs_marker`` for the standalone ``batch_marker.py`` tool, never
+    run inline. Returns ``(rel, {"extract": status, ...})``."""
+    rel = os.path.relpath(path_str, root_str)
+    pdf = Path(path_str)
+    extract_path = pdf.with_name(pdf.stem + "-extract.json")
+    if extract_path.exists() and not force:
+        return rel, {"extract": "exists"}
+    try:
+        import pdf_to_5etools_v2 as v2
+        import chunk_cache as cc
+        roots, units, kind, meta = v2.extract_structure(
+            pdf, output_type=output_type, allow_marker=False)
+        cc.serialize_extract(extract_path, roots, units, kind, meta)
+    except Exception as e:  # noqa: BLE001 — never let one PDF kill the pool
+        if type(e).__name__ == "NeedsMarkerError":
+            return rel, {"extract": "needs_marker"}
+        return rel, {"extract": "error", "reason": f"{type(e).__name__}: {e}"}
+    return rel, {"extract": "done", "kind": kind}
+
+
 class Dispatcher:
     def __init__(self, args, docs: dict, root: Path, state=None):
         self.args = args
@@ -419,12 +522,13 @@ class Dispatcher:
         self.stop = threading.Event()
         self.counts = {"done": 0, "failed": 0, "skipped": 0,
                        "already": 0, "total": 0,
-                       "carried_failed": 0, "deferred": 0, "unfixable": 0}
+                       "carried_failed": 0, "deferred": 0, "unfixable": 0,
+                       "no_extract": 0}
         self.logdir = Path(args.logdir)
         self.logdir.mkdir(parents=True, exist_ok=True)
 
     # ---- queue construction -------------------------------------------------
-    def enqueue(self, small_endpoint: Endpoint | None):
+    def enqueue(self, small_endpoint: Endpoint | None, require_extract: bool = False):
         safe_chars = small_endpoint.safe_input_chars() if small_endpoint else 0
         for rel, ent in sorted(self.docs.items()):
             if ent.get("status") == "skipped":
@@ -462,6 +566,13 @@ class Dispatcher:
             if self.args.only_failed and prior_status != "failed":
                 self.counts["deferred"] += 1        # not a prior failure; skip
                 continue
+            # Encode phase only runs docs that have a structural extract on disk;
+            # docs still awaiting the fast/Marker extract pass are deferred (not
+            # failed) and picked up by a later encode run.
+            if require_extract and not pdf.with_name(
+                    pdf.stem + "-extract.json").exists():
+                self.counts["no_extract"] += 1
+                continue
             ent["status"] = "pending"
             self.counts["total"] += 1
             fits_small = ent.get("text_chars", 1 << 30) <= safe_chars
@@ -480,55 +591,66 @@ class Dispatcher:
     def run_doc(self, rel: str, ep: Endpoint):
         pdf = self.root / rel
         out = pdf.with_suffix(".json")
+        extract_path = pdf.with_name(pdf.stem + "-extract.json")
         log = self.logdir / (re.sub(r"[^\w.-]+", "_", rel) + ".log")
-        cmd = [
-            sys.executable, str(CONVERTER), str(pdf),
-            "--provider", "dgx", "--endpoint", ep.url,
-            "--model", self.args.model,
-            "--concurrency", str(self.args.doc_concurrency),
-            "--output-mode", "homebrew", "--type", self.args.type,
-            "--reuse-responses",
-        ]
+        # Split for THIS endpoint's context window: a doc too big for a small box
+        # gets chunked finer here — free, no PDF — instead of being pinned to the
+        # large box. The prompt-cap preflight inside encode_chunks is the backstop.
+        max_chars = ep.safe_input_chars()
         attempts = 0
         ok = False
         last_exit = None
         t0 = time.monotonic()
+        # Mark in-flight so batch_status.py can list which docs are converting —
+        # there's no converter subprocess to pgrep anymore (encode is in-process).
+        with self.lock:
+            if self.state:
+                self.state.mark_running(rel, ep.name)
         while attempts < self.args.max_retries + 1 and not self.stop.is_set():
             attempts += 1
             with open(log, "a") as lf:
                 lf.write(f"\n===== attempt {attempts} on {ep.name} ({ep.url}) "
                          f"{time.strftime('%Y-%m-%d %H:%M:%S')} =====\n")
                 lf.flush()
+                # Route this worker thread's converter prints into the per-doc log
+                # so _failure_reason's tail classification still works.
+                _STDOUT_ROUTER.set_target(lf)
+                _STDERR_ROUTER.set_target(lf)
                 try:
-                    rc = subprocess.run(
-                        cmd, cwd=str(HERE), stdout=lf, stderr=subprocess.STDOUT,
-                        timeout=self.args.doc_timeout,
-                        env={**os.environ,
-                             "PDF2E_MAX_CHUNK_CHARS": str(self.args.max_chunk_chars),
-                             # Prompt cap is a HARD ERROR (no chunking): a chunk
-                             # whose prompt exceeds this aborts the doc with no
-                             # JSON, so it stays failed for a larger-context retry.
-                             "PDF2E_MAX_PROMPT_TOKENS": str(self.args.prompt_cap),
-                             # Per-chunk soft cap: a chunk over this is skipped
-                             # without sending (won't finish in the timeout) and
-                             # logged as a failed chunk; the doc continues.
-                             "PDF2E_MAX_CHUNK_TOKENS": str(self.args.chunk_token_cap),
-                             # Output budget (max_tokens). prompt_cap + this must
-                             # stay under the endpoint's served --max-model-len.
-                             "PDF2E_MAX_OUTPUT_TOKENS": str(self.args.output_cap)},
-                    ).returncode
-                except subprocess.TimeoutExpired:
-                    lf.write(f"\n[batch] TIMEOUT after {self.args.doc_timeout}s\n")
-                    rc = 124
-            last_exit = rc
-            if rc == 0 and out.exists():
+                    roots, units, kind, _meta = _cc.load_extract(extract_path)
+                    chunks = _v2.split_to_chunks(roots, units, kind,
+                                                 max_chars=max_chars)
+                    _v2.encode_chunks(
+                        roots, chunks, _meta,
+                        pdf_path=pdf, backend=ep.backend, model=ep.model,
+                        author=self.args.author,
+                        out_path=None, output_dir=None, use_batch=False,
+                        debug_dir=None, dry_run_only=False, verbose=False,
+                        reuse_responses=True,
+                        concurrency=self.args.doc_concurrency,
+                    )
+                    last_exit = 0 if out.exists() else 1
+                except _v2.PartialConversionError as e:
+                    # ≥1 chunk failed fast; the rest are cached and no JSON was
+                    # written. Distinct code so we don't burn retries re-failing
+                    # the same chunk — a later run finishes it from cache.
+                    print(f"partial: {e}")
+                    last_exit = 3
+                except RuntimeError as e:
+                    # Includes the hard prompt-cap abort ("prompt cap; aborting"),
+                    # which _failure_reason tags as prompt_too_big from the log.
+                    print(f"error: {e}")
+                    last_exit = 1
+                except Exception as e:  # noqa: BLE001 — one doc never kills the driver
+                    print(f"error: {type(e).__name__}: {e}")
+                    last_exit = 1
+                finally:
+                    _STDOUT_ROUTER.clear()
+                    _STDERR_ROUTER.clear()
+            if last_exit == 0 and out.exists():
                 ok = True
                 break
-            if rc == 3:
-                # Partial conversion: ≥1 chunk failed fast (e.g. a read timeout)
-                # but the rest are cached and no JSON was written. Don't spend the
-                # remaining doc-level retries re-timing-out the same chunk — mark
-                # failed and move on; a later --reuse-responses pass finishes it.
+            if last_exit == 3:
                 break
             if attempts <= self.args.max_retries and not self.stop.is_set():
                 time.sleep(min(60, 5 * attempts))  # linear backoff, capped
@@ -593,6 +715,13 @@ class Dispatcher:
             self.run_doc(rel, ep)
 
     def start_endpoint(self, ep: Endpoint):
+        # One shared Backend per endpoint, reused across its worker threads
+        # (Backend.complete is stateless per call). Built here, after the
+        # converter is imported, so the encode workers never touch the Anthropic
+        # SDK path.
+        if ep.backend is None and _lb is not None:
+            ep.model = self.args.model
+            ep.backend = _lb.dgx_backend(ep.url)
         ep.active = True
         for _ in range(ep.pool):
             t = threading.Thread(target=self.worker, args=(ep,), daemon=True)
@@ -720,6 +849,16 @@ def parse_args(argv=None):
                         "re-run fails identically); raising the matching cap "
                         "re-queues them automatically, so this flag is only for "
                         "forcing a re-attempt at the same caps.")
+    p.add_argument("--phase", choices=["extract", "encode", "all"], default="all",
+                   help="Which pass to run. 'extract' = fast-path structural "
+                        "extraction only (writes <stem>-extract.json; docs needing "
+                        "Marker are deferred to batch_marker.py). 'encode' = "
+                        "in-process LLM conversion of docs that already have an "
+                        "extract on disk. 'all' (default) = extract then encode in "
+                        "one invocation (run batch_marker.py between them if any "
+                        "docs need Marker, then re-run --phase encode).")
+    p.add_argument("--author", default="Unknown",
+                   help="Author name written into the generated adventure JSON.")
     p.add_argument("--rescan", action="store_true",
                    help="Ignore cached scan entries and re-classify every PDF.")
     p.add_argument("--list", action="store_true",
@@ -735,6 +874,53 @@ def write_skiplist(docs: dict, path: str):
         for rel, reason, pages, tc in rows:
             f.write(f"{rel}\t{reason}\t{pages}\t{tc}\n")
     return len(rows)
+
+
+def run_extract_phase(disp: "Dispatcher", args) -> Counter:
+    """Fast/printed-ToC structural extraction for every content doc that needs
+    one, into ``<stem>-extract.json``, via a process pool (RAM released per doc).
+    Docs that route to Marker are reported ``needs_marker`` for ``batch_marker.py``
+    — never run inline. Returns a status Counter."""
+    root = disp.root
+    todo = []
+    for rel, ent in sorted(disp.docs.items()):
+        if ent.get("status") == "skipped":
+            continue
+        pdf = root / rel
+        if pdf.with_suffix(".json").exists() and not args.force:
+            continue  # already converted
+        extract_path = pdf.with_name(pdf.stem + "-extract.json")
+        if extract_path.exists() and not args.force:
+            ent["extract"] = "done"
+            continue
+        todo.append(str(pdf))
+
+    counts: Counter = Counter()
+    if not todo:
+        print("[extract] nothing to extract.")
+        return counts
+    print(f"[extract] extracting structure for {len(todo)} docs "
+          f"({args.scan_workers} workers) ...")
+    done = 0
+    with ProcessPoolExecutor(max_workers=args.scan_workers) as ex:
+        futs = {ex.submit(_extract_one, p, str(root), args.type, args.force): p
+                for p in todo}
+        for fut in as_completed(futs):
+            rel, res = fut.result()
+            status = res["extract"]
+            counts[status] += 1
+            ent = disp.docs.get(rel)
+            if ent is not None:
+                ent["extract"] = status
+                if res.get("reason"):
+                    ent["extract_reason"] = res["reason"]
+            done += 1
+            if done % 50 == 0 or done == len(todo):
+                print(f"[extract] {done}/{len(todo)} "
+                      f"(done={counts['done']} exists={counts['exists']} "
+                      f"needs_marker={counts['needs_marker']} "
+                      f"error={counts['error']})", flush=True)
+    return counts
 
 
 def main(argv=None):
@@ -814,7 +1000,32 @@ def main(argv=None):
                           pool=pool2, max_prompt_tokens=args.prompt_cap)
 
     disp = Dispatcher(args, docs, root, state=state)
-    disp.enqueue(small_endpoint=spark2)
+
+    # ---- Extract phase: structural extraction -> <stem>-extract.json ----
+    # RAM-bound process pool, local-only. Marker docs are deferred to the
+    # standalone batch_marker.py (run it between --phase extract and --phase
+    # encode when the summary reports docs needing Marker).
+    if args.phase in ("extract", "all"):
+        ecounts = run_extract_phase(disp, args)
+        disp.persist()
+        print(f"\n=== extract === wrote {ecounts['done']}, "
+              f"already {ecounts['exists']}, "
+              f"need Marker {ecounts['needs_marker']} (run batch_marker.py), "
+              f"errors {ecounts['error']}.")
+        if args.phase == "extract":
+            write_skiplist(docs, args.skiplist)
+            print(f"  state db: {args.state_db}   skiplist: {args.skiplist}")
+            state.close()
+            return 0
+
+    # ---- Encode phase: in-process LLM conversion from the extracts ----
+    # Import the converter once (after PDF2E_* env is set) and route per-thread
+    # stdout into per-doc logs. Only docs with an extract on disk are enqueued;
+    # the rest (still awaiting Marker) are deferred.
+    _load_converter(args)
+    _install_thread_routers()
+
+    disp.enqueue(small_endpoint=spark2, require_extract=True)
 
     n_skip = write_skiplist(docs, args.skiplist)
     disp.persist()
@@ -832,6 +1043,9 @@ def main(argv=None):
     if disp.counts["deferred"]:
         print(f"  deferred (not fail): {disp.counts['deferred']}  "
               f"(--only-failed: only prior failures attempted)")
+    if disp.counts["no_extract"]:
+        print(f"  awaiting extract   : {disp.counts['no_extract']}  "
+              f"(no <stem>-extract.json yet; run --phase extract / batch_marker.py)")
     if disp.counts["unfixable"]:
         print(f"  skipped (cap-bound): {disp.counts['unfixable']}  "
               f"(prior chunk_too_big/prompt_too_big at >= current caps "
