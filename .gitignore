@@ -29,6 +29,15 @@ vtt-to-tts/Nikhil-Kostadis.chunks/
 pdf-translators/*-responses/
 pdf-translators/728848-*.json
 
+# pdf-translators batch run artifacts (SQLite state, logs, generated manifest/skiplist)
+pdf-translators/dmsguild-state.db*
+pdf-translators/dmsguild-batch.out
+pdf-translators/dmsguild-logs/
+pdf-translators/dmsguild-manifest.json
+pdf-translators/dmsguild-skiplist.tsv
+pdf-translators/ling-ab-slice/
+pdf-translators/ling-ab-test.db
+
 # Scratch / one-off files at repo root
 testfile.py
 replace_in_files.py

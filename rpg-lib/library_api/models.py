@@ -25,6 +25,12 @@ class BookSummary(BaseModel):
     filepath: str | None = None
     relative_path: str | None = None
     product_id: str | None = None
+    product_version: str | None = None
+    is_printer_friendly: bool = False
+    # On a grouped result: the id of the printer-friendly edition in this variant
+    # group (the preferred edition to open/convert), or None if the group has no
+    # printer-friendly variant.
+    printer_friendly_variant_id: int | None = None
 
 
 class Bookmark(BaseModel):
@@ -43,6 +49,7 @@ class BookDetail(BookSummary):
     is_old_version: bool
     version_generation: int | None
     product_version: str | None
+    is_printer_friendly: bool = False
     date_indexed: str | None
     date_enriched: str | None
     bookmarks: list[Bookmark]
@@ -143,3 +150,16 @@ class GraphEdge(BaseModel):
 class GraphResponse(BaseModel):
     nodes: list[GraphNode]
     edges: list[GraphEdge]
+
+
+# ── Bulk flag resolution (consumed by pdf-translators/batch_convert) ───────────
+
+class ResolveRequest(BaseModel):
+    filepaths: list[str]
+
+
+class ResolveFlags(BaseModel):
+    is_old_version: bool
+    is_duplicate: bool
+    is_draft: bool
+    is_printer_friendly: bool
