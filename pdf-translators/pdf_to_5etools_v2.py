@@ -71,10 +71,51 @@ SELECTABLE_TEXT_MIN_CHARS = 100
 # 200k-token context window. Output of a 150 KB chunk is roughly 50k
 # tokens of structured JSON, which Haiku 4.5 handles inside the raised
 # MAX_OUTPUT_TOKENS ceiling (see claude_api.py).
-MAX_CHUNK_CHARS = 150_000
+# Overridable via PDF2E_MAX_CHUNK_CHARS so a caller can shrink chunks to fit a
+# prompt-capped endpoint (e.g. local vLLM boxes limited to 40K input tokens).
+# Default unchanged, so existing workflows are unaffected.
+MAX_CHUNK_CHARS = int(os.environ.get("PDF2E_MAX_CHUNK_CHARS", "150000"))
+
+# Hard input-prompt cap (in tokens). When > 0, a chunk whose estimated prompt
+# (system + user, ~chars/4) exceeds this aborts the WHOLE document with an
+# error and writes no JSON — the cap is a guardrail, not a chunk boundary. This
+# is intentionally different from MAX_CHUNK_CHARS, which splits oversized
+# sections by their children: splitting reduces most chunks below the cap, so
+# only a genuinely oversized leaf (no children to split by) trips this, and when
+# it does the doc is left unconverted so it can be re-run on a larger-context
+# model rather than silently sent over-budget. 0 = disabled (default).
+# batch_convert sets it via PDF2E_MAX_PROMPT_TOKENS (= --prompt-cap).
+MAX_PROMPT_TOKENS = int(os.environ.get("PDF2E_MAX_PROMPT_TOKENS", "0"))
+CHARS_PER_TOKEN = 4  # rough English-prose estimate; matches batch_convert routing
+
+# Per-chunk soft cap (in tokens). When > 0, a single chunk whose estimated prompt
+# exceeds this is NOT sent — it almost certainly won't finish generating inside
+# the provider read-timeout, so rather than burn a full timeout to discover that,
+# we skip it up front, log it, and mark it a failed chunk. Unlike MAX_PROMPT_TOKENS
+# (which aborts the whole doc), this lets the doc's other chunks run and cache;
+# the doc then ends as a partial (no JSON, exit 3) so the failure is logged and the
+# doc stays resumable. 0 = disabled (default). batch_convert sets it via
+# PDF2E_MAX_CHUNK_TOKENS (= --chunk-token-cap).
+MAX_CHUNK_TOKENS = int(os.environ.get("PDF2E_MAX_CHUNK_TOKENS", "0"))
+
+
+def _estimate_prompt_tokens(prompt: str) -> int:
+    """Rough token estimate for a built chunk prompt: (system + user) / 4.
+    The single place this ratio is applied for both size guards below."""
+    return (len(SYSTEM_PROMPT) + len(prompt)) // CHARS_PER_TOKEN
 
 MARKER_ENV = Path(__file__).parent / "marker-env"
 MARKER_BIN = MARKER_ENV / "bin" / "marker_single"
+
+# Exit code main() returns when ≥1 chunk failed but the rest succeeded. The
+# adventure JSON is intentionally NOT written (so the doc stays resumable); the
+# batch driver treats this code as "failed, don't retry now".
+PARTIAL_EXIT_CODE = 3
+
+
+class PartialConversionError(RuntimeError):
+    """Raised when some chunks failed and were skipped. The successful chunks
+    are cached; re-run with --reuse-responses to finish the doc."""
 
 
 # ---------------------------------------------------------------------------
@@ -946,22 +987,10 @@ def convert(
         short_id = re.sub(r"[^A-Z0-9]", "", pdf_path.stem.upper())[:8] or "HOMEBREW"
     name = pdf_path.stem.replace("_", " ")
 
-    # Always persist raw Claude responses alongside the output so a crash
-    # in later steps (assembly, write, monster pass) doesn't lose the API
-    # work. Default location: <out_stem>-responses/. Respects --debug-dir
-    # if the user passed one.
-    if not dry_run_only and debug_dir is None and not monsters_only:
-        target_dir_for_log = output_dir or (out_path.parent if out_path
-                                             else pdf_path.parent)
-        stem = out_path.stem if out_path else pdf_path.stem
-        debug_dir = target_dir_for_log / f"{stem}-responses"
-    if debug_dir is not None:
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        if not dry_run_only:
-            print(f"[responses] saving raw Claude I/O to {debug_dir}")
-
     # ---- Bestiary-only fast exit ----
     if monsters_only:
+        if debug_dir is not None:
+            debug_dir.mkdir(parents=True, exist_ok=True)
         return convert_monsters_only(
             pdf_path=pdf_path, short_id=short_id, name=name, author=author,
             out_path=out_path, output_dir=output_dir,
@@ -969,7 +998,119 @@ def convert(
             debug_dir=debug_dir, dry_run_only=dry_run_only, verbose=verbose,
         )
 
-    # ---- 1. Route ----
+    # Multi-pass pipeline (see chunk_cache.py): extract structure (PyMuPDF/Marker,
+    # no network) -> split (pure) -> encode (LLM, no PyMuPDF). batch_convert runs
+    # these as separate passes via serialize_extract/load_extract; the in-process
+    # convert() just chains them.
+    roots, units, kind, meta = extract_structure(
+        pdf_path, output_type=output_type, short_id=short_id,
+        force_marker=force_marker, verbose=verbose,
+    )
+    chunks = split_to_chunks(roots, units, kind)
+    return encode_chunks(
+        roots, chunks, meta, pdf_path=pdf_path, backend=backend, model=model,
+        author=author, out_path=out_path, output_dir=output_dir,
+        use_batch=use_batch, debug_dir=debug_dir, dry_run_only=dry_run_only,
+        verbose=verbose, extract_monsters=extract_monsters,
+        resume_batch=resume_batch, replay_responses=replay_responses,
+        reuse_responses=reuse_responses, concurrency=concurrency,
+    )
+
+
+class NeedsMarkerError(RuntimeError):
+    """Raised by :func:`extract_structure` (``allow_marker=False``) when a PDF
+    routes to the Marker path. The batch fast-extract phase catches this to defer
+    the doc to ``batch_marker.py`` rather than running Marker inline."""
+
+
+def _body_from_units(node: TocNode, units: list[str], kind: str) -> str:
+    """Reconstruct a node's body from stored text units. Reproduces
+    :func:`_node_body_pymupdf` (``kind="pages"``, ``=== page N ===`` markers,
+    ``\\n\\n``-joined) and :func:`_node_body_markdown` (``kind="lines"``,
+    ``\\n``-joined slice) byte-for-byte, so a post-load split matches the
+    in-PDF split exactly."""
+    if kind == "pages":
+        parts = []
+        n = len(units)
+        for p in range(node.start_page, node.end_page + 1):
+            if 1 <= p <= n:
+                parts.append(f"=== page {p} ===\n{units[p - 1]}")
+        return "\n\n".join(parts)
+    # kind == "lines"
+    start = max(0, node.start_page - 1)
+    end = min(len(units), node.end_page)
+    return "\n".join(units[start:end])
+
+
+def _derive_ids(pdf_path: Path, short_id: str | None) -> tuple[str, str]:
+    if short_id is None:
+        short_id = re.sub(r"[^A-Z0-9]", "", pdf_path.stem.upper())[:8] or "HOMEBREW"
+    name = pdf_path.stem.replace("_", " ")
+    return short_id, name
+
+
+def _fast_structure(pdf_path: Path, profile: "InputProfile", *,
+                    use_printed_toc: bool, verbose: bool):
+    """PyMuPDF structural extraction (fast or printed-ToC). Returns
+    ``(roots, units)`` with ``units[p-1]`` = page p's text (1-indexed)."""
+    doc = fitz.open(str(pdf_path))
+    try:
+        if use_printed_toc:
+            toc_roots = build_toc_from_printed(
+                profile.printed_toc_entries, total_pages=profile.page_count,
+            )
+            if not toc_roots:
+                raise RuntimeError(
+                    "printed-ToC path selected but no TocNode tree produced")
+        else:
+            toc_roots = get_toc_tree(pdf_path, max_level=3)
+            if not toc_roots:
+                raise RuntimeError(
+                    "fast path selected but get_toc_tree returned no roots")
+        toc_roots = _unwrap_singleton_root(toc_roots, verbose)
+        units = [extract_page_text(doc, p) for p in range(1, doc.page_count + 1)]
+    finally:
+        doc.close()
+    return toc_roots, units
+
+
+def _marker_structure(pdf_path: Path, *, verbose: bool):
+    """Marker structural extraction. Returns ``(roots, units)`` with ``units`` =
+    the markdown lines. GPU/ML-heavy; ``batch_marker.py`` drives this as a
+    separate batch tool."""
+    with tempfile.TemporaryDirectory(prefix="marker-") as tmp:
+        md_path = run_marker(pdf_path, Path(tmp), verbose=verbose)
+        md_text = md_path.read_text()
+    headings, lines = parse_markdown_headings(md_text)
+    headings = normalise_numbered_rooms(headings)
+    toc_roots = build_synthetic_toc(headings, total_lines=len(lines))
+    toc_roots = _unwrap_singleton_root(toc_roots, verbose)
+    return toc_roots, lines
+
+
+def extract_structure(
+    pdf_path: Path,
+    *,
+    output_type: str,
+    short_id: str | None = None,
+    force_marker: bool = False,
+    allow_marker: bool = True,
+    verbose: bool = False,
+):
+    """Phase 1: profile + route + structural extraction. No split, no LLM.
+
+    Returns ``(roots, units, kind, meta)`` — ``roots`` the TocNode tree,
+    ``units`` the flat text list, ``kind`` ``"pages"`` (fast/printed-ToC) or
+    ``"lines"`` (Marker), ``meta`` a JSON-serializable dict. Persist with
+    ``chunk_cache.serialize_extract`` so the split + encode passes run without
+    re-opening the PDF.
+
+    ``allow_marker=False`` raises :class:`NeedsMarkerError` for a PDF that would
+    route to Marker (the batch fast phase defers those to ``batch_marker.py``).
+    """
+    short_id, name = _derive_ids(pdf_path, short_id)
+
+    # ---- Route ----
     profile = profile_pdf(pdf_path)
     use_fast = profile.use_fast_path and not force_marker
     use_printed_toc = (
@@ -991,43 +1132,45 @@ def convert(
           f"printed_toc={len(profile.printed_toc_entries) or 'none'} "
           f"-> {route_label}")
 
-    # ---- 2. Build chunks ----
-    if use_fast:
-        doc = fitz.open(str(pdf_path))
-        try:
-            toc_roots = get_toc_tree(pdf_path, max_level=3)
-            if not toc_roots:
-                raise RuntimeError("fast path selected but get_toc_tree returned no roots")
-            toc_roots = _unwrap_singleton_root(toc_roots, verbose)
-            chunks = build_chunks_from_toc(toc_roots, doc)
-        finally:
-            doc.close()
-    elif use_printed_toc:
-        doc = fitz.open(str(pdf_path))
-        try:
-            toc_roots = build_toc_from_printed(
-                profile.printed_toc_entries,
-                total_pages=profile.page_count,
-            )
-            if not toc_roots:
-                raise RuntimeError(
-                    "printed-ToC path selected but no TocNode tree produced"
-                )
-            toc_roots = _unwrap_singleton_root(toc_roots, verbose)
-            chunks = build_chunks_from_toc(toc_roots, doc)
-        finally:
-            doc.close()
+    # ---- Structural extraction ----
+    if use_fast or use_printed_toc:
+        toc_roots, units = _fast_structure(
+            pdf_path, profile, use_printed_toc=use_printed_toc, verbose=verbose)
+        kind = "pages"
+        source_kind = "printed-toc" if use_printed_toc else "fast"
     else:
-        with tempfile.TemporaryDirectory(prefix="marker-") as tmp:
-            md_path = run_marker(pdf_path, Path(tmp), verbose=verbose)
-            md_text = md_path.read_text()
-        headings, lines = parse_markdown_headings(md_text)
-        headings = normalise_numbered_rooms(headings)
-        toc_roots = build_synthetic_toc(headings, total_lines=len(lines))
-        toc_roots = _unwrap_singleton_root(toc_roots, verbose)
-        chunks = build_chunks_from_markdown(toc_roots, lines)
+        if not allow_marker:
+            raise NeedsMarkerError(
+                f"{pdf_path.name} routes to the Marker path; deferred")
+        toc_roots, units = _marker_structure(pdf_path, verbose=verbose)
+        kind = "lines"
+        source_kind = "marker"
 
-    # Count distinct top-level roots for user-visible reporting
+    meta = {
+        "short_id": short_id,
+        "name": name,
+        "output_type": output_type,
+        "page_count": profile.page_count,
+        "source_kind": source_kind,
+    }
+    return toc_roots, units, kind, meta
+
+
+def split_to_chunks(toc_roots, units: list[str], kind: str,
+                    max_chars: int = MAX_CHUNK_CHARS) -> list:
+    """Phase 2 (pure, re-runnable): split the tree into a ChunkSpec list by cap.
+
+    A node whose reconstructed body exceeds ``max_chars`` is split by its
+    children (see :func:`split_oversized`). Needs no PDF/Marker — only the stored
+    tree + units — so it can be re-run with a tighter ``max_chars`` (e.g. sized
+    to a specific endpoint's context window) for free. Owns the ``[chunks]``
+    report and the no-chunks raise.
+    """
+    def body_fn(node: TocNode) -> str:
+        return _body_from_units(node, units, kind)
+
+    chunks = split_oversized(toc_roots, body_fn, max_chars)
+
     distinct_roots = {id(c.root) for c in chunks}
     print(f"[chunks] {len(chunks)} API calls across "
           f"{len(distinct_roots)} top-level sections")
@@ -1039,6 +1182,80 @@ def convert(
 
     if not chunks:
         raise RuntimeError("no chunks produced; cannot convert")
+    return chunks
+
+
+def encode_chunks(
+    toc_roots,
+    chunks,
+    meta: dict,
+    *,
+    pdf_path: Path,
+    backend: "_lb.Backend",
+    model: str,
+    author: str,
+    out_path: Path | None,
+    output_dir: Path | None,
+    use_batch: bool,
+    debug_dir: Path | None,
+    dry_run_only: bool,
+    verbose: bool,
+    extract_monsters: bool = False,
+    resume_batch: str | None = None,
+    replay_responses: Path | None = None,
+    reuse_responses: bool = False,
+    concurrency: int = 1,
+) -> Path:
+    """Phase 2 of the v2 pipeline: send chunks to the LLM, assemble + write JSON.
+
+    Consumes :func:`extract_chunks`'s output — either in-process or reloaded from
+    disk via ``chunk_cache.load_chunks`` (which rebinds chunk ``root`` /
+    ``target_node`` to the reloaded tree so ``assemble_adventure``'s ``id()``
+    grouping stays correct). Needs no PyMuPDF. ``toc_roots`` is accepted for
+    call-site symmetry with the extract output; assembly walks the tree via the
+    chunks' own ``root`` references.
+    """
+    short_id = meta["short_id"]
+    name = meta["name"]
+    output_type = meta["output_type"]
+
+    # Persist raw LLM responses next to the output so a crash in a later step
+    # (assembly, write, monster pass) doesn't lose the API work. Default
+    # location: <out_stem>-responses/. Respects an explicit --debug-dir.
+    if not dry_run_only and debug_dir is None:
+        target_dir_for_log = output_dir or (out_path.parent if out_path
+                                             else pdf_path.parent)
+        stem = out_path.stem if out_path else pdf_path.stem
+        debug_dir = target_dir_for_log / f"{stem}-responses"
+    if debug_dir is not None:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        if not dry_run_only:
+            print(f"[responses] saving raw Claude I/O to {debug_dir}")
+
+    # ---- 2b. Hard prompt-cap guardrail ----
+    # If any chunk's estimated prompt exceeds the cap, abort the WHOLE document
+    # (raise -> main() returns nonzero, no JSON written) instead of sending an
+    # over-budget request or splitting further. Leaving no <stem>.json means
+    # batch_convert keeps the doc in its failed set for a re-run on a
+    # larger-context model. Estimate = (system + user chars) / CHARS_PER_TOKEN.
+    if MAX_PROMPT_TOKENS > 0:
+        over = []
+        for c in chunks:
+            est = _estimate_prompt_tokens(build_prompt(c.target_node, c.body))
+            if est > MAX_PROMPT_TOKENS:
+                over.append((c.target_node.title, c.target_node.start_page,
+                             c.target_node.end_page, est))
+        if over:
+            detail = "\n".join(
+                f"    - {title} (pages {sp}-{ep}): ~{est:,} tok > "
+                f"{MAX_PROMPT_TOKENS:,} cap"
+                for title, sp, ep, est in over
+            )
+            raise RuntimeError(
+                f"{len(over)} chunk(s) exceed the {MAX_PROMPT_TOKENS:,}-token "
+                f"prompt cap; aborting — no JSON written. Re-run this PDF on a "
+                f"larger-context model:\n{detail}"
+            )
 
     # ---- 3. Dry run ----
     if dry_run_only:
@@ -1123,15 +1340,53 @@ def convert(
                 if debug_dir is not None and (debug_dir / f"{cid}-response.txt").exists():
                     print(f"[reuse] chunk {cid}: cached response unusable — "
                           f"re-calling {backend.kind}")
+            prompt = build_prompt(spec.target_node, spec.body)
+            # Pre-flight size guard: a chunk this big won't finish generating
+            # inside the read-timeout, so skip it up front instead of burning a
+            # full timeout to find out. Logged and treated as a failed chunk
+            # (None) — the rest of the doc still runs; the doc ends as a partial.
+            if MAX_CHUNK_TOKENS > 0:
+                est = _estimate_prompt_tokens(prompt)
+                if est > MAX_CHUNK_TOKENS:
+                    print(f"[chunk-too-big] {cid}: ~{est:,} tok > "
+                          f"{MAX_CHUNK_TOKENS:,} cap — skipping without sending "
+                          f"(won't finish in the timeout); logged as a failed "
+                          f"chunk.", flush=True)
+                    return None
             if verbose:
                 print(f"[chunk {cid}] calling {backend.kind} ({len(spec.body)} chars)")
-            prompt = build_prompt(spec.target_node, spec.body)
-            return call_claude_for_chunk(backend, prompt, model, verbose, debug_dir, cid)
+            try:
+                return call_claude_for_chunk(backend, prompt, model, verbose, debug_dir, cid)
+            except Exception as e:
+                # Fail-and-continue: a chunk that errors out (e.g. a DGX read
+                # timeout — generation exceeded the budget) is reported and
+                # SKIPPED, not retried into oblivion and not allowed to abort the
+                # whole doc. Returning None lets every other chunk still run and
+                # cache its response; the doc is then left unwritten (see below)
+                # so a later --reuse-responses pass retries only this chunk.
+                print(f"[chunk-fail] {cid}: {type(e).__name__}: {e} — skipping "
+                      f"this chunk and continuing; re-run with --reuse-responses "
+                      f"to retry it.", flush=True)
+                return None
 
         conc = max(1, min(concurrency, len(chunks)))
         if conc > 1:
             print(f"[concurrency] sending {len(chunks)} chunks, {conc} at a time")
         results = _map_chunks_ordered(chunks, _run_chunk, conc)
+
+        failed_idx = [i for i, r in enumerate(results) if r is None]
+        if failed_idx:
+            # ≥1 chunk failed. Do NOT write the adventure JSON: leaving the
+            # output path absent keeps the doc "not done" so a resume revisits
+            # it. Every chunk that DID succeed saved its response, so the resume
+            # reuses them and only re-sends the failed chunk(s). Signalled to
+            # main() as a distinct exit code (partial), so the batch driver can
+            # mark the doc failed without burning its doc-level retries.
+            fails = ", ".join(_chunk_cid(i, chunks[i]) for i in failed_idx)
+            raise PartialConversionError(
+                f"{len(failed_idx)}/{len(chunks)} chunk(s) failed and were "
+                f"skipped: {fails}. Other chunks are cached — re-run with "
+                f"--reuse-responses to finish this doc.")
         for spec, entries in zip(chunks, results):
             chunk_results.append((spec, entries))
 
@@ -1183,6 +1438,48 @@ def convert(
 # CLI
 # ---------------------------------------------------------------------------
 
+def _git_version(start: Path) -> str:
+    """Compact git description of the repo containing *start*.
+
+    Returns e.g. ``v1.0-52-g1db4b3e (main)`` or ``1db4b3e-dirty (main)``; the
+    ``-dirty`` suffix means the working tree has uncommitted changes — the single
+    most common reason "I thought I was running the new code" is actually true
+    only if it's committed (subprocesses pick up whatever is on disk, but a clean
+    tree pins it to a known commit). Falls back to ``unknown`` off a git repo.
+    """
+    d = start if start.is_dir() else start.parent
+    try:
+        desc = subprocess.run(
+            ["git", "-C", str(d), "describe", "--tags", "--always", "--dirty"],
+            capture_output=True, text=True, timeout=5)
+        if desc.returncode != 0:
+            return "unknown"
+        branch = subprocess.run(
+            ["git", "-C", str(d), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5)
+        rev = desc.stdout.strip() or "unknown"
+        br = branch.stdout.strip()
+        return f"{rev} ({br})" if br and br != "HEAD" else rev
+    except Exception:  # noqa: BLE001 — a version banner must never break a run
+        return "unknown"
+
+
+def _print_version_banner() -> None:
+    """Print the git version of every repo whose code this run executes.
+
+    The converter (mytools) and the transport lib (dgxlib, a separate
+    editable-installed repo) version independently, so a run is only fully
+    described by both. Printed at startup so it lands in each doc's log.
+    """
+    parts = [f"converter(mytools) {_git_version(Path(__file__))}"]
+    try:
+        import dgxlib  # editable install — its own repo / git history
+        parts.append(f"dgxlib {_git_version(Path(dgxlib.__file__))}")
+    except Exception:  # noqa: BLE001
+        pass
+    print("[version] " + " | ".join(parts))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Convert a PDF into a 5etools homebrew adventure/book JSON (v2).",
@@ -1222,6 +1519,8 @@ def main(argv: list[str] | None = None) -> int:
              "--batch only the missing chunks are submitted to the Batch API).",
     )
     args = parser.parse_args(argv)
+
+    _print_version_banner()
 
     if not args.pdf.exists():
         print(f"error: {args.pdf} does not exist")
@@ -1311,6 +1610,11 @@ def main(argv: list[str] | None = None) -> int:
             reuse_responses=args.reuse_responses,
             concurrency=concurrency,
         )
+    except PartialConversionError as e:
+        # Some chunks failed; the rest are cached and the doc was left unwritten.
+        # Distinct exit code so batch_convert doesn't burn its doc-level retries.
+        print(f"partial: {e}")
+        return PARTIAL_EXIT_CODE
     except RuntimeError as e:
         print(f"error: {e}")
         return 1

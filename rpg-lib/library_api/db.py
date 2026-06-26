@@ -63,6 +63,11 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
         "filepath": row["filepath"] if "filepath" in keys else None,
         "relative_path": row["relative_path"] if "relative_path" in keys else None,
         "product_id": row["product_id"] if "product_id" in keys else None,
+        # Optional (only present when the SELECT includes them); guarded so call
+        # sites that don't select them are unaffected by the contract test.
+        "product_version": row["product_version"] if "product_version" in keys else None,
+        "is_printer_friendly": (bool(row["is_printer_friendly"])
+                                if "is_printer_friendly" in keys else False),
     }
 
 
@@ -214,22 +219,37 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
     offset = (page - 1) * per_page
 
     if grouped:
-        # Fetch id+publisher+collection in sorted order, group in Python
+        # Fetch id+publisher+collection+PF in sorted order, group in Python
         id_rows = conn.execute(
-            f"SELECT id, publisher, collection FROM books WHERE {where} ORDER BY {order_by}",
+            f"SELECT id, publisher, collection, is_printer_friendly "
+            f"FROM books WHERE {where} ORDER BY {order_by}",
             params,
         ).fetchall()
 
-        # Group preserving sort order; first occurrence is the representative
+        # Group preserving sort order. The representative is the first member in
+        # sort order, UPGRADED to the printer-friendly edition when one exists in
+        # the group (cleanest text layer / preferred export). Old versions are
+        # already excluded by the WHERE, so a group's members are all current; the
+        # only choice left is format, and printer-friendly wins. `pf_id` is also
+        # surfaced so a consumer can request the PF edition explicitly.
         seen: dict[str, dict] = {}
         group_order: list[str] = []
         for row in id_rows:
             key = _collection_group_key(row["publisher"], row["collection"], row["id"])
+            is_pf = bool(row["is_printer_friendly"])
             if key not in seen:
-                seen[key] = {"rep_id": row["id"], "ids": [row["id"]]}
+                seen[key] = {"rep_id": row["id"], "ids": [row["id"]],
+                             "pf_id": row["id"] if is_pf else None}
                 group_order.append(key)
             else:
-                seen[key]["ids"].append(row["id"])
+                g = seen[key]
+                g["ids"].append(row["id"])
+                if is_pf and g["pf_id"] is None:
+                    g["pf_id"] = row["id"]
+        # Prefer the printer-friendly member as the representative.
+        for g in seen.values():
+            if g["pf_id"] is not None:
+                g["rep_id"] = g["pf_id"]
 
         total = len(group_order)
         total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
@@ -246,6 +266,7 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
                        b.game_system, b.product_type, b.tags, b.series, b.source,
                        b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
                        b.filepath, b.relative_path, b.product_id,
+                       b.product_version, b.is_printer_friendly,
                        (f.book_id IS NOT NULL) AS is_favorite
                 FROM books b
                 LEFT JOIN user_data.favorites f ON f.book_id = b.id
@@ -262,6 +283,7 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
                 summary = _row_to_summary(row)
                 summary["variant_count"] = len(g["ids"])
                 summary["variant_ids"] = g["ids"]
+                summary["printer_friendly_variant_id"] = g["pf_id"]
                 results.append(summary)
 
         return {"results": results, "total": total, "page": page,
@@ -279,6 +301,7 @@ def search_books(conn: sqlite3.Connection, q: str | None = None,
                    b.game_system, b.product_type, b.tags, b.series, b.source,
                    b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
                    b.filepath, b.relative_path, b.product_id,
+                   b.product_version, b.is_printer_friendly,
                    (f.book_id IS NOT NULL) AS is_favorite
             FROM books b
             LEFT JOIN user_data.favorites f ON f.book_id = b.id
@@ -399,6 +422,7 @@ def get_books_by_ids(conn: sqlite3.Connection, book_ids: list[int]) -> list[dict
                    b.game_system, b.product_type, b.tags, b.series, b.source,
                    b.page_count, b.has_bookmarks, b.description, b.min_level, b.max_level,
                    b.filepath, b.relative_path, b.product_id,
+                   b.product_version, b.is_printer_friendly,
                    (f.book_id IS NOT NULL) AS is_favorite
             FROM books b
             LEFT JOIN user_data.favorites f ON f.book_id = b.id
@@ -407,6 +431,42 @@ def get_books_by_ids(conn: sqlite3.Connection, book_ids: list[int]) -> list[dict
         book_ids,
     ).fetchall()
     return [_row_to_summary(r) for r in rows]
+
+
+def resolve_flags(conn: sqlite3.Connection,
+                  filepaths: list[str]) -> dict[str, dict]:
+    """Map each absolute filepath to its library flags from the books table.
+
+    Joins on ``books.filepath`` (the absolute path, which is UNIQUE). Returns
+    ``{filepath: {is_old_version, is_duplicate, is_draft, is_printer_friendly}}``
+    for matched paths; unmatched paths are omitted (caller treats a missing key
+    as "no flags"). Chunks the IN-list (batch of 500) to stay well under
+    SQLite's ~999 variable limit — mirrors ``flag_content_duplicates``.
+
+    Consumed by pdf-translators/batch_convert, which posts ~1300 paths so the
+    library, not the converter, decides which file of each product is canonical.
+    """
+    out: dict[str, dict] = {}
+    if not filepaths:
+        return out
+    batch_size = 500
+    for i in range(0, len(filepaths), batch_size):
+        batch = filepaths[i:i + batch_size]
+        placeholders = ",".join("?" * len(batch))
+        rows = conn.execute(
+            f"""SELECT filepath, is_old_version, is_duplicate,
+                       is_draft, is_printer_friendly
+                FROM books WHERE filepath IN ({placeholders})""",
+            batch,
+        ).fetchall()
+        for r in rows:
+            out[r["filepath"]] = {
+                "is_old_version": bool(r["is_old_version"]),
+                "is_duplicate": bool(r["is_duplicate"]),
+                "is_draft": bool(r["is_draft"]),
+                "is_printer_friendly": bool(r["is_printer_friendly"]),
+            }
+    return out
 
 
 def get_book(conn: sqlite3.Connection, book_id: int) -> dict | None:

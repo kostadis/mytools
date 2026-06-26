@@ -11,8 +11,8 @@ from fastapi.responses import FileResponse
 from . import db, sidecar
 from .models import (
     BookDetail, BookSummary, BookText, FacetsResponse, FilterOptions,
-    GraphResponse, NlqRequest, NlqResponse, SearchResponse, StatsResponse,
-    TopicResponse,
+    GraphResponse, NlqRequest, NlqResponse, ResolveFlags, ResolveRequest,
+    SearchResponse, StatsResponse, TopicResponse,
 )
 
 router = APIRouter(prefix="/api/library", tags=["library"])
@@ -131,6 +131,22 @@ def get_books_by_ids(ids: str = Query(..., description="Comma-separated book IDs
     conn = _conn()
     try:
         return db.get_books_by_ids(conn, book_ids)
+    finally:
+        conn.close()
+
+
+@router.post("/resolve", response_model=dict[str, ResolveFlags])
+def resolve(body: ResolveRequest):
+    """Bulk-resolve per-file library flags by absolute filepath.
+
+    POST (not GET) because the path list can be ~1300 long. Returns
+    ``{filepath: {is_old_version, is_duplicate, is_draft, is_printer_friendly}}``
+    for matched paths; unmatched paths are omitted. Lets a consumer
+    (pdf-translators/batch_convert) get the library's canonical/dedup decision
+    without touching the SQLite DB directly."""
+    conn = _conn()
+    try:
+        return db.resolve_flags(conn, body.filepaths)
     finally:
         conn.close()
 
