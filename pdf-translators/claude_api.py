@@ -10,6 +10,7 @@ single constant for output-token budget, and shared prompt fragments.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
@@ -23,7 +24,13 @@ if TYPE_CHECKING:
 # Constants
 # ---------------------------------------------------------------------------
 
-MAX_OUTPUT_TOKENS = 50_000
+# Per-request output-token budget (the `max_tokens` sent on every completion).
+# Default 50k is sized for the Anthropic path (Haiku/Sonnet cap output at 64k).
+# Overridable via PDF2E_MAX_OUTPUT_TOKENS so a larger-context local endpoint can
+# raise it — but on a prompt-capped endpoint keep `prompt_cap + this` under the
+# served `--max-model-len` (e.g. DGX Qwen at 128K: 40k prompt + 80k output =
+# 120k < 131072). Raising past the served context makes vLLM reject the request.
+MAX_OUTPUT_TOKENS = int(os.environ.get("PDF2E_MAX_OUTPUT_TOKENS", "50000"))
 
 # Shared prompt fragment — tag rules injected into every converter's SYSTEM_PROMPT.
 # Update here when the set of supported 5etools inline tags changes.
