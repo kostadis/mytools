@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""batch_marker.py — standalone Marker extraction pass.
+"""batch_marker.py — standalone Marker OCR extraction pass.
 
 Run this AFTER ``batch_convert.py --phase extract`` (the fast PyMuPDF pass).
 The fast pass handles bookmarked digital PDFs and *defers* everything else
-(scans, un-bookmarked digital) as ``needs_marker`` — those docs have no
+(scans, un-bookmarked digital) as ``needs_ocr`` — those docs have no
 ``<stem>-extract.json``. This tool runs Marker on exactly that set, producing the
 same ``<stem>-extract.json`` artifact (``kind="lines"``) the encode pass consumes.
+For Mistral OCR instead of Marker, use ``batch_mistral_ocr.py``.
 
 Why it's a separate tool, not a phase inside batch_convert:
   * Marker is GPU/ML-heavy (~5 GB of model weights) with a completely different

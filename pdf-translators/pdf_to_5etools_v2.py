@@ -969,7 +969,10 @@ def convert(
     debug_dir: Path | None,
     dry_run_only: bool,
     verbose: bool,
-    force_marker: bool = False,
+    force_ocr: bool = False,
+    ocr_provider: str = "marker",
+    mistral_api_key: str | None = None,
+    from_markdown: Path | None = None,
     extract_monsters: bool = False,
     monsters_only: bool = False,
     resume_batch: str | None = None,
@@ -1004,7 +1007,9 @@ def convert(
     # convert() just chains them.
     roots, units, kind, meta = extract_structure(
         pdf_path, output_type=output_type, short_id=short_id,
-        force_marker=force_marker, verbose=verbose,
+        force_ocr=force_ocr, ocr_provider=ocr_provider,
+        mistral_api_key=mistral_api_key, from_markdown=from_markdown,
+        verbose=verbose,
     )
     chunks = split_to_chunks(roots, units, kind)
     return encode_chunks(
@@ -1017,10 +1022,11 @@ def convert(
     )
 
 
-class NeedsMarkerError(RuntimeError):
+class NeedsOcrError(RuntimeError):
     """Raised by :func:`extract_structure` (``allow_marker=False``) when a PDF
-    routes to the Marker path. The batch fast-extract phase catches this to defer
-    the doc to ``batch_marker.py`` rather than running Marker inline."""
+    routes to the OCR path. The batch fast-extract phase catches this to defer
+    the doc to ``batch_marker.py`` / ``batch_mistral_ocr.py`` rather than
+    running OCR inline."""
 
 
 def _body_from_units(node: TocNode, units: list[str], kind: str) -> str:
@@ -1088,12 +1094,30 @@ def _marker_structure(pdf_path: Path, *, verbose: bool):
     return toc_roots, lines
 
 
+def _mistral_ocr_structure(pdf_path: Path, *, api_key: str, verbose: bool):
+    """Mistral OCR structural extraction. Uploads the PDF to the Mistral API,
+    OCRs all pages, then feeds the returned markdown through the same heading
+    pipeline as Marker. Returns ``(roots, units)`` with ``units`` = the
+    markdown lines. ``batch_mistral_ocr.py`` drives this as a separate batch
+    tool using the Mistral Batch API."""
+    from mistral_ocr import run_mistral_ocr
+    md_text = run_mistral_ocr(pdf_path, api_key, verbose=verbose)
+    headings, lines = parse_markdown_headings(md_text)
+    headings = normalise_numbered_rooms(headings)
+    toc_roots = build_synthetic_toc(headings, total_lines=len(lines))
+    toc_roots = _unwrap_singleton_root(toc_roots, verbose)
+    return toc_roots, lines
+
+
 def extract_structure(
     pdf_path: Path,
     *,
     output_type: str,
     short_id: str | None = None,
-    force_marker: bool = False,
+    force_ocr: bool = False,
+    ocr_provider: str = "marker",
+    mistral_api_key: str | None = None,
+    from_markdown: Path | None = None,
     allow_marker: bool = True,
     verbose: bool = False,
 ):
@@ -1101,22 +1125,45 @@ def extract_structure(
 
     Returns ``(roots, units, kind, meta)`` — ``roots`` the TocNode tree,
     ``units`` the flat text list, ``kind`` ``"pages"`` (fast/printed-ToC) or
-    ``"lines"`` (Marker), ``meta`` a JSON-serializable dict. Persist with
+    ``"lines"`` (OCR), ``meta`` a JSON-serializable dict. Persist with
     ``chunk_cache.serialize_extract`` so the split + encode passes run without
     re-opening the PDF.
 
-    ``allow_marker=False`` raises :class:`NeedsMarkerError` for a PDF that would
-    route to Marker (the batch fast phase defers those to ``batch_marker.py``).
+    ``allow_marker=False`` raises :class:`NeedsOcrError` for a PDF that would
+    route to the OCR path (the batch fast phase defers those to
+    ``batch_marker.py`` / ``batch_mistral_ocr.py``).
+
+    ``from_markdown`` skips profiling and OCR entirely — the provided ``.md``
+    file (e.g. from ``extract_markdown.py`` or Mistral Studio) is fed directly
+    into the heading pipeline. The PDF path is still required for ID/name
+    derivation and output naming.
     """
     short_id, name = _derive_ids(pdf_path, short_id)
 
+    # ---- Markdown-file fast path (no profiling, no OCR) ----
+    if from_markdown is not None:
+        print(f"[profile] markdown-file={from_markdown.name} (skipping PDF profiling)")
+        md_text = from_markdown.read_text()
+        headings, lines = parse_markdown_headings(md_text)
+        headings = normalise_numbered_rooms(headings)
+        toc_roots = build_synthetic_toc(headings, total_lines=len(lines))
+        toc_roots = _unwrap_singleton_root(toc_roots, verbose)
+        meta = {
+            "short_id": short_id,
+            "name": name,
+            "output_type": output_type,
+            "page_count": len(lines),
+            "source_kind": "markdown-file",
+        }
+        return toc_roots, lines, "lines", meta
+
     # ---- Route ----
     profile = profile_pdf(pdf_path)
-    use_fast = profile.use_fast_path and not force_marker
+    use_fast = profile.use_fast_path and not force_ocr
     use_printed_toc = (
         not use_fast
         and profile.use_printed_toc_path
-        and not force_marker
+        and not force_ocr
     )
     if use_fast:
         route_label = "fast-path (PyMuPDF + bookmarks)"
@@ -1125,7 +1172,7 @@ def extract_structure(
                        f"{len(profile.printed_toc_entries)} ToC entries from "
                        f"pages {profile.printed_toc_pages})")
     else:
-        route_label = "Marker path"
+        route_label = f"OCR path ({ocr_provider})"
     print(f"[profile] pages={profile.page_count} "
           f"bookmarks={'yes' if profile.has_bookmarks else 'no'} "
           f"digital={'yes' if profile.has_selectable_text else 'no'} "
@@ -1140,11 +1187,16 @@ def extract_structure(
         source_kind = "printed-toc" if use_printed_toc else "fast"
     else:
         if not allow_marker:
-            raise NeedsMarkerError(
-                f"{pdf_path.name} routes to the Marker path; deferred")
-        toc_roots, units = _marker_structure(pdf_path, verbose=verbose)
+            raise NeedsOcrError(
+                f"{pdf_path.name} routes to the OCR path; deferred")
+        if ocr_provider == "mistral":
+            toc_roots, units = _mistral_ocr_structure(
+                pdf_path, api_key=mistral_api_key, verbose=verbose)
+            source_kind = "mistral-ocr"
+        else:
+            toc_roots, units = _marker_structure(pdf_path, verbose=verbose)
+            source_kind = "marker"
         kind = "lines"
-        source_kind = "marker"
 
     meta = {
         "short_id": short_id,
@@ -1486,9 +1538,29 @@ def main(argv: list[str] | None = None) -> int:
     )
     _cli.add_common_args(parser, default_chunk=DEFAULT_CHUNK, default_model=DEFAULT_MODEL)
     parser.add_argument(
-        "--force-marker", action="store_true", dest="force_marker",
-        help="Bypass the PyMuPDF fast path; always use Marker. Useful when "
-             "the PDF has bookmarks but the text layer is unreliable.",
+        "--from-markdown", metavar="FILE", dest="from_markdown", type=Path,
+        default=None,
+        help="Read a pre-existing markdown file instead of running OCR. "
+             "Skips PDF profiling and all OCR; the PDF path is still used for "
+             "output naming. Useful after running extract_markdown.py and "
+             "hand-editing the result.",
+    )
+    parser.add_argument(
+        "--force-ocr", action="store_true", dest="force_ocr",
+        help="Bypass the PyMuPDF fast path; always use the OCR path. Useful "
+             "when the PDF has bookmarks but the text layer is unreliable.",
+    )
+    parser.add_argument(
+        "--ocr-provider", choices=["marker", "mistral"], default="marker",
+        dest="ocr_provider",
+        help="OCR backend when the fast path is bypassed (default: marker). "
+             "'marker' uses the local ML pipeline; 'mistral' calls the "
+             "Mistral OCR API ($4/1000 pages).",
+    )
+    parser.add_argument(
+        "--mistral-api-key", default=None, dest="mistral_api_key",
+        help="Mistral API key for --ocr-provider mistral. Also read from "
+             "MISTRAL_API_KEY env var.",
     )
     parser.add_argument(
         "--resume-batch", metavar="BATCH_ID", dest="resume_batch", default=None,
@@ -1588,6 +1660,15 @@ def main(argv: list[str] | None = None) -> int:
     else:
         concurrency = 8 if args.provider == "dgx" else 1
 
+    mistral_api_key = args.mistral_api_key or os.environ.get("MISTRAL_API_KEY")
+    if args.ocr_provider == "mistral" and not mistral_api_key and not args.from_markdown:
+        print("error: --ocr-provider mistral requires MISTRAL_API_KEY or --mistral-api-key")
+        return 1
+
+    if args.from_markdown and not args.from_markdown.exists():
+        print(f"error: --from-markdown file not found: {args.from_markdown}")
+        return 1
+
     try:
         convert(
             pdf_path=args.pdf,
@@ -1602,7 +1683,10 @@ def main(argv: list[str] | None = None) -> int:
             debug_dir=args.debug_dir,
             dry_run_only=args.dry_run_only,
             verbose=args.verbose,
-            force_marker=args.force_marker,
+            force_ocr=args.force_ocr,
+            ocr_provider=args.ocr_provider,
+            mistral_api_key=mistral_api_key,
+            from_markdown=args.from_markdown,
             extract_monsters=args.extract_monsters,
             monsters_only=args.monsters_only,
             resume_batch=args.resume_batch,

@@ -489,9 +489,10 @@ def _extract_one(path_str: str, root_str: str, output_type: str, force: bool):
     """Process-pool worker: structural extraction of one PDF into
     ``<stem>-extract.json``. Imports the converter inside the worker (a fresh,
     short-lived process — RAM is released on exit, the whole reason extraction is
-    a separate pool). Fast/printed-ToC only; a doc that routes to Marker is
-    reported ``needs_marker`` for the standalone ``batch_marker.py`` tool, never
-    run inline. Returns ``(rel, {"extract": status, ...})``."""
+    a separate pool). Fast/printed-ToC only; a doc that routes to the OCR path is
+    reported ``needs_ocr`` for the standalone ``batch_marker.py`` /
+    ``batch_mistral_ocr.py`` tools, never run inline.
+    Returns ``(rel, {"extract": status, ...})``."""
     rel = os.path.relpath(path_str, root_str)
     pdf = Path(path_str)
     extract_path = pdf.with_name(pdf.stem + "-extract.json")
@@ -504,8 +505,8 @@ def _extract_one(path_str: str, root_str: str, output_type: str, force: bool):
             pdf, output_type=output_type, allow_marker=False)
         cc.serialize_extract(extract_path, roots, units, kind, meta)
     except Exception as e:  # noqa: BLE001 — never let one PDF kill the pool
-        if type(e).__name__ == "NeedsMarkerError":
-            return rel, {"extract": "needs_marker"}
+        if type(e).__name__ == "NeedsOcrError":
+            return rel, {"extract": "needs_ocr"}
         return rel, {"extract": "error", "reason": f"{type(e).__name__}: {e}"}
     return rel, {"extract": "done", "kind": kind}
 
@@ -879,8 +880,9 @@ def write_skiplist(docs: dict, path: str):
 def run_extract_phase(disp: "Dispatcher", args) -> Counter:
     """Fast/printed-ToC structural extraction for every content doc that needs
     one, into ``<stem>-extract.json``, via a process pool (RAM released per doc).
-    Docs that route to Marker are reported ``needs_marker`` for ``batch_marker.py``
-    — never run inline. Returns a status Counter."""
+    Docs that route to the OCR path are reported ``needs_ocr`` for
+    ``batch_marker.py`` / ``batch_mistral_ocr.py`` — never run inline.
+    Returns a status Counter."""
     root = disp.root
     todo = []
     for rel, ent in sorted(disp.docs.items()):
@@ -918,7 +920,7 @@ def run_extract_phase(disp: "Dispatcher", args) -> Counter:
             if done % 50 == 0 or done == len(todo):
                 print(f"[extract] {done}/{len(todo)} "
                       f"(done={counts['done']} exists={counts['exists']} "
-                      f"needs_marker={counts['needs_marker']} "
+                      f"needs_ocr={counts['needs_ocr']} "
                       f"error={counts['error']})", flush=True)
     return counts
 
@@ -1010,7 +1012,8 @@ def main(argv=None):
         disp.persist()
         print(f"\n=== extract === wrote {ecounts['done']}, "
               f"already {ecounts['exists']}, "
-              f"need Marker {ecounts['needs_marker']} (run batch_marker.py), "
+              f"need OCR {ecounts['needs_ocr']} "
+              f"(run batch_marker.py or batch_mistral_ocr.py), "
               f"errors {ecounts['error']}.")
         if args.phase == "extract":
             write_skiplist(docs, args.skiplist)
@@ -1021,7 +1024,7 @@ def main(argv=None):
     # ---- Encode phase: in-process LLM conversion from the extracts ----
     # Import the converter once (after PDF2E_* env is set) and route per-thread
     # stdout into per-doc logs. Only docs with an extract on disk are enqueued;
-    # the rest (still awaiting Marker) are deferred.
+    # the rest (still awaiting OCR) are deferred.
     _load_converter(args)
     _install_thread_routers()
 

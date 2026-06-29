@@ -4,8 +4,8 @@ app.py
 ======
 Standalone web interface for pdf_to_5etools_v2.py. Legacy UI modes
 ("standard", "ocr", "1e") are preserved as hints: "ocr" and "1e" now
-force the Marker pipeline via --force-marker; "standard" lets v2 auto-
-route between the PyMuPDF fast path and Marker.
+force the OCR pipeline via --force-ocr; "standard" lets v2 auto-route
+between the PyMuPDF fast path and the OCR path.
 
 Requirements:
     pip install flask
@@ -1187,8 +1187,8 @@ def convert():
     out_path = tmpdir / out_name
 
     # v2 is a single unified script. Legacy `mode` values ("ocr", "1e") now
-    # map to --force-marker, which bypasses the PyMuPDF fast path and routes
-    # the PDF through Marker regardless of whether bookmarks are present.
+    # map to --force-ocr, which bypasses the PyMuPDF fast path and routes
+    # the PDF through the OCR pipeline regardless of whether bookmarks are present.
     script = "pdf_to_5etools_v2.py"
 
     cmd = [
@@ -1220,10 +1220,10 @@ def convert():
         cmd.append("--batch")
 
     if mode in ("ocr", "1e"):
-        cmd.append("--force-marker")
+        cmd.append("--force-ocr")
 
     # 1e-mode page range still honoured; v1-specific flags
-    # (--module-code, --system, --dpi, --force-ocr, --no-cr-adjustment, --no-retry)
+    # (--module-code, --system, --dpi, --no-cr-adjustment, --no-retry)
     # no longer apply in v2 and are intentionally dropped.
     if mode == "1e":
         page_range = request.form.get("page_range", "").strip()
