@@ -4,15 +4,7 @@
       "source": "github",
       "repo": "anthropics/claude-plugins-official"
     },
-    "installLocation": "/home/kroussos/.claude/plugins/marketplaces/claude-plugins-official",
-    "lastUpdated": "2026-05-08T18:04:14.339Z"
-  },
-  "mempalace": {
-    "source": {
-      "source": "github",
-      "repo": "MemPalace/mempalace"
-    },
-    "installLocation": "/home/kroussos/.claude/plugins/marketplaces/mempalace",
-    "lastUpdated": "2026-05-02T05:35:11.000Z"
+    "installLocation": "/home/kostadis/.claude/plugins/marketplaces/claude-plugins-official",
+    "lastUpdated": "2026-06-21T02:33:24.453Z"
   }
 }
