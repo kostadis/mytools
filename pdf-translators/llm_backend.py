@@ -31,13 +31,28 @@ from typing import Callable
 
 import claudelib  # noqa: E402
 
-import dgxlib  # noqa: E402  (editable install — github.com/kostadis/dgx-fun)
+try:
+    import dgxlib  # noqa: E402  (editable install — github.com/kostadis/dgx-fun)
+    _dgxlib_available = True
+except ModuleNotFoundError:
+    dgxlib = None  # type: ignore[assignment]
+    _dgxlib_available = False
+
 import claudecodelib  # noqa: E402  (local — Claude Code CLI subscription transport)
 
 # Re-export DGX discovery helpers so the entry point can resolve the served model
 # id without importing dgxlib itself.
-DEFAULT_ENDPOINT: str = dgxlib.DEFAULT_ENDPOINT
-discover_model = dgxlib.discover_model
+DEFAULT_ENDPOINT: str = dgxlib.DEFAULT_ENDPOINT if _dgxlib_available else "http://192.168.1.147:8001/v1"
+
+
+def discover_model(endpoint: str | None = None) -> str:
+    """Discover the model served at the DGX endpoint. Requires dgxlib."""
+    if not _dgxlib_available:
+        raise RuntimeError(
+            "dgxlib not installed (pip install -e git+https://github.com/kostadis/dgx-fun). "
+            "Required for --provider dgx."
+        )
+    return dgxlib.discover_model(endpoint)
 
 
 class Backend:
@@ -101,6 +116,11 @@ def anthropic_backend(api_key: str | None = None) -> Backend:
 
 def dgx_backend(endpoint: str | None = None) -> Backend:
     """Build a Backend backed by the DGX Spark vLLM endpoint (``dgxlib``)."""
+    if not _dgxlib_available:
+        raise RuntimeError(
+            "dgxlib not installed (pip install -e git+https://github.com/kostadis/dgx-fun). "
+            "Required for --provider dgx."
+        )
     endpoint = endpoint or DEFAULT_ENDPOINT
     client = dgxlib.make_client(endpoint)
 
