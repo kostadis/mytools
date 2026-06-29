@@ -10,7 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/kroussos/src/mempalace/hooks/mempal_save_hook.sh",
+            "command": "$HOME/src/mempalace/hooks/mempal_save_hook.sh",
             "timeout": 30
           }
         ]
@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/kroussos/src/mempalace/hooks/mempal_precompact_hook.sh",
+            "command": "$HOME/src/mempalace/hooks/mempal_precompact_hook.sh",
             "timeout": 30
           }
         ]
