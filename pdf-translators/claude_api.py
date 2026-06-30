@@ -228,7 +228,8 @@ def _repair_doubled_braces(raw: str) -> str:
 
 def _parse_claude_response(raw: str, verbose: bool,
                             debug_dir: Path | None = None,
-                            chunk_id: str = "") -> tuple[list[Any], bool]:
+                            chunk_id: str = "",
+                            from_cache: bool = False) -> tuple[list[Any], bool]:
     """Parse a raw Claude text response into a JSON list.
 
     Returns ``(entries, parse_ok)``.  ``parse_ok`` is ``False`` when the raw
@@ -270,8 +271,12 @@ def _parse_claude_response(raw: str, verbose: bool,
                 return result, True
             except json.JSONDecodeError:
                 pass  # repair didn't help — fall through to partial recovery
-        print(f"    [WARN] JSON parse error in {chunk_id}: {e}", flush=True)
-        print(f"    Raw response (first 400 chars): {raw[:400]}", flush=True)
+        if from_cache:
+            print(f"    [WARN] cached response for {chunk_id} is unusable ({e})"
+                  f" — will retry via LLM", flush=True)
+        else:
+            print(f"    [WARN] JSON parse error in {chunk_id}: {e}", flush=True)
+            print(f"    Raw response (first 400 chars): {raw[:400]}", flush=True)
         if debug_dir:
             (debug_dir / f"{chunk_id}-parse-error.txt").write_text(
                 f"Error: {e}\n\n{raw}", encoding="utf-8"
