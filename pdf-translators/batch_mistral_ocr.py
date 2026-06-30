@@ -362,6 +362,7 @@ def _process_results(client, job, stem_to_pdf: dict[str, Path],
 
         if _render_doc(rec["response"]["body"], pdf, output_type, verbose):
             done += 1
+            print(f"[results] OK   {pdf.with_name(pdf.stem + '-extract.json')}")
         else:
             failed += 1
 
@@ -470,6 +471,13 @@ def main(argv=None) -> int:
             return 0
         print("[mistral-ocr] nothing to do.")
         return 0
+
+    # Name exactly which docs this run will OCR, and where each output lands
+    # (<stem>-extract.json next to the source PDF), so the files are findable.
+    print(f"[mistral-ocr] submitting {len(selected)} doc(s) for OCR:")
+    for pdf in selected:
+        print(f"  - {os.path.relpath(str(pdf), str(root))}")
+        print(f"      -> {pdf.with_name(pdf.stem + '-extract.json')}")
 
     from mistralai.client.sdk import Mistral
     client = Mistral(api_key=api_key)
