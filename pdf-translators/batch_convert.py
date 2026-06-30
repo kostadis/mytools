@@ -360,20 +360,25 @@ class Endpoint:
     max_ctx: int                          # context window in tokens (informational)
     takes_big: bool                       # may run docs too big for a prompt-capped box
     pool: int                             # concurrent docs (== max in-flight seqs @ concurrency 1)
-    max_prompt_tokens: int | None = None  # per-request prompt cap; None = no cap
+    max_prompt_tokens: int | None = None  # per-request prompt cap; None/0 = derive from ctx
+    output_cap: int = 80_000              # output token budget; used in ctx-derived splitting
     active: bool = False
     threads: list = field(default_factory=list)
     backend: object = None                # llm_backend.Backend (built lazily)
     model: str | None = None              # served model id for this endpoint
 
     def safe_input_chars(self) -> int:
-        """Max whole-doc text (chars) routable here, with system-prompt headroom.
+        """Max chunk text (chars) for splitting, with headroom for output + system prompt.
 
-        None max_prompt_tokens (the large box) accepts any document.
+        When max_prompt_tokens is set, use it directly. Otherwise derive from the
+        actual context window (max_ctx) minus output and system-prompt headroom — this
+        ensures split_to_chunks sub-splits oversized nodes even when there is no hard
+        prompt cap.
         """
-        if self.max_prompt_tokens is None:
-            return 1 << 30
-        budget = max(0, self.max_prompt_tokens - SYSTEM_PROMPT_RESERVE_TOKENS)
+        if self.max_prompt_tokens:
+            budget = max(0, self.max_prompt_tokens - SYSTEM_PROMPT_RESERVE_TOKENS)
+        else:
+            budget = max(0, self.max_ctx - SYSTEM_PROMPT_RESERVE_TOKENS - self.output_cap)
         return budget * CHARS_PER_TOKEN
 
     def reachable(self) -> bool:
@@ -698,6 +703,12 @@ class Dispatcher:
             return "interrupted"          # killed by signal (e.g. SIGINT) — retry
         try:
             tail = log.read_text(errors="replace")[-20000:]
+            # Only classify against the current attempt's output — logs accumulate
+            # across re-runs (append mode) and old content like [chunk-too-big]
+            # would otherwise misclassify a new failure.
+            marker_idx = tail.rfind("===== attempt ")
+            if marker_idx >= 0:
+                tail = tail[marker_idx:]
         except OSError:
             tail = ""
         if last_exit == 3:
@@ -758,12 +769,10 @@ def parse_args(argv=None):
                         "Empty string disables it.")
     p.add_argument("--spark2-ctx", type=int, default=262144,
                    help="spark2 context window (tokens), informational; 256K.")
-    p.add_argument("--prompt-cap", type=int, default=40000,
-                   help="Max prompt (input) tokens EACH box accepts. Passed to the "
-                        "converter as PDF2E_MAX_PROMPT_TOKENS, where it is a HARD "
-                        "ERROR: a chunk whose prompt exceeds it aborts the whole doc "
-                        "(no JSON written), leaving it failed for a larger-context "
-                        "retry. Also used for endpoint routing here.")
+    p.add_argument("--prompt-cap", type=int, default=0,
+                   help="Max prompt (input) tokens per chunk. 0 = disabled (default). "
+                        "When set, a chunk that exceeds it aborts the whole doc "
+                        "(no JSON written). Also used for endpoint routing.")
     p.add_argument("--chunk-token-cap", type=int, default=20000,
                    help="Per-chunk soft cap (input tokens). Passed to the converter "
                         "as PDF2E_MAX_CHUNK_TOKENS: a single chunk whose estimated "
@@ -986,20 +995,20 @@ def main(argv=None):
     state.set_meta(root=str(root), source=mode, api_base=args.library_api)
 
     # Endpoints.
-    # Both boxes are now equally prompt-capped (40K), so both accept any doc and
-    # work round-robins across them (larger docs drained first by whichever box is
-    # free). The converter's chunk cap (--max-chunk-chars) guarantees no prompt
-    # exceeds --prompt-cap on either box, so there is no "big -> spark1 only" split.
+    # Both boxes accept any doc and work round-robin (larger docs drained first by
+    # whichever box is free). --prompt-cap is disabled by default (0).
     # Per-box pool so asymmetric boxes (e.g. spark1 seqs 16 throughput, spark2
     # MTP seqs 4 latency) can each be driven at their own --max-num-seqs.
     pool1 = args.pool1 if args.pool1 is not None else args.pool
     pool2 = args.pool2 if args.pool2 is not None else args.pool
     spark1 = Endpoint("spark1", args.spark1, args.spark1_ctx, takes_big=True,
-                      pool=pool1, max_prompt_tokens=args.prompt_cap)
+                      pool=pool1, max_prompt_tokens=args.prompt_cap,
+                      output_cap=args.output_cap)
     spark2 = None
     if args.spark2.strip():
         spark2 = Endpoint("spark2", args.spark2, args.spark2_ctx, takes_big=True,
-                          pool=pool2, max_prompt_tokens=args.prompt_cap)
+                          pool=pool2, max_prompt_tokens=args.prompt_cap,
+                          output_cap=args.output_cap)
 
     disp = Dispatcher(args, docs, root, state=state)
 
@@ -1067,9 +1076,10 @@ def main(argv=None):
         print("  deduped (canonical): from existing state DB (reuse)")
     print(f"  state db           : {args.state_db}  (mode: {mode})")
     print(f"  logs               : {args.logdir}")
-    print(f"  prompt cap (both)  : {args.prompt_cap} tok in (HARD ERROR -> doc fails, "
-          f"no JSON); output cap {args.output_cap} tok; chunk cap "
-          f"{args.max_chunk_chars} chars")
+    prompt_cap_str = (f"{args.prompt_cap} tok in (HARD ERROR -> doc fails, no JSON)"
+                      if args.prompt_cap > 0 else "disabled")
+    print(f"  prompt cap (both)  : {prompt_cap_str}; output cap {args.output_cap} tok; "
+          f"chunk cap {args.max_chunk_chars} chars")
     print(f"  per-chunk cap      : {args.chunk_token_cap} tok in "
           f"(over -> skip that chunk, log it, doc ends partial)"
           if args.chunk_token_cap > 0 else
