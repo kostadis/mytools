@@ -1,0 +1,89 @@
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted, computed, watchEffect } from 'vue'
+import { useEditor } from './stores/editor'
+import TreePanel from './components/TreePanel.vue'
+import PreviewPanel from './components/PreviewPanel.vue'
+
+const store = useEditor()
+const filePath = ref('')
+
+const title = computed(() => {
+  const name = store.currentFile.split('/').pop() || 'Markdown Editor'
+  return (store.dirty ? '● ' : '') + name
+})
+
+function doLoad() {
+  const v = filePath.value.trim()
+  if (v) store.load(v)
+}
+
+function onKey(e: KeyboardEvent) {
+  const t = e.target as HTMLElement
+  if (t && t.tagName === 'INPUT') return
+
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); return }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'Z' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); return }
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); store.save(); return }
+
+  const sel = store.selected
+  if (sel < 0) return
+  const b = store.blocks[sel]
+  if (!b || b.level === 0) return
+
+  if (e.key === 'u') store.moveUp(sel)
+  else if (e.key === 'd') store.moveDown(sel)
+  else if (e.key === '[') store.promote(sel)
+  else if (e.key === ']') store.demote(sel)
+  else if (e.key === 'Delete') store.remove(sel)
+}
+
+onMounted(async () => {
+  window.addEventListener('keydown', onKey)
+  // Server tells us if a file was passed on the CLI.
+  try {
+    const r = await fetch('/api/config')
+    if (r.ok) {
+      const cfg = await r.json()
+      if (cfg.preload) {
+        filePath.value = cfg.preload
+        await store.load(cfg.preload)
+        filePath.value = store.currentFile
+      }
+    }
+  } catch {
+    /* no config endpoint — fine */
+  }
+})
+
+onUnmounted(() => window.removeEventListener('keydown', onKey))
+
+// keep document.title in sync
+watchEffect(() => { document.title = title.value })
+</script>
+
+<template>
+  <div class="toolbar">
+    <span class="brand">MD</span>
+    <input
+      class="file"
+      type="text"
+      placeholder="path/to/file.md"
+      v-model="filePath"
+      @keydown.enter="doLoad"
+    />
+    <button class="tbtn" @click="doLoad">Load</button>
+    <span class="sep"></span>
+    <button class="tbtn" title="Undo (Ctrl+Z)" :disabled="!store.canUndo" @click="store.undo()">↩</button>
+    <button class="tbtn" title="Redo (Ctrl+Shift+Z)" :disabled="!store.canRedo" @click="store.redo()">↪</button>
+    <span class="sep"></span>
+    <button class="tbtn save" title="Save (Ctrl+S)" @click="store.save()">💾 Save</button>
+    <span v-if="store.dirty" class="dirty">●</span>
+  </div>
+
+  <div class="main">
+    <TreePanel />
+    <PreviewPanel />
+  </div>
+
+  <div class="status">{{ store.statusMsg }}</div>
+</template>

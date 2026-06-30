@@ -339,6 +339,25 @@ python3 adventure_editor.py [file.json] [--port N]
 
 **Tests:** `pytest test_adventure_editor.py -v` (81 tests covering load, save, undo, move, promote, demote, dissolve, bulk operations, flags, join lines, no-pk-in-onclick regression).
 
+### `markdown_editor.py` + `frontend/` — Markdown heading-tree editor (Vite/Vue SPA)
+
+Flask app (port 5107) for cleaning up the Markdown that feeds `pdf_to_5etools_v2.py --from-markdown` (typically OCR output from `extract_markdown.py`). Two-panel UI: a collapsible **heading tree** (left) + a heading **preview** (right). Per-row ops: expand/collapse, move section up/down (whole subtree), promote/demote heading level (`#` count), delete (undo recovers). Double-click a row to rename; keyboard: `u`/`d` move, `[`/`]` promote/demote, `Del` delete, `Ctrl+Z`/`Ctrl+Shift+Z` undo/redo, `Ctrl+S` save (writes a `.bak`).
+
+**This is the one editor in the project that is NOT a single-file Flask app** — it is the deliberate exception. It started as inline-HTML/vanilla-JS like the others, but hand-rolled DOM updates hit a hard performance ceiling on large OCR files (700 KB / 8000+ lines / 500+ headings): every interaction rebuilt the whole tree's `innerHTML`. The fix that actually mattered was **list virtualization** (only render the ~40 rows on screen), which is impractical to maintain by hand — so the front end was rebuilt as a proper SPA.
+
+**Architecture:**
+- **Backend (`markdown_editor.py`)** — thin Flask server. JSON API: `/api/config` (CLI-preloaded file path), `/api/files`, `/api/load`, `/api/save`. Serves the built bundle from `frontend/dist/` (hashed assets cached; `index.html` sent `no-store` so a rebuild is always picked up). No inline HTML anymore.
+- **Frontend (`frontend/`)** — Vite + **Vue 3** + TypeScript + **Pinia**, mirroring `rpg-lib/frontend` conventions. `src/lib/tree.ts` holds the pure heading-tree logic (parse/serialize/move/promote/delete — ported verbatim from the original vanilla JS, no DOM deps). `src/stores/editor.ts` is the Pinia store (blocks, selection, collapse set, undo/redo, load/save). `src/components/TreePanel.vue` and `PreviewPanel.vue` both use **`vue-virtual-scroller`** (`RecycleScroller`) — this is the performance fix.
+
+**Build step (required — the bundle is gitignored):**
+```bash
+cd frontend && npm install && npm run build      # produces frontend/dist/
+python3 markdown_editor.py [file.md] [--port N]  # http://127.0.0.1:5107
+```
+UI development with hot reload: run the backend, then `cd frontend && npm run dev` (Vite on :5173 proxies `/api` to the Flask backend; `BACKEND` env var overrides the target). `npm run typecheck` runs `vue-tsc`. `frontend/node_modules` and `frontend/dist` are gitignored — **a fresh checkout must `npm install && npm run build` before the editor will serve a UI** (the backend returns a 503 "Frontend not built" page otherwise).
+
+**Diagnostic:** `probe_editor.py` is a stdlib CLI that probes any of these Flask UIs and reports a per-phase timing breakdown (TCP connect / time-to-first-byte / body read) so "slow" can be localized to network vs. server vs. browser. `python3 probe_editor.py --port 5107`.
+
 ### `validate_adventure.py` — adventure JSON structural validator
 
 Validates 5etools adventure JSON structure against patterns from the 98 official adventure data files. Works as both a CLI tool and importable library.
