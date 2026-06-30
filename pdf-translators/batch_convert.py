@@ -311,6 +311,39 @@ def classify_pdf(path_str: str, root_str: str):
                  "mtime": mtime, "pages": pages, "text_chars": text_chars}
 
 
+EXTRACT_SKIP_MARKER = ".extract_skip"
+
+
+def _load_skip_set(directory: Path) -> set:
+    """Parse a `.extract_skip` file in `directory` into a set of PDF basenames
+    to skip. The file lists exact files (one per line); blank lines and lines
+    starting with '#' are ignored, and any directory prefix is dropped so an
+    entry can be a bare filename or a path."""
+    marker = directory / EXTRACT_SKIP_MARKER
+    names: set = set()
+    try:
+        text = marker.read_text(errors="replace")
+    except OSError:
+        return names
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        names.add(os.path.basename(line))
+    return names
+
+
+def _file_marked_skip(pdf: Path, cache: dict) -> bool:
+    """True if this PDF is listed in a `.extract_skip` file sitting in its own
+    directory. Skip-sets are memoised per directory since PDFs share parents."""
+    d = pdf.parent
+    key = str(d)
+    skip = cache.get(key)
+    if skip is None:
+        skip = cache[key] = _load_skip_set(d)
+    return pdf.name in skip
+
+
 def build_manifest(root: Path, prior: dict, workers: int) -> dict:
     """Scan all PDFs under root, reusing prior entries for unchanged files."""
     pdfs = sorted(str(p) for p in root.rglob("*.pdf")
@@ -529,13 +562,14 @@ class Dispatcher:
         self.counts = {"done": 0, "failed": 0, "skipped": 0,
                        "already": 0, "total": 0,
                        "carried_failed": 0, "deferred": 0, "unfixable": 0,
-                       "no_extract": 0}
+                       "no_extract": 0, "extract_skip": 0}
         self.logdir = Path(args.logdir)
         self.logdir.mkdir(parents=True, exist_ok=True)
 
     # ---- queue construction -------------------------------------------------
     def enqueue(self, small_endpoint: Endpoint | None, require_extract: bool = False):
         safe_chars = small_endpoint.safe_input_chars() if small_endpoint else 0
+        skip_cache: dict = {}
         for rel, ent in sorted(self.docs.items()):
             if ent.get("status") == "skipped":
                 self.counts["skipped"] += 1
@@ -546,6 +580,14 @@ class Dispatcher:
             if out.exists() and not self.args.force:
                 ent["status"] = "done"
                 self.counts["already"] += 1
+                continue
+            # Manual never-convert filter: a `.extract_skip` file in the PDF's
+            # own directory lists exact files the user has decided will never
+            # convert. Skip those without burning a doc slot.
+            if _file_marked_skip(pdf, skip_cache):
+                ent["status"] = "skipped"
+                ent["reason"] = "extract_skip"
+                self.counts["extract_skip"] += 1
                 continue
             # Deterministic-failure filter: a doc the last run failed with an
             # over-cap reason (chunk_too_big / prompt_too_big) fails identically
@@ -1063,6 +1105,9 @@ def main(argv=None):
               f"(prior chunk_too_big/prompt_too_big at >= current caps "
               f"--chunk-token-cap {args.chunk_token_cap} / --prompt-cap "
               f"{args.prompt_cap}; raise the matching cap or --retry-too-big)")
+    if disp.counts["extract_skip"]:
+        print(f"  skipped (.extract_skip): {disp.counts['extract_skip']}  "
+              f"(directory marked never-convert)")
     print(f"  skipped (total)    : {n_skip}  -> {args.skiplist}"
           f"  (non-content + dedup)")
     if dedup_counts:
