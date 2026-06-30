@@ -32,6 +32,7 @@ with ``--resume-job JOB_ID`` to skip upload/submit and go straight to polling.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -74,6 +75,12 @@ def parse_args(argv=None):
                    metavar="FILE",
                    help="JSON file mapping stem → absolute PDF path, required with "
                         "--resume-job (saved automatically as mistral-ocr-map.json).")
+    p.add_argument("--no-images", action="store_true",
+                   help="Don't request/save embedded page images. By default the "
+                        "OCR request sets include_image_base64=True and each page "
+                        "image is written to <stem>-mistral-images/ with the "
+                        "markdown link rewritten to point at it. Use this to keep "
+                        "the batch result small when you only need the text.")
     p.add_argument("--no-profile", action="store_true",
                    help="Skip the per-PDF fast-path/OCR routing check (which "
                         "opens every candidate PDF — slow on a network mount). "
@@ -163,8 +170,10 @@ def _upload_pdfs(client, pdfs: list[Path], verbose: bool) -> dict[str, str]:
     return stem_to_fid
 
 
-def _build_manifest(stem_to_fid: dict[str, str]) -> bytes:
-    """Build the JSONL batch manifest bytes."""
+def _build_manifest(stem_to_fid: dict[str, str],
+                    include_images: bool = True) -> bytes:
+    """Build the JSONL batch manifest bytes. With include_images, each request
+    asks for the page images inline (base64) so _process_results can save them."""
     lines = []
     for stem, file_id in stem_to_fid.items():
         req = {
@@ -175,6 +184,7 @@ def _build_manifest(stem_to_fid: dict[str, str]) -> bytes:
                 "table_format": "markdown",
                 "extract_header": False,
                 "extract_footer": False,
+                "include_image_base64": include_images,
             },
         }
         lines.append(json.dumps(req))
@@ -234,7 +244,34 @@ def _process_results(client, job, stem_to_pdf: dict[str, Path],
 
         body = rec["response"]["body"]
         pages = sorted(body.get("pages", []), key=lambda p: p["index"])
-        md_text = "\n\n".join(p["markdown"] for p in pages)
+
+        # Save any embedded page images (present only when the request set
+        # include_image_base64) into a per-doc subfolder, and rewrite each
+        # page's markdown link to point at the saved file. Filenames are
+        # page-prefixed so a repeated id like img-0.jpeg across pages doesn't
+        # collide. Image bytes are base64, optionally as a data: URI.
+        img_dir = pdf.with_name(pdf.stem + "-mistral-images")
+        n_img = 0
+        page_mds = []
+        for p in pages:
+            md = p["markdown"]
+            for img in p.get("images") or []:
+                iid = img.get("id")
+                b64 = img.get("image_base64")
+                if not iid or not b64:
+                    continue
+                data = b64.split(",", 1)[1] if b64.startswith("data:") else b64
+                fname = f"p{p['index']:03d}-{iid}"
+                try:
+                    img_dir.mkdir(exist_ok=True)
+                    (img_dir / fname).write_bytes(base64.b64decode(data))
+                    n_img += 1
+                except (OSError, ValueError) as e:
+                    print(f"[results] WARN {stem}: image {iid}: {e}")
+                    continue
+                md = md.replace(f"]({iid})", f"]({img_dir.name}/{fname})")
+            page_mds.append(md)
+        md_text = "\n\n".join(page_mds)
 
         # Persist the raw OCR markdown next to the PDF for cleanup in
         # markdown_editor.py (--from-markdown). Suffixed so it never collides
@@ -243,7 +280,8 @@ def _process_results(client, job, stem_to_pdf: dict[str, Path],
         try:
             md_path.write_text(md_text, encoding="utf-8")
             if verbose:
-                print(f"[results] md   {stem} -> {md_path.name}")
+                extra = f" (+{n_img} images -> {img_dir.name}/)" if n_img else ""
+                print(f"[results] md   {stem} -> {md_path.name}{extra}")
         except OSError as e:
             print(f"[results] WARN {stem}: could not write {md_path.name}: {e}")
 
@@ -358,7 +396,8 @@ def main(argv=None) -> int:
     # Upload manifest JSONL. Pass raw bytes (not BytesIO): the mistralai 2.5.0
     # File.content union accepts bytes | IO | BufferedReader, and its pydantic
     # is-instance checks reject a BytesIO — while bytes validate directly.
-    manifest_bytes = _build_manifest(stem_to_fid)
+    manifest_bytes = _build_manifest(stem_to_fid,
+                                     include_images=not args.no_images)
     manifest_upload = client.files.upload(
         file={"file_name": "batch-ocr-requests.jsonl",
               "content": manifest_bytes},
