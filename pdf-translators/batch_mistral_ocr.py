@@ -87,6 +87,13 @@ def parse_args(argv=None):
                         "Treats any doc lacking both <stem>.json and "
                         "<stem>-extract.json as OCR-bound. Sound after "
                         "'batch_convert --phase extract' has run.")
+    p.add_argument("--rebuild-from-raw", action="store_true",
+                   dest="rebuild_from_raw",
+                   help="Re-render <stem>-mistral.md / images / extract from "
+                        "saved <stem>-mistral-raw.json files. NO API calls, no "
+                        "cost. Use to re-apply a parsing change (e.g. table "
+                        "inlining) across every already-OCR'd doc. Respects "
+                        "--limit; ignores --force/--no-profile.")
     p.add_argument("--limit", type=int, default=0, metavar="N",
                    help="Submit at most N docs this run (0 = no limit). The "
                         "Mistral free tier caps a batch job at 10 documents, so "
@@ -207,13 +214,124 @@ def _poll_job(client, job_id: str, poll_interval: int, verbose: bool):
         time.sleep(poll_interval)
 
 
-def _process_results(client, job, stem_to_pdf: dict[str, Path],
-                     output_type: str, verbose: bool) -> tuple[int, int]:
-    """Download result JSONL, run heading pipeline, write extract files.
-    Returns (done, failed) counts."""
+def _raw_path(pdf: Path) -> Path:
+    """Path of the complete raw OCR response saved next to a PDF."""
+    return pdf.with_name(pdf.stem + "-mistral-raw.json")
+
+
+def _render_doc(body: dict, pdf: Path, output_type: str, verbose: bool,
+                save_raw: bool = True) -> bool:
+    """Render one doc's OCR response body into all on-disk artifacts:
+    <stem>-mistral-raw.json (the COMPLETE response, saved first so nothing is
+    ever lost), <stem>-mistral-images/, <stem>-mistral.md (images saved +
+    tables inlined), and <stem>-extract.json (for the encode pass).
+
+    Because the full response is persisted, any later parsing change can be
+    re-applied for free via --rebuild-from-raw — no re-OCR. Returns True on a
+    successfully written extract."""
     import pdf_to_5etools_v2 as v2
     import chunk_cache as cc
 
+    stem = pdf.stem
+
+    # 1. Persist the complete raw response FIRST — the single source of truth.
+    if save_raw:
+        try:
+            _raw_path(pdf).write_text(json.dumps(body), encoding="utf-8")
+        except OSError as e:
+            print(f"[results] WARN {stem}: could not write raw response: {e}")
+
+    pages = sorted(body.get("pages", []), key=lambda p: p["index"])
+
+    # 2. Save embedded page images into a per-doc subfolder and rewrite each
+    # page's markdown link to the saved file. Filenames are page-prefixed so a
+    # repeated id like img-0.jpeg across pages doesn't collide. Image bytes are
+    # base64, optionally as a data: URI.
+    img_dir = pdf.with_name(pdf.stem + "-mistral-images")
+    n_img = 0
+    n_tbl = 0
+    page_mds = []
+    for p in pages:
+        md = p["markdown"]
+        for img in p.get("images") or []:
+            iid = img.get("id")
+            b64 = img.get("image_base64")
+            if not iid or not b64:
+                continue
+            data = b64.split(",", 1)[1] if b64.startswith("data:") else b64
+            fname = f"p{p['index']:03d}-{iid}"
+            try:
+                img_dir.mkdir(exist_ok=True)
+                (img_dir / fname).write_bytes(base64.b64decode(data))
+                n_img += 1
+            except (OSError, ValueError) as e:
+                print(f"[results] WARN {stem}: image {iid}: {e}")
+                continue
+            md = md.replace(f"]({iid})", f"]({img_dir.name}/{fname})")
+        # 3. Inline tables: Mistral returns each table's body in page.tables[]
+        # (id + markdown/html content) and leaves only a [tbl-N.md](tbl-N.md)
+        # link in the page markdown. Splice the real content in so the table
+        # survives into the .md and into units[] for the encode pass; without
+        # this the stat-block ability tables come out empty.
+        for tbl in p.get("tables") or []:
+            tid = tbl.get("id")
+            content = tbl.get("content")
+            if not tid or not content:
+                continue
+            ref = f"[{tid}]({tid})"
+            if ref in md:
+                md = md.replace(ref, content)
+            else:
+                md = f"{md}\n\n{content}"  # ref not found — append as fallback
+            n_tbl += 1
+        page_mds.append(md)
+    md_text = "\n\n".join(page_mds)
+
+    # 4. Persist the rendered markdown for cleanup in markdown_editor.py
+    # (--from-markdown). Suffixed so it never collides with a Marker <stem>.md.
+    md_path = pdf.with_name(pdf.stem + "-mistral.md")
+    try:
+        md_path.write_text(md_text, encoding="utf-8")
+        if verbose:
+            bits = []
+            if n_img:
+                bits.append(f"+{n_img} images -> {img_dir.name}/")
+            if n_tbl:
+                bits.append(f"+{n_tbl} tables inlined")
+            extra = f" ({', '.join(bits)})" if bits else ""
+            print(f"[results] md   {stem} -> {md_path.name}{extra}")
+    except OSError as e:
+        print(f"[results] WARN {stem}: could not write {md_path.name}: {e}")
+
+    # 5. Build the extract the encode pass consumes.
+    try:
+        headings, lines = v2.parse_markdown_headings(md_text)
+        headings = v2.normalise_numbered_rooms(headings)
+        toc_roots = v2.build_synthetic_toc(headings, total_lines=len(lines))
+        toc_roots = v2._unwrap_singleton_root(toc_roots, verbose)
+
+        short_id, name = v2._derive_ids(pdf, None)
+        meta = {
+            "short_id": short_id,
+            "name": name,
+            "output_type": output_type,
+            "page_count": len(pages),
+            "source_kind": "mistral-ocr",
+        }
+        extract_path = pdf.with_name(pdf.stem + "-extract.json")
+        cc.serialize_extract(extract_path, toc_roots, lines, "lines", meta)
+        if verbose:
+            print(f"[results] OK  {stem} -> {extract_path.name}")
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"[results] FAIL {stem}: pipeline error {type(e).__name__}: {e}")
+        return False
+
+
+def _process_results(client, job, stem_to_pdf: dict[str, Path],
+                     output_type: str, verbose: bool) -> tuple[int, int]:
+    """Download result JSONL, save each raw response, render all artifacts.
+    Returns (done, failed) counts."""
     output_fid = job.output_file
     if not output_fid:
         print("[results] job has no output_file — nothing to download.")
@@ -242,73 +360,36 @@ def _process_results(client, job, stem_to_pdf: dict[str, Path],
             failed += 1
             continue
 
-        body = rec["response"]["body"]
-        pages = sorted(body.get("pages", []), key=lambda p: p["index"])
-
-        # Save any embedded page images (present only when the request set
-        # include_image_base64) into a per-doc subfolder, and rewrite each
-        # page's markdown link to point at the saved file. Filenames are
-        # page-prefixed so a repeated id like img-0.jpeg across pages doesn't
-        # collide. Image bytes are base64, optionally as a data: URI.
-        img_dir = pdf.with_name(pdf.stem + "-mistral-images")
-        n_img = 0
-        page_mds = []
-        for p in pages:
-            md = p["markdown"]
-            for img in p.get("images") or []:
-                iid = img.get("id")
-                b64 = img.get("image_base64")
-                if not iid or not b64:
-                    continue
-                data = b64.split(",", 1)[1] if b64.startswith("data:") else b64
-                fname = f"p{p['index']:03d}-{iid}"
-                try:
-                    img_dir.mkdir(exist_ok=True)
-                    (img_dir / fname).write_bytes(base64.b64decode(data))
-                    n_img += 1
-                except (OSError, ValueError) as e:
-                    print(f"[results] WARN {stem}: image {iid}: {e}")
-                    continue
-                md = md.replace(f"]({iid})", f"]({img_dir.name}/{fname})")
-            page_mds.append(md)
-        md_text = "\n\n".join(page_mds)
-
-        # Persist the raw OCR markdown next to the PDF for cleanup in
-        # markdown_editor.py (--from-markdown). Suffixed so it never collides
-        # with a Marker-produced <stem>.md.
-        md_path = pdf.with_name(pdf.stem + "-mistral.md")
-        try:
-            md_path.write_text(md_text, encoding="utf-8")
-            if verbose:
-                extra = f" (+{n_img} images -> {img_dir.name}/)" if n_img else ""
-                print(f"[results] md   {stem} -> {md_path.name}{extra}")
-        except OSError as e:
-            print(f"[results] WARN {stem}: could not write {md_path.name}: {e}")
-
-        try:
-            headings, lines = v2.parse_markdown_headings(md_text)
-            headings = v2.normalise_numbered_rooms(headings)
-            toc_roots = v2.build_synthetic_toc(headings, total_lines=len(lines))
-            toc_roots = v2._unwrap_singleton_root(toc_roots, verbose)
-
-            short_id, name = v2._derive_ids(pdf, None)
-            meta = {
-                "short_id": short_id,
-                "name": name,
-                "output_type": output_type,
-                "page_count": len(pages),
-                "source_kind": "mistral-ocr",
-            }
-            extract_path = pdf.with_name(pdf.stem + "-extract.json")
-            cc.serialize_extract(extract_path, toc_roots, lines, "lines", meta)
+        if _render_doc(rec["response"]["body"], pdf, output_type, verbose):
             done += 1
-            if verbose:
-                print(f"[results] OK  {stem} -> {extract_path.name}")
-        except Exception as e:  # noqa: BLE001
-            print(f"[results] FAIL {stem}: pipeline error {type(e).__name__}: {e}")
+        else:
             failed += 1
 
     return done, failed
+
+
+def _rebuild_from_raw(root: Path, rels: list[str], output_type: str,
+                      verbose: bool) -> tuple[int, int]:
+    """Re-render artifacts from saved <stem>-mistral-raw.json files — NO API
+    calls, no cost. Use after a parsing change (e.g. the table-inlining fix) to
+    refresh every already-OCR'd doc for free. Returns (done, skipped)."""
+    done = skipped = 0
+    for rel in rels:
+        pdf = root / rel
+        raw = _raw_path(pdf)
+        if not raw.exists():
+            skipped += 1
+            continue
+        try:
+            body = json.loads(raw.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print(f"[rebuild] FAIL {pdf.stem}: bad raw file: {e}")
+            skipped += 1
+            continue
+        # save_raw=False: the raw file is the input, don't rewrite it.
+        if _render_doc(body, pdf, output_type, verbose, save_raw=False):
+            done += 1
+    return done, skipped
 
 
 def _delete_uploads(client, file_ids: list[str], verbose: bool) -> None:
@@ -329,12 +410,25 @@ def main(argv=None) -> int:
         sys.exit(f"error: --root not a directory: {root}")
 
     api_key = args.mistral_api_key or os.environ.get("MISTRAL_API_KEY")
-    if not api_key and not args.list:
+    if not api_key and not args.list and not args.rebuild_from_raw:
         sys.exit("error: MISTRAL_API_KEY not set and --mistral-api-key not provided")
 
-    from pdf_to_5etools_v2 import profile_pdf
-
     rels = _candidate_rels(root, args.state_db)
+
+    if args.rebuild_from_raw:
+        # Offline re-render from saved raw responses — no API, no cost.
+        have_raw = [rel for rel in rels if _raw_path(root / rel).exists()]
+        if args.limit and len(have_raw) > args.limit:
+            print(f"[rebuild] --limit {args.limit}: rebuilding the first "
+                  f"{args.limit} of {len(have_raw)} docs with a raw response.")
+            have_raw = have_raw[:args.limit]
+        else:
+            print(f"[rebuild] {len(have_raw)} doc(s) have a saved raw response.")
+        done, skipped = _rebuild_from_raw(root, have_raw, args.type, args.verbose)
+        print(f"\n=== rebuild done === re-rendered {done}.")
+        return 0
+
+    from pdf_to_5etools_v2 import profile_pdf
 
     if args.resume_job:
         # Resume mode: skip selection/upload, go straight to polling.
