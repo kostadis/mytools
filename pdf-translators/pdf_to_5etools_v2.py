@@ -632,7 +632,7 @@ def _load_cached_response(
         return None
     raw = cached.read_text(encoding="utf-8")
     entries, _ok = _api._parse_claude_response(
-        raw, verbose, debug_dir=None, chunk_id=cid,
+        raw, verbose, debug_dir=None, chunk_id=cid, from_cache=True,
     )
     return entries or None
 
@@ -1283,31 +1283,6 @@ def encode_chunks(
         debug_dir.mkdir(parents=True, exist_ok=True)
         if not dry_run_only:
             print(f"[responses] saving raw Claude I/O to {debug_dir}")
-
-    # ---- 2b. Hard prompt-cap guardrail ----
-    # If any chunk's estimated prompt exceeds the cap, abort the WHOLE document
-    # (raise -> main() returns nonzero, no JSON written) instead of sending an
-    # over-budget request or splitting further. Leaving no <stem>.json means
-    # batch_convert keeps the doc in its failed set for a re-run on a
-    # larger-context model. Estimate = (system + user chars) / CHARS_PER_TOKEN.
-    if MAX_PROMPT_TOKENS > 0:
-        over = []
-        for c in chunks:
-            est = _estimate_prompt_tokens(build_prompt(c.target_node, c.body))
-            if est > MAX_PROMPT_TOKENS:
-                over.append((c.target_node.title, c.target_node.start_page,
-                             c.target_node.end_page, est))
-        if over:
-            detail = "\n".join(
-                f"    - {title} (pages {sp}-{ep}): ~{est:,} tok > "
-                f"{MAX_PROMPT_TOKENS:,} cap"
-                for title, sp, ep, est in over
-            )
-            raise RuntimeError(
-                f"{len(over)} chunk(s) exceed the {MAX_PROMPT_TOKENS:,}-token "
-                f"prompt cap; aborting — no JSON written. Re-run this PDF on a "
-                f"larger-context model:\n{detail}"
-            )
 
     # ---- 3. Dry run ----
     if dry_run_only:
