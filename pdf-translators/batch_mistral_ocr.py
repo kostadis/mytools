@@ -32,7 +32,6 @@ with ``--resume-job JOB_ID`` to skip upload/submit and go straight to polling.
 from __future__ import annotations
 
 import argparse
-import io
 import json
 import os
 import re
@@ -75,6 +74,17 @@ def parse_args(argv=None):
                    metavar="FILE",
                    help="JSON file mapping stem → absolute PDF path, required with "
                         "--resume-job (saved automatically as mistral-ocr-map.json).")
+    p.add_argument("--no-profile", action="store_true",
+                   help="Skip the per-PDF fast-path/OCR routing check (which "
+                        "opens every candidate PDF — slow on a network mount). "
+                        "Treats any doc lacking both <stem>.json and "
+                        "<stem>-extract.json as OCR-bound. Sound after "
+                        "'batch_convert --phase extract' has run.")
+    p.add_argument("--limit", type=int, default=0, metavar="N",
+                   help="Submit at most N docs this run (0 = no limit). The "
+                        "Mistral free tier caps a batch job at 10 documents, so "
+                        "--limit 10 keeps each run inside it; re-run to take the "
+                        "next N (docs that got an extract are skipped on resume).")
     p.add_argument("--verbose", action="store_true")
     return p.parse_args(argv)
 
@@ -104,8 +114,17 @@ def _needs_ocr(pdf: Path, profile_pdf) -> bool:
     return not (prof.use_fast_path or prof.use_printed_toc_path)
 
 
-def _select(root: Path, rels: list[str], force: bool, profile_pdf) -> list[Path]:
-    """Filter to docs that lack an extract and route to the OCR path."""
+def _select(root: Path, rels: list[str], force: bool, profile_pdf,
+            skip_profile: bool = False) -> list[Path]:
+    """Filter to docs that lack an extract and route to the OCR path.
+
+    With ``skip_profile`` the per-doc ``profile_pdf`` call is skipped: any doc
+    lacking both ``<stem>.json`` and ``<stem>-extract.json`` is taken as
+    OCR-bound. This is sound after ``batch_convert --phase extract`` has run
+    (the fast path writes an extract for everything it can handle and defers the
+    rest), and avoids opening every PDF off a slow mount just to re-derive the
+    routing. Don't use it if the extract phase hasn't run — fast-path-eligible
+    docs would then be sent to OCR too."""
     selected = []
     for rel in rels:
         pdf = root / rel
@@ -115,6 +134,9 @@ def _select(root: Path, rels: list[str], force: bool, profile_pdf) -> list[Path]
             continue  # already converted
         extract_path = pdf.with_name(pdf.stem + "-extract.json")
         if extract_path.exists() and not force:
+            continue
+        if skip_profile:
+            selected.append(pdf)
             continue
         try:
             if _needs_ocr(pdf, profile_pdf):
@@ -163,7 +185,7 @@ def _poll_job(client, job_id: str, poll_interval: int, verbose: bool):
     """Poll until terminal status; return the final BatchJob object."""
     terminal = {"SUCCESS", "FAILED", "TIMEOUT_EXCEEDED", "CANCELLED"}
     while True:
-        job = client.batch_jobs.get(job_id=job_id)
+        job = client.batch.jobs.get(job_id=job_id)
         status = job.status
         done = job.completed_requests
         total = job.total_requests
@@ -189,8 +211,10 @@ def _process_results(client, job, stem_to_pdf: dict[str, Path],
 
     if verbose:
         print(f"[results] downloading output file {output_fid} ...")
+    # files.download returns a *streaming* httpx.Response; its body must be
+    # read() before .text is accessible (else httpx.ResponseNotRead).
     resp = client.files.download(file_id=output_fid)
-    result_lines = resp.text.strip().splitlines()
+    result_lines = resp.read().decode("utf-8").strip().splitlines()
 
     done = failed = 0
     for line in result_lines:
@@ -211,6 +235,17 @@ def _process_results(client, job, stem_to_pdf: dict[str, Path],
         body = rec["response"]["body"]
         pages = sorted(body.get("pages", []), key=lambda p: p["index"])
         md_text = "\n\n".join(p["markdown"] for p in pages)
+
+        # Persist the raw OCR markdown next to the PDF for cleanup in
+        # markdown_editor.py (--from-markdown). Suffixed so it never collides
+        # with a Marker-produced <stem>.md.
+        md_path = pdf.with_name(pdf.stem + "-mistral.md")
+        try:
+            md_path.write_text(md_text, encoding="utf-8")
+            if verbose:
+                print(f"[results] md   {stem} -> {md_path.name}")
+        except OSError as e:
+            print(f"[results] WARN {stem}: could not write {md_path.name}: {e}")
 
         try:
             headings, lines = v2.parse_markdown_headings(md_text)
@@ -285,9 +320,16 @@ def main(argv=None) -> int:
         print(f"\n=== mistral-ocr done === extracted {done}, failed {failed}.")
         return 1 if failed else 0
 
-    selected = _select(root, rels, args.force, profile_pdf)
+    selected = _select(root, rels, args.force, profile_pdf,
+                       skip_profile=args.no_profile)
     print(f"[mistral-ocr] {len(selected)} doc(s) need Mistral OCR "
           f"(of {len(rels)} content docs under {root})")
+
+    if args.limit and len(selected) > args.limit:
+        print(f"[mistral-ocr] --limit {args.limit}: submitting the first "
+              f"{args.limit}; {len(selected) - args.limit} deferred to a "
+              f"later run.")
+        selected = selected[:args.limit]
 
     if args.list or not selected:
         for pdf in selected:
@@ -313,19 +355,20 @@ def main(argv=None) -> int:
     print(f"[mistral-ocr] stem map saved to {map_path.name} "
           f"(use with --resume-job if interrupted)")
 
-    # Upload manifest JSONL
+    # Upload manifest JSONL. Pass raw bytes (not BytesIO): the mistralai 2.5.0
+    # File.content union accepts bytes | IO | BufferedReader, and its pydantic
+    # is-instance checks reject a BytesIO — while bytes validate directly.
     manifest_bytes = _build_manifest(stem_to_fid)
-    manifest_file = io.BytesIO(manifest_bytes)
     manifest_upload = client.files.upload(
         file={"file_name": "batch-ocr-requests.jsonl",
-              "content": manifest_file},
+              "content": manifest_bytes},
         purpose="batch",
     )
     manifest_fid = manifest_upload.id
     print(f"[mistral-ocr] manifest uploaded -> {manifest_fid}")
 
     # Submit batch job
-    job = client.batch_jobs.create(
+    job = client.batch.jobs.create(
         endpoint="/v1/ocr",
         input_files=[manifest_fid],
         model="mistral-ocr-latest",
