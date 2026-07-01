@@ -11,8 +11,20 @@ consumes. For the local Marker pipeline instead, use ``batch_marker.py``.
 Workflow::
 
     python3 batch_convert.py --phase extract          # fast structural extraction
-    python3 batch_mistral_ocr.py                       # this tool — Mistral OCR the rest
+    python3 batch_mistral_ocr.py --no-profile          # this tool — Mistral OCR the rest
     python3 batch_convert.py --phase encode            # in-process LLM conversion
+
+Typical run of THIS tool (after --phase extract has run)::
+
+    export MISTRAL_API_KEY=...
+    python3 batch_mistral_ocr.py --no-profile --limit 5 --verbose
+
+  --no-profile  skips the slow per-PDF routing check (every doc lacking both
+                <stem>.json and <stem>-extract.json is taken as OCR-bound) —
+                seconds instead of minutes on a network mount.
+  --limit N     submit at most N docs (the Mistral free tier caps a batch job
+                at 10); re-run the same command to take the next N — docs that
+                already produced an extract are skipped automatically.
 
 Batch API flow (this tool):
   1. Select PDFs that lack ``<stem>-extract.json`` and route to the OCR path.
@@ -328,42 +340,94 @@ def _render_doc(body: dict, pdf: Path, output_type: str, verbose: bool,
         return False
 
 
+def _download_jsonl(client, file_id: str) -> list[dict]:
+    """Download a Mistral batch output/error file and parse its JSONL lines.
+
+    files.download returns a *streaming* httpx.Response; its body must be
+    read() before .text is accessible (else httpx.ResponseNotRead)."""
+    resp = client.files.download(file_id=file_id)
+    text = resp.read().decode("utf-8").strip()
+    return [json.loads(line) for line in text.splitlines() if line]
+
+
+def _error_message(rec: dict) -> tuple[int | None, object]:
+    """Best-effort (status_code, human message) from a batch error record.
+
+    Mistral records the provider error either at ``rec['error']`` or in
+    ``rec['response']['body']``; ``body`` is often a JSON *string* whose
+    ``message`` field is the readable text (e.g. 'File is too large...')."""
+    resp = rec.get("response") or {}
+    code = resp.get("status_code")
+    raw = rec.get("error")
+    if raw is None:
+        raw = resp.get("body")
+    msg = raw
+    if isinstance(raw, str):
+        try:
+            msg = json.loads(raw).get("message", raw)
+        except (ValueError, AttributeError):
+            msg = raw
+    elif isinstance(raw, dict):
+        msg = raw.get("message", raw)
+    return code, msg
+
+
 def _process_results(client, job, stem_to_pdf: dict[str, Path],
                      output_type: str, verbose: bool) -> tuple[int, int]:
-    """Download result JSONL, save each raw response, render all artifacts.
-    Returns (done, failed) counts."""
-    output_fid = job.output_file
-    if not output_fid:
-        print("[results] job has no output_file — nothing to download.")
-        return 0, len(stem_to_pdf)
-
-    if verbose:
-        print(f"[results] downloading output file {output_fid} ...")
-    # files.download returns a *streaming* httpx.Response; its body must be
-    # read() before .text is accessible (else httpx.ResponseNotRead).
-    resp = client.files.download(file_id=output_fid)
-    result_lines = resp.read().decode("utf-8").strip().splitlines()
-
+    """Render artifacts from the batch OUTPUT file (successes) and surface the
+    reason for every failure from the ERROR file. Mistral routes failed
+    requests to ``job.error_file`` — not the output file — so without reading it
+    a ``failed=N`` count has no explanation. Returns (done, failed) counts."""
     done = failed = 0
-    for line in result_lines:
-        rec = json.loads(line)
-        stem = rec["custom_id"]
-        pdf = stem_to_pdf.get(stem)
-        if pdf is None:
-            print(f"[results] unknown custom_id {stem!r} — skipping")
-            continue
+    seen: set = set()
 
-        status_code = rec.get("response", {}).get("status_code")
-        if status_code != 200:
-            err = rec.get("error") or rec.get("response", {})
-            print(f"[results] FAIL {stem}: status {status_code} {err}")
+    # 1. Successes: the output file.
+    output_fid = getattr(job, "output_file", None)
+    if output_fid:
+        if verbose:
+            print(f"[results] downloading output file {output_fid} ...")
+        for rec in _download_jsonl(client, output_fid):
+            stem = rec.get("custom_id")
+            pdf = stem_to_pdf.get(stem)
+            if pdf is None:
+                print(f"[results] unknown custom_id {stem!r} in output — skipping")
+                continue
+            seen.add(stem)
+            status_code = (rec.get("response") or {}).get("status_code")
+            if status_code != 200:  # defensive: shouldn't appear in output file
+                code, msg = _error_message(rec)
+                print(f"[results] FAIL {pdf.name}: status {code}: {msg}")
+                failed += 1
+                continue
+            if _render_doc(rec["response"]["body"], pdf, output_type, verbose):
+                done += 1
+                print(f"[results] OK   {pdf.with_name(pdf.stem + '-extract.json')}")
+            else:
+                failed += 1
+    else:
+        print("[results] job has no output_file — no requests succeeded.")
+
+    # 2. Failures: the error file — print each doc's actual reason.
+    error_fid = getattr(job, "error_file", None)
+    if error_fid:
+        if verbose:
+            print(f"[results] downloading error file {error_fid} ...")
+        for rec in _download_jsonl(client, error_fid):
+            stem = rec.get("custom_id")
+            if stem in seen:
+                continue
+            seen.add(stem)
+            code, msg = _error_message(rec)
+            pdf = stem_to_pdf.get(stem)
+            label = pdf.name if pdf else (stem or "<unknown>")
+            print(f"[results] FAIL {label}: status {code}: {msg}")
             failed += 1
-            continue
 
-        if _render_doc(rec["response"]["body"], pdf, output_type, verbose):
-            done += 1
-            print(f"[results] OK   {pdf.with_name(pdf.stem + '-extract.json')}")
-        else:
+    # 3. Anything that appeared in neither file.
+    for stem, pdf in stem_to_pdf.items():
+        if stem not in seen:
+            print(f"[results] FAIL {pdf.name}: no result returned "
+                  f"(custom_id {stem!r} in neither output nor error file)")
             failed += 1
 
     return done, failed
