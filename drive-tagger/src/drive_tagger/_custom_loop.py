@@ -132,7 +132,7 @@ async def _run_openai_compat(
     )
     seed_messages.append({"role": "system", "content": "\n".join(system_parts)})
     async with (
-        AsyncOpenAI(base_url=base_url, api_key=api_key or "unused") as client,
+        AsyncOpenAI(base_url=base_url, api_key=api_key or "unused", timeout=120.0) as client,
         stdio_client(server_params) as (read, write),
     ):
         async with ClientSession(read, write) as session:
@@ -154,12 +154,16 @@ async def _run_openai_compat(
             done_since: int | None = None
 
             while steps < max_steps:
-                response = await client.chat.completions.create(
-                    model=model,
-                    messages=messages,  # type: ignore[arg-type]
-                    tools=tools,  # type: ignore[arg-type]
-                    extra_body=extra or None,
-                )
+                try:
+                    response = await client.chat.completions.create(
+                        model=model,
+                        messages=messages,  # type: ignore[arg-type]
+                        tools=tools,  # type: ignore[arg-type]
+                        extra_body=extra or None,
+                    )
+                except Exception as exc:
+                    print(f"\n[batch aborted: LLM error — {exc}]", file=sys.stderr, flush=True)
+                    break
                 choice = response.choices[0]
                 msg = choice.message
 
