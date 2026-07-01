@@ -1,9 +1,14 @@
-"""Drive the tagging loop with a Cursor SDK agent.
+"""Drive the tagging loop with an LLM agent.
 
-Each batch launches a fresh local agent with the drive-tagger MCP server attached
-over stdio and sends the driving prompt. Because all durable state lives in
-turbovecdb + the graph DB, batches are independent: we keep launching agents
-until the worklist is drained (or no progress is made).
+Supports four providers (DT_PROVIDER env var):
+  cursor      — Cursor SDK agent (default; requires CURSOR_API_KEY)
+  anthropic   — Anthropic API via ant auth login or ANTHROPIC_API_KEY
+  openrouter  — OpenRouter OpenAI-compat endpoint (requires OPENROUTER_API_KEY)
+  dgx         — Local DGX Spark vLLM endpoint (requires DT_DGX_ENDPOINT)
+
+Each batch launches a fresh MCP server subprocess and runs an agent until the
+worklist is drained (or no progress is made).  All durable state lives in
+turbovecdb + the graph DB, so batches are independent and restartable.
 """
 
 from __future__ import annotations
@@ -28,6 +33,9 @@ def _worklist_ids(folder_id: Optional[str]) -> list[str]:
         raise RunnerError(
             f"no scan found at {CONFIG.scan_path}; run `drive-tagger scan` first"
         )
+    descendants = (
+        extract.folder_descendants(folder_id, CONFIG.scan_path) if folder_id else None
+    )
     ids: list[str] = []
     with open(CONFIG.scan_path, "r", encoding="utf-8") as fh:
         for line in fh:
@@ -40,8 +48,10 @@ def _worklist_ids(folder_id: Optional[str]) -> list[str]:
                 continue
             if not extract.is_processable(rec):
                 continue
-            if folder_id and folder_id not in (rec.get("parents") or []):
-                continue
+            if descendants is not None:
+                parents = rec.get("parents") or []
+                if not any(p in descendants for p in parents):
+                    continue
             ids.append(rec["id"])
     return ids
 
@@ -78,7 +88,14 @@ def _log_message(msg) -> None:
         pass
 
 
-def run(*, execute: bool = False, folder_id: Optional[str] = None, max_batches: int = 100) -> dict:
+def _run_cursor(
+    *,
+    execute: bool,
+    folder_id: Optional[str],
+    max_batches: int,
+    run_id: str,
+    total_start: int,
+) -> dict:
     api_key = os.environ.get("CURSOR_API_KEY")
     if not api_key:
         raise RunnerError(
@@ -87,13 +104,6 @@ def run(*, execute: bool = False, folder_id: Optional[str] = None, max_batches: 
         )
 
     from cursor_sdk import Agent, AgentOptions, LocalAgentOptions, StdioMcpServerConfig
-
-    CONFIG.ensure_dirs()
-    run_id = __import__("time").strftime("%Y%m%dT%H%M%S")
-
-    total_start = _remaining(folder_id)
-    if total_start == 0:
-        return {"status": "nothing_to_do", "remaining": 0}
 
     batches_run = 0
     remaining = total_start
@@ -114,7 +124,7 @@ def run(*, execute: bool = False, folder_id: Optional[str] = None, max_batches: 
 
         print(
             f"\n=== batch {batches_run + 1} (remaining: {remaining}, "
-            f"execute={execute}) ===",
+            f"execute={execute}, provider=cursor) ===",
             file=sys.stderr,
             flush=True,
         )
@@ -137,10 +147,7 @@ def run(*, execute: bool = False, folder_id: Optional[str] = None, max_batches: 
 
         new_remaining = _remaining(folder_id)
         if new_remaining >= remaining:
-            # No forward progress this batch; stop to avoid an infinite loop.
-            print(
-                "[no progress this batch; stopping]", file=sys.stderr, flush=True
-            )
+            print("[no progress this batch; stopping]", file=sys.stderr, flush=True)
             remaining = new_remaining
             break
         remaining = new_remaining
@@ -152,3 +159,124 @@ def run(*, execute: bool = False, folder_id: Optional[str] = None, max_batches: 
         "remaining": remaining,
         "execute": execute,
     }
+
+
+def _run_custom(
+    *,
+    provider: str,
+    model: str,
+    execute: bool,
+    folder_id: Optional[str],
+    max_batches: int,
+    run_id: str,
+    total_start: int,
+) -> dict:
+    from mcp.client.stdio import StdioServerParameters
+
+    from ._custom_loop import run_batch
+
+    base_url = ""
+    api_key = ""
+    disable_thinking = False
+    if provider == "openrouter":
+        base_url = CONFIG.openrouter_base_url
+        api_key = CONFIG.openrouter_api_key
+    elif provider == "dgx":
+        base_url = CONFIG.dgx_endpoint
+        api_key = "unused"
+        disable_thinking = True  # Qwen3 thinking tokens make tool-calling loops unusably slow
+
+    batches_run = 0
+    remaining = total_start
+    for _ in range(max_batches):
+        if remaining == 0:
+            break
+
+        env = {**os.environ, "DT_EXECUTE": "1" if execute else "0", "DT_RUN_ID": run_id}
+        if folder_id:
+            env["DT_FOLDER_ID"] = folder_id
+
+        server_params = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "drive_tagger.mcp_server"],
+            env={k: str(v) for k, v in env.items()},
+        )
+
+        print(
+            f"\n=== batch {batches_run + 1} (remaining: {remaining}, "
+            f"execute={execute}, provider={provider}) ===",
+            file=sys.stderr,
+            flush=True,
+        )
+
+        run_batch(
+            provider=provider,
+            prompt=DRIVING_PROMPT,
+            model=model,
+            server_params=server_params,
+            openai_base_url=base_url,
+            openai_api_key=api_key,
+            disable_thinking=disable_thinking,
+        )
+
+        batches_run += 1
+        print(f"\n[batch {batches_run} finished]", file=sys.stderr, flush=True)
+
+        new_remaining = _remaining(folder_id)
+        if new_remaining >= remaining:
+            print("[no progress this batch; stopping]", file=sys.stderr, flush=True)
+            remaining = new_remaining
+            break
+        remaining = new_remaining
+
+    return {
+        "status": "done" if remaining == 0 else "stopped",
+        "batches": batches_run,
+        "processed": total_start - remaining,
+        "remaining": remaining,
+        "execute": execute,
+    }
+
+
+def run(*, execute: bool = False, folder_id: Optional[str] = None, max_batches: int = 100) -> dict:
+    provider = CONFIG.provider
+
+    CONFIG.ensure_dirs()
+    run_id = __import__("time").strftime("%Y%m%dT%H%M%S")
+
+    total_start = _remaining(folder_id)
+    if total_start == 0:
+        return {"status": "nothing_to_do", "remaining": 0}
+
+    if provider == "cursor":
+        return _run_cursor(
+            execute=execute,
+            folder_id=folder_id,
+            max_batches=max_batches,
+            run_id=run_id,
+            total_start=total_start,
+        )
+
+    if provider == "openrouter" and not CONFIG.openrouter_api_key:
+        raise RunnerError(
+            "OPENROUTER_API_KEY is not set; "
+            "export it or switch DT_PROVIDER to cursor / anthropic / dgx"
+        )
+
+    if provider not in ("anthropic", "openrouter", "dgx"):
+        raise RunnerError(
+            f"Unknown DT_PROVIDER={provider!r}. "
+            "Valid values: cursor, anthropic, openrouter, dgx"
+        )
+
+    model = CONFIG.dgx_model if provider == "dgx" else CONFIG.model
+
+    return _run_custom(
+        provider=provider,
+        model=model,
+        execute=execute,
+        folder_id=folder_id,
+        max_batches=max_batches,
+        run_id=run_id,
+        total_start=total_start,
+    )

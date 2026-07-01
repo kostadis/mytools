@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
+from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -65,6 +67,37 @@ DOCUMENT_MIMES = {
     "text/markdown",
 }
 DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".pptx", ".md", ".markdown"}
+
+
+def folder_descendants(folder_id: str, scan_path: Path) -> set[str]:
+    """Return all file/folder IDs that are descendants of folder_id.
+
+    Reads scan_path once to build a parent→children map, then does a BFS
+    from folder_id.  Includes the folder itself so callers can check
+    ``rec['id'] in descendants`` or ``any(p in descendants for p in parents)``.
+    """
+    children: dict[str, list[str]] = defaultdict(list)
+    with open(scan_path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for parent in rec.get("parents") or []:
+                children[parent].append(rec["id"])
+
+    result: set[str] = {folder_id}
+    queue = [folder_id]
+    while queue:
+        node = queue.pop()
+        for child in children.get(node, []):
+            if child not in result:
+                result.add(child)
+                queue.append(child)
+    return result
 
 
 def is_processable(record: dict) -> bool:
