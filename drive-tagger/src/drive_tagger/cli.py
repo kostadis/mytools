@@ -80,6 +80,11 @@ def run(
         "--dgx-endpoint",
         help="DGX vLLM base URL (overrides DT_DGX_ENDPOINT).",
     ),
+    shard: Optional[str] = typer.Option(
+        None,
+        "--shard",
+        help="Worklist shard e.g. '0/2' (first half) or '1/2' (second half). Run one shard per machine for parallel processing (overrides DT_SHARD).",
+    ),
 ) -> None:
     """Run the agentic tagging loop until the worklist is drained."""
     import os
@@ -94,6 +99,8 @@ def run(
         os.environ["DT_MODEL"] = model
     if dgx_endpoint is not None:
         os.environ["DT_DGX_ENDPOINT"] = dgx_endpoint
+    if shard is not None:
+        os.environ["DT_SHARD"] = shard
 
     try:
         result = run_agent(execute=execute, folder_id=folder, max_batches=max_batches)
