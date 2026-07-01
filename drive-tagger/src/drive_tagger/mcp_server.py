@@ -16,7 +16,6 @@ Behavior is controlled by env vars set by the runner:
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Optional
 
@@ -47,29 +46,8 @@ class _State:
         self.run_id = os.environ.get("DT_RUN_ID", "")
 
     def _load_worklist(self) -> list[dict]:
-        path = CONFIG.scan_path
-        if not path.exists():
-            return []
-        folder_id = os.environ.get("DT_FOLDER_ID", "").strip()
-        descendants = extract.folder_descendants(folder_id, path) if folder_id else None
-        records = []
-        with open(path, "r", encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rec = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not extract.is_processable(rec):
-                    continue
-                if descendants is not None:
-                    parents = rec.get("parents") or []
-                    if not any(p in descendants for p in parents):
-                        continue
-                records.append(rec)
-        return records
+        folder_id = os.environ.get("DT_FOLDER_ID", "").strip() or None
+        return extract.load_worklist(folder_id, CONFIG.scan_path)
 
 
 _STATE: Optional[_State] = None

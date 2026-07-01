@@ -34,14 +34,21 @@ def _resolve_bin() -> str:
     )
 
 
-def _run(args: list[str], *, capture_bytes: bool = False) -> bytes | str:
+def _run(args: list[str], *, capture_bytes: bool = False, timeout: int = 60) -> bytes | str:
     bin_path = _resolve_bin()
-    proc = subprocess.run(
-        [bin_path, *args],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            [bin_path, *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise GDriveError(
+            f"gdrive-cli {' '.join(args[:2])} timed out after {timeout}s — "
+            "OAuth token may be stale; run `gdrive-cli google scan` to refresh."
+        )
     if proc.returncode != 0:
         stderr = proc.stderr.decode("utf-8", errors="replace")
         raise GDriveError(f"gdrive-cli {' '.join(args)} failed (exit {proc.returncode}):\n{stderr}")
@@ -55,7 +62,7 @@ def scan(out: Optional[Path] = None, *, all_drives: bool = False) -> Path:
     args = ["google", "scan", "--out", str(out)]
     if all_drives:
         args.append("--all-drives")
-    _run(args)
+    _run(args, timeout=600)
     return out
 
 
