@@ -17,6 +17,26 @@ app = typer.Typer(
 
 
 @app.command()
+def check() -> None:
+    """Test configured endpoints and API keys; exits 1 on any failure."""
+    from . import health
+
+    results = health.check_all()
+    any_failed = False
+    for r in results:
+        mark = typer.style("✓", fg=typer.colors.GREEN) if r.ok else typer.style("✗", fg=typer.colors.RED)
+        label = typer.style(r.name, bold=not r.ok)
+        typer.echo(f"  {mark}  {label:<38} {r.detail}")
+        if not r.ok:
+            any_failed = True
+
+    if any_failed:
+        typer.secho("\nOne or more checks failed.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    typer.secho("\nAll checks passed.", fg=typer.colors.GREEN)
+
+
+@app.command()
 def scan(
     all_drives: bool = typer.Option(
         None, "--all-drives/--my-drive", help="Include shared drives (default from DT_ALL_DRIVES)."
@@ -60,6 +80,11 @@ def run(
         "--dgx-endpoint",
         help="DGX vLLM base URL (overrides DT_DGX_ENDPOINT).",
     ),
+    shard: Optional[str] = typer.Option(
+        None,
+        "--shard",
+        help="Worklist shard e.g. '0/2' (first half) or '1/2' (second half). Run one shard per machine for parallel processing (overrides DT_SHARD).",
+    ),
 ) -> None:
     """Run the agentic tagging loop until the worklist is drained."""
     import os
@@ -74,6 +99,8 @@ def run(
         os.environ["DT_MODEL"] = model
     if dgx_endpoint is not None:
         os.environ["DT_DGX_ENDPOINT"] = dgx_endpoint
+    if shard is not None:
+        os.environ["DT_SHARD"] = shard
 
     try:
         result = run_agent(execute=execute, folder_id=folder, max_batches=max_batches)

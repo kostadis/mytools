@@ -228,6 +228,17 @@ def run(*, execute: bool = False, folder_id: Optional[str] = None, max_batches: 
     CONFIG.ensure_dirs()
     run_id = __import__("time").strftime("%Y%m%dT%H%M%S")
 
+    # Pre-flight: fail fast before spending time on the 75MB worklist load.
+    from . import health as _health
+
+    print("Checking endpoints...", file=sys.stderr, flush=True)
+    failures = [r for r in _health.check_all() if not r.ok]
+    if failures:
+        for r in failures:
+            print(f"  ✗  {r.name}: {r.detail}", file=sys.stderr)
+        raise RunnerError("pre-flight checks failed — fix the above before running")
+    print("  all checks passed.", file=sys.stderr, flush=True)
+
     # Build the worklist once — scan.jsonl is 75MB+, we don't re-read it per batch.
     print("Loading worklist...", file=sys.stderr, flush=True)
     worklist_ids = set(_worklist_ids(folder_id))
