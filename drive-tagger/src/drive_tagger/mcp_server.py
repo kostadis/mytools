@@ -44,6 +44,9 @@ class _State:
         self.returned_this_run = 0
         self.execute = os.environ.get("DT_EXECUTE", "0") == "1"
         self.run_id = os.environ.get("DT_RUN_ID", "")
+        # Forward pointer — advances past processed/skipped entries so each
+        # next_file call is O(1) amortized rather than O(len(records)).
+        self._scan_idx: int = 0
 
     def _load_worklist(self) -> list[dict]:
         folder_id = os.environ.get("DT_FOLDER_ID", "").strip() or None
@@ -61,9 +64,13 @@ def _state() -> _State:
 
 
 def _next_unprocessed(st: _State) -> Optional[dict]:
-    for rec in st.records:
+    # st.current is always None here (cleared at the top of next_file before
+    # this is called), so we only need to skip processed and skipped entries.
+    while st._scan_idx < len(st.records):
+        rec = st.records[st._scan_idx]
         fid = rec["id"]
-        if fid in st.processed or fid in st.skipped or fid == st.current:
+        if fid in st.processed or fid in st.skipped:
+            st._scan_idx += 1
             continue
         return rec
     return None

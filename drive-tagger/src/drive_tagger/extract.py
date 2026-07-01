@@ -136,12 +136,30 @@ def load_worklist(folder_id: Optional[str], scan_path: Path) -> list[dict]:
                 if child not in descendants:
                     descendants.add(child)
                     queue.append(child)
-        return [
+        return _apply_shard([
             r for r in all_records
             if is_processable(r) and any(p in descendants for p in (r.get("parents") or []))
-        ]
+        ])
 
-    return [r for r in all_records if is_processable(r)]
+    return _apply_shard([r for r in all_records if is_processable(r)])
+
+
+def _apply_shard(records: list[dict]) -> list[dict]:
+    """Filter records to the shard specified by DT_SHARD='index/total'."""
+    spec = os.environ.get("DT_SHARD", "").strip()
+    if not spec:
+        return records
+    try:
+        idx_str, total_str = spec.split("/")
+        idx, total = int(idx_str), int(total_str)
+        if total < 2 or not (0 <= idx < total):
+            raise ValueError
+    except (ValueError, TypeError):
+        raise ValueError(f"DT_SHARD must be 'index/total' (e.g. '0/2'), got {spec!r}")
+    return [
+        r for r in records
+        if int(hashlib.md5(r["id"].encode()).hexdigest(), 16) % total == idx
+    ]
 
 
 def is_processable(record: dict) -> bool:
