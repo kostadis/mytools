@@ -56,7 +56,12 @@ class Config:
     embed_model: str = field(
         default_factory=lambda: _env("DT_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
     )
-    embed_dim: int = field(default_factory=lambda: _env_int("DT_EMBED_DIM", 384))
+    embed_dim: int = field(
+        default_factory=lambda: _env_int(
+            "DT_EMBED_DIM",
+            1024 if _env("DT_EMBED_PROVIDER", "local") == "dgx" else 384,
+        )
+    )
 
     # DGX embedding endpoint (Ollama on spark2, OpenAI-compat /v1/embeddings).
     dgx_embed_endpoint: str = field(
