@@ -89,20 +89,20 @@ async fn exchange_code(client_id: &str, client_secret: &str, code: &str, scope: 
 async fn refresh_token(client_secret: &str, refresh_token: &str, scope: &str) -> Result<Token> {
     let client = Client::new();
     
+    let creds_path = credentials_path()?;
+    let creds_data = fs::read_to_string(&creds_path)?;
+    let creds: serde_json::Value = serde_json::from_str(&creds_data)?;
+    let client_id = creds["installed"]["client_id"]
+        .as_str()
+        .context("Missing client_id")?;
+
     let form = [
+        ("client_id", client_id),
         ("client_secret", client_secret),
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh_token),
         ("scope", scope),
     ];
-
-    // Need client_id from credentials
-    let creds_path = credentials_path()?;
-    let creds_data = fs::read_to_string(&creds_path)?;
-    let creds: serde_json::Value = serde_json::from_str(&creds_data)?;
-    let _client_id = creds["installed"]["client_id"]
-        .as_str()
-        .context("Missing client_id")?;
 
     let resp = client
         .post("https://oauth2.googleapis.com/token")
