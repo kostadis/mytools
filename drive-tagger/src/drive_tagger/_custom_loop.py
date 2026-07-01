@@ -108,6 +108,7 @@ async def _run_openai_compat(
     server_params: StdioServerParameters,
     max_steps: int = _MAX_STEPS_DEFAULT,
     disable_thinking: bool = False,
+    system_instructions: str = "",
 ) -> None:
     from openai import AsyncOpenAI
 
@@ -116,11 +117,11 @@ async def _run_openai_compat(
     if disable_thinking:
         extra["chat_template_kwargs"] = {"enable_thinking": False}
 
-    # Qwen3 model-level thinking disable: inject /no_think system message.
-    # This is honored by the tokenizer regardless of vLLM version.
-    # The agent-mode instruction prevents Qwen from roleplaying tool calls as
-    # prose instead of actually invoking them (finish_reason: stop hallucination).
-    seed_messages: list[dict] = []
+    # Build system message.
+    # - /no_think: Qwen3 thinking-token disable (honored by tokenizer).
+    # - agent enforcement: prevents Qwen from roleplaying tool calls as prose.
+    # - system_instructions: full workflow instructions when caller wants them
+    #   in the system turn (more reliable than a long user message for Qwen).
     system_parts = []
     if disable_thinking:
         system_parts.append("/no_think")
@@ -130,7 +131,9 @@ async def _run_openai_compat(
         "Your very first response MUST be a call to the `next_file` tool — "
         "do not output any text before making that call."
     )
-    seed_messages.append({"role": "system", "content": "\n".join(system_parts)})
+    if system_instructions:
+        system_parts.append(system_instructions)
+    seed_messages: list[dict] = [{"role": "system", "content": "\n\n".join(system_parts)}]
     async with (
         AsyncOpenAI(base_url=base_url, api_key=api_key or "unused", timeout=120.0) as client,
         stdio_client(server_params) as (read, write),
@@ -238,6 +241,7 @@ def run_batch(
     openai_api_key: str = "",
     max_steps: int = _MAX_STEPS_DEFAULT,
     disable_thinking: bool = False,
+    system_instructions: str = "",
 ) -> None:
     """Run one agent batch synchronously. Called from the sync runner loop."""
     if provider == "anthropic":
@@ -252,5 +256,6 @@ def run_batch(
                 server_params,
                 max_steps=max_steps,
                 disable_thinking=disable_thinking,
+                system_instructions=system_instructions,
             )
         )
