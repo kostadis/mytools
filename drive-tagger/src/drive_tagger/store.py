@@ -80,25 +80,14 @@ class Store:
             out["vector"] = res.vectors[0]
         return out
 
-    def _reupsert_metadata(self, file_id: str, meta: dict) -> None:
-        """Update a document's metadata without re-embedding (reuses its vector)."""
-        res = self.documents.get(ids=[file_id], include=["documents", "vectors"])
-        if not res.ids:
-            return
-        self.documents.upsert(
-            ids=[file_id],
-            documents=[res.documents[0] if res.documents else ""],
-            metadatas=[meta],
-            vectors=[res.vectors[0]] if res.vectors else None,
-        )
-
     def mark_processed(self, file_id: str) -> None:
         doc = self.get_document(file_id)
         if not doc:
             return
         meta = {k: v for k, v in doc.items() if k not in ("id", "document", "vector")}
         meta["processed"] = True
-        self._reupsert_metadata(file_id, meta)
+        meta["processed_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        self.documents.update_metadata(ids=[file_id], metadatas=[meta])
 
     def find_similar(self, file_id: str, k: int) -> list[dict]:
         """Return up to ``k`` documents most similar to ``file_id`` (excluding it)."""
@@ -195,16 +184,12 @@ class Store:
         return out
 
     def _bump_category_count(self, name: str, delta: int) -> None:
-        res = self.categories.get(ids=[name], include=["documents", "metadatas"])
+        res = self.categories.get(ids=[name], include=["metadatas"])
         if not res.ids:
             return
         meta = dict(res.metadatas[0])
         meta["member_count"] = max(0, meta.get("member_count", 0) + delta)
-        self.categories.upsert(
-            ids=[name],
-            documents=[res.documents[0] if res.documents else name],
-            metadatas=[meta],
-        )
+        self.categories.update_metadata(ids=[name], metadatas=[meta])
 
     def assign_categories(self, file_id: str, names: list[str]) -> list[str]:
         """Attach categories to a document (union with existing). Returns the
@@ -224,7 +209,7 @@ class Store:
         merged = sorted(current.union(clean))
         meta = {k: v for k, v in doc.items() if k not in ("id", "document", "vector")}
         meta["categories"] = merged
-        self._reupsert_metadata(file_id, meta)
+        self.documents.update_metadata(ids=[file_id], metadatas=[meta])
         return merged
 
     # -- lifecycle ------------------------------------------------------------

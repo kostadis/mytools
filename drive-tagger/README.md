@@ -86,9 +86,13 @@ DT_FOLDER_ID=<drive-folder-id> DT_MAX_FILES=10 uv run drive-tagger run
 | `DT_PROVIDER` | `cursor` | LLM backend: `cursor`, `anthropic`, `openrouter`, `dgx` |
 | `DT_MODEL` | `claude-haiku-4-5` | Model id for cursor / anthropic / openrouter. For openrouter use the namespaced id, e.g. `anthropic/claude-haiku-4.5`. |
 | `DT_DGX_MODEL` | `Qwen/Qwen3-Next-80B-A3B-Instruct-FP8` | Model id for the DGX backend (verify with `/spark-status`) |
-| `DT_DGX_ENDPOINT` | `http://192.168.1.147:8001/v1` | OpenAI-compat base URL for the DGX Spark |
+| `DT_DGX_ENDPOINT` | `http://192.168.1.147:8001/v1` | OpenAI-compat base URL for the DGX Spark chat endpoint |
 | `OPENROUTER_API_KEY` | (unset) | Required when `DT_PROVIDER=openrouter` |
 | `DT_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Override the OpenRouter endpoint |
+| `DT_EMBED_PROVIDER` | `local` | Embedding backend: `local` (fastembed, 384-dim) or `dgx` (Ollama on spark2, 1024-dim). **Switching requires `drive-tagger reset`** and setting `DT_EMBED_DIM` to match. |
+| `DT_DGX_EMBED_ENDPOINT` | `http://192.168.1.121:11434/v1` | Ollama OpenAI-compat base URL for DGX embeddings (spark2) |
+| `DT_DGX_EMBED_MODEL` | `qwen3-embedding:0.6b` | Embedding model id served by Ollama on spark2 |
+| `DT_EMBED_DIM` | `384` | Vector dimension — must match the embed model (384 for local MiniLM, 1024 for qwen3-embedding:0.6b) |
 | `DT_SIMILAR_K` | `8` | neighbors / categories retrieved per file |
 | `DT_MAX_FILES` | `50` | max files processed per `run` invocation |
 | `DT_MAX_CHARS` | `12000` | max characters embedded per file |

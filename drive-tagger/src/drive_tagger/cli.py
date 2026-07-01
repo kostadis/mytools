@@ -125,6 +125,54 @@ def _dgx_metrics(endpoint: str) -> dict:
     return result
 
 
+_RATE_WINDOW = 20  # number of recently-processed files used to compute rate
+
+
+def _rate_and_eta(docs: list[dict], remaining: int) -> tuple[Optional[str], Optional[str]]:
+    """Return (rate_str, eta_str) from processed_at timestamps, or (None, None)."""
+    from datetime import datetime
+
+    stamps = sorted(
+        d["processed_at"] for d in docs if d.get("processed_at")
+    )
+    if len(stamps) < 2:
+        return None, None
+
+    window = stamps[-_RATE_WINDOW:]
+    try:
+        t0 = datetime.fromisoformat(window[0])
+        t1 = datetime.fromisoformat(window[-1])
+    except ValueError:
+        return None, None
+
+    elapsed_min = (t1 - t0).total_seconds() / 60.0
+    if elapsed_min <= 0:
+        return None, None
+
+    files_in_window = len(window) - 1
+    rate = files_in_window / elapsed_min  # files / min
+
+    if rate >= 1:
+        rate_str = f"{rate:.1f} files/min"
+    else:
+        rate_str = f"{rate * 60:.1f} files/hr"
+
+    n_label = f"last {len(window)}"
+    rate_display = f"{rate_str}  ({n_label})"
+
+    eta_str: Optional[str] = None
+    if rate > 0 and remaining > 0:
+        eta_min = remaining / rate
+        if eta_min < 90:
+            eta_str = f"~{eta_min:.0f}m"
+        elif eta_min < 60 * 36:
+            eta_str = f"~{eta_min / 60:.1f}h"
+        else:
+            eta_str = f"~{eta_min / 60 / 24:.1f}d"
+
+    return rate_display, eta_str
+
+
 def _print_status(folder: Optional[str]) -> None:
     """Print one status snapshot to stdout."""
     from .config import CONFIG
@@ -157,11 +205,19 @@ def _print_status(folder: Optional[str]) -> None:
     done_ids = {d["id"] for d in docs if d.get("processed")}
     remaining = len(work_ids - done_ids)
 
-    typer.echo(f"Provider:                     {CONFIG.provider}")
+    rate_str, eta_str = _rate_and_eta(docs, remaining)
+
+    typer.echo(f"Provider:                     {CONFIG.provider} / embed:{CONFIG.embed_provider}")
     typer.echo(f"Worklist (processable files): {len(worklist)}")
     typer.echo(f"Documents stored:             {len(docs)}")
     typer.echo(f"Processed:                    {processed}")
     typer.echo(f"Remaining:                    {remaining}")
+    if rate_str:
+        typer.echo(f"Rate:                         {rate_str}")
+        if eta_str:
+            typer.echo(f"ETA:                          {eta_str}")
+    else:
+        typer.echo("Rate:                         (no timing data yet)")
     typer.echo(f"Categories:                   {len(categories)}")
     typer.echo(f"File-to-file links:           {link_count}")
     if categories:
