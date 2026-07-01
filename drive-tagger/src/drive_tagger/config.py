@@ -53,6 +53,30 @@ class Config:
     )
     embed_dim: int = field(default_factory=lambda: _env_int("DT_EMBED_DIM", 384))
 
+    # --- provider selection --------------------------------------------------
+    # cursor | anthropic | openrouter | dgx
+    provider: str = field(default_factory=lambda: _env("DT_PROVIDER", "cursor"))
+
+    # --- OpenRouter ----------------------------------------------------------
+    openrouter_base_url: str = field(
+        default_factory=lambda: _env("DT_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    )
+    # Reads OPENROUTER_API_KEY by convention (same name most tools use).
+    openrouter_api_key: str = field(
+        default_factory=lambda: _env("OPENROUTER_API_KEY", "")
+    )
+
+    # --- DGX Spark -----------------------------------------------------------
+    dgx_endpoint: str = field(
+        default_factory=lambda: _env("DT_DGX_ENDPOINT", "http://192.168.1.147:8001/v1")
+    )
+    # Model running on the DGX; verify with /spark-status before changing.
+    dgx_model: str = field(
+        default_factory=lambda: _env(
+            "DT_DGX_MODEL", "Qwen/Qwen3-Next-80B-A3B-Instruct-FP8"
+        )
+    )
+
     # --- agent / retrieval tunables -----------------------------------------
     model: str = field(default_factory=lambda: _env("DT_MODEL", "claude-haiku-4-5"))
     similar_k: int = field(default_factory=lambda: _env_int("DT_SIMILAR_K", 8))

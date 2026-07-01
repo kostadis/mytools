@@ -51,6 +51,7 @@ class _State:
         if not path.exists():
             return []
         folder_id = os.environ.get("DT_FOLDER_ID", "").strip()
+        descendants = extract.folder_descendants(folder_id, path) if folder_id else None
         records = []
         with open(path, "r", encoding="utf-8") as fh:
             for line in fh:
@@ -63,8 +64,10 @@ class _State:
                     continue
                 if not extract.is_processable(rec):
                     continue
-                if folder_id and folder_id not in (rec.get("parents") or []):
-                    continue
+                if descendants is not None:
+                    parents = rec.get("parents") or []
+                    if not any(p in descendants for p in parents):
+                        continue
                 records.append(rec)
         return records
 
