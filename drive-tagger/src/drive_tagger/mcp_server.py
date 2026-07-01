@@ -16,8 +16,11 @@ Behavior is controlled by env vars set by the runner:
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 from typing import Optional
+
+_EXTRACT_TIMEOUT = 90  # seconds; pypdf/docx/pptx can hang on malformed files
 
 from mcp.server.fastmcp import FastMCP
 
@@ -102,11 +105,20 @@ def next_file() -> dict:
         if st.store.has_unchanged(fid, rec.get("md5_checksum"), rec.get("modified_time")):
             st.processed.add(fid)
             continue
+        _pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        _future = _pool.submit(extract.extract_text, rec)
         try:
-            text = extract.extract_text(rec)
-        except Exception as exc:  # noqa: BLE001 - surface extraction issues, keep going
+            text = _future.result(timeout=_EXTRACT_TIMEOUT)
+        except concurrent.futures.TimeoutError:
+            _pool.shutdown(wait=False)
+            st.skipped.add(fid)
+            st._scan_idx += 1
+            continue
+        except Exception:  # noqa: BLE001
+            _pool.shutdown(wait=False)
             st.skipped.add(fid)
             continue
+        _pool.shutdown(wait=False)
         if not text:
             st.skipped.add(fid)
             continue
