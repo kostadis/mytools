@@ -39,8 +39,7 @@ async def _run_anthropic(
 ) -> None:
     from anthropic import AsyncAnthropic
 
-    client = AsyncAnthropic()
-    async with stdio_client(server_params) as (read, write):
+    async with AsyncAnthropic() as client, stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools_resp = await session.list_tools()
@@ -112,7 +111,6 @@ async def _run_openai_compat(
 ) -> None:
     from openai import AsyncOpenAI
 
-    client = AsyncOpenAI(base_url=base_url, api_key=api_key or "unused")
     # extra_body merged into every chat.completions.create call (newer vLLM)
     extra: dict = {}
     if disable_thinking:
@@ -123,7 +121,10 @@ async def _run_openai_compat(
     seed_messages: list[dict] = []
     if disable_thinking:
         seed_messages.append({"role": "system", "content": "/no_think"})
-    async with stdio_client(server_params) as (read, write):
+    async with (
+        AsyncOpenAI(base_url=base_url, api_key=api_key or "unused") as client,
+        stdio_client(server_params) as (read, write),
+    ):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools_resp = await session.list_tools()
