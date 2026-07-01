@@ -1,0 +1,25 @@
+# pdf-translators runtime dependencies.
+# Floors are the versions verified working; bump as needed.
+
+# PDF parsing / profiling (fast path, TOC extraction) — imported as `fitz`.
+PyMuPDF>=1.27.1
+
+# Anthropic Messages API (claude provider, via ../lib/claudelib.py and claude_api.py).
+anthropic>=0.84.0
+
+# Mistral OCR extraction pass (mistral_ocr.py / batch_mistral_ocr.py).
+# Pinned to the 2.x line: the code imports `from mistralai.client.sdk import Mistral`,
+# which is the 2.x namespace layout (not the 1.x top-level `from mistralai import Mistral`).
+mistralai>=2.5.0
+
+# Flask web UIs (app.py and the *_editor.py tools).
+Flask>=3.1.3
+
+# Test suite.
+pytest>=9.0.2
+
+# Not on PyPI — install separately when using those paths:
+#   dgxlib  — DGX Spark vLLM transport (--provider dgx); editable install from
+#             github.com/kostadis/dgx-fun.
+#   Marker  — local ML OCR pipeline (batch_marker.py / --force-marker); install
+#             marker-pdf into the separate marker-env/ venv (see CLAUDE.md).
