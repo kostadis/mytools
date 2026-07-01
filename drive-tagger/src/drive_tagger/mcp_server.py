@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import os
+import sys
 from typing import Optional
 
 _EXTRACT_TIMEOUT = 90  # seconds; pypdf/docx/pptx can hang on malformed files
@@ -101,28 +102,36 @@ def next_file() -> dict:
         if rec is None:
             return {"done": True, "remaining": 0}
         fid = rec["id"]
+        name = rec.get("name", fid)
+        print(f"[next_file] checking {name!r}", file=sys.stderr, flush=True)
         # Skip if unchanged from a previous run.
         if st.store.has_unchanged(fid, rec.get("md5_checksum"), rec.get("modified_time")):
             st.processed.add(fid)
             continue
+        print(f"[next_file] extracting text …", file=sys.stderr, flush=True)
         _pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         _future = _pool.submit(extract.extract_text, rec)
         try:
             text = _future.result(timeout=_EXTRACT_TIMEOUT)
         except concurrent.futures.TimeoutError:
+            print(f"[next_file] extraction timed out, skipping", file=sys.stderr, flush=True)
             _pool.shutdown(wait=False)
             st.skipped.add(fid)
             st._scan_idx += 1
             continue
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            print(f"[next_file] extraction error: {exc}, skipping", file=sys.stderr, flush=True)
             _pool.shutdown(wait=False)
             st.skipped.add(fid)
             continue
         _pool.shutdown(wait=False)
         if not text:
+            print(f"[next_file] no text extracted, skipping", file=sys.stderr, flush=True)
             st.skipped.add(fid)
             continue
+        print(f"[next_file] embedding ({len(text)} chars) …", file=sys.stderr, flush=True)
         st.store.add_document(rec, text)
+        print(f"[next_file] done → returning to agent", file=sys.stderr, flush=True)
         st.current = fid
         st.returned_this_run += 1
         snippet = text[:1500]
