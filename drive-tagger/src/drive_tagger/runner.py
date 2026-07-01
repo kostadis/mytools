@@ -13,7 +13,6 @@ turbovecdb + the graph DB, so batches are independent and restartable.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from typing import Optional
@@ -33,31 +32,10 @@ def _worklist_ids(folder_id: Optional[str]) -> list[str]:
         raise RunnerError(
             f"no scan found at {CONFIG.scan_path}; run `drive-tagger scan` first"
         )
-    descendants = (
-        extract.folder_descendants(folder_id, CONFIG.scan_path) if folder_id else None
-    )
-    ids: list[str] = []
-    with open(CONFIG.scan_path, "r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not extract.is_processable(rec):
-                continue
-            if descendants is not None:
-                parents = rec.get("parents") or []
-                if not any(p in descendants for p in parents):
-                    continue
-            ids.append(rec["id"])
-    return ids
+    return [r["id"] for r in extract.load_worklist(folder_id, CONFIG.scan_path)]
 
 
-def _remaining(folder_id: Optional[str]) -> int:
-    worklist = set(_worklist_ids(folder_id))
+def _remaining_from_set(worklist: set[str]) -> int:
     if not worklist:
         return 0
     store = Store()
@@ -66,6 +44,10 @@ def _remaining(folder_id: Optional[str]) -> int:
     finally:
         store.close()
     return len(worklist - processed)
+
+
+def _remaining(folder_id: Optional[str]) -> int:
+    return _remaining_from_set(set(_worklist_ids(folder_id)))
 
 
 def _log_message(msg) -> None:
@@ -95,6 +77,7 @@ def _run_cursor(
     max_batches: int,
     run_id: str,
     total_start: int,
+    worklist_ids: set[str],
 ) -> dict:
     api_key = os.environ.get("CURSOR_API_KEY")
     if not api_key:
@@ -145,7 +128,7 @@ def _run_cursor(
         status = getattr(result, "status", "unknown")
         print(f"\n[batch {batches_run} finished: {status}]", file=sys.stderr, flush=True)
 
-        new_remaining = _remaining(folder_id)
+        new_remaining = _remaining_from_set(worklist_ids)
         if new_remaining >= remaining:
             print("[no progress this batch; stopping]", file=sys.stderr, flush=True)
             remaining = new_remaining
@@ -170,6 +153,7 @@ def _run_custom(
     max_batches: int,
     run_id: str,
     total_start: int,
+    worklist_ids: set[str],
 ) -> dict:
     from mcp.client.stdio import StdioServerParameters
 
@@ -222,7 +206,7 @@ def _run_custom(
         batches_run += 1
         print(f"\n[batch {batches_run} finished]", file=sys.stderr, flush=True)
 
-        new_remaining = _remaining(folder_id)
+        new_remaining = _remaining_from_set(worklist_ids)
         if new_remaining >= remaining:
             print("[no progress this batch; stopping]", file=sys.stderr, flush=True)
             remaining = new_remaining
@@ -244,9 +228,13 @@ def run(*, execute: bool = False, folder_id: Optional[str] = None, max_batches: 
     CONFIG.ensure_dirs()
     run_id = __import__("time").strftime("%Y%m%dT%H%M%S")
 
-    total_start = _remaining(folder_id)
+    # Build the worklist once — scan.jsonl is 75MB+, we don't re-read it per batch.
+    print("Loading worklist...", file=sys.stderr, flush=True)
+    worklist_ids = set(_worklist_ids(folder_id))
+    total_start = _remaining_from_set(worklist_ids)
     if total_start == 0:
         return {"status": "nothing_to_do", "remaining": 0}
+    print(f"Worklist: {len(worklist_ids)} processable files, {total_start} unprocessed.", file=sys.stderr, flush=True)
 
     if provider == "cursor":
         return _run_cursor(
@@ -255,6 +243,7 @@ def run(*, execute: bool = False, folder_id: Optional[str] = None, max_batches: 
             max_batches=max_batches,
             run_id=run_id,
             total_start=total_start,
+            worklist_ids=worklist_ids,
         )
 
     if provider == "openrouter" and not CONFIG.openrouter_api_key:
@@ -279,4 +268,5 @@ def run(*, execute: bool = False, folder_id: Optional[str] = None, max_batches: 
         max_batches=max_batches,
         run_id=run_id,
         total_start=total_start,
+        worklist_ids=worklist_ids,
     )

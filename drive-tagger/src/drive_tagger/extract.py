@@ -100,6 +100,50 @@ def folder_descendants(folder_id: str, scan_path: Path) -> set[str]:
     return result
 
 
+def load_worklist(folder_id: Optional[str], scan_path: Path) -> list[dict]:
+    """Return processable Drive records from scan_path in a single file pass.
+
+    If folder_id is given, restricts to descendants of that folder (BFS done
+    from the same pass).  This replaces the previous two-pass pattern of
+    calling folder_descendants() then reading the file again.
+    """
+    if not scan_path.exists():
+        return []
+
+    children: dict[str, list[str]] = defaultdict(list)
+    all_records: list[dict] = []
+
+    with open(scan_path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            all_records.append(rec)
+            if folder_id:
+                for parent in rec.get("parents") or []:
+                    children[parent].append(rec["id"])
+
+    if folder_id:
+        descendants: set[str] = {folder_id}
+        queue = [folder_id]
+        while queue:
+            node = queue.pop()
+            for child in children.get(node, []):
+                if child not in descendants:
+                    descendants.add(child)
+                    queue.append(child)
+        return [
+            r for r in all_records
+            if is_processable(r) and any(p in descendants for p in (r.get("parents") or []))
+        ]
+
+    return [r for r in all_records if is_processable(r)]
+
+
 def is_processable(record: dict) -> bool:
     """True if we can plausibly extract text from this record.
 
