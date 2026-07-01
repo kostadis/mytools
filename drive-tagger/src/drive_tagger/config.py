@@ -81,7 +81,7 @@ class Config:
 
     # --- DGX Spark -----------------------------------------------------------
     dgx_endpoint: str = field(
-        default_factory=lambda: _env("DT_DGX_ENDPOINT", "http://192.168.1.147:8001/v1")
+        default_factory=lambda: _env("DT_DGX_ENDPOINT", "http://192.168.1.121:8001/v1")
     )
     # Model running on the DGX; verify with /spark-status before changing.
     dgx_model: str = field(
