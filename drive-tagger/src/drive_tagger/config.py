@@ -48,10 +48,23 @@ class Config:
     )
 
     # --- embeddings ----------------------------------------------------------
+    # "local" uses fastembed (all-MiniLM-L6-v2, 384-dim, no network).
+    # "dgx" uses the Ollama OpenAI-compat endpoint on spark2 (qwen3-embedding:0.6b, 1024-dim).
+    # Switching providers requires `drive-tagger reset` — vectors from different models
+    # are incompatible even if you set DT_EMBED_DIM correctly.
+    embed_provider: str = field(default_factory=lambda: _env("DT_EMBED_PROVIDER", "local"))
     embed_model: str = field(
         default_factory=lambda: _env("DT_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
     )
     embed_dim: int = field(default_factory=lambda: _env_int("DT_EMBED_DIM", 384))
+
+    # DGX embedding endpoint (Ollama on spark2, OpenAI-compat /v1/embeddings).
+    dgx_embed_endpoint: str = field(
+        default_factory=lambda: _env("DT_DGX_EMBED_ENDPOINT", "http://192.168.1.121:11434/v1")
+    )
+    dgx_embed_model: str = field(
+        default_factory=lambda: _env("DT_DGX_EMBED_MODEL", "qwen3-embedding:0.6b")
+    )
 
     # --- provider selection --------------------------------------------------
     # cursor | anthropic | openrouter | dgx
