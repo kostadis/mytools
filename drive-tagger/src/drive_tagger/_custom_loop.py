@@ -118,9 +118,19 @@ async def _run_openai_compat(
 
     # Qwen3 model-level thinking disable: inject /no_think system message.
     # This is honored by the tokenizer regardless of vLLM version.
+    # The agent-mode instruction prevents Qwen from roleplaying tool calls as
+    # prose instead of actually invoking them (finish_reason: stop hallucination).
     seed_messages: list[dict] = []
+    system_parts = []
     if disable_thinking:
-        seed_messages.append({"role": "system", "content": "/no_think"})
+        system_parts.append("/no_think")
+    system_parts.append(
+        "You are an autonomous agent. You MUST use tool calls for ALL actions. "
+        "NEVER describe, simulate, or narrate tool calls in text. "
+        "Your very first response MUST be a call to the `next_file` tool — "
+        "do not output any text before making that call."
+    )
+    seed_messages.append({"role": "system", "content": "\n".join(system_parts)})
     async with (
         AsyncOpenAI(base_url=base_url, api_key=api_key or "unused") as client,
         stdio_client(server_params) as (read, write),
@@ -148,6 +158,7 @@ async def _run_openai_compat(
                     model=model,
                     messages=messages,  # type: ignore[arg-type]
                     tools=tools,  # type: ignore[arg-type]
+                    tool_choice="required",
                     extra_body=extra or None,
                 )
                 choice = response.choices[0]
@@ -159,7 +170,7 @@ async def _run_openai_compat(
                     for tc in msg.tool_calls:
                         print(f"\n[tool] {tc.function.name}", file=sys.stderr, flush=True)
 
-                if choice.finish_reason != "tool_calls" or not msg.tool_calls:
+                if not msg.tool_calls:
                     break
 
                 # Rebuild as plain dict — avoids Pydantic serialisation surprises
