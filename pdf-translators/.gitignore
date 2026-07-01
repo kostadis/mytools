@@ -17,5 +17,9 @@ marker-env/
 # Per-run batch conversion logs (one .log per module).
 ddex3-logs/
 
-# Mistral OCR batch resume map (stem->pdf, regenerated each run).
+# Mistral OCR batch resume maps (stem->pdf, regenerated each run).
 mistral-ocr-map.json
+ocr-three-map.json
+
+# Scratch backups of OCR extract/markdown output.
+scratchpad-*-backup/
