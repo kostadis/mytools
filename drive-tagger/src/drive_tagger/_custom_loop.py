@@ -158,7 +158,6 @@ async def _run_openai_compat(
                     model=model,
                     messages=messages,  # type: ignore[arg-type]
                     tools=tools,  # type: ignore[arg-type]
-                    tool_choice="required",
                     extra_body=extra or None,
                 )
                 choice = response.choices[0]
@@ -170,7 +169,7 @@ async def _run_openai_compat(
                     for tc in msg.tool_calls:
                         print(f"\n[tool] {tc.function.name}", file=sys.stderr, flush=True)
 
-                if not msg.tool_calls:
+                if choice.finish_reason != "tool_calls" or not msg.tool_calls:
                     break
 
                 # Rebuild as plain dict — avoids Pydantic serialisation surprises
