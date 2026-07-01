@@ -16,10 +16,12 @@ stopped and resumed without losing work.
 ## Architecture
 
 ```
-Cursor SDK agent  <--MCP-->  drive-tagger MCP server  -->  gdrive-cli (Rust)  -->  Google Drive
-                                       |
-                                       +-->  turbovecdb (documents + categories)
-                                       +-->  graph.sqlite (file-to-file links)
+LLM agent (cursor / anthropic / openrouter / dgx)
+         |
+         +--MCP stdio-->  drive-tagger MCP server  -->  gdrive-cli (Rust)  -->  Google Drive
+                                   |
+                                   +-->  turbovecdb (documents + categories)
+                                   +-->  graph.sqlite (file-to-file links)
 ```
 
 The agent loops over these tools:
@@ -37,7 +39,11 @@ The agent loops over these tools:
    - Put your Google OAuth Desktop client at `~/.config/gdrive-cli/credentials.json`.
    - Run `gdrive-cli google scan` once to mint `token.json` / `token-write.json` (browser consent).
    - drive-tagger looks for the binary at `../gdrive-cli/target/release/gdrive-cli` (sibling in mytools); override with `DT_GDRIVE_CLI`.
-2. **Cursor API key**: `export CURSOR_API_KEY=...` (Cursor Dashboard -> Integrations).
+2. **LLM backend** — pick one:
+   - **Cursor** (default): `export CURSOR_API_KEY=...` (Cursor Dashboard → Integrations).
+   - **Anthropic/Claude subscription**: `ant auth login` once, then `export DT_PROVIDER=anthropic`. No API key env var needed.
+   - **OpenRouter**: `export OPENROUTER_API_KEY=... DT_PROVIDER=openrouter DT_MODEL=anthropic/claude-haiku-4.5`.
+   - **DGX Spark**: `export DT_PROVIDER=dgx` (uses `http://192.168.1.147:8001/v1` by default; override with `DT_DGX_ENDPOINT`).
 3. **Optional local fast-path**: if Google Drive for Desktop is mounted, set `DT_USE_MOUNT=1` (and `DT_DRIVE_MOUNT`, default `/mnt/g`) to read synced binaries locally instead of downloading.
 
 ## Install
@@ -77,7 +83,12 @@ DT_FOLDER_ID=<drive-folder-id> DT_MAX_FILES=10 uv run drive-tagger run
 
 | Var | Default | Meaning |
 | --- | --- | --- |
-| `DT_MODEL` | `claude-haiku-4-5` | Cursor model id for the agent (use `Cursor.models.list()` to see valid ids) |
+| `DT_PROVIDER` | `cursor` | LLM backend: `cursor`, `anthropic`, `openrouter`, `dgx` |
+| `DT_MODEL` | `claude-haiku-4-5` | Model id for cursor / anthropic / openrouter. For openrouter use the namespaced id, e.g. `anthropic/claude-haiku-4.5`. |
+| `DT_DGX_MODEL` | `Qwen/Qwen3-Next-80B-A3B-Instruct-FP8` | Model id for the DGX backend (verify with `/spark-status`) |
+| `DT_DGX_ENDPOINT` | `http://192.168.1.147:8001/v1` | OpenAI-compat base URL for the DGX Spark |
+| `OPENROUTER_API_KEY` | (unset) | Required when `DT_PROVIDER=openrouter` |
+| `DT_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Override the OpenRouter endpoint |
 | `DT_SIMILAR_K` | `8` | neighbors / categories retrieved per file |
 | `DT_MAX_FILES` | `50` | max files processed per `run` invocation |
 | `DT_MAX_CHARS` | `12000` | max characters embedded per file |
