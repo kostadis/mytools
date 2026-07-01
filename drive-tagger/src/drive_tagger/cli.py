@@ -17,6 +17,26 @@ app = typer.Typer(
 
 
 @app.command()
+def check() -> None:
+    """Test configured endpoints and API keys; exits 1 on any failure."""
+    from . import health
+
+    results = health.check_all()
+    any_failed = False
+    for r in results:
+        mark = typer.style("✓", fg=typer.colors.GREEN) if r.ok else typer.style("✗", fg=typer.colors.RED)
+        label = typer.style(r.name, bold=not r.ok)
+        typer.echo(f"  {mark}  {label:<38} {r.detail}")
+        if not r.ok:
+            any_failed = True
+
+    if any_failed:
+        typer.secho("\nOne or more checks failed.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    typer.secho("\nAll checks passed.", fg=typer.colors.GREEN)
+
+
+@app.command()
 def scan(
     all_drives: bool = typer.Option(
         None, "--all-drives/--my-drive", help="Include shared drives (default from DT_ALL_DRIVES)."
