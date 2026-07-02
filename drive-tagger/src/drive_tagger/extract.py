@@ -267,11 +267,14 @@ def _local_bytes(md5: Optional[str]) -> Optional[bytes]:
 # --- binary parsers ----------------------------------------------------------
 
 
+_PDF_MAX_PAGES = 20  # enough for intro/TOC/overview; avoids timeout on large books
+
+
 def _pdf_text(data: bytes) -> str:
     from pypdf import PdfReader
 
     reader = PdfReader(io.BytesIO(data))
-    return "\n".join((page.extract_text() or "") for page in reader.pages)
+    return "\n".join((page.extract_text() or "") for page in reader.pages[:_PDF_MAX_PAGES])
 
 
 def _docx_text(data: bytes) -> str:
