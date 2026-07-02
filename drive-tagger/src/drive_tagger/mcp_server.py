@@ -231,21 +231,6 @@ def link_files(src_id: str, dst_id: str, relation: str = "related-to", note: str
     return {"added": added, "src_id": src_id, "dst_id": dst_id, "relation": relation}
 
 
-@mcp.tool()
-def stats() -> dict:
-    """Return current counts: documents stored, categories, links, and files
-    remaining in the worklist."""
-    st = _state()
-    return {
-        "documents": st.store.count_documents(),
-        "categories": len(st.store.list_categories()),
-        "links": st.graph.count(),
-        "skipped": st.graph.count_skipped(),
-        "remaining": _remaining(st),
-        "execute": st.execute,
-    }
-
-
 def main() -> None:
     mcp.run(transport="stdio")
 
