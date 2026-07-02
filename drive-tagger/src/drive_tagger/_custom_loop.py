@@ -128,8 +128,10 @@ async def _run_openai_compat(
     system_parts.append(
         "You are an autonomous agent. You MUST use tool calls for ALL actions. "
         "NEVER describe, simulate, or narrate tool calls in text. "
-        "Your very first response MUST be a call to the `next_file` tool — "
-        "do not output any text before making that call."
+        "Your very first response MUST be a call to the `next_file` tool. "
+        "Calling any other tool first — link_files, find_similar, "
+        "search_categories, list_categories, create_category, assign_categories "
+        "— before calling `next_file` is FORBIDDEN. Call `next_file` now."
     )
     if system_instructions:
         system_parts.append(system_instructions)
@@ -177,6 +179,17 @@ async def _run_openai_compat(
                         print(f"\n[tool] {tc.function.name}", file=sys.stderr, flush=True)
 
                 if choice.finish_reason != "tool_calls" or not msg.tool_calls:
+                    break
+
+                # Guard: if the very first tool call isn't next_file the model has
+                # entered hallucination mode — abort rather than burn the batch.
+                if steps == 0 and msg.tool_calls[0].function.name != "next_file":
+                    print(
+                        f"\n[batch aborted: first tool was "
+                        f"{msg.tool_calls[0].function.name!r}, expected next_file]",
+                        file=sys.stderr,
+                        flush=True,
+                    )
                     break
 
                 # Rebuild as plain dict — avoids Pydantic serialisation surprises

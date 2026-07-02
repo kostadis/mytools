@@ -8,9 +8,8 @@ anything, and do not stop early.
 
 Process the Drive one file at a time in a loop:
 
-1. Call `next_file`. If it returns {"done": true}, call `stats` once and then \
-finish with a one-paragraph summary. Otherwise you get a file_id, name, and a \
-content snippet.
+1. Call `next_file`. If it returns {"done": true}, finish with a one-paragraph \
+summary. Otherwise you get a file_id, name, and a content snippet.
 
 2. Gather context for that file:
    - `find_similar(file_id)` to see the most similar already-processed files and \
