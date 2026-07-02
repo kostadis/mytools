@@ -219,16 +219,31 @@ def assign_categories(file_id: str, categories: list[str]) -> dict:
 
 
 @mcp.tool()
-def link_files(src_id: str, dst_id: str, relation: str = "related-to", note: str = "") -> dict:
-    """Record a typed connection between two files (e.g. relation = "supersedes",
-    "part-of", "duplicate-of", "related-to"). Use this to capture relationships
-    beyond shared categories."""
+def link_files(src_id: str, links: list[dict]) -> dict:
+    """Record typed connections from src_id to one or more files in a single call.
+    Call ONCE with ALL related neighbors — do not call this tool in a loop.
+
+    Each entry in links: {"dst_id": "...", "relation": "supersedes|part-of|duplicate-of|references|related-to", "note": "..."}
+    Returns {"added": N, "skipped": M}."""
     st = _state()
-    try:
-        added = st.graph.add_link(src_id, dst_id, relation, note)
-    except Exception as exc:  # noqa: BLE001
-        return {"error": str(exc)}
-    return {"added": added, "src_id": src_id, "dst_id": dst_id, "relation": relation}
+    added = 0
+    skipped = 0
+    errors: list[str] = []
+    for lnk in links:
+        dst_id = lnk.get("dst_id", "")
+        relation = lnk.get("relation", "related-to")
+        note = lnk.get("note", "")
+        try:
+            if st.graph.add_link(src_id, dst_id, relation, note):
+                added += 1
+            else:
+                skipped += 1
+        except Exception as exc:  # noqa: BLE001
+            errors.append(str(exc))
+    result: dict = {"added": added, "skipped": skipped}
+    if errors:
+        result["errors"] = errors
+    return result
 
 
 def main() -> None:
