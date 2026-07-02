@@ -121,11 +121,13 @@ def next_file() -> dict:
             st._scan_idx += 1
             continue
         except Exception as exc:  # noqa: BLE001
-            reason = "gdrive-error" if "gdrive-cli" in str(exc) else "extract-error"
+            is_gdrive = "gdrive-cli" in str(exc)
+            reason = "gdrive-error" if is_gdrive else "extract-error"
             print(f"[next_file] extraction error ({reason}): {exc}, skipping", file=sys.stderr, flush=True)
             _pool.shutdown(wait=False)
             st.skipped.add(fid)
-            st.graph.add_skipped(fid, reason)
+            if not is_gdrive:
+                st.graph.add_skipped(fid, reason)
             continue
         _pool.shutdown(wait=False)
         if not text:
