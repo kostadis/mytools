@@ -54,16 +54,6 @@ class _Shared:
             print(f"[{self.done}/{self.total}] {name} — {outcome}", file=sys.stderr, flush=True)
 
 
-def _extract_with_timeout(rec: dict) -> Optional[str]:
-    """extract_text with a hard ceiling; the hung thread is abandoned on timeout."""
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    future = pool.submit(extract.extract_text, rec)
-    try:
-        return future.result(timeout=_EXTRACT_TIMEOUT)
-    finally:
-        pool.shutdown(wait=False)
-
-
 def _parse_judge(content: str) -> dict:
     """Parse the judge's JSON reply, tolerating markdown fences and stray prose."""
     text = content.strip()
@@ -163,8 +153,9 @@ def _process_one(store: Store, graph: Graph, client, rec: dict, shared: _Shared,
             text = doc["document"]
     if text is None:
         try:
-            text = _extract_with_timeout(rec)
-        except concurrent.futures.TimeoutError:
+            # Killable child process: a stuck pypdf is terminated, not abandoned.
+            text = extract.extract_text_subprocess(rec, _EXTRACT_TIMEOUT)
+        except TimeoutError:
             graph.add_skipped(fid, "extract-timeout")
             with shared.lock:
                 shared.skipped += 1
@@ -286,8 +277,11 @@ def run_pipeline(
     if remaining_start == 0:
         return {"status": "nothing_to_do", "remaining": 0}
 
-    budget = max_files if max_files is not None else CONFIG.max_files_per_run
-    todo = todo[:budget]
+    # No default cap: a pipeline drains the worklist unless explicitly limited.
+    # (The agent runner's DT_MAX_FILES batch budget doesn't apply here — there
+    # are no conversation batches to bound.)
+    if max_files is not None:
+        todo = todo[:max_files]
     print(
         f"Worklist: {len(records)} processable files, {remaining_start} unprocessed, "
         f"taking {len(todo)} this run with {n_workers} worker(s).",

@@ -125,7 +125,9 @@ def pipeline(
         None, "--folder", help="Restrict to descendants of this Drive folder id."
     ),
     max_files: Optional[int] = typer.Option(
-        None, "--max-files", help="Max files processed this run (default DT_MAX_FILES)."
+        None,
+        "--max-files",
+        help="Stop after this many files (default: run until the worklist is drained).",
     ),
     workers: Optional[int] = typer.Option(
         None, "--workers", help="Concurrent workers (default DT_PIPELINE_WORKERS=4)."
