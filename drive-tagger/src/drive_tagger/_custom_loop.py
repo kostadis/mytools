@@ -125,13 +125,15 @@ async def _run_openai_compat(
     system_parts = []
     if disable_thinking:
         system_parts.append("/no_think")
+    # Do NOT name other tools here, even to forbid them. Qwen exhibits negation
+    # blindness: "calling link_files first is FORBIDDEN" reliably makes it call
+    # link_files first (verified 0/5 vs 5/5 on both DGX boxes). Salience wins
+    # over logic — only ever mention the tool we want called.
     system_parts.append(
         "You are an autonomous agent. You MUST use tool calls for ALL actions. "
         "NEVER describe, simulate, or narrate tool calls in text. "
-        "Your very first response MUST be a call to the `next_file` tool. "
-        "Calling any other tool first — link_files, find_similar, "
-        "search_categories, list_categories, create_category, assign_categories "
-        "— before calling `next_file` is FORBIDDEN. Call `next_file` now."
+        "Your very first response MUST be a call to the `next_file` tool — "
+        "do not output any text before making that call."
     )
     if system_instructions:
         system_parts.append(system_instructions)
