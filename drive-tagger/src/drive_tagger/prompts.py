@@ -25,10 +25,10 @@ fitting set, not a single tag.
 
 4. Call `assign_categories(file_id, [list of category names])`.
 
-5. Capture connections beyond shared categories. Call `link_files(file_id, links=[...])` \
-ONCE with ALL strongly related neighbors from `find_similar` in a single call — \
-do not call link_files in a loop. Use a precise relation for each: \
-"supersedes", "part-of", "duplicate-of", "references", or "related-to".
+5. Capture connections beyond shared categories. Using a single `link_files` call, \
+pass all strongly related neighbors from `find_similar` at once as the links list, \
+each with a precise relation: "supersedes", "part-of", "duplicate-of", \
+"references", or "related-to".
 
 6. Go back to step 1.
 

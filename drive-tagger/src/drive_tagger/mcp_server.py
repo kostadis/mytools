@@ -220,8 +220,7 @@ def assign_categories(file_id: str, categories: list[str]) -> dict:
 
 @mcp.tool()
 def link_files(src_id: str, links: list[dict]) -> dict:
-    """Record typed connections from src_id to one or more files in a single call.
-    Call ONCE with ALL related neighbors — do not call this tool in a loop.
+    """Record typed connections from src_id to one or more files.
 
     Each entry in links: {"dst_id": "...", "relation": "supersedes|part-of|duplicate-of|references|related-to", "note": "..."}
     Returns {"added": N, "skipped": M}."""
