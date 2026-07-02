@@ -43,7 +43,7 @@ class _State:
         self.processed: set[str] = {
             d["id"] for d in self.store.all_documents() if d.get("processed")
         }
-        self.skipped: set[str] = set()
+        self.skipped: set[str] = set(self.graph.all_skipped().keys())
         self.current: Optional[str] = None
         self.returned_this_run = 0
         self.execute = os.environ.get("DT_EXECUTE", "0") == "1"
@@ -117,17 +117,21 @@ def next_file() -> dict:
             print(f"[next_file] extraction timed out, skipping", file=sys.stderr, flush=True)
             _pool.shutdown(wait=False)
             st.skipped.add(fid)
+            st.graph.add_skipped(fid, "extract-timeout")
             st._scan_idx += 1
             continue
         except Exception as exc:  # noqa: BLE001
-            print(f"[next_file] extraction error: {exc}, skipping", file=sys.stderr, flush=True)
+            reason = "gdrive-error" if "gdrive-cli" in str(exc) else "extract-error"
+            print(f"[next_file] extraction error ({reason}): {exc}, skipping", file=sys.stderr, flush=True)
             _pool.shutdown(wait=False)
             st.skipped.add(fid)
+            st.graph.add_skipped(fid, reason)
             continue
         _pool.shutdown(wait=False)
         if not text:
             print(f"[next_file] no text extracted, skipping", file=sys.stderr, flush=True)
             st.skipped.add(fid)
+            st.graph.add_skipped(fid, "no-text")
             continue
         print(f"[next_file] embedding ({len(text)} chars) …", file=sys.stderr, flush=True)
         st.store.add_document(rec, text)
@@ -234,6 +238,7 @@ def stats() -> dict:
         "documents": st.store.count_documents(),
         "categories": len(st.store.list_categories()),
         "links": st.graph.count(),
+        "skipped": st.graph.count_skipped(),
         "remaining": _remaining(st),
         "execute": st.execute,
     }
