@@ -45,9 +45,9 @@ JUDGE_PROMPT = """\
 You are a librarian organizing a Google Drive of tabletop RPG documents into a \
 rich, interconnected taxonomy.
 
-You will be given one file (name and content snippet), the most similar \
-already-stored files (its neighbors) with their categories, and the complete \
-list of existing categories.
+You will be given the complete list of existing categories, then the file's \
+most similar already-stored files (its neighbors) with their categories, and \
+finally the file itself (name and content snippet).
 
 Decide:
 
@@ -85,16 +85,25 @@ def build_judge_user_msg(
     neighbors: list[dict],
     categories: list[dict],
 ) -> str:
-    """Assemble the judge's user message from harness-gathered context."""
-    lines = [
-        f"FILE: {name}",
-        f"MIME: {mime_type}",
-        "",
-        "CONTENT SNIPPET:",
-        snippet,
-        "",
-        "NEIGHBORS (most similar already-stored files):",
-    ]
+    """Assemble the judge's user message from harness-gathered context.
+
+    Section order matters for vLLM prefix caching: the stable content
+    (category list) leads so consecutive calls share the longest possible
+    prefix; the per-file content (snippet) goes last.
+    """
+    # No member counts here: they change on nearly every assignment, which
+    # would invalidate the cached prefix on every call.
+    lines = ["EXISTING CATEGORIES:"]
+    if categories:
+        for c in categories:
+            desc = c.get("description") or ""
+            entry = f"- {c['name']}"
+            if desc:
+                entry += f": {desc}"
+            lines.append(entry)
+    else:
+        lines.append("(none yet - you are starting the taxonomy)")
+    lines += ["", "NEIGHBORS (most similar already-stored files):"]
     if neighbors:
         for n in neighbors:
             cats = ", ".join(n.get("categories") or []) or "(none)"
@@ -104,14 +113,12 @@ def build_judge_user_msg(
             )
     else:
         lines.append("(none stored yet)")
-    lines += ["", "EXISTING CATEGORIES:"]
-    if categories:
-        for c in categories:
-            desc = c.get("description") or ""
-            entry = f"- {c['name']} ({c.get('member_count', 0)} files)"
-            if desc:
-                entry += f": {desc}"
-            lines.append(entry)
-    else:
-        lines.append("(none yet - you are starting the taxonomy)")
+    lines += [
+        "",
+        f"FILE: {name}",
+        f"MIME: {mime_type}",
+        "",
+        "CONTENT SNIPPET:",
+        snippet,
+    ]
     return "\n".join(lines)
