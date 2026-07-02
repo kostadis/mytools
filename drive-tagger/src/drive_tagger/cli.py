@@ -328,5 +328,37 @@ def reset(
     typer.echo("Local state cleared.")
 
 
+@app.command("retry-skipped")
+def retry_skipped(
+    reason: str = typer.Option(
+        "gdrive-error",
+        "--reason",
+        "-r",
+        help="Skip reason to clear (gdrive-error, extract-timeout, no-text, or 'all').",
+    ),
+) -> None:
+    """Clear persisted skip records so files are retried on the next run.
+
+    Use after fixing the underlying issue (e.g. refreshing the OAuth token
+    clears gdrive-error skips so those files are attempted again).
+    """
+    from .graph import Graph
+
+    graph = Graph()
+    counts = graph.count_skipped()
+    if not counts:
+        typer.echo("No skipped files recorded.")
+        return
+
+    typer.echo("Current skip counts:")
+    for r, n in sorted(counts.items()):
+        typer.echo(f"  {r}: {n}")
+
+    clear_reason = None if reason == "all" else reason
+    deleted = graph.clear_skipped(clear_reason)
+    label = reason if reason != "all" else "all reasons"
+    typer.echo(f"Cleared {deleted} skip record(s) for {label}.")
+
+
 if __name__ == "__main__":
     app()

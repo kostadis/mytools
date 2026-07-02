@@ -31,6 +31,15 @@ class Graph:
             )
             """
         )
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS skipped_files (
+                file_id    TEXT PRIMARY KEY,
+                reason     TEXT NOT NULL,
+                skipped_at TEXT NOT NULL
+            )
+            """
+        )
         self._conn.commit()
 
     def add_link(self, src_id: str, dst_id: str, relation: str, note: str = "") -> bool:
@@ -69,6 +78,47 @@ class Graph:
 
     def count(self) -> int:
         return int(self._conn.execute("SELECT COUNT(*) FROM links").fetchone()[0])
+
+    # -- skipped files --------------------------------------------------------
+
+    def add_skipped(self, file_id: str, reason: str) -> None:
+        """Record a file as permanently skipped with a reason code."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO skipped_files (file_id, reason, skipped_at) VALUES (?, ?, ?)",
+            (file_id, reason, time.strftime("%Y-%m-%dT%H:%M:%S")),
+        )
+        self._conn.commit()
+
+    def all_skipped(self) -> dict[str, str]:
+        """Return {file_id: reason} for all persisted skipped files."""
+        rows = self._conn.execute(
+            "SELECT file_id, reason FROM skipped_files"
+        ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
+    def clear_skipped(self, reason: str | None = None) -> int:
+        """Delete skip records. If reason is given, only remove that reason. Returns count deleted."""
+        if reason:
+            cur = self._conn.execute(
+                "DELETE FROM skipped_files WHERE reason = ?", (reason,)
+            )
+        else:
+            cur = self._conn.execute("DELETE FROM skipped_files")
+        self._conn.commit()
+        return cur.rowcount
+
+    def count_skipped(self, reason: str | None = None) -> dict[str, int]:
+        """Return counts per reason code (or just the requested reason)."""
+        if reason:
+            rows = self._conn.execute(
+                "SELECT reason, COUNT(*) FROM skipped_files WHERE reason = ? GROUP BY reason",
+                (reason,),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT reason, COUNT(*) FROM skipped_files GROUP BY reason"
+            ).fetchall()
+        return {row[0]: row[1] for row in rows}
 
     def close(self) -> None:
         self._conn.commit()

@@ -8,9 +8,8 @@ anything, and do not stop early.
 
 Process the Drive one file at a time in a loop:
 
-1. Call `next_file`. If it returns {"done": true}, call `stats` once and then \
-finish with a one-paragraph summary. Otherwise you get a file_id, name, and a \
-content snippet.
+1. Call `next_file`. If it returns {"done": true}, finish with a one-paragraph \
+summary. Otherwise you get a file_id, name, and a content snippet.
 
 2. Gather context for that file:
    - `find_similar(file_id)` to see the most similar already-processed files and \
@@ -26,11 +25,10 @@ fitting set, not a single tag.
 
 4. Call `assign_categories(file_id, [list of category names])`.
 
-5. Capture connections beyond shared categories. For each strongly related \
-neighbor from `find_similar`, call \
-`link_files(file_id, neighbor_id, relation)` using a precise relation such as \
-"supersedes", "part-of", "duplicate-of", "references", or "related-to". Record \
-multiple links when warranted. Aim for the richest set of connections.
+5. Capture connections beyond shared categories. Using a single `link_files` call, \
+pass all strongly related neighbors from `find_similar` at once as the links list, \
+each with a precise relation: "supersedes", "part-of", "duplicate-of", \
+"references", or "related-to".
 
 6. Go back to step 1.
 

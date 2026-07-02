@@ -108,6 +108,7 @@ async def _run_openai_compat(
     server_params: StdioServerParameters,
     max_steps: int = _MAX_STEPS_DEFAULT,
     disable_thinking: bool = False,
+    system_instructions: str = "",
 ) -> None:
     from openai import AsyncOpenAI
 
@@ -116,13 +117,29 @@ async def _run_openai_compat(
     if disable_thinking:
         extra["chat_template_kwargs"] = {"enable_thinking": False}
 
-    # Qwen3 model-level thinking disable: inject /no_think system message.
-    # This is honored by the tokenizer regardless of vLLM version.
-    seed_messages: list[dict] = []
+    # Build system message.
+    # - /no_think: Qwen3 thinking-token disable (honored by tokenizer).
+    # - agent enforcement: prevents Qwen from roleplaying tool calls as prose.
+    # - system_instructions: full workflow instructions when caller wants them
+    #   in the system turn (more reliable than a long user message for Qwen).
+    system_parts = []
     if disable_thinking:
-        seed_messages.append({"role": "system", "content": "/no_think"})
+        system_parts.append("/no_think")
+    # Do NOT name other tools here, even to forbid them. Qwen exhibits negation
+    # blindness: "calling link_files first is FORBIDDEN" reliably makes it call
+    # link_files first (verified 0/5 vs 5/5 on both DGX boxes). Salience wins
+    # over logic — only ever mention the tool we want called.
+    system_parts.append(
+        "You are an autonomous agent. You MUST use tool calls for ALL actions. "
+        "NEVER describe, simulate, or narrate tool calls in text. "
+        "Your very first response MUST be a call to the `next_file` tool — "
+        "do not output any text before making that call."
+    )
+    if system_instructions:
+        system_parts.append(system_instructions)
+    seed_messages: list[dict] = [{"role": "system", "content": "\n\n".join(system_parts)}]
     async with (
-        AsyncOpenAI(base_url=base_url, api_key=api_key or "unused") as client,
+        AsyncOpenAI(base_url=base_url, api_key=api_key or "unused", timeout=120.0) as client,
         stdio_client(server_params) as (read, write),
     ):
         async with ClientSession(read, write) as session:
@@ -144,12 +161,16 @@ async def _run_openai_compat(
             done_since: int | None = None
 
             while steps < max_steps:
-                response = await client.chat.completions.create(
-                    model=model,
-                    messages=messages,  # type: ignore[arg-type]
-                    tools=tools,  # type: ignore[arg-type]
-                    extra_body=extra or None,
-                )
+                try:
+                    response = await client.chat.completions.create(
+                        model=model,
+                        messages=messages,  # type: ignore[arg-type]
+                        tools=tools,  # type: ignore[arg-type]
+                        extra_body=extra or None,
+                    )
+                except Exception as exc:
+                    print(f"\n[batch aborted: LLM error — {exc}]", file=sys.stderr, flush=True)
+                    break
                 choice = response.choices[0]
                 msg = choice.message
 
@@ -160,6 +181,17 @@ async def _run_openai_compat(
                         print(f"\n[tool] {tc.function.name}", file=sys.stderr, flush=True)
 
                 if choice.finish_reason != "tool_calls" or not msg.tool_calls:
+                    break
+
+                # Guard: if the very first tool call isn't next_file the model has
+                # entered hallucination mode — abort rather than burn the batch.
+                if steps == 0 and msg.tool_calls[0].function.name != "next_file":
+                    print(
+                        f"\n[batch aborted: first tool was "
+                        f"{msg.tool_calls[0].function.name!r}, expected next_file]",
+                        file=sys.stderr,
+                        flush=True,
+                    )
                     break
 
                 # Rebuild as plain dict — avoids Pydantic serialisation surprises
@@ -224,6 +256,7 @@ def run_batch(
     openai_api_key: str = "",
     max_steps: int = _MAX_STEPS_DEFAULT,
     disable_thinking: bool = False,
+    system_instructions: str = "",
 ) -> None:
     """Run one agent batch synchronously. Called from the sync runner loop."""
     if provider == "anthropic":
@@ -238,5 +271,6 @@ def run_batch(
                 server_params,
                 max_steps=max_steps,
                 disable_thinking=disable_thinking,
+                system_instructions=system_instructions,
             )
         )
