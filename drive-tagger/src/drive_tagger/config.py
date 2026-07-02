@@ -102,6 +102,10 @@ class Config:
     max_files_per_run: int = field(default_factory=lambda: _env_int("DT_MAX_FILES", 50))
     batch_size: int = field(default_factory=lambda: _env_int("DT_BATCH_SIZE", 10))
 
+    # --- deterministic pipeline (`drive-tagger pipeline`) --------------------
+    pipeline_workers: int = field(default_factory=lambda: _env_int("DT_PIPELINE_WORKERS", 4))
+    judge_chars: int = field(default_factory=lambda: _env_int("DT_JUDGE_CHARS", 2500))
+
     # --- optional local mount fast-path -------------------------------------
     drive_mount: str = field(default_factory=lambda: _env("DT_DRIVE_MOUNT", "/mnt/g"))
 
