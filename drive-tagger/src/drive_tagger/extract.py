@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import os
+import sys
 from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
@@ -127,6 +128,15 @@ def load_worklist(folder_id: Optional[str], scan_path: Path) -> list[dict]:
                 for parent in rec.get("parents") or []:
                     children[parent].append(rec["id"])
 
+    # opt-in rpg-lib filename filter
+    rpg_names: set[str] | None = None
+    if CONFIG.rpg_lib_url:
+        from . import rpg_lib as _rpg_lib
+        rpg_names = _rpg_lib.load_filenames(CONFIG.rpg_lib_url)
+
+    def _rpg_ok(r: dict) -> bool:
+        return rpg_names is None or r.get("name", "") in rpg_names
+
     if folder_id:
         descendants: set[str] = {folder_id}
         queue = [folder_id]
@@ -136,12 +146,27 @@ def load_worklist(folder_id: Optional[str], scan_path: Path) -> list[dict]:
                 if child not in descendants:
                     descendants.add(child)
                     queue.append(child)
-        return _apply_shard([
+        filtered = [
             r for r in all_records
-            if is_processable(r) and any(p in descendants for p in (r.get("parents") or []))
-        ])
+            if is_processable(r) and _rpg_ok(r)
+            and any(p in descendants for p in (r.get("parents") or []))
+        ]
+    else:
+        filtered = [r for r in all_records if is_processable(r) and _rpg_ok(r)]
 
-    return _apply_shard([r for r in all_records if is_processable(r)])
+    if rpg_names is not None:
+        name_counts: dict[str, int] = defaultdict(int)
+        for r in filtered:
+            name_counts[r.get("name", "")] += 1
+        collisions = sum(1 for c in name_counts.values() if c > 1)
+        if collisions:
+            print(
+                f"[worklist] {collisions} filename(s) appear in multiple Drive records (all included)",
+                file=sys.stderr,
+            )
+        print(f"[worklist] rpg-lib filter: {len(filtered)} files", file=sys.stderr)
+
+    return _apply_shard(filtered)
 
 
 def _apply_shard(records: list[dict]) -> list[dict]:

@@ -108,6 +108,11 @@ class Config:
     # --- scan ----------------------------------------------------------------
     all_drives: bool = field(default_factory=lambda: _env("DT_ALL_DRIVES", "0") == "1")
 
+    # --- rpg-lib worklist filter (opt-in) ---------------------------------------
+    # Set DT_RPG_LIB_URL to the rpg-lib base URL (e.g. http://localhost:8000) to
+    # restrict the worklist to books curated by that service.  Empty = disabled.
+    rpg_lib_url: str = field(default_factory=lambda: _env("DT_RPG_LIB_URL", ""))
+
     # Which files count as taggable: "documents" (PDF/Docs/docx/markdown/slides)
     # or "all" (also text/plain, json, csv, xml).
     processable_mode: str = field(
