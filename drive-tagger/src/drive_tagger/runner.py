@@ -193,14 +193,25 @@ def _run_custom(
             flush=True,
         )
 
+        # For DGX/OpenRouter: put workflow instructions in the system turn and
+        # use a short action trigger as the user message. Qwen follows system
+        # prompts as instructions; long user messages get treated as text to
+        # complete, causing the model to narrate the loop instead of running it.
+        if disable_thinking:
+            batch_prompt = "Call next_file now."
+            batch_system = DRIVING_PROMPT
+        else:
+            batch_prompt = DRIVING_PROMPT
+            batch_system = ""
         run_batch(
             provider=provider,
-            prompt=DRIVING_PROMPT,
+            prompt=batch_prompt,
             model=model,
             server_params=server_params,
             openai_base_url=base_url,
             openai_api_key=api_key,
             disable_thinking=disable_thinking,
+            system_instructions=batch_system,
         )
 
         batches_run += 1

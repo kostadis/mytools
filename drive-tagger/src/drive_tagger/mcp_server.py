@@ -16,8 +16,12 @@ Behavior is controlled by env vars set by the runner:
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
+import sys
 from typing import Optional
+
+_EXTRACT_TIMEOUT = 90  # seconds; pypdf/docx/pptx can hang on malformed files
 
 from mcp.server.fastmcp import FastMCP
 
@@ -39,7 +43,7 @@ class _State:
         self.processed: set[str] = {
             d["id"] for d in self.store.all_documents() if d.get("processed")
         }
-        self.skipped: set[str] = set()
+        self.skipped: set[str] = set(self.graph.all_skipped().keys())
         self.current: Optional[str] = None
         self.returned_this_run = 0
         self.execute = os.environ.get("DT_EXECUTE", "0") == "1"
@@ -98,19 +102,42 @@ def next_file() -> dict:
         if rec is None:
             return {"done": True, "remaining": 0}
         fid = rec["id"]
+        name = rec.get("name", fid)
+        print(f"[next_file] checking {name!r}", file=sys.stderr, flush=True)
         # Skip if unchanged from a previous run.
         if st.store.has_unchanged(fid, rec.get("md5_checksum"), rec.get("modified_time")):
             st.processed.add(fid)
             continue
+        print(f"[next_file] extracting text …", file=sys.stderr, flush=True)
+        _pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        _future = _pool.submit(extract.extract_text, rec)
         try:
-            text = extract.extract_text(rec)
-        except Exception as exc:  # noqa: BLE001 - surface extraction issues, keep going
+            text = _future.result(timeout=_EXTRACT_TIMEOUT)
+        except concurrent.futures.TimeoutError:
+            print(f"[next_file] extraction timed out, skipping", file=sys.stderr, flush=True)
+            _pool.shutdown(wait=False)
             st.skipped.add(fid)
+            st.graph.add_skipped(fid, "extract-timeout")
+            st._scan_idx += 1
             continue
+        except Exception as exc:  # noqa: BLE001
+            is_gdrive = "gdrive-cli" in str(exc)
+            reason = "gdrive-error" if is_gdrive else "extract-error"
+            print(f"[next_file] extraction error ({reason}): {exc}, skipping", file=sys.stderr, flush=True)
+            _pool.shutdown(wait=False)
+            st.skipped.add(fid)
+            if not is_gdrive:
+                st.graph.add_skipped(fid, reason)
+            continue
+        _pool.shutdown(wait=False)
         if not text:
+            print(f"[next_file] no text extracted, skipping", file=sys.stderr, flush=True)
             st.skipped.add(fid)
+            st.graph.add_skipped(fid, "no-text")
             continue
+        print(f"[next_file] embedding ({len(text)} chars) …", file=sys.stderr, flush=True)
         st.store.add_document(rec, text)
+        print(f"[next_file] done → returning to agent", file=sys.stderr, flush=True)
         st.current = fid
         st.returned_this_run += 1
         snippet = text[:1500]
@@ -192,30 +219,30 @@ def assign_categories(file_id: str, categories: list[str]) -> dict:
 
 
 @mcp.tool()
-def link_files(src_id: str, dst_id: str, relation: str = "related-to", note: str = "") -> dict:
-    """Record a typed connection between two files (e.g. relation = "supersedes",
-    "part-of", "duplicate-of", "related-to"). Use this to capture relationships
-    beyond shared categories."""
-    st = _state()
-    try:
-        added = st.graph.add_link(src_id, dst_id, relation, note)
-    except Exception as exc:  # noqa: BLE001
-        return {"error": str(exc)}
-    return {"added": added, "src_id": src_id, "dst_id": dst_id, "relation": relation}
+def link_files(src_id: str, links: list[dict]) -> dict:
+    """Record typed connections from src_id to one or more files.
 
-
-@mcp.tool()
-def stats() -> dict:
-    """Return current counts: documents stored, categories, links, and files
-    remaining in the worklist."""
+    Each entry in links: {"dst_id": "...", "relation": "supersedes|part-of|duplicate-of|references|related-to", "note": "..."}
+    Returns {"added": N, "skipped": M}."""
     st = _state()
-    return {
-        "documents": st.store.count_documents(),
-        "categories": len(st.store.list_categories()),
-        "links": st.graph.count(),
-        "remaining": _remaining(st),
-        "execute": st.execute,
-    }
+    added = 0
+    skipped = 0
+    errors: list[str] = []
+    for lnk in links:
+        dst_id = lnk.get("dst_id", "")
+        relation = lnk.get("relation", "related-to")
+        note = lnk.get("note", "")
+        try:
+            if st.graph.add_link(src_id, dst_id, relation, note):
+                added += 1
+            else:
+                skipped += 1
+        except Exception as exc:  # noqa: BLE001
+            errors.append(str(exc))
+    result: dict = {"added": added, "skipped": skipped}
+    if errors:
+        result["errors"] = errors
+    return result
 
 
 def main() -> None:
