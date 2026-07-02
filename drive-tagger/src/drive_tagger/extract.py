@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import multiprocessing
 import os
 import sys
 from collections import defaultdict
@@ -333,3 +334,53 @@ def extract_text(record: dict) -> Optional[str]:
     if not text:
         return None
     return text[: CONFIG.max_chars]
+
+
+# --- killable subprocess wrapper ----------------------------------------------
+# pypdf can spin forever on malformed files. A thread-based timeout abandons the
+# stuck thread, which keeps burning CPU and contending the GIL for the rest of
+# the run. A child process can actually be terminated — and gets its own GIL,
+# so concurrent parses genuinely parallelize.
+
+
+def _extract_child(rec: dict, conn) -> None:
+    """Entry point for the spawned extractor process."""
+    try:
+        conn.send(("ok", extract_text(rec)))
+    except Exception as exc:  # noqa: BLE001 — serialized back to the parent
+        conn.send(("error", f"{type(exc).__name__}: {exc}"))
+    finally:
+        conn.close()
+
+
+def extract_text_subprocess(rec: dict, timeout: float) -> Optional[str]:
+    """Run extract_text in a killable child process.
+
+    Raises TimeoutError if the child exceeds ``timeout`` seconds (the child is
+    terminated, not abandoned), or RuntimeError with the child's error message.
+    """
+    # "spawn" (not fork): forking a multithreaded parent can deadlock the child
+    # on locks held by other threads at fork time.
+    ctx = multiprocessing.get_context("spawn")
+    parent_conn, child_conn = ctx.Pipe(duplex=False)
+    proc = ctx.Process(target=_extract_child, args=(rec, child_conn), daemon=True)
+    proc.start()
+    child_conn.close()
+    try:
+        if not parent_conn.poll(timeout):
+            raise TimeoutError(f"extraction exceeded {timeout}s")
+        try:
+            status, payload = parent_conn.recv()
+        except EOFError:
+            raise RuntimeError(f"extractor process died (exit {proc.exitcode})")
+    finally:
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(5)
+            if proc.is_alive():
+                proc.kill()
+        proc.join(5)
+        parent_conn.close()
+    if status == "ok":
+        return payload
+    raise RuntimeError(payload)
