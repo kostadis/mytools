@@ -1,4 +1,4 @@
-"""The driving prompt handed to the Cursor SDK agent each batch."""
+"""Prompts: the agent driving prompt and the pipeline judge prompt."""
 
 DRIVING_PROMPT = """\
 You are an autonomous librarian organizing a Google Drive into a rich, \
@@ -35,3 +35,90 @@ each with a precise relation: "supersedes", "part-of", "duplicate-of", \
 Be decisive and keep iterating through `next_file` until it reports done. Favor \
 breadth of correct connections over caution.
 """
+
+
+# --- deterministic pipeline judge ---------------------------------------------
+# One-shot decision per file: no tools, no sequencing, JSON out. Per the Qwen
+# findings, the prompt names no tools and gives no workflow imperatives.
+
+JUDGE_PROMPT = """\
+You are a librarian organizing a Google Drive of tabletop RPG documents into a \
+rich, interconnected taxonomy.
+
+You will be given the complete list of existing categories, then the file's \
+most similar already-stored files (its neighbors) with their categories, and \
+finally the file itself (name and content snippet).
+
+Decide:
+
+1. Which categories this file belongs to. PREFER REUSING existing categories \
+whenever they fit so the taxonomy stays coherent. A file usually belongs to \
+SEVERAL categories - choose the richest fitting set, not a single tag.
+
+2. Whether any genuinely new categories are needed. Only invent a new category \
+for a theme no existing category covers - use a concise, reusable name (2-4 \
+words) and a one-sentence description.
+
+3. Which neighbors this file is strongly connected to, beyond shared \
+categories. Use a precise relation for each: "supersedes", "part-of", \
+"duplicate-of", "references", or "related-to". Only reference neighbors listed \
+in the NEIGHBORS section, by their exact id.
+
+Respond with ONLY a JSON object in exactly this shape - no prose, no markdown \
+fences:
+
+{
+  "categories": ["Existing Category", "Another Category"],
+  "new_categories": [{"name": "New Category", "description": "One sentence."}],
+  "links": [{"dst_id": "<neighbor id>", "relation": "related-to"}]
+}
+
+"categories" must list every category assigned to this file, including the \
+names of any new_categories. Use [] for a list with no entries.
+"""
+
+
+def build_judge_user_msg(
+    name: str,
+    mime_type: str,
+    snippet: str,
+    neighbors: list[dict],
+    categories: list[dict],
+) -> str:
+    """Assemble the judge's user message from harness-gathered context.
+
+    Section order matters for vLLM prefix caching: the stable content
+    (category list) leads so consecutive calls share the longest possible
+    prefix; the per-file content (snippet) goes last.
+    """
+    # No member counts here: they change on nearly every assignment, which
+    # would invalidate the cached prefix on every call.
+    lines = ["EXISTING CATEGORIES:"]
+    if categories:
+        for c in categories:
+            desc = c.get("description") or ""
+            entry = f"- {c['name']}"
+            if desc:
+                entry += f": {desc}"
+            lines.append(entry)
+    else:
+        lines.append("(none yet - you are starting the taxonomy)")
+    lines += ["", "NEIGHBORS (most similar already-stored files):"]
+    if neighbors:
+        for n in neighbors:
+            cats = ", ".join(n.get("categories") or []) or "(none)"
+            lines.append(
+                f"- id={n['id']}  name={n.get('name', '')}  "
+                f"distance={n.get('distance', '')}  categories: {cats}"
+            )
+    else:
+        lines.append("(none stored yet)")
+    lines += [
+        "",
+        f"FILE: {name}",
+        f"MIME: {mime_type}",
+        "",
+        "CONTENT SNIPPET:",
+        snippet,
+    ]
+    return "\n".join(lines)
