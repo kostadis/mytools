@@ -1,15 +1,18 @@
 """Generate human- and machine-readable reports from turbovecdb + the graph DB.
 
 Outputs (under ``reports/``):
-  * ``DRIVE-TAGS.md``   - categories with their files, the connection list, and a
-    mermaid diagram of file-to-file links.
-  * ``categories.json`` - categories with members.
-  * ``graph.json``      - nodes (files) + typed edges (links).
+  * ``DRIVE-TAGS.md``       - index: totals + one line per category linking to its page.
+  * ``categories/<slug>.md`` - one page per category: description, member files,
+    and the links that touch those files (with a mermaid diagram when small
+    enough to render usefully).
+  * ``categories.json``     - categories with members (machine-readable).
+  * ``graph.json``          - nodes (files) + typed edges (links) (machine-readable).
 """
 
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -18,10 +21,90 @@ from .config import CONFIG
 from .graph import Graph
 from .store import Store
 
+# Above this many links touching a category, skip the mermaid diagram (unreadable
+# past this size) and truncate the textual connection list.
+MAX_MERMAID_EDGES = 150
+MAX_CONNECTIONS_LISTED = 300
+
 
 def _mermaid_label(text: str) -> str:
     safe = text.replace('"', "'").replace("\n", " ").strip()
     return safe[:40] if safe else "(untitled)"
+
+
+def _slugify(name: str, used: dict[str, int]) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "untitled"
+    count = used.get(slug, 0)
+    used[slug] = count + 1
+    return slug if count == 0 else f"{slug}-{count + 1}"
+
+
+def _category_page(
+    name: str,
+    slug: str,
+    desc: str,
+    mem: list[dict],
+    local_links: list[dict],
+    name_by_id: dict[str, str],
+    slug_by_name: dict[str, str],
+) -> str:
+    lines: list[str] = []
+    lines.append(f"# {name}")
+    lines.append("")
+    lines.append("[← All categories](../DRIVE-TAGS.md)")
+    lines.append("")
+    if desc:
+        lines.append(desc)
+        lines.append("")
+
+    lines.append(f"## Files ({len(mem)})")
+    lines.append("")
+    for m in sorted(mem, key=lambda d: d.get("name", "").lower()):
+        link = m.get("web_view_link", "") or ""
+        others = [c for c in (m.get("categories", []) or []) if c != name]
+        also = ", ".join(f"[{c}]({slug_by_name[c]}.md)" for c in others if c in slug_by_name)
+        suffix = f" — also: {also}" if also else ""
+        title = m.get("name", "(untitled)")
+        entry = f"[{title}]({link})" if link else title
+        lines.append(f"- {entry}{suffix}")
+    lines.append("")
+
+    lines.append(f"## Connections ({len(local_links)})")
+    lines.append("")
+    if local_links:
+        shown = local_links[:MAX_CONNECTIONS_LISTED]
+        for ln in shown:
+            src = name_by_id.get(ln["src_id"], ln["src_id"])
+            dst = name_by_id.get(ln["dst_id"], ln["dst_id"])
+            note = f" ({ln['note']})" if ln.get("note") else ""
+            lines.append(f"- {src} --{ln['relation']}--> {dst}{note}")
+        if len(local_links) > MAX_CONNECTIONS_LISTED:
+            remaining = len(local_links) - MAX_CONNECTIONS_LISTED
+            lines.append("")
+            lines.append(f"_...and {remaining} more. See `graph.json` for the full link list._")
+        lines.append("")
+
+        if len(local_links) <= MAX_MERMAID_EDGES:
+            node_ids: dict[str, str] = {}
+            for ln in local_links:
+                for fid in (ln["src_id"], ln["dst_id"]):
+                    if fid not in node_ids:
+                        node_ids[fid] = f"n{len(node_ids)}"
+            lines.append("```mermaid")
+            lines.append("graph LR")
+            for fid, nid in node_ids.items():
+                lines.append(f'  {nid}["{_mermaid_label(name_by_id.get(fid, fid))}"]')
+            for ln in local_links:
+                s = node_ids[ln["src_id"]]
+                d = node_ids[ln["dst_id"]]
+                lines.append(f'  {s} -->|"{_mermaid_label(ln["relation"])}"| {d}')
+            lines.append("```")
+            lines.append("")
+    else:
+        lines.append("_No file-to-file links recorded yet._")
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 def generate() -> dict[str, Path]:
@@ -37,7 +120,6 @@ def generate() -> dict[str, Path]:
         graph.close()
 
     name_by_id = {d["id"]: d.get("name", "") for d in docs}
-    link_by_id = {d.get("web_view_link", "") or "" for d in docs}  # noqa: F841 (kept for clarity)
 
     # category -> [docs]
     members: dict[str, list[dict]] = defaultdict(list)
@@ -83,7 +165,35 @@ def generate() -> dict[str, Path]:
     graph_path = CONFIG.reports_dir / "graph.json"
     graph_path.write_text(json.dumps(graph_json, indent=2), encoding="utf-8")
 
-    # --- DRIVE-TAGS.md -------------------------------------------------------
+    # --- category pages -------------------------------------------------------
+    pages_dir = CONFIG.reports_dir / "categories"
+    pages_dir.mkdir(parents=True, exist_ok=True)
+    for stale in pages_dir.glob("*.md"):
+        stale.unlink()
+
+    used_slugs: dict[str, int] = {}
+    slug_by_name = {name: _slugify(name, used_slugs) for name in all_cat_names}
+
+    for name in all_cat_names:
+        mem = members.get(name, [])
+        local_ids = {m["id"] for m in mem}
+        local_links = sorted(
+            (
+                ln
+                for ln in links
+                if ln["src_id"] in local_ids or ln["dst_id"] in local_ids
+            ),
+            key=lambda ln: (
+                name_by_id.get(ln["src_id"], ""),
+                name_by_id.get(ln["dst_id"], ""),
+            ),
+        )
+        page = _category_page(
+            name, slug_by_name[name], cat_desc.get(name, ""), mem, local_links, name_by_id, slug_by_name
+        )
+        (pages_dir / f"{slug_by_name[name]}.md").write_text(page, encoding="utf-8")
+
+    # --- DRIVE-TAGS.md (index) -------------------------------------------------
     lines: list[str] = []
     lines.append("# Drive Tags")
     lines.append("")
@@ -93,58 +203,30 @@ def generate() -> dict[str, Path]:
         f"{len(docs)} documents - {len(all_cat_names)} categories - {len(links)} links"
     )
     lines.append("")
+    lines.append(
+        "Each category has its own page under `categories/` with its files and the "
+        "links that touch them. The full link list is in `graph.json`."
+    )
+    lines.append("")
 
     lines.append("## Categories")
     lines.append("")
     for name in all_cat_names:
         mem = members.get(name, [])
-        lines.append(f"### {name} ({len(mem)})")
-        desc = cat_desc.get(name, "")
-        if desc:
-            lines.append("")
-            lines.append(desc)
-        lines.append("")
-        for m in sorted(mem, key=lambda d: d.get("name", "").lower()):
-            link = m.get("web_view_link", "") or ""
-            others = [c for c in (m.get("categories", []) or []) if c != name]
-            suffix = f" - also: {', '.join(others)}" if others else ""
-            if link:
-                lines.append(f"- [{m.get('name', '(untitled)')}]({link}){suffix}")
-            else:
-                lines.append(f"- {m.get('name', '(untitled)')}{suffix}")
-        lines.append("")
-
-    lines.append("## Connections")
+        slug = slug_by_name[name]
+        desc = cat_desc.get(name, "").strip().splitlines()[0] if cat_desc.get(name, "").strip() else ""
+        if len(desc) > 100:
+            desc = desc[:99].rstrip() + "…"
+        suffix = f" — {desc}" if desc else ""
+        lines.append(f"- [{name}](categories/{slug}.md) ({len(mem)}){suffix}")
     lines.append("")
-    if links:
-        for ln in links:
-            src = name_by_id.get(ln["src_id"], ln["src_id"])
-            dst = name_by_id.get(ln["dst_id"], ln["dst_id"])
-            note = f" ({ln['note']})" if ln.get("note") else ""
-            lines.append(f"- {src} --{ln['relation']}--> {dst}{note}")
-        lines.append("")
-
-        # mermaid diagram of the link graph
-        node_ids: dict[str, str] = {}
-        for ln in links:
-            for fid in (ln["src_id"], ln["dst_id"]):
-                if fid not in node_ids:
-                    node_ids[fid] = f"n{len(node_ids)}"
-        lines.append("```mermaid")
-        lines.append("graph LR")
-        for fid, nid in node_ids.items():
-            lines.append(f'  {nid}["{_mermaid_label(name_by_id.get(fid, fid))}"]')
-        for ln in links:
-            s = node_ids[ln["src_id"]]
-            d = node_ids[ln["dst_id"]]
-            lines.append(f'  {s} -->|"{_mermaid_label(ln["relation"])}"| {d}')
-        lines.append("```")
-        lines.append("")
-    else:
-        lines.append("_No file-to-file links recorded yet._")
-        lines.append("")
 
     md_path = CONFIG.reports_dir / "DRIVE-TAGS.md"
     md_path.write_text("\n".join(lines), encoding="utf-8")
 
-    return {"markdown": md_path, "categories": categories_path, "graph": graph_path}
+    return {
+        "index": md_path,
+        "categories_dir": pages_dir,
+        "categories_json": categories_path,
+        "graph": graph_path,
+    }
