@@ -116,6 +116,70 @@ def run(
         typer.echo("(dry-run: nothing written to Drive. Re-run with --execute to apply tags.)")
 
 
+@app.command()
+def pipeline(
+    execute: bool = typer.Option(
+        False, "--execute", help="Also write tags to Drive appProperties (default: dry-run)."
+    ),
+    folder: Optional[str] = typer.Option(
+        None, "--folder", help="Restrict to descendants of this Drive folder id."
+    ),
+    max_files: Optional[int] = typer.Option(
+        None,
+        "--max-files",
+        help="Stop after this many files (default: run until the worklist is drained).",
+    ),
+    workers: Optional[int] = typer.Option(
+        None, "--workers", help="Concurrent workers (default DT_PIPELINE_WORKERS=4)."
+    ),
+    shard: Optional[str] = typer.Option(
+        None,
+        "--shard",
+        help="Worklist shard e.g. '0/2' (overrides DT_SHARD).",
+    ),
+    dgx_endpoint: Optional[str] = typer.Option(
+        None,
+        "--dgx-endpoint",
+        help="DGX vLLM base URL (overrides DT_DGX_ENDPOINT).",
+    ),
+) -> None:
+    """Deterministic tagging pipeline: the harness drives, the LLM judges once per file."""
+    import os
+
+    from .pipeline import PipelineError, run_pipeline
+
+    if shard is not None:
+        os.environ["DT_SHARD"] = shard
+    if dgx_endpoint is not None:
+        # CONFIG was frozen at import; update both it and the env.
+        os.environ["DT_DGX_ENDPOINT"] = dgx_endpoint
+        CONFIG.dgx_endpoint = dgx_endpoint
+    # The pipeline always talks to the DGX OpenAI-compat endpoint; make the
+    # health preflight check that endpoint regardless of DT_PROVIDER.
+    CONFIG.provider = "dgx"
+
+    try:
+        result = run_pipeline(
+            execute=execute, folder_id=folder, max_files=max_files, workers=workers
+        )
+    except PipelineError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo("")
+    if result["status"] == "nothing_to_do":
+        typer.echo("Nothing to do: worklist is fully processed.")
+        return
+    typer.echo(
+        f"Pipeline done: processed {result['processed']}, "
+        f"skipped {result['skipped']}, judge-failed {result['judge_failed']}, "
+        f"errors {result['errors']}, remaining {result['remaining']}."
+    )
+    typer.echo(f"Elapsed {result['elapsed_s']}s ({result['files_per_min']} files/min).")
+    if not execute:
+        typer.echo("(dry-run: nothing written to Drive. Re-run with --execute to apply tags.)")
+
+
 def _dgx_metrics(endpoint: str) -> dict:
     """Fetch key vLLM metrics from the Prometheus /metrics endpoint."""
     import urllib.request
