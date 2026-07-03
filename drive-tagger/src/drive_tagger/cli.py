@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -422,6 +423,54 @@ def retry_skipped(
     deleted = graph.clear_skipped(clear_reason)
     label = reason if reason != "all" else "all reasons"
     typer.echo(f"Cleared {deleted} skip record(s) for {label}.")
+
+
+consolidate_app = typer.Typer(
+    add_completion=False,
+    help="Post-run category consolidation: collect merge candidates, review, apply.",
+)
+app.add_typer(consolidate_app, name="consolidate")
+
+
+@consolidate_app.command("collect")
+def consolidate_collect(
+    diagnostics: bool = typer.Option(
+        False, "--diagnostics", help="Print pairwise nearest-neighbor category distances for threshold calibration."
+    ),
+    threshold: Optional[float] = typer.Option(
+        None, "--threshold", help="Override DT_CONSOLIDATE_CLUSTER_THRESHOLD for this run only."
+    ),
+) -> None:
+    """Cluster near-duplicate categories -> reports/consolidation/clusters.json."""
+    from .consolidate import collect
+
+    result = collect(threshold=threshold, diagnostics=diagnostics)
+    typer.echo(f"\nWrote {result['path']}")
+    typer.echo(
+        f"{result['n_clusters']} multi-member cluster(s) ({result['n_absorbed']} categories), "
+        f"{result['n_singletons']} singleton(s)."
+    )
+
+
+@consolidate_app.command("apply")
+def consolidate_apply(
+    decisions: Path = typer.Option(
+        None,
+        "--decisions",
+        help="Path to decisions.json (default: reports/consolidation/decisions.json).",
+    ),
+) -> None:
+    """Apply approved merge decisions to the store, then regenerate reports/."""
+    from .consolidate import apply
+
+    path = decisions or (CONFIG.consolidation_dir / "decisions.json")
+    if not path.exists():
+        typer.secho(f"No decisions file at {path}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    result = apply(path)
+    typer.echo(f"Merged {len(result['merged'])} cluster(s); skipped {len(result['skipped'])}.")
+    for m in result["merged"]:
+        typer.echo(f"  -> {m['canonical']}  (absorbed: {', '.join(m['sources'])})")
 
 
 if __name__ == "__main__":
