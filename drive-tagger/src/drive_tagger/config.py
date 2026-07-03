@@ -22,6 +22,13 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ[name])
+    except (KeyError, ValueError):
+        return default
+
+
 def _env_path(name: str, default: Path) -> Path:
     return Path(os.environ[name]).expanduser() if name in os.environ else default
 
@@ -123,6 +130,30 @@ class Config:
         default_factory=lambda: _env("DT_PROCESSABLE_MODE", "documents")
     )
 
+    # --- post-run category consolidation (`drive-tagger consolidate`) -------
+    # Cosine distance threshold for single-linkage clustering of near-duplicate
+    # categories (turbovecdb metric is cosine: 0 = identical vectors). This is
+    # a CALIBRATED PLACEHOLDER, not a universal constant.
+    #
+    # Measured against the real data/db on 2026-07-03 (1197 categories, 5041
+    # docs, DT_EMBED_PROVIDER=dgx / qwen3-embedding:0.6b / 1024-dim): nearest-
+    # neighbor category distances have p1=0.0004, p5=0.049 (singular/plural and
+    # synonym pairs live under ~0.03). Single-linkage chaining crosses a cliff
+    # around 0.06 (largest cluster 20 members) -> 0.08 (94 members) -> 0.15 (371
+    # members, i.e. the taxonomy collapsing into one blob). 0.05 sits just below
+    # that cliff. Run `consolidate collect --diagnostics` to see this
+    # distribution for yourself before trusting the number.
+    #
+    # This value does NOT transfer to a different embed model. The *default*
+    # embed provider elsewhere in this file is "local" (MiniLM, 384-dim) but
+    # this default was calibrated on dgx/qwen3-1024 data (the only real corpus
+    # available). If DT_EMBED_PROVIDER=local, re-run `--diagnostics` and repick
+    # a threshold just below that model's own chaining cliff before trusting
+    # `consolidate collect` output.
+    consolidate_cluster_threshold: float = field(
+        default_factory=lambda: _env_float("DT_CONSOLIDATE_CLUSTER_THRESHOLD", 0.05)
+    )
+
     @property
     def db_dir(self) -> Path:
         return self.data_dir / "db"
@@ -135,10 +166,15 @@ class Config:
     def scan_path(self) -> Path:
         return self.data_dir / "scan.jsonl"
 
+    @property
+    def consolidation_dir(self) -> Path:
+        return self.reports_dir / "consolidation"
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         self.db_dir.mkdir(parents=True, exist_ok=True)
+        self.consolidation_dir.mkdir(parents=True, exist_ok=True)
 
 
 CONFIG = Config()
