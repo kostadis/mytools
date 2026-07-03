@@ -191,6 +191,85 @@ class Store:
         meta["member_count"] = max(0, meta.get("member_count", 0) + delta)
         self.categories.update_metadata(ids=[name], metadatas=[meta])
 
+    def all_categories_with_vectors(self) -> list[dict]:
+        """Every category with its embedding vector (for clustering)."""
+        res = self.categories.get(include=["documents", "metadatas", "vectors"])
+        out = []
+        for i, name in enumerate(res.ids):
+            meta = res.metadatas[i]
+            out.append(
+                {
+                    "name": name,
+                    "description": meta.get("description", res.documents[i] if res.documents else ""),
+                    "member_count": meta.get("member_count", 0),
+                    "vector": res.vectors[i] if res.vectors else None,
+                }
+            )
+        return out
+
+    def merge_categories(self, sources: list[str], into: str, description: str = "") -> None:
+        """Fold every category in `sources` into `into`.
+
+        - Ensures `into` exists (creates it if brand-new; if it already exists
+          and `description` is explicitly given, updates the description —
+          this deliberately re-embeds and refreshes `created_at`, since an
+          explicit description means the human/skill chose a better one. If
+          `into` already exists and no description is given, it is left
+          untouched — the common case of merging a cluster into one of its
+          own existing members.)
+        - For every document whose `categories` contains any source: replaces
+          the sources with `into`, dedups + sorts (same pattern as
+          `assign_categories`).
+        - Recomputes `into`'s `member_count` from actual post-merge membership
+          (not additive — a doc in both a source and `into` must not double-
+          count).
+        - Deletes the source category rows. Safe to re-run: if a source is
+          already gone, no documents reference it (no-op rewrite) and
+          `categories.delete(ids=sources)` on missing ids is a no-op.
+        """
+        into = into.strip()
+        if not into:
+            raise ValueError("into must be non-empty")
+        sources = [s.strip() for s in sources if s and s.strip() and s.strip() != into]
+
+        if not self.category_exists(into):
+            self.create_category(into, description)
+        elif description:
+            self.create_category(into, description)
+
+        if not sources:
+            return  # nothing to fold in (e.g. re-apply after sources already merged)
+
+        source_set = set(sources)
+        affected_ids: list[str] = []
+        affected_metas: list[dict] = []
+        member_count = 0
+        for doc in self.all_documents():
+            cats = set(doc.get("categories", []) or [])
+            touched = cats & source_set
+            if touched:
+                cats -= source_set
+                cats.add(into)
+                meta = {k: v for k, v in doc.items() if k not in ("id", "document", "vector")}
+                meta["categories"] = sorted(cats)
+                affected_ids.append(doc["id"])
+                affected_metas.append(meta)
+            if into in cats:
+                member_count += 1
+
+        if affected_ids:
+            self.documents.update_metadata(ids=affected_ids, metadatas=affected_metas)
+
+        into_meta = dict(self.categories.get(ids=[into], include=["metadatas"]).metadatas[0])
+        into_meta["member_count"] = member_count
+        self.categories.update_metadata(ids=[into], metadatas=[into_meta])
+
+        self.categories.delete(ids=sources)
+
+    def rename_category(self, old: str, new: str) -> None:
+        """Single-source rename: fold `old` into `new`."""
+        self.merge_categories([old], new)
+
     def assign_categories(self, file_id: str, names: list[str]) -> list[str]:
         """Attach categories to a document (union with existing). Returns the
         full category list. Unknown categories are auto-created as empty."""
