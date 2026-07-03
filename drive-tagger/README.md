@@ -79,6 +79,39 @@ Scope a first run cheaply with a folder and a small budget:
 DT_FOLDER_ID=<drive-folder-id> DT_MAX_FILES=10 uv run drive-tagger run
 ```
 
+### Post-run category consolidation
+
+A pipeline run is deliberately liberal about creating categories — over-generation is
+cheaper to fix after the fact than under-generation is to detect. Once a run has produced
+a taxonomy, consolidate near-duplicates in three steps:
+
+```bash
+# 1. Deterministically cluster near-duplicate categories (read-only)
+uv run drive-tagger consolidate collect --diagnostics   # --diagnostics prints pairwise
+                                                          # nearest-neighbor distances to
+                                                          # help calibrate the threshold below
+
+# 2. Review interactively, one cluster at a time (Claude Code session)
+/drive-consolidate
+
+# 3. Or apply a hand-written / pre-approved decisions.json directly
+uv run drive-tagger consolidate apply --decisions reports/consolidation/decisions.json
+```
+
+`consolidate collect` writes `reports/consolidation/clusters.json` — near-duplicate
+categories grouped by single-linkage clustering over embedding cosine distance, each
+group tagged with a confidence (`high`/`medium`/`low`) and a suggested canonical name.
+`/drive-consolidate` walks the clusters interactively and persists each decision to
+`reports/consolidation/decisions.json` (approve/reject/rename/split/ignore — resumable
+across invocations). `consolidate apply` merges every `approved` cluster
+(`store.merge_categories`: affected documents' `categories` get rewritten to the
+canonical name, source categories are deleted) and regenerates `reports/`. Both `collect`
+and `apply` are safe to re-run — already-merged sources are simply no-ops.
+
+If your `data/db` was built with the DGX embedder (see `DT_EMBED_PROVIDER` below), you
+must set `DT_EMBED_PROVIDER=dgx DT_EMBED_DIM=1024` for `consolidate` commands too — the
+store won't open against a mismatched embedder/dimension.
+
 ### Tunables (environment variables)
 
 | Var | Default | Meaning |
@@ -100,6 +133,7 @@ DT_FOLDER_ID=<drive-folder-id> DT_MAX_FILES=10 uv run drive-tagger run
 | `DT_ALL_DRIVES` | `0` | include shared drives in `scan` |
 | `DT_USE_MOUNT` | `0` | read synced binaries from the local Drive mount |
 | `DT_GDRIVE_CLI` | `../gdrive-cli/.../gdrive-cli` | path to the gdrive-cli binary |
+| `DT_CONSOLIDATE_CLUSTER_THRESHOLD` | `0.05` | Cosine distance for single-linkage `consolidate collect` clustering. **Embed-model-specific** — the default was calibrated against real `dgx`/qwen3-1024 data, where near-dupe pairs sit under ~0.03 but single-linkage chaining crosses a cliff around 0.06 (one cluster balloons from ~10 members to 20+, then 94+ by 0.08) as it fuses through generic hub categories. 0.05 sits just below that cliff. Re-run `consolidate collect --diagnostics` and repick a threshold below the chaining cliff before trusting the output if you switch to `local` (MiniLM-384) embeddings. |
 
 ## Notes
 
