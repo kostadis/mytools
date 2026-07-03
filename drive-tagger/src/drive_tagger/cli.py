@@ -367,7 +367,7 @@ def status(
 
 @app.command()
 def report() -> None:
-    """Write DRIVE-TAGS.md, categories.json, and graph.json to reports/."""
+    """Write reports/DRIVE-TAGS.md (index), reports/categories/*.md, categories.json, and graph.json."""
     from . import report as report_mod
 
     paths = report_mod.generate()

@@ -67,7 +67,7 @@ uv run drive-tagger run
 
 # 3. Inspect progress and the taxonomy
 uv run drive-tagger status
-uv run drive-tagger report          # writes reports/DRIVE-TAGS.md, categories.json, graph.json
+uv run drive-tagger report          # writes reports/DRIVE-TAGS.md (index) + reports/categories/*.md, categories.json, graph.json
 
 # 4. When happy, also write tags to Drive appProperties
 uv run drive-tagger run --execute
@@ -139,7 +139,8 @@ store won't open against a mismatched embedder/dimension.
 
 - `appProperties` written to Drive (`dt_categories`, `dt_run`) are app-private:
   searchable via the API but not shown in the Drive web UI. The human-readable
-  artifact is `reports/DRIVE-TAGS.md`.
+  artifact is `reports/DRIVE-TAGS.md`, an index linking to one page per category
+  under `reports/categories/`.
 - Re-running only processes new or changed files (tracked by md5 / modified time
   in turbovecdb), so there is no full re-cluster pass.
 
