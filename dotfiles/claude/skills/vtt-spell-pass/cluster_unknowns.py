@@ -273,7 +273,9 @@ def main():
                     help="JSON output of find_unknowns.py (default: stdin)")
     ap.add_argument("--glossary", required=True, type=Path)
     ap.add_argument("--npcs-dir", required=True, type=Path)
-    ap.add_argument("--extra-known", type=Path)
+    ap.add_argument("--extra-known", type=Path, nargs="*", default=[],
+                    help="One or more flat one-name-per-line dictionaries of "
+                         "verified nouns (e.g. notes/proper_nouns_adventure.txt)")
     args = ap.parse_args()
 
     if args.in_path:

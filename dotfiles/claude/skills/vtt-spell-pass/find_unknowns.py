@@ -148,10 +148,24 @@ def parse_npc_dossiers(npcs_dir: Path) -> set[str]:
     return names
 
 
-def load_extra(path: Path | None) -> set[str]:
-    if not path or not path.exists():
+def load_extra(paths: Path | list[Path] | None) -> set[str]:
+    """Load verified-noun dictionaries. Accepts a single Path (back-compat),
+    a list of Paths, or None. Each file is a flat one-name-per-line dump;
+    blank lines and lines starting with '#' are ignored."""
+    if not paths:
         return set()
-    return {line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip() and not line.startswith("#")}
+    if isinstance(paths, Path):
+        paths = [paths]
+    names: set[str] = set()
+    for path in paths:
+        if not path or not path.exists():
+            continue
+        names |= {
+            line.strip()
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.startswith("#")
+        }
+    return names
 
 
 # Otter/Zoom speaker labels at line start. Two patterns:
@@ -288,7 +302,9 @@ def main():
     ap.add_argument("--vtt", required=True, type=Path)
     ap.add_argument("--glossary", required=True, type=Path)
     ap.add_argument("--npcs-dir", required=True, type=Path)
-    ap.add_argument("--extra-known", type=Path)
+    ap.add_argument("--extra-known", type=Path, nargs="*", default=[],
+                    help="One or more flat one-name-per-line dictionaries of "
+                         "verified nouns (e.g. notes/proper_nouns_adventure.txt)")
     ap.add_argument("--min-count", type=int, default=1,
                     help="Only report unknowns appearing at least this many times")
     args = ap.parse_args()
