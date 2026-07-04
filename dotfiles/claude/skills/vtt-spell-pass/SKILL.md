@@ -34,6 +34,26 @@ Detect or ask:
    glossary already exists in the documented format — see Out of the Abyss
    for the canonical example).
 4. **NPC dossier dir** — `<campaign>/docs/npcs/` if present.
+5. **Verified-noun dictionaries** — flat, one-name-per-line files of
+   confirmed proper nouns (module NPCs, creatures, spells, locations,
+   deities) that should be treated as known and therefore never surfaced
+   as candidate misspellings. These are *not* the glossary — they are
+   pre-verified vocabulary that suppresses false positives and improves
+   clustering (dictionary entries also become canonical replacement
+   targets). **Auto-detect the conventional path
+   `<campaign>/notes/proper_nouns_adventure.txt`, then surface what you
+   found and ask the user to confirm or add more before running Phase 1.**
+   Pass every confirmed file to both scripts via `--extra-known` (the flag
+   accepts multiple paths).
+
+   Format matters: `--extra-known` treats every non-`#` line as a name, so
+   only feed flat one-per-line dumps. Do **not** pass markdown tables
+   (e.g. `proper_nouns_adventure.md`, `vtt_known_additions.md`) — they
+   inject table syntax and prose fragments into the known set and can
+   silently suppress real unknowns. The `.md` companion files exist for
+   human reading and explicitly point at the `.txt` as the loadable form;
+   honor that contract. If no dictionary exists, proceed without one —
+   it is an enhancement, not a hard dependency.
 
 ## Workflow
 
@@ -46,12 +66,17 @@ python ~/.claude/skills/vtt-spell-pass/find_unknowns.py \
   --vtt <vtt> \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
   --npcs-dir <campaign>/docs/npcs \
+  --extra-known <campaign>/notes/proper_nouns_adventure.txt \
   --min-count 1 \
 | python ~/.claude/skills/vtt-spell-pass/cluster_unknowns.py \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
   --npcs-dir <campaign>/docs/npcs \
+  --extra-known <campaign>/notes/proper_nouns_adventure.txt \
   > /tmp/spell_pass_clusters.json
 ```
+
+`--extra-known` accepts multiple paths — pass every dictionary the user
+confirmed in required-input #5 (omit the flag if none exist).
 
 `find_unknowns.py` emits the raw unknown-token list with counts and
 contexts. `cluster_unknowns.py` then:
