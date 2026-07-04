@@ -17,11 +17,14 @@ how they were categorized.
    - `search_categories(file_id)` to find existing categories relevant to this \
 file. Use `list_categories` if you need the full list.
 
-3. Decide categories. PREFER REUSING existing categories whenever they fit so the \
-taxonomy stays coherent. Only `create_category(name, description)` for a \
-genuinely new theme - use a concise, reusable name (2-4 words) and a one-sentence \
-description. A file usually belongs to SEVERAL categories: assign the richest \
-fitting set, not a single tag.
+3. Decide categories. Every category is ONE facet: a single aesthetic, genre, \
+content-type, or subject. A file usually has SEVERAL facets, so give it several \
+separate one-facet tags - e.g. a whimsical adventure module about talking cats \
+gets "Absurdist", "Adventures", "Feline". PREFER REUSING existing categories \
+whenever they fit so the taxonomy stays coherent. Only \
+`create_category(name, description)` when no existing category names a facet this \
+file has - name it as a single facet in one or two words, with a one-sentence \
+description. Assign the richest set of one-facet tags that describe the file.
 
 4. Call `assign_categories(file_id, [list of category names])`.
 
@@ -41,9 +44,43 @@ breadth of correct connections over caution.
 # One-shot decision per file: no tools, no sequencing, JSON out. Per the Qwen
 # findings, the prompt names no tools and gives no workflow imperatives.
 
-JUDGE_PROMPT = """\
+# The curated facet vocabulary — ONE controlled list, maintained by the human.
+# Each category is a single facet on one of four orthogonal axes; a document
+# usually spans several axes and so gets several one-facet tags. Seeded from the
+# accepted canonicals in reports/consolidation/tail_decisions.json plus the live
+# high-count atomic facets. These are EXAMPLES per axis, not a closed set: the
+# model reuses these and the runtime-injected EXISTING CATEGORIES list first, and
+# only mints a new single-facet tag for a genuinely uncovered theme. Curating
+# this list (adding/renaming axis values) is the durable lever on tag quality.
+#
+# Qwen note: this block is stated positively (only the shape we want, with no
+# named anti-example), per the negation-blindness finding.
+FACET_VOCABULARY = """\
+- Aesthetic / tone: Absurdist, Gothic, Cosmic, Weird, Noir, Epic, Mythic, Dark
+- Genre / setting: Horror, Fantasy, Sci-Fi, Cyberpunk, Post-Apocalyptic, \
+Feywild, Underwater, Arcane, Infernal, Elemental
+- Content-type: Adventures, Adventure Modules, Campaign, Encounters, Spells, \
+Feats, Maps, Playbooks, Magic Items, Tomes, Archetypes, Mechanics, Progression, \
+System, RPG, Class Homebrew
+- Subject: Monsters, Races, Constructs, Aberrations, Artifacts, Cults, Mythos, \
+Lore, Setting, Combat, Class, Necromancy, Traps, Villains"""
+
+JUDGE_PROMPT = (
+    """\
 You are a librarian organizing a Google Drive of tabletop RPG documents into a \
 rich, interconnected taxonomy.
+
+In this taxonomy every category is ONE facet: a single aesthetic, genre, \
+content-type, or subject. A document usually has SEVERAL facets, so it gets \
+several separate one-facet tags. For example, a whimsical adventure module about \
+talking cats gets three tags: "Absurdist", "Adventures", "Feline" - one tag per \
+facet.
+
+Example facets, grouped by axis (reuse these and the categories in the EXISTING \
+CATEGORIES list before creating anything new):
+"""
+    + FACET_VOCABULARY
+    + """
 
 You will be given the complete list of existing categories, then the file's \
 most similar already-stored files (its neighbors) with their categories, and \
@@ -51,13 +88,13 @@ finally the file itself (name and content snippet).
 
 Decide:
 
-1. Which categories this file belongs to. PREFER REUSING existing categories \
-whenever they fit so the taxonomy stays coherent. A file usually belongs to \
-SEVERAL categories - choose the richest fitting set, not a single tag.
+1. Which facets this file has. List every fitting facet as its own tag. PREFER \
+REUSING existing categories whenever they fit so the taxonomy stays coherent. \
+Give the file the richest set of one-facet tags that describe it.
 
-2. Whether any genuinely new categories are needed. Only invent a new category \
-for a theme no existing category covers - use a concise, reusable name (2-4 \
-words) and a one-sentence description.
+2. Whether any genuinely new facet is needed. Only when no existing category \
+names a facet this file has, create one new tag - name it as a single facet in \
+one or two words, with a one-sentence description.
 
 3. Which neighbors this file is strongly connected to, beyond shared \
 categories. Use a precise relation for each: "supersedes", "part-of", \
@@ -76,6 +113,7 @@ fences:
 "categories" must list every category assigned to this file, including the \
 names of any new_categories. Use [] for a list with no entries.
 """
+)
 
 
 def build_judge_user_msg(
