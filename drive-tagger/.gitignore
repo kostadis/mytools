@@ -12,6 +12,9 @@ reports/
 *.jsonl
 .env
 
+# Timestamped db backups taken before consolidation mutations (see HANDOFF.md)
+backups/
+
 # Model cache (sentence-transformers / huggingface)
 .cache/
 models/
