@@ -473,5 +473,60 @@ def consolidate_apply(
         typer.echo(f"  -> {m['canonical']}  (absorbed: {', '.join(m['sources'])})")
 
 
+backfill_app = typer.Typer(
+    add_completion=False,
+    help="Backfill LLM-drafted descriptions for empty-description categories (issue #98).",
+)
+consolidate_app.add_typer(backfill_app, name="backfill")
+
+
+@backfill_app.command("draft")
+def backfill_draft(
+    out: Optional[Path] = typer.Option(
+        None,
+        "--out",
+        help="Output path (default: reports/consolidation/description_backfill.json).",
+    ),
+) -> None:
+    """Draft descriptions for empty-description multi-word categories.
+
+    Read-only against the store — writes reports/consolidation/
+    description_backfill.json for human review. Run `apply-descriptions`
+    only after reviewing that file.
+    """
+    from .backfill import draft
+
+    result = draft(out_path=out)
+    typer.echo(f"\nWrote {result['path']}")
+    typer.echo(
+        f"Drafted {len(result['drafted'])} description(s). "
+        "Review the file above before running apply-descriptions."
+    )
+
+
+@backfill_app.command("apply-descriptions")
+def backfill_apply_descriptions(
+    descriptions: Optional[Path] = typer.Option(
+        None,
+        "--descriptions",
+        help="Path to the drafted descriptions artifact "
+        "(default: reports/consolidation/description_backfill.json).",
+    ),
+) -> None:
+    """Write human-reviewed drafted descriptions into the store."""
+    from .backfill import apply_descriptions
+
+    path = descriptions or (CONFIG.consolidation_dir / "description_backfill.json")
+    if not path.exists():
+        typer.secho(f"No descriptions file at {path}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    result = apply_descriptions(descriptions_path=path)
+    typer.echo(f"Applied {len(result['applied'])} description(s); skipped {len(result['skipped'])}.")
+    for a in result["applied"]:
+        typer.echo(f"  -> {a['name']}")
+    for s in result["skipped"]:
+        typer.echo(f"  (skipped {s.get('name')}: {s.get('reason')})")
+
+
 if __name__ == "__main__":
     app()
