@@ -193,6 +193,89 @@ def _lexical_pairs(names: list[str], members_by_cat: dict[str, list[str]]) -> li
     return [entry for _, entry in items]
 
 
+def _prefix_pairs(names: list[str], members_by_cat: dict[str, list[str]]) -> list[dict]:
+    """Every ordered (base, extension) pair where `base`'s whitespace-token
+    list is an exact prefix of `extension`'s whitespace-token list, restricted
+    to `base` having 2+ tokens (issue #100; DEDUP_BLIND_SPOTS.md failure
+    mode 3).
+
+    Tokenization is whitespace-only, deliberately NOT split on hyphens or any
+    other punctuation — "System-Agnostic" stays one token, so "System-Agnostic
+    Sci-Fi" (2 tokens) correctly prefixes "System-Agnostic Sci-Fi Scenarios"
+    without the hyphenated compound being torn apart.
+
+    The `len(base_tokens) >= 2` floor is load-bearing, not incidental: it is
+    exactly what separates this signal from the existing, intentional Pass-2
+    single-word facet pattern (`Campaign` -> `Campaign Supplements`, `RPG` ->
+    `RPG Playkit` — ~128 of these exist in the live store and are correct
+    design, not bugs). A single *bare word* base — including a hyphenated one
+    like `Sci-Fi` or a bare proper noun like `Hârn` — is exactly the same
+    kind of one-lexical-unit facet as `Horror` or `Fantasy`; whitespace-only
+    tokenization treats it as 1 token and excludes it on purpose, even though
+    an earlier ad hoc corpus scan (DEDUP_BLIND_SPOTS.md's "20 pairs" table)
+    was inconsistent about this and let a handful of single-whitespace-token
+    bases (`High-Level`, `Zero-Level`, `Sci-Fi`, `Hârn`) through. Those 4 are
+    intentionally NOT reproduced here — see test_cluster.py for the split.
+
+    Unlike `_lexical_pairs`, prefix containment is NOT grouped into symmetric
+    equivalence classes — it is inherently pairwise and asymmetric (that A is
+    a prefix of B says nothing about whether some other C is also a prefix of
+    B or of A). A name that prefixes N different longer names (e.g. `Call of
+    Cthulhu` against 6 siblings in the baseline data) produces N separate
+    entries, one per (base, extension) pair, not one merged group.
+
+    `suggested_canonical`/`reason` deliberately do NOT reuse `_pick_canonical`'s
+    "highest member_count wins" framing. That framing presumes the review
+    question is "which of these already-equivalent names should survive" —
+    true for `clusters`/`lexical_pairs`, but false here: DEDUP_BLIND_SPOTS.md
+    failure mode 3 shows a prefix pair is just as often a legitimate,
+    unfinished Pass-2-style facet decomposition (`Call of Cthulhu` + `Scenarios`
+    is real orthogonal scope, not a duplicate) as it is a true duplicate
+    (`System-Agnostic Sci-Fi` + `Scenarios` merely restates the base's own
+    description in different words). Which one it is cannot be told apart
+    mechanically — it is a human judgment call, so this function only
+    surfaces the (base, extension) candidate; it does not pre-decide an
+    answer. `suggested_canonical` is set to `base` (the broader, structurally
+    prior category) purely as a scaffold for the "if this turns out to be a
+    duplicate" branch of that decision, NOT a recommendation to merge — the
+    `reason` string spells out both possibilities explicitly so a reviewer
+    never mistakes this for an already-decided merge suggestion.
+    """
+    distinct = sorted(set(names))
+    tokens = {nm: nm.split() for nm in distinct}
+    lowered = {nm: [t.lower() for t in toks] for nm, toks in tokens.items()}
+
+    pairs = []
+    for base in distinct:
+        base_toks = lowered[base]
+        if len(base_toks) < 2:
+            continue
+        for extension in distinct:
+            if extension == base:
+                continue
+            ext_toks = lowered[extension]
+            if len(ext_toks) <= len(base_toks):
+                continue
+            if ext_toks[: len(base_toks)] != base_toks:
+                continue
+            member_names = [base, extension]
+            pairs.append(
+                {
+                    "id": _cluster_id(member_names),
+                    "members": _member_entries(member_names, members_by_cat),
+                    "base": base,
+                    "extension": extension,
+                    "suggested_canonical": base,
+                    "reason": (
+                        f"prefix: '{base}' may be duplicate-of or "
+                        f"facet-parent-of '{extension}'"
+                    ),
+                }
+            )
+    pairs.sort(key=lambda p: (p["base"].lower(), p["extension"].lower()))
+    return pairs
+
+
 # -- collect -------------------------------------------------------------
 
 def collect(*, threshold: Optional[float] = None, diagnostics: bool = False) -> dict:
@@ -221,6 +304,7 @@ def collect(*, threshold: Optional[float] = None, diagnostics: bool = False) -> 
     # pairs can exist even with zero embeddable categories.
     all_names = [c["name"] for c in cats]
     lexical_pairs = _lexical_pairs(all_names, members_by_cat)
+    prefix_pairs = _prefix_pairs(all_names, members_by_cat)
 
     cats = [c for c in cats if c.get("vector")]  # defensive: skip vector-less rows
     names = [c["name"] for c in cats]
@@ -235,6 +319,7 @@ def collect(*, threshold: Optional[float] = None, diagnostics: bool = False) -> 
             "n_absorbed": 0,
             "n_singletons": 0,
             "lexical_pairs": lexical_pairs,
+            "prefix_pairs": prefix_pairs,
         }
         path = _write_clusters_json(thr, result)
         return {**result, "path": path}
@@ -280,6 +365,7 @@ def collect(*, threshold: Optional[float] = None, diagnostics: bool = False) -> 
         "n_absorbed": sum(len(c["members"]) for c in clusters_out),
         "n_singletons": len(singletons_out),
         "lexical_pairs": lexical_pairs,
+        "prefix_pairs": prefix_pairs,
     }
     path = _write_clusters_json(thr, result)
     return {**result, "path": path}
@@ -293,6 +379,7 @@ def _write_clusters_json(threshold: float, result: dict) -> Path:
         "clusters": result["clusters"],
         "singletons": result["singletons"],
         "lexical_pairs": result.get("lexical_pairs", []),
+        "prefix_pairs": result.get("prefix_pairs", []),
     }
     path = CONFIG.consolidation_dir / "clusters.json"
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

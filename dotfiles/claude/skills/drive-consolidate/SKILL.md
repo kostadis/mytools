@@ -75,6 +75,27 @@ Read `reports/consolidation/clusters.json`. Its shape:
       // match, so they're simply absent rather than faked.
     }
   ],
+  "prefix_pairs": [
+    {
+      "id": "9a1c4e7bf203",              // same 12-hex _cluster_id scheme as `clusters`
+      "members": [
+        {"name": "...", "member_count": 212, "sample_docs": ["...", "..."]},
+        {"name": "...", "member_count": 38, "sample_docs": ["...", "..."]}
+      ],
+      "base": "System-Agnostic Sci-Fi",        // the shorter name — its
+                                                 // whitespace-token list is
+                                                 // an exact prefix of `extension`'s
+      "extension": "System-Agnostic Sci-Fi Scenarios",
+      "suggested_canonical": "System-Agnostic Sci-Fi",  // = `base` — a
+                                                 // scaffold for the "if this
+                                                 // turns out to be a duplicate"
+                                                 // branch, NOT a merge
+                                                 // recommendation (see below)
+      "reason": "prefix: 'System-Agnostic Sci-Fi' may be duplicate-of or facet-parent-of 'System-Agnostic Sci-Fi Scenarios'"
+      // no confidence / min_distance / max_distance here either — same
+      // reason as `lexical_pairs`.
+    }
+  ],
   "singletons": [{"name": "...", "member_count": 0}]
 }
 ```
@@ -100,28 +121,48 @@ exact same shape as a `clusters` entry (`id` / `members` /
 specifically so it can be walked through the identical Phase 2/3 review
 flow with no special-casing.
 
+`prefix_pairs` (issue #100) is a **third, independent** signal, and asks a
+genuinely **different review question** than `clusters`/`lexical_pairs` — see
+the framing note in Phase 2 before treating it like just another merge
+candidate list. Mechanically: `_prefix_pairs` in `consolidate.py` scans every
+category name (whitespace-tokenized, hyphens NOT treated as separators —
+`System-Agnostic` stays one token) for ordered pairs where one name's
+(`base`) tokens are an exact prefix of another's (`extension`), restricted to
+`base` having 2+ tokens. That floor deliberately excludes the ~128 existing,
+intentional single-word Pass-2 facet pairs already in the store (`Campaign`
+⊂ `Campaign Supplements`, `RPG` ⊂ `RPG Playkit`, `Horror` ⊂ `Horror Themes`,
+`Fantasy` ⊂ `Fantasy Technology`) — those are correct design, not candidates.
+Unlike `lexical_pairs`, prefix containment is pairwise, not a symmetric
+equivalence class: a name that prefixes several longer names (e.g. `Call of
+Cthulhu` against 6 siblings in the live store) produces one `prefix_pairs`
+entry per pair, not one merged group. `suggested_canonical` is always set to
+`base` — but read that as a scaffold for the "if this turns out to be a
+duplicate" branch of the human decision, not a recommendation to merge (see
+Phase 2/3). Background: `reports/consolidation/DEDUP_BLIND_SPOTS.md` failure
+mode 3, if present on disk (gitignored working data, not always checked out).
+
 **Sanity check** (mirrors vtt-spell-pass's `known_names_count` check): let
 `n = singletons.length + sum(len(c.members) for c in clusters)` (total
 categories reviewed). If `clusters` is empty and `n` is large (say >50),
 something is wrong with the threshold or the data — say so and stop rather
 than telling the user "nothing to review." If `n` itself is tiny (<20), there
 may genuinely be nothing worth consolidating yet — that's a fine outcome, say
-so and stop. (`lexical_pairs` doesn't change this formula — every name it
-references already appears in either `clusters` or `singletons`, so it adds
-review turns, not new categories to the count.)
+so and stop. (`lexical_pairs`/`prefix_pairs` don't change this formula —
+every name they reference already appears in either `clusters` or
+`singletons`, so they add review turns, not new categories to the count.)
 
 ### Phase 1a — merge every signal-list into one review queue
 
 `collect()` can emit more than one independent duplicate signal in the same
-run — today that's `clusters` (embedding distance) and `lexical_pairs` (name
-normalization); a future run adds a third, `prefix_pairs` (issue #100).
+run — today that's `clusters` (embedding distance), `lexical_pairs` (name
+normalization), and `prefix_pairs` (name-prefix containment, issue #100).
 Before Phase 2/3 touch anything, merge **every** signal-list
 `clusters.json` contains into one id-keyed review queue:
 
 1. Build an empty dict keyed by `id`.
-2. Walk each signal-list in turn — currently `["clusters", "lexical_pairs"]`
-   — inserting each entry under its `id`. List order doesn't matter; the
-   merge is idempotent.
+2. Walk each signal-list in turn — currently
+   `["clusters", "lexical_pairs", "prefix_pairs"]` — inserting each entry
+   under its `id`. List order doesn't matter; the merge is idempotent.
 3. **If an `id` already exists in the queue**, don't add a second turn for
    it. This is expected, not a bug: `_cluster_id` is derived purely from
    the sorted member-name set, so the exact same pair of categories can
@@ -137,8 +178,8 @@ Before Phase 2/3 touch anything, merge **every** signal-list
 
 Implement the merge as a small loop over "the signal-list keys in
 `clusters.json`" rather than hand-writing separate merge logic per list —
-when issue #100 adds `prefix_pairs`, wiring it into this step should be a
-one-line addition to that list, not a rewrite.
+adding `prefix_pairs` (issue #100) to that list was exactly this: a one-line
+addition, not a rewrite. The same should hold for any future signal.
 
 ### Phase 2 — Claude pre-classifies each queue entry (minimal filtering, surface when in doubt)
 
@@ -174,6 +215,32 @@ noise from apostrophe/period-stripping, not a real pair — lean toward
 rejecting single-word collisions like that on inspection rather than
 approving by default).
 
+**`prefix_pairs` entries ask a different review question — read this before
+touching one.** A `clusters`/`lexical_pairs` entry asks "are these the same
+thing — merge?" A `prefix_pairs` entry asks: **is the `extension` a true
+duplicate of the `base`, or a legitimate (if unfinished) Pass-2-style facet
+decomposition** — a proper-noun/brand facet plus a genuinely orthogonal
+content-type word? These look identical mechanically (`base`'s tokens are an
+exact prefix of `extension`'s) but resolve to opposite answers depending on
+what the base's own description already covers:
+
+- `Call of Cthulhu` (4 docs) + `Scenarios` / `Content` / `Handouts` /
+  `Investigator Handbooks` / `Coloring Books` / `Keeper Decks` are **not**
+  duplicates — the bare facet legitimately means "everything tagged with
+  this setting/brand," and each suffix adds real, orthogonal scope. Same
+  shape as the accepted single-word Pass-2 pattern, just two words deep.
+- `System-Agnostic Sci-Fi` (212 docs, description: "adventure modules and
+  campaign frameworks... adapted to any RPG system") vs. `System-Agnostic
+  Sci-Fi Scenarios` (38 docs, description: "adventure modules designed to be
+  adapted to any RPG system") **is** a likely duplicate — `Scenarios`
+  restates the base's own description in different words rather than adding
+  new scope.
+
+There is no mechanical rule that tells these apart (see
+`DEDUP_BLIND_SPOTS.md` failure mode 3, if present on disk) — read both
+descriptions and the sample docs, same as any other cluster review, and form
+an opinion on which of the two this looks like before Phase 3.
+
 **Bias, same as vtt-spell-pass: never silently merge distinct themes, never
 silently drop a real merge candidate. When in doubt, surface it in Phase 3
 rather than pre-filtering it out.** There is no auto-drop list here —
@@ -185,8 +252,8 @@ removes entries from review.
 
 Use `TaskCreate` to enumerate the merged review queue from Phase 1a (in its
 merge order — high-confidence embedding clusters first, then lexical-only
-pairs) so progress is trackable, then `AskUserQuestion` to walk them one at
-a time.
+pairs, then prefix pairs) so progress is trackable, then `AskUserQuestion`
+to walk them one at a time.
 
 For each entry show: member names + `member_count` + up to 8 sample doc
 names each, the deterministic `suggested_canonical` + `reason`, and Claude's
@@ -229,6 +296,41 @@ C) Split — not all the same; ask me about subgroups one at a time
 D) Reject — keep all separate
 E) Ignore forever (don't ask again)
 ```
+
+A `prefix_pairs` entry presents differently — it's a **base/extension**
+pair, not a symmetric group of members, and the review question is "is the
+extension a duplicate of the base, or does it add real orthogonal scope?"
+(see the Phase 2 framing note above). Note in particular how option (D)
+reads: rejecting a `clusters`/`lexical_pairs` entry means "these aren't
+duplicates," full stop — but rejecting a `prefix_pairs` entry has a more
+specific, positive meaning: **"legitimate decomposition, leave both
+as-is,"** because the base and extension are expected to coexist as
+siblings in that outcome, not just "not related."
+
+```
+Prefix pair 9a1c4e7bf203  (prefix: base "System-Agnostic Sci-Fi" (212 docs) may be duplicate-of or facet-parent-of "System-Agnostic Sci-Fi Scenarios" (38 docs))
+Deterministic suggestion: suggested_canonical = "System-Agnostic Sci-Fi" (base) — a scaffold, not a recommendation; see Claude's read.
+Claude's read: likely duplicate — "System-Agnostic Sci-Fi"'s own description
+already says "adventure modules and campaign frameworks... adapted to any
+RPG system." "Scenarios"'s description ("adventure modules designed to be
+adapted to any RPG system") restates the same scope in different words
+rather than adding a new facet. Recommend folding into the base.
+
+Base:      System-Agnostic Sci-Fi            212 docs   "adventure modules and campaign frameworks... adapted to any RPG system"
+Extension: System-Agnostic Sci-Fi Scenarios    38 docs   "adventure modules designed to be adapted to any RPG system"
+  e.g. "Derelict Signal.pdf", "Void Contract Job.pdf"
+
+A) Approve merge -> "System-Agnostic Sci-Fi" (fold extension's docs into base)
+B) Different canonical name (type it)
+C) Split — some of the extension's docs are duplicates, some are genuinely new scope; ask me about subgroups
+D) Reject — legitimate decomposition, leave both as-is
+E) Ignore forever (don't ask again)
+```
+
+(Compare with `Call of Cthulhu` + `Scenarios`: same mechanical shape, but
+there Claude's read would recommend (D) — the base's bare "everything tagged
+with this setting" scope and the suffix's added content-type meaning are
+genuinely orthogonal, so both stay as-is.)
 
 **Hard rule: every merge requires explicit user confirmation before being
 written to `decisions.json`.** The deterministic suggestion + Claude's
@@ -365,9 +467,12 @@ ignored / split-markers / invalid).
 - **`decisions.json` entries are signal-agnostic.** `apply()` reads only
   `status` / `canonical` / `sources` / `description` from each entry — it
   has no idea, and doesn't need one, whether an `id` originated from
-  `clusters`, `lexical_pairs`, or a future `prefix_pairs` (issue #100). This
-  is what makes Phase 1a's merge safe: once an entry is in the queue and
-  decided, it flows through Phase 4/5 identically regardless of origin.
+  `clusters`, `lexical_pairs`, or `prefix_pairs` (issue #100). This is what
+  makes Phase 1a's merge safe: once an entry is in the queue and decided, it
+  flows through Phase 4/5 identically regardless of origin — a `prefix_pairs`
+  entry the user approves as a merge writes the exact same schema as any
+  other approved entry (`canonical` = the chosen name, `sources` = the other
+  member's name); nothing new is needed in Phase 4/`apply()` for it.
 - **Don't silently reject a low-confidence cluster.** A low-confidence /
   hub-anchored cluster is a signal to propose splitting, not a signal to
   auto-reject — auto-rejecting would silently drop real merge candidates
