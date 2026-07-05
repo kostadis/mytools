@@ -276,6 +276,32 @@ def _prefix_pairs(names: list[str], members_by_cat: dict[str, list[str]]) -> lis
     return pairs
 
 
+def _backfill_targets(categories: list[dict]) -> list[dict]:
+    """Select empty-description categories worth backfilling a description for
+    (issue #98; DEDUP_BLIND_SPOTS.md failure mode 1).
+
+    `store.py`'s `create_category` embeds `description or name` — so an
+    empty-description category's vector is a bare-name-string embedding, while
+    every category with a real description is a paragraph embedding. These two
+    representations don't live in a comparable part of embedding space, which
+    is why empty-description categories drift far from true siblings at every
+    clustering threshold regardless of topic overlap.
+
+    Selection is deliberately narrow: `description == ""` AND 2+ whitespace-
+    separated name-tokens. The 1-token case (`Absurdist`, `Gothic`, ~235 of
+    them in the live store) is the existing, intentional Pass-2 facet-token
+    pattern — the name *is* the content by design, and backfilling a
+    description for one would be wrong, not just unnecessary. Do not loosen
+    this predicate to "catch more" — the multi-word-only floor is exactly what
+    separates the 132 real gaps from the 235 categories that must never be
+    touched here."""
+    return [
+        c
+        for c in categories
+        if c.get("description", "") == "" and len(c.get("name", "").split()) >= 2
+    ]
+
+
 # -- collect -------------------------------------------------------------
 
 def collect(*, threshold: Optional[float] = None, diagnostics: bool = False) -> dict:
