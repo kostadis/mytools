@@ -150,6 +150,22 @@ class Config:
     # available). If DT_EMBED_PROVIDER=local, re-run `--diagnostics` and repick
     # a threshold just below that model's own chaining cliff before trusting
     # `consolidate collect` output.
+    #
+    # DO NOT "fix" misses by raising this threshold further. Ceiling case:
+    # "Floating City" / "Floating Cities" -- a literal singular/plural of the
+    # identical word -- measures cosine distance 0.361, far past every
+    # chaining cliff documented above (0.06 / 0.08 / 0.15). Any threshold high
+    # enough to catch that pair also re-collapses the whole taxonomy into one
+    # blob (see the 0.15 = 371-member data point). There is no single
+    # threshold value that catches all genuine name-level duplicates without
+    # destroying the categories entirely.
+    #
+    # Catching this class of miss requires a separate, non-embedding signal:
+    # a lexical name-normalization pass and a prefix-containment pass
+    # (tracked as GitHub issues #99 and #100), not a threshold change here.
+    # Full evidence/measurements: reports/consolidation/DEDUP_BLIND_SPOTS.md
+    # (gitignored working-tree doc; not visible via git log/show, but present
+    # on disk for anyone with local access).
     consolidate_cluster_threshold: float = field(
         default_factory=lambda: _env_float("DT_CONSOLIDATE_CLUSTER_THRESHOLD", 0.05)
     )
