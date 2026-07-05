@@ -1,13 +1,23 @@
 """Tests for the pure clustering primitives in consolidate.py (issue #88):
-_union_find_clusters, _confidence, _cluster_id.
+_union_find_clusters, _confidence, _cluster_id. Plus the lexical
+name-normalization pass (issue #99): _normalize_name, _lexical_pairs,
+_member_entries.
 
 No Store, no fixture — these are pure functions over hand-built distance
-matrices. Fully offline by construction.
+matrices / name lists. Fully offline by construction.
 """
 
 import numpy as np
 
-from drive_tagger.consolidate import _cluster_id, _confidence, _union_find_clusters
+from drive_tagger.consolidate import (
+    SAMPLE_DOCS_CAP,
+    _cluster_id,
+    _confidence,
+    _lexical_pairs,
+    _member_entries,
+    _normalize_name,
+    _union_find_clusters,
+)
 
 
 def _symmetric(n, pairs, default=1.0):
@@ -132,3 +142,98 @@ def test_cluster_id_differs_for_different_membership():
     id_a = _cluster_id(["A", "B"])
     id_b = _cluster_id(["A", "B", "C"])
     assert id_a != id_b
+
+
+# -- _normalize_name (issue #99 — lexical name-normalization pass) --------
+
+KNOWN_DUPLICATE_PAIRS = [
+    ("Dungeon Generator", "Dungeon Generators"),
+    ("Explorer's Journal", "Explorer's Journals"),
+    ("Floating City", "Floating Cities"),
+    ("Gamemaster Screen", "Gamemaster Screens"),
+    ("Smugglers' Lair", "Smugglers' Lairs"),
+]
+
+
+def test_normalize_name_collides_known_duplicate_pairs():
+    for singular, plural in KNOWN_DUPLICATE_PAIRS:
+        assert _normalize_name(singular) == _normalize_name(plural), (singular, plural)
+
+
+def test_normalize_name_collides_floating_city_and_cities():
+    # Flagship case from DEDUP_BLIND_SPOTS.md: a literal singular/plural of
+    # the same word that sits at cosine distance 0.36 — far past any usable
+    # embedding threshold — so this lexical pass is the only signal that
+    # catches it.
+    assert _normalize_name("Floating City") == _normalize_name("Floating Cities")
+
+
+def test_normalize_name_does_not_collide_unrelated_names():
+    assert _normalize_name("Bestiary") != _normalize_name("Character Sheet Templates")
+
+
+# -- _lexical_pairs (issue #99) -------------------------------------------
+
+
+def test_lexical_pairs_groups_known_pairs_and_excludes_singletons():
+    names = [
+        "Dungeon Generator",
+        "Dungeon Generators",
+        "Floating City",
+        "Floating Cities",
+        "Bestiary",  # singleton -- no normalized-form collision
+    ]
+    members_by_cat = {
+        "Dungeon Generator": ["a.pdf"],
+        "Dungeon Generators": ["b.pdf", "c.pdf"],
+        "Floating City": ["d.pdf"],
+        "Floating Cities": ["e.pdf", "f.pdf", "g.pdf"],
+        "Bestiary": ["h.pdf"],
+    }
+
+    pairs = _lexical_pairs(names, members_by_cat)
+    groups = [frozenset(m["name"] for m in p["members"]) for p in pairs]
+
+    assert len(pairs) == 2
+    assert frozenset({"Dungeon Generator", "Dungeon Generators"}) in groups
+    assert frozenset({"Floating City", "Floating Cities"}) in groups
+    assert not any("Bestiary" in g for g in groups)
+
+    # Shape matches an embedding cluster entry, minus the embedding-only keys.
+    for p in pairs:
+        assert set(p) == {"id", "members", "suggested_canonical", "reason"}
+        assert p["reason"].startswith("lexical: normalized to '")
+
+
+def test_lexical_pairs_suggested_canonical_is_highest_member_count():
+    names = ["Dungeon Generator", "Dungeon Generators"]
+    members_by_cat = {
+        "Dungeon Generator": ["a.pdf"],
+        "Dungeon Generators": ["b.pdf", "c.pdf", "d.pdf"],
+    }
+
+    pairs = _lexical_pairs(names, members_by_cat)
+
+    assert len(pairs) == 1
+    assert pairs[0]["suggested_canonical"] == "Dungeon Generators"
+    assert pairs[0]["id"] == _cluster_id(["Dungeon Generator", "Dungeon Generators"])
+
+
+# -- _member_entries (refactored out of collect(), issue #99) -------------
+
+
+def test_member_entries_sorts_by_member_count_desc_and_caps_sample_docs():
+    member_names = ["Low Count Cat", "High Count Cat"]
+    members_by_cat = {
+        "Low Count Cat": ["only_one.pdf"],
+        "High Count Cat": [f"doc_{i}.pdf" for i in range(SAMPLE_DOCS_CAP + 5)],
+    }
+
+    entries = _member_entries(member_names, members_by_cat)
+
+    assert [e["name"] for e in entries] == ["High Count Cat", "Low Count Cat"]
+    assert entries[0]["member_count"] == SAMPLE_DOCS_CAP + 5
+    assert len(entries[0]["sample_docs"]) == SAMPLE_DOCS_CAP
+    assert entries[0]["sample_docs"] == sorted(members_by_cat["High Count Cat"])[:SAMPLE_DOCS_CAP]
+    assert entries[1]["member_count"] == 1
+    assert entries[1]["sample_docs"] == ["only_one.pdf"]
