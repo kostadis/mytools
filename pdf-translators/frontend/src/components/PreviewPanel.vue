@@ -29,7 +29,7 @@ watch(
     >
       <div
         class="pline"
-        :class="{ ph: item.idx === store.selected }"
+        :class="{ ph: store.selection.has(item.idx) }"
         :style="{ paddingLeft: 16 + (item.level - 1) * 12 + 'px' }"
         @click="store.select(item.idx)"
       >
