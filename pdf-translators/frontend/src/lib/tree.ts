@@ -45,13 +45,18 @@ export function parseMarkdown(md: string): Block[] {
 }
 
 export function blocksToMarkdown(blks: Block[]): string {
+  // Each block's `body` already carries its own trailing newline(s) (parse
+  // appends '\n' after every non-final line), and the heading line always gets
+  // exactly one '\n' before its body. So blocks concatenate directly with
+  // join('') — joining with '\n' instead injects an extra blank line at every
+  // heading boundary on *each* save, growing the file every time. join('')
+  // makes parse↔serialize idempotent.
   return blks
     .map((b) => {
       if (b.level === 0) return b.body
-      const hdr = '#'.repeat(b.level) + ' ' + b.text
-      return b.body ? hdr + '\n' + b.body : hdr
+      return '#'.repeat(b.level) + ' ' + b.text + '\n' + b.body
     })
-    .join('\n')
+    .join('')
 }
 
 // ── Tree helpers ───────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import {
   parseMarkdown,
   blocksToMarkdown,
   visibleIndices,
+  sectionEnd,
   prevSibling,
   nextSibling,
   moveSectionUp,
@@ -16,12 +17,15 @@ interface Snapshot {
   blocks: Block[]
   collapsed: number[]
   selected: number
+  selection: number[]
 }
 
 interface State {
   blocks: Block[]
   collapsed: Set<number>
-  selected: number
+  selected: number // anchor / keyboard focus / preview-scroll target
+  selection: Set<number> // all selected indices (multi-select)
+  anchor: number // range anchor for shift-click (kept across shift-clicks)
   currentFile: string
   dirty: boolean
   statusMsg: string
@@ -34,6 +38,8 @@ export const useEditor = defineStore('editor', {
     blocks: [],
     collapsed: new Set<number>(),
     selected: -1,
+    selection: new Set<number>(),
+    anchor: -1,
     currentFile: '',
     dirty: false,
     statusMsg: 'No file loaded.',
@@ -57,6 +63,7 @@ export const useEditor = defineStore('editor', {
     },
     canUndo: (s) => s.undoStack.length > 0,
     canRedo: (s) => s.redoStack.length > 0,
+    selectionCount: (s) => s.selection.size,
   },
 
   actions: {
@@ -69,6 +76,7 @@ export const useEditor = defineStore('editor', {
         blocks: this.blocks.map((b) => ({ ...b })),
         collapsed: [...this.collapsed],
         selected: this.selected,
+        selection: [...this.selection],
       }
     },
 
@@ -82,6 +90,8 @@ export const useEditor = defineStore('editor', {
       this.blocks = s.blocks
       this.collapsed = new Set(s.collapsed)
       this.selected = s.selected
+      this.selection = new Set(s.selection ?? (s.selected >= 0 ? [s.selected] : []))
+      this.anchor = s.selected
     },
 
     undo() {
@@ -100,8 +110,45 @@ export const useEditor = defineStore('editor', {
 
     // ── Selection / collapse (hot path; reactivity handles minimal repaint) ──
 
+    // Plain single select (clears any multi-selection). Used by preview clicks.
     select(i: number) {
+      this.selection = new Set([i])
       this.selected = i
+      this.anchor = i
+    },
+
+    // Click with modifier keys: ctrl/cmd toggles one row; shift selects the
+    // range (over *visible* rows) from the anchor; plain replaces with one.
+    clickSelect(i: number, ctrl: boolean, shift: boolean) {
+      if (shift && this.anchor >= 0) {
+        const vis = this.visible
+        const a = vis.indexOf(this.anchor)
+        const b = vis.indexOf(i)
+        if (a >= 0 && b >= 0) {
+          const [lo, hi] = a < b ? [a, b] : [b, a]
+          this.selection = new Set(vis.slice(lo, hi + 1))
+          this.selected = i // anchor stays put so the range can be re-adjusted
+          return
+        }
+      }
+      if (ctrl) {
+        const s = new Set(this.selection)
+        if (s.has(i)) s.delete(i)
+        else s.add(i)
+        this.selection = s
+        this.selected = i
+        this.anchor = i
+        return
+      }
+      this.select(i)
+    },
+
+    clearSelection() {
+      this.selection = new Set()
+    },
+
+    selectAllVisible() {
+      this.selection = new Set(this.visible)
     },
 
     toggleCollapse(i: number) {
@@ -156,6 +203,40 @@ export const useEditor = defineStore('editor', {
       this.dirty = true
     },
 
+    // ── Bulk operations on the current multi-selection ───────────────────────
+
+    // Promote/demote every selected heading by `delta`, clamped to 1..6.
+    // Level changes don't shift indices, so a single map pass is safe.
+    changeLevelSelected(delta: number) {
+      if (!this.selection.size) return
+      this.pushHistory()
+      const sel = this.selection
+      this.blocks = this.blocks.map((b, j) =>
+        sel.has(j) && b.level > 0
+          ? { ...b, level: Math.max(1, Math.min(6, b.level + delta)) }
+          : b,
+      )
+      this.dirty = true
+    },
+
+    // Delete every selected section (heading + its subtree). Compute the union
+    // of all [i, sectionEnd(i)) ranges first, then filter once — this is robust
+    // to overlapping/nested selections (e.g. a parent and its child both held).
+    deleteSelected() {
+      if (!this.selection.size) return
+      this.pushHistory()
+      const remove = new Set<number>()
+      for (const i of this.selection) {
+        const end = sectionEnd(this.blocks, i)
+        for (let j = i; j < end; j++) remove.add(j)
+      }
+      this.blocks = this.blocks.filter((_, j) => !remove.has(j))
+      this.selection = new Set()
+      this.selected = Math.min(this.selected, this.blocks.length - 1)
+      this.anchor = this.selected
+      this.dirty = true
+    },
+
     // ── Load / save ──────────────────────────────────────────────────────────
 
     async load(path: string) {
@@ -169,6 +250,8 @@ export const useEditor = defineStore('editor', {
       this.blocks = parseMarkdown(data.content)
       this.collapsed = new Set()
       this.selected = -1
+      this.selection = new Set()
+      this.anchor = -1
       this.undoStack = []
       this.redoStack = []
       this.dirty = false

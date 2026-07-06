@@ -64,13 +64,39 @@ button:disabled { opacity: 0.35; cursor: default; }
   border-right: 2px solid var(--border);
   background: var(--bg);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .prev-panel {
   flex: 1;
   background: #fff;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
-.scroller { height: 100%; }
+.scroller { flex: 1 1 0; min-height: 0; }
+
+/* ── Bulk action bar (shown when >1 row selected) ─────────────────────── */
+.bulk-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: #cfe2ff;
+  border-bottom: 1px solid #9ec5fe;
+}
+.bulk-bar .bulk-count { font-size: 0.78rem; font-weight: 600; color: #084298; margin-right: 2px; }
+.bulk-bar button {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border: 1px solid #6c757d;
+  border-radius: 3px;
+  background: #fff;
+}
+.bulk-bar button:hover { background: #e9ecef; }
+.bulk-bar .bulk-del { color: #dc3545; border-color: #dc3545; }
+.bulk-bar .bulk-clear { margin-left: auto; }
 
 /* ── Tree rows ────────────────────────────────────────────────────────── */
 .hrow {

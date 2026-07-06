@@ -24,17 +24,21 @@ function onKey(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); return }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'Z' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); return }
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); store.save(); return }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a') { e.preventDefault(); store.selectAllVisible(); return }
+  if (e.key === 'Escape') { store.clearSelection(); return }
 
   const sel = store.selected
   if (sel < 0) return
   const b = store.blocks[sel]
   if (!b || b.level === 0) return
 
+  // [ ] Del operate on the whole multi-selection (which is just {anchor} after
+  // a plain click, so single-row behaviour is unchanged). Move stays single.
   if (e.key === 'u') store.moveUp(sel)
   else if (e.key === 'd') store.moveDown(sel)
-  else if (e.key === '[') store.promote(sel)
-  else if (e.key === ']') store.demote(sel)
-  else if (e.key === 'Delete') store.remove(sel)
+  else if (e.key === '[') store.changeLevelSelected(-1)
+  else if (e.key === ']') store.changeLevelSelected(1)
+  else if (e.key === 'Delete') store.deleteSelected()
 }
 
 onMounted(async () => {
