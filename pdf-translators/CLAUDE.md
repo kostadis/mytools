@@ -343,6 +343,8 @@ python3 adventure_editor.py [file.json] [--port N]
 
 Flask app (port 5107) for cleaning up the Markdown that feeds `pdf_to_5etools_v2.py --from-markdown` (typically OCR output from `extract_markdown.py`). Two-panel UI: a collapsible **heading tree** (left) + a heading **preview** (right). Per-row ops: expand/collapse, move section up/down (whole subtree), promote/demote heading level (`#` count), delete (undo recovers). Double-click a row to rename; keyboard: `u`/`d` move, `[`/`]` promote/demote, `Del` delete, `Ctrl+Z`/`Ctrl+Shift+Z` undo/redo, `Ctrl+S` save (writes a `.bak`).
 
+**Multi-select:** Ctrl/Cmd+click toggles a row, Shift+click selects a range (over visible rows from the anchor), `Ctrl+A` selects all visible, `Esc` clears. When more than one row is selected a **bulk action bar** appears above the tree (Promote / Demote / Delete / Clear), and `[`/`]`/`Del` apply to the whole selection. Bulk delete unions each selection's subtree range before filtering, so overlapping parent/child selections are handled correctly. Selection state participates in undo/redo. Mirrors the multi-select UX in `adventure_editor.py`.
+
 **This is the one editor in the project that is NOT a single-file Flask app** — it is the deliberate exception. It started as inline-HTML/vanilla-JS like the others, but hand-rolled DOM updates hit a hard performance ceiling on large OCR files (700 KB / 8000+ lines / 500+ headings): every interaction rebuilt the whole tree's `innerHTML`. The fix that actually mattered was **list virtualization** (only render the ~40 rows on screen), which is impractical to maintain by hand — so the front end was rebuilt as a proper SPA.
 
 **Architecture:**

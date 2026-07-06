@@ -42,8 +42,8 @@ const editingIdx = ref<number>(-1)
 const editValue = ref('')
 const editInput = ref<HTMLInputElement | null>(null)
 
-function onSelect(idx: number) {
-  store.select(idx)
+function onRowClick(e: MouseEvent, idx: number) {
+  store.clickSelect(idx, e.ctrlKey || e.metaKey, e.shiftKey)
 }
 
 function startEdit(row: Row) {
@@ -77,6 +77,13 @@ watch(
 
 <template>
   <div class="tree-panel">
+    <div v-if="store.selectionCount > 1" class="bulk-bar">
+      <span class="bulk-count">{{ store.selectionCount }} selected</span>
+      <button title="Promote all (reduce #)" @click="store.changeLevelSelected(-1)">◀ Promote</button>
+      <button title="Demote all (add #)" @click="store.changeLevelSelected(1)">▶ Demote</button>
+      <button class="bulk-del" title="Delete all selected" @click="store.deleteSelected()">✕ Delete</button>
+      <button class="bulk-clear" title="Clear selection (Esc)" @click="store.clearSelection()">Clear</button>
+    </div>
     <RecycleScroller
       ref="scroller"
       class="scroller"
@@ -87,9 +94,9 @@ watch(
     >
       <div
         class="hrow"
-        :class="{ selected: item.idx === store.selected, editing: item.idx === editingIdx }"
+        :class="{ selected: store.selection.has(item.idx), editing: item.idx === editingIdx }"
         :style="{ paddingLeft: item.indent + 'px' }"
-        @click="onSelect(item.idx)"
+        @click="onRowClick($event, item.idx)"
       >
         <span
           class="hrow-toggle"
