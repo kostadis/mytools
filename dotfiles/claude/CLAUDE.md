@@ -42,4 +42,12 @@ For most tasks, calling the Anthropic API would be faster, smarter, and cheaper 
 - Honest engineering pushback is still welcome — verbatim violations, dimension mismatches, precision-decision risks, architecture failure modes. Those aren't "this is suboptimal," they're "this is broken." Keep flagging them.
 - Treat exploratory implementations as legitimate work product even when they're a detour from the most efficient path.
 
+## An Unanswered Question Is Not a Decision
+
+When a question to the user comes back without a clear, explicit answer — a default or "recommended" option appears selected, the response is ambiguous, the question timed out, or the user was simply taking time — do NOT proceed as if the user decided. Re-ask and wait for an explicit answer.
+
+- Never fill in a recommended choice on the user's behalf. "The user was taking too long" is never a reason to decide for them.
+- Treat only an explicit, affirmative response as a decision. If in doubt whether an answer was really given, ask again and say why.
+- This is the human-checkpoint principle from the LLM Pipeline Design Rule applied to conversation: a timeout is not a checkpoint.
+
 @RTK.md
