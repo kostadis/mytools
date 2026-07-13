@@ -205,6 +205,73 @@ def extract_text(vtt_text: str) -> str:
     return "\n".join(lines)
 
 
+# ── Phonetic "sounds-like-a-known-name" rescue ──────────────────────────────
+# find_propers filters out (a) capitalised tokens that only ever appear
+# sentence-initial and (b) all lowercase tokens. That silently drops one-off
+# name-garbles like "Hulkrist"/"Demonor" (sentence-initial) and "glabbagel"
+# (lowercase). The rescue re-admits a filtered token IF it resembles a known
+# name — a Double-Metaphone or devowelled-key candidate confirmed by a close
+# edit-distance ratio. Real-word garbles (teeth/tea, fake/point) don't resemble
+# a name, so they stay out — that class is the context-aware pass's job.
+import difflib
+
+try:
+    from dmetaphone import codes as _dm_codes  # vendored Double Metaphone
+except Exception:  # pragma: no cover - fallback if module unavailable
+    _dm_codes = None
+
+LOWER_WORD_RE = re.compile(r"\b([a-z][a-z'\-]{3,})\b")
+
+
+def _devowel_key(s: str) -> str:
+    s = re.sub(r"[^a-z]", "", s.lower())
+    return (s[0] + re.sub(r"[aeiou]", "", s[1:])) if s else ""
+
+
+def _mcodes(s: str) -> set[str]:
+    if _dm_codes is None:
+        return set()
+    try:
+        return {c for c in _dm_codes(s) if c}
+    except Exception:
+        return set()
+
+
+def build_name_index(known: set[str]) -> tuple[dict, dict]:
+    """Index single-word known names (len >= 4, non-stopword) by metaphone code
+    and devowelled key, for the resemblance rescue."""
+    by_code: dict[str, set[str]] = defaultdict(set)
+    by_devowel: dict[str, set[str]] = defaultdict(set)
+    for n in known:
+        if len(n) < 4 or " " in n or n in STOPWORDS:
+            continue
+        for c in _mcodes(n):
+            by_code[c].add(n)
+        by_devowel[_devowel_key(n)].add(n)
+    return by_code, by_devowel
+
+
+def resembles_known_name(tok: str, by_code: dict, by_devowel: dict,
+                         min_ratio: float) -> bool:
+    """True if tok shares a metaphone/devowel key with a known name AND is a
+    close edit-distance match (ratio >= min_ratio) to that candidate. Guards
+    against wild collisions; real-word non-names have no name candidate."""
+    t = tok.strip()
+    if len(t) < 4 or " " in t:
+        return False
+    cands: set[str] = set()
+    for c in _mcodes(t):
+        cands |= by_code.get(c, set())
+    cands |= by_devowel.get(_devowel_key(t), set())
+    if not cands:
+        return False
+    tl = t.lower()
+    return any(
+        difflib.SequenceMatcher(None, tl, c.lower()).ratio() >= min_ratio
+        for c in cands
+    )
+
+
 def find_propers(text: str, known: set[str]) -> dict[str, dict]:
     """Find capitalised tokens that look like proper nouns and aren't known.
 
@@ -212,6 +279,8 @@ def find_propers(text: str, known: set[str]) -> dict[str, dict]:
     """
     # Build lowercase-stripped known set for matching
     known_lc = {k.lower() for k in known}
+    # Phonetic index of known names for the "sounds-like-a-known-name" rescue
+    _name_by_code, _name_by_devowel = build_name_index(known)
 
     # Track sentence-initial vs mid-sentence positions
     # A token is "real proper noun" if it appears mid-sentence at least once
@@ -262,11 +331,17 @@ def find_propers(text: str, known: set[str]) -> dict[str, dict]:
                 parts = tok_clean.split()
                 if all(p in STOPWORDS for p in parts):
                     continue
-            # Must appear mid-sentence somewhere (filters sentence-initial false positives)
+            # Must appear mid-sentence somewhere (filters sentence-initial false
+            # positives) — UNLESS it clearly resembles a known name, which
+            # rescues one-off name-garbles that only ever appear sentence-initial
+            # (e.g. "Hulkrist", "Demonor", "Fembrance").
             if tok_clean not in mid_sentence_tokens and not any(
                 w in mid_sentence_tokens for w in tok_clean.split()
             ):
-                continue
+                if not resembles_known_name(
+                    tok_clean, _name_by_code, _name_by_devowel, min_ratio=0.72
+                ):
+                    continue
             all_hits[tok_clean]["count"] += 1
             if len(seen_contexts[tok_clean]) < 3:
                 # Capture surrounding context
@@ -274,6 +349,27 @@ def find_propers(text: str, known: set[str]) -> dict[str, dict]:
                 end = min(len(paragraph), m.end() + 40)
                 ctx = paragraph[start:end].strip()
                 seen_contexts[tok_clean].append(ctx)
+
+    # Lowercase sweep: the capitalised PROPER_RE never sees lowercase garbles
+    # like "glabbagel". Scan lowercase word-runs and surface only those that
+    # strongly resemble a known name (tighter ratio than the capitalised path,
+    # since lowercase common words are the false-positive risk here).
+    for paragraph in text.split("\n"):
+        for m in LOWER_WORD_RE.finditer(paragraph):
+            tok = m.group(1)
+            if len(tok) < 6:            # short lowercase words collide with names too easily
+                continue
+            if tok.lower() in known_lc or tok in all_hits:
+                continue
+            if not resembles_known_name(
+                tok, _name_by_code, _name_by_devowel, min_ratio=0.82
+            ):
+                continue
+            all_hits[tok]["count"] += 1
+            if len(seen_contexts[tok]) < 3:
+                start = max(0, m.start() - 40)
+                end = min(len(paragraph), m.end() + 40)
+                seen_contexts[tok].append(paragraph[start:end].strip())
 
     for tok, ctxs in seen_contexts.items():
         all_hits[tok]["contexts"] = ctxs
