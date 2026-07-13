@@ -40,20 +40,41 @@ Detect or ask:
    as candidate misspellings. These are *not* the glossary — they are
    pre-verified vocabulary that suppresses false positives and improves
    clustering (dictionary entries also become canonical replacement
-   targets). **Auto-detect the conventional path
-   `<campaign>/notes/proper_nouns_adventure.txt`, then surface what you
-   found and ask the user to confirm or add more before running Phase 1.**
-   Pass every confirmed file to both scripts via `--extra-known` (the flag
-   accepts multiple paths).
+   targets). **Auto-detect the conventional flat path
+   `<campaign>/notes/proper_nouns_adventure.txt`. Also check whether the
+   campaign keeps a generated entity inventory: `docs/entity_inventory.md`
+   (produced from `docs/entity_registry.yaml` by `registry.py project`) is
+   the current OOTA source. Surface what you found and ask the user to
+   confirm or add more before running Phase 1.** Pass every confirmed flat
+   file to both scripts via `--extra-known` (the flag accepts multiple
+   paths).
 
    Format matters: `--extra-known` treats every non-`#` line as a name, so
-   only feed flat one-per-line dumps. Do **not** pass markdown tables
-   (e.g. `proper_nouns_adventure.md`, `vtt_known_additions.md`) — they
-   inject table syntax and prose fragments into the known set and can
-   silently suppress real unknowns. The `.md` companion files exist for
-   human reading and explicitly point at the `.txt` as the loadable form;
-   honor that contract. If no dictionary exists, proceed without one —
-   it is an enhancement, not a hard dependency.
+   only feed flat one-per-line dumps. Do **not** pass a markdown file raw
+   (tables, `- **Name** — description` bullets, prose) — it injects markup
+   and prose fragments into the known set and can silently suppress real
+   unknowns.
+
+   **Flatten generated markdown sources first.** `entity_inventory.md` and
+   `notes/vtt_known_additions.md` are valuable name sources but are
+   markdown, not flat. Extract each into a throwaway `.txt` in your
+   scratchpad, then pass the `.txt`:
+   - pull every `**bold**` span from each `- ` bullet line;
+   - split each span on ` / ` (multi-alias entries like
+     `**Whistlerites / Miloites / Protanthians**` become three names);
+   - unescape `\'` → `'` (e.g. `Drow\'s`);
+   - dedupe case-insensitively, one name per line.
+
+   **`vtt_known_additions.md` can hold stale entries.** It records
+   "real name, not a misspelling" rulings from prior passes, but some may
+   since have been reclassified — a name the glossary now treats as a
+   *wrong-form*. This run, `Callan Strongbench` was listed here as canonical
+   but the glossary maps it → `Kalan Strongbranch`; a stale "known" entry
+   silently suppresses a real unknown. When you flatten it, flag any entry
+   that also appears as a glossary wrong-form to the user — the glossary wins.
+
+   If no dictionary exists, proceed without one — it is an enhancement, not
+   a hard dependency.
 
 ## Workflow
 
@@ -112,6 +133,29 @@ already said "not a name, ignore" in a prior run.
 `known_names_count` should be in the hundreds for a mature campaign. If
 it's <50 the glossary or `docs/npcs/` isn't being read correctly —
 investigate before bothering the user with hundreds of false positives.
+
+**Collapse the set first: apply the current glossary, then re-scan.**
+Before surfacing anything, run `apply_replacements.py` with the *existing*
+glossary to a throwaway copy, then re-run `find_unknowns.py` +
+`cluster_unknowns.py` on that cleaned copy. This removes every token the
+glossary already knows how to fix (e.g. `Bookworm`, `Alcrist`, `Gergam`)
+and leaves the **true residual** — the tokens that actually need a decision.
+
+```bash
+python ~/.claude/skills/vtt-spell-pass/apply_replacements.py \
+  --vtt <vtt> --glossary <glossary> --output /tmp/preview_current.vtt
+python ~/.claude/skills/vtt-spell-pass/find_unknowns.py \
+  --vtt /tmp/preview_current.vtt --glossary <glossary> \
+  --npcs-dir <npcs> --extra-known <dicts> --min-count 1 \
+| python ~/.claude/skills/vtt-spell-pass/cluster_unknowns.py \
+  --glossary <glossary> --npcs-dir <npcs> --extra-known <dicts>
+```
+
+Many survivors are **false residuals**: multi-word capitalised runs whose
+embedded name is *already correct* — `And Kalan`, `The Helmed Horror`,
+`But Alkrist`, `How's Grygum`. The scanner flags them only because it can't
+split the run. Don't ask about these; the name is right. Only surface a
+residual when the embedded proper noun is actually wrong.
 
 ### Phase 2 — pre-classify candidates (LLM judgment, MINIMAL filtering)
 
@@ -223,6 +267,14 @@ The script appends to the existing canonical's row if one exists, or
 creates a new row, or creates a new section. You decide which section
 based on what the canonical refers to (ask the user if unclear).
 
+**Match `--section` to the canonical's *existing* row.** `add_to_glossary.py`
+only looks for an existing row *inside the named section*. If the canonical
+already has a row in a different section, a wrong `--section` silently
+creates a **duplicate** row (this run: `Talon, Talen → Kalan` landed in
+`## PCs` while the real `Kalan` row lives in `## NPCs and creatures`). Grep
+the glossary for the canonical first (`grep -n '\*\*Kalan\*\*' <glossary>`)
+and use whatever section its row is already in.
+
 For "New canon" decisions: don't write to the glossary. Instead append a
 line to a new file `<campaign>/notes/vtt_known_additions.md` listing
 `<canonical>  — <context excerpt>  — <date>`. The user can promote that
@@ -232,6 +284,23 @@ glossary with non-misspellings.
 For "Ignore" decisions: take no action.
 
 Mark the corresponding TaskUpdate as completed after each decision.
+
+**Glossary entry vs. targeted edit — the case-insensitivity gate.**
+`apply_replacements.py` matches `\bwrong\b` with `re.IGNORECASE`, so a
+wrong-form that is also a common English word will over-replace anywhere it
+appears lowercase. Before writing a *new* wrong-form to the glossary, grep
+the VTT for lowercase occurrences of it. If any exist — or the wrong-form is
+a common word (`Embrace`, `Close`, `Home`), a generic phrase (`Call and`),
+or a non-name transcription fix (`Izzy` → `he's`) — **do not add it to the
+glossary.** Apply that one correction as a targeted `Edit` on the *cleaned*
+output in Phase 5, touching only the specific line(s). This keeps the
+glossary safe to auto-apply to every future transcript. Examples this run:
+`Embrace → Fembris` (a blanket rule would corrupt "corrosive embrace"),
+`Call and → Kalan`, `Izzy → he's`.
+
+The glossary keeps its own running landmine list (a "Notes for future passes"
+section flagging risky case-insensitive rows like `Char→Shar`, `Cal→Kalan`).
+Re-read it and grep the VTT for those lowercase forms before every apply.
 
 ### Phase 5 — apply replacements
 
@@ -257,6 +326,13 @@ unknowns mean either (a) a candidate slipped through pre-classification
 or (b) a new word the user didn't get to. Show the user the diff and ask
 whether to do another pass.
 
+Expect **false residuals** to remain (see Phase 1) — multi-word capitalised
+runs like `And Kalan`, `The Helmed Horror`, `Helmed Horror No` whose embedded
+name is already correct. These are *not* a reason for another pass; only a
+residual whose embedded proper noun is actually *wrong* is. Also grep the
+cleaned output for accidental doubling from full-name wrong-forms (e.g.
+`Strongbranch Strongbranch`) and fix any with a targeted edit.
+
 After confirming, record the VTT as processed so future runs against the
 same path are no-ops:
 
@@ -274,6 +350,14 @@ python ~/.claude/skills/vtt-spell-pass/state.py \
   separate manual fix.
 - **Possessive `'s` is auto-handled.** The applier extends each wrong-form
   to also catch its possessive (`Lavagul'` → `Lavagul's` → `Glabbagool's`).
+- **Never map a bare first name to a full "First Last" canonical.** If the
+  surname is independently corrected by another row, the two fire together
+  and *double* the surname (this run: `Kellen → Kalan Strongbranch` plus
+  `Strongbench → Strongbranch` turned "Kellen Strongbench" into
+  "Kalan Strongbranch **Strongbranch**"). Map a bare first name to the bare
+  first-name canonical (`Kellen → Kalan`) and let the surname row fix the
+  surname independently; reserve full-name wrong-forms for inputs that
+  actually contain a surname token (`Callan Strongfeld → Kalan Strongbranch`).
 - **Don't silently expand the user's variant lists.** If the user says
   "add X as a misspelling of Y", add exactly X — not your guesses about
   related forms. (See memory: `feedback_scope_discipline`.)
