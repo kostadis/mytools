@@ -47,6 +47,26 @@ Special sub-case — **distinct-but-similar** (S looks like near-miss N but is a
 entity**, AND run `registry.py mark-distinct <dir> "S" "N"` so the near-miss
 stops re-suggesting the pair on future runs.
 
+Special sub-case — **do NOT register a bare race/collective as a global entity**: when
+a candidate is a *people/race or generic collective* (`Derro`, `Myconid`, `Duergar`,
+`Drow`, `Kuo-toa`, "the guards", "the cultists"), registering the bare name is the
+**wrong** move — it makes the name a *global* known bundle, so `facts_to_state`
+collapses every occurrence across the whole campaign into one place-blind dossier. What
+you almost always want is the opposite: the same race is a *distinct faction in each
+place*, and `facts_to_state` produces that for free — any subject that is **not** a
+registry known-name is **location-scoped** into per-place bundles (`Derro (Gracklstugh)`,
+`Myconid (Neverlight Grove)`, `Drow (Velkynvelve)`). So rule these **Not an entity**
+(registry-wise) — leave them unregistered so location-scoping handles them — and if a
+race name *is* already registered (or would otherwise read as known), add it to the
+campaign's `--exclude-names` file (e.g. `docs/ensemble/location_scoped_races.md`) to
+force location-scoping. You **cannot** register `Derro of Gracklstugh` and have it catch
+Gracklstugh-derro facts: known-name matching is by *bare subject*, and the location split
+is derived from where each fact occurs, not from a registry name. Register a race
+globally only if you truly want one campaign-wide monolith (rare). *(GM ruling, OOTA
+2026-07-13 — adding bare `Derro`/`Myconid` globalized them and collapsed the built-in
+location-scoping; reverted. Corrects an earlier draft of this note that wrongly said
+"add it location-qualified.")*
+
 **Never put a not-an-entity into the registry.** `rejected_aliases` means "these
 ≥2 names are not aliases of *each other*" — a different claim from "this surface
 form isn't an entity at all." Non-entities belong in this skill's state file, so
