@@ -12,6 +12,7 @@ The authored content (all symlinked live into `~/.claude/`):
 - `claude/settings.json` — user-level Claude Code settings. Currently `{}` — the `model` field is intentionally absent so `/model` switches freely per session.
 - `claude/skills/<name>/SKILL.md` — custom user-invocable skills (the Kostadis Engine plus the campaign helpers, see below).
 - `claude/agents/<name>.md` — custom subagent definitions (`kostadis-architect`, `ux-reviewer`).
+- `claude/memory/<project-hash>/` — per-project **auto-recall memory** (a `MEMORY.md` index plus one file per fact), loaded into that project's sessions. Symlinked live to `~/.claude/projects/<project-hash>/memory/` so memories are git-tracked and survive a machine change. **Caveat**: the symlink target sits *inside* the gitignored `projects/` runtime tree, so on a fresh machine the symlink must be recreated by hand once Claude Code has created that project's dir — e.g. `ln -s ~/src/mytools/dotfiles/claude/memory/<hash> ~/.claude/projects/<hash>/memory`. The `<project-hash>` is Claude Code's slugified project path (`-home-kroussos-src-campaigns` for `/home/kroussos/src/campaigns`), so it matches across machines that check the repo out to the same path.
 - `claude/plugins/blocklist.json`, `claude/plugins/known_marketplaces.json` — plugin marketplace config. **Caveat**: Claude Code refreshes these files periodically. Because they are symlinked, those refreshes land in the repo and produce a dirty working tree. Either `git checkout --` them or fold the refresh into the next commit.
 
 **Not authored, not touched:**
