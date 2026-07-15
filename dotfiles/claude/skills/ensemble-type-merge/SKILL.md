@@ -76,10 +76,23 @@ decided yet".)
 Report to the user:
 
 > **X candidate groups** (Y single-type entities need no decision; Z groups already decided).
-> Working through them one at a time, densest groups first.
+> Working through them densest groups first.
 
-Use TaskCreate to enumerate the candidate groups so progress is visible. Then begin the first group
-immediately — don't dump the full list upfront.
+Use TaskCreate to enumerate progress — one task per group for small sets, one per *batch* for large ones.
+Then begin immediately — don't dump the full list upfront.
+
+**Scale / batching.** One-group-one-confirmation is the safe default but it does not scale: the OOTA run had
+**91 groups**, and 91 round-trips is a multi-hour slog. When the set is large (roughly >15), offer to
+**batch** and let the user choose the cadence — don't impose it. A batch that worked well was 10 groups:
+read every member body in the batch, present a compact **verdict table** (one row per group: files, the
+recommended `primary` in bold, and any judgment-call flag spelled out), then take a **single bulk
+confirmation** with an escape hatch — "approve all N" / "approve except the ones I name" / "go one-by-one".
+AskUserQuestion allows up to 4 questions per call, so put each genuine judgment call in the batch (a
+keep-separate candidate, a primary-type choice, a re-subject question) in its own question and make the last
+question the bulk "approve the rest". This still gives the human a veto on *every* identity decision — they
+see each verdict — it just spends one turn per batch instead of one per group. **Persist each batch before
+starting the next** so a stop mid-run loses nothing, and treat an ambiguous or mis-clicked batch answer as
+*no decision* (re-ask) rather than assuming approval.
 
 ## Per-group workflow
 
@@ -114,6 +127,60 @@ These are starting priors, not a substitute for reading the bodies:
 - **3+ types in one group:** flag as higher-stakes. It's fine (and expected) for the resolution to be
   partial — e.g. merge two of the three, keep the third separate. `glabbagool` above is exactly this case if
   the object-typed file turns out to be about a different "Glabbagool" reference.
+- **A humanoid *race/people* name typed as `monster` (duergar, drow, kuo-toa, myconid, derro, …):** the
+  `monster` typing of a humanoid people is almost always the alignment-monolith stereotype trap, not a real
+  bestiary facet — humanoids vary in religion and alignment, so "the duergar" as a hostile monolith is a
+  mis-frame. Unless the `monster` body is genuinely about **physiology/anatomy/statblock** (innate
+  invisibility mechanics, spore biology, etc.), it is describing *a specific society doing things* and
+  should merge into the **faction** dossier, with the **faction file as `primary`** (so the merged output
+  stays framed as a people, not a creature). In play this is usually "the <race> of <place>" — e.g. the
+  `duergar` group resolved to *"the Duergar of Gracklstugh"* (faction), not duergar-in-general. Only keep a
+  `monster` race-facet separate when it is purely physiological reference material. **Keep the race
+  location-scoped — don't globalize it at the registry level:** this merge only concerns the *dossier*
+  (folding the `monster` facet into the `faction` facet). Separately, the same race is a distinct faction per
+  place, and `facts_to_state` emits `Derro (Gracklstugh)`, `Myconid (Neverlight Grove)` for free *as long as
+  the bare name is not a registry known-name*. So **do not register the bare race name** — leave it
+  unregistered, or add it to the `--exclude-names` file; registering it makes one global bundle that
+  collapses every location. You can't register `Derro of Gracklstugh` to catch those facts either — matching
+  is by bare subject; the location split is derived from where facts occur. *(GM ruling, OOTA 2026-07-13 —
+  corrects an earlier draft that said "register it location-qualified.")*
+
+The OOTA run surfaced a handful of recurring *shapes*. These merge almost every time:
+
+- **A place across `location` + `faction` (+ sometimes a 1-fact `npc`):** almost always one settlement —
+  `location` is its geography/state, `faction` its governance/polity, `npc` the place personified as a
+  negotiating agent ("Blingdenstone is making weapons deals"). Merge all, **`location` primary**.
+  (Blingdenstone, Gracklstugh, Candlekeep, Menzoberranzan, Velkynvelve, Sloobludop all resolved this way.)
+- **A deity or demon lord across `monster` / `faction` / `npc`:** the entity itself, its cult/dominion, and
+  its invoked-voice-through-a-mortal. Merge all; **primary is usually `monster`** for demon lords, `npc`
+  for gods. (Zuggtmoy, Juiblex, Demogorgon, Lolth, Yeenoghu.)
+- **A sentient item or creature across `object` / `npc` / `monster`:** a talking sword, an ooze companion, a
+  captive dragon legitimately spans all three — magic-item facet, person facet, combat-creature facet.
+  Merge all. (Glabbagool = npc+monster+object; Dawnbringer = object+npc+monster; Themberchaud =
+  npc+monster+faction+object, where the odd facets were "the sacred flame the Keepers tend" and "his
+  political captivity".)
+- **The party's own reputation or tactic as a pseudo-entity:** an invented group name or combat combo gets
+  scattered across faction/npc/monster/object as different scenes name it. Merge all into **`faction`**. (The
+  Ember Vanguard; the Ember Grapple — but keep those two *distinct from each other*.)
+
+And two shapes that mean **keep separate** — the minority this skill exists to catch:
+
+- **A low-fact secondary that is a *different* entity mis-subjected onto this name (not mere noise):** the
+  sharpest case is `faction_daz` (1 fact) — the *unknown-patron* plot thread ("someone pays Menzoberranzan
+  rates to keep the drow evoker alive") mislabeled with subject "Daz", when Daz is the *protected*, not the
+  payer. Merging would inject an inverted fact into the PC's dossier and synthesis would amplify it. Keep
+  separate **and** record a re-subject note pointing the stray content at its real subject. Same shape as
+  `ilvara`'s 1-fact `faction` ("goods she carried at her death" confusion) — kept out of her merge.
+- **A generic common noun with facets in different chapters/contexts:** `spores` (Ilvara's infection vector
+  vs Voosbur's dreamscape spores) and `spider` (a wild prison spider vs Daz's Lolth familiar) share a word
+  by coincidence, not identity. Keep separate; re-subject each with a qualifier. Contrast a *specific* named
+  thing whose files are the same event — `poison` (ch60) had `monster`+`object` that were both the one
+  Janussi murder poison, so it merged.
+
+**Calibration (OOTA, 91 groups): ~95% merged, ~5% kept separate.** The large majority of same-name
+type-collisions really are one entity — but the keep-separate minority clusters exactly where you'd expect
+(1–3-fact secondaries and generic common nouns), and it's the whole reason a blind script is wrong. Default
+to reading carefully, not to either merge or keep-separate.
 
 State your recommendation and confidence before asking, same as `ensemble-alias-review`:
 
@@ -163,6 +230,36 @@ group's decision, write it back — never clobber existing entries.
   `merged_dossiers/`, untouched.
 - A group's `resolution` list must account for every member file in that group (every filename the scanner
   reported for that key appears in exactly one sub-group).
+- Optional `"note"` (string) on a group records reasoning worth keeping — a mis-extraction diagnosis, a
+  kept-separate rationale, or a **re-subject flag** (see below). The apply script ignores it; it's for the
+  human record.
+
+**Re-subject flags for generic subject names.** When a merged group's subject is a *generic* name — a
+common item, structure, role, or org label that could collide with other instances downstream (`bag of
+holding`, `inner circle`, `high tower`, `miners guild`, `temple of oghma`, `poison`, `spider`, …) — the
+merge is still correct if the members are the same specific thing, but the *name* needs qualifying by its
+owner or parent context so synthesis doesn't conflate it with a different one. **Do not rename in place**
+(this skill is verbatim concatenation only). Instead record a `"note"` flagging it as a RE-SUBJECT CANDIDATE
+for the entity-triage/alias tooling, with the suggested qualified name — `owner's <item>` or
+`<place>_<structure>`. Documented GM rulings: `bag of holding` → "Glabbagool's Bag of Holding"; `inner
+circle` → "neverlight_grove_inner_circle". Surface the suggestion to the user when a generic name comes up;
+they may want a specific qualifier. *(GM ruling, OOTA 2026-07-13.)* Recurring qualifier shapes from the run:
+`<place>_<structure>` (`neverlight_grove_circle_of_masters`, `candlekeep_high_tower`,
+`blingdenstone_miners_guild`), `<owner>'s_<item>` ("Glabbagool's Bag of Holding", `daz_familiar_spider`),
+and `<thing>_<event>` (`midnight_tears_poison_used_to_kill_janussi`, `sylviras_abyssal_plague`).
+
+**Alias flags (cross-name sameness).** Type-merge only collapses *one* subject name across types; a
+*different* subject name for the same thing is the alias tool's job — but you will spot such aliases here, so
+leave a breadcrumb. Record a `"note"` marking the alias; don't merge across names yourself. OOTA: the
+`poison` group (ch60 murder poison) is the same substance as the separate `midnight tears` group, flagged as
+an ALIAS for entity-triage/alias tooling.
+
+**Primary-type accuracy.** The `primary` file's *type* becomes the merged dossier's lead frontmatter, so the
+densest-default is wrong when the densest member is typed inaptly. When densest ≠ apt, surface the choice to
+the user instead of taking densest silently: `faerzress` (an ambient phenomenon) took `location` as primary
+over the denser `monster`; `deepking` (an individual ruler) kept `faction` as primary (densest) but with a
+note flagging the office-vs-person mismatch. Races always take `faction` primary (see Step 2), regardless of
+which file is densest.
 
 Confirm in one line: `✓ Saved: glabbagool — merged (npc+monster), kept object separate`
 
@@ -198,7 +295,11 @@ user how many groups remain undecided and that re-running this skill will pick u
   corpus even mid-review.
 - Confuse this with `ensemble-alias-review`/`ensemble-alias-merge` (name-variant merging, a different axis).
   If a group here turns out to actually be a spelling/name variant rather than a type-duplicate, say so but
-  don't act on it — that's the other skill's job.
+  don't act on it — that's the other skill's job. You *may* leave an alias/re-subject `"note"` as a
+  breadcrumb (see Step 4); just never merge across two *different* subject names yourself.
+- Treat an ambiguous, mis-clicked, or timed-out batch answer as **approval**. It is a non-decision — re-ask
+  the exact groups it left unresolved. Only an explicit "approve" (of all, or of the named remainder) is a
+  decision; an answer that only refines one group in a batch does not silently ratify the rest.
 
 ## Why this design
 
