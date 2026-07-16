@@ -1,0 +1,15 @@
+- [Shared venv](reference_shared_venv.md) — run CampaignGenerator (and mempalace/notetaker/worldanvil) under `~/.venvs/main`; marker-env + vtt-to-tts kept separate
+- [One question at a time](feedback_one_question_at_a_time.md) — when asking the user multiple questions, serialize them instead of presenting a numbered list
+- [Preserve .dedup_state.json](feedback_dedup_state_persist.md) — never delete the dossier-merge state file at end of run; future runs need it to pin past decisions
+- [OOTA PCs](project_oota_pcs.md) — Daz, Grygum, Thorin, Zalthir are PCs in Out of the Abyss; pre-filter from npc dossiers
+- [Campaign PCs](project_campaign_pcs.md) — Phandalin: Brewbarry, Vukradin (alias Vucravinios), Valphine, Soma; SKT "3HPP": Orsik, Thistle, Unla Kee, Vardis (+ alias variants); pre-filter from npc dossiers, but keep npc_lord_zymorven
+- [LLM surfaces candidates, not state](feedback_llm_surfaces_candidates_not_decisions.md) — prompts must never output current values / totals / thresholds; list candidate events with cited triggers for GM review
+- [Extract captures everything, synthesis decides scope](feedback_extract_captures_everything.md) — extract prompts must preserve all named NPCs (including deceased and referenced-but-absent); scope/consolidation happens in synthesis
+- [Campaign prep query patterns](project_query_patterns.md) — "connect A to B" is a graph query (connections.py); "is this behavior correct for B" is prose retrieval (MemPalace / query.py). Don't conflate.
+- [Web UI usage pattern](project_web_ui_usage_pattern.md) — single user, one page at a time; race-condition bugs are mostly theoretical, but Session Config is revisited often within a session.
+- [Never commit directly to main](feedback_never_commit_to_main.md) — always use a feature branch + PR; wait for user's go-ahead before merging
+- [pdf-translators canonical path](reference_pdf_translators_path.md) — lives at `~/src/mytools/pdf-translators/`; ignore stale copies in 5etools-kostadis and 5etools-src
+- [Spark local-LLM setup](project_spark_llamacpp_setup.md) — vLLM (port 8001, Qwen3-Next-80B-FP8) is live on `spark`; llama.cpp (port 8000, Qwen2.5-32B-Q4_K_M) preserved as dormant alt. `spark2` reachable but unused. How to flip + gotchas inside.
+- [Host aliases not IPs](feedback_host_aliases_not_ips.md) — refer to Spark hosts as `spark`/`spark2`, never by IP or `.local` name
+- [enhance_summary on Spark test](reference_enhance_summary_spark_test.md) — 2026-06-02 calibration: Spark output passes canon gate clean; ~1.6× slower than Sonnet; real sessions ~12–15K tok (VTT ≈7.4 ch/tok); clean 400 choke at 131072. Report in ~/src/dgx/
+- [dgxlib shared package](project_dgxlib_shared.md) — per-model DGX config lives in dgx-fun's `dgxlib` (installed in ~/.venvs/main); CampaignGenerator + mytools consume it. Landing via PRs dgx-fun#20 / mytools#49 / CG#97.
