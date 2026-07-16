@@ -29,6 +29,7 @@ interface State {
   currentFile: string
   dirty: boolean
   statusMsg: string
+  errorMsg: string
   undoStack: Snapshot[]
   redoStack: Snapshot[]
 }
@@ -43,6 +44,7 @@ export const useEditor = defineStore('editor', {
     currentFile: '',
     dirty: false,
     statusMsg: 'No file loaded.',
+    errorMsg: '',
     undoStack: [],
     redoStack: [],
   }),
@@ -69,6 +71,10 @@ export const useEditor = defineStore('editor', {
   actions: {
     status(msg: string) {
       this.statusMsg = msg
+    },
+
+    dismissError() {
+      this.errorMsg = ''
     },
 
     snapshot(): Snapshot {
@@ -242,7 +248,10 @@ export const useEditor = defineStore('editor', {
     async load(path: string) {
       const r = await fetch('/api/load?file=' + encodeURIComponent(path))
       if (!r.ok) {
-        this.status('Load failed: ' + path)
+        const body = await r.json().catch(() => null)
+        const msg = body?.error || `Load failed: ${path}`
+        this.status(msg)
+        this.errorMsg = msg
         return
       }
       const data = await r.json()
@@ -255,6 +264,7 @@ export const useEditor = defineStore('editor', {
       this.undoStack = []
       this.redoStack = []
       this.dirty = false
+      this.errorMsg = ''
       this.status(`Loaded: ${data.path.split('/').pop()}  (${this.blocks.length} blocks)`)
     },
 
@@ -271,9 +281,13 @@ export const useEditor = defineStore('editor', {
       })
       if (r.ok) {
         this.dirty = false
+        this.errorMsg = ''
         this.status('Saved ✓')
       } else {
-        this.status('Save failed!')
+        const body = await r.json().catch(() => null)
+        const msg = body?.error || 'Save failed!'
+        this.status(msg)
+        this.errorMsg = msg
       }
     },
   },
