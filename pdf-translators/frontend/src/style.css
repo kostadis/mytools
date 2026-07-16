@@ -176,6 +176,29 @@ button:disabled { opacity: 0.35; cursor: default; }
 .pline:hover { background: #f1f3f5; }
 .pline.ph { background: #fff3cd; font-weight: 700; }
 
+/* ── Error banner ─────────────────────────────────────────────────────── */
+.error-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #f8d7da;
+  color: #842029;
+  border-bottom: 1px solid #f5c2c7;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+.error-banner span { flex: 1 1 auto; word-break: break-word; }
+.error-banner button {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: #842029;
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding: 0 4px;
+}
+
 /* ── Status bar ───────────────────────────────────────────────────────── */
 .status {
   flex: 0 0 auto;

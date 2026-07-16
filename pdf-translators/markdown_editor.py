@@ -28,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -37,6 +38,23 @@ app = Flask(__name__)
 _preload_file: str = ""
 DEFAULT_PORT = 5107
 DIST = Path(__file__).with_name("frontend") / "dist"
+
+_WINDOWS_PATH_RE = re.compile(r"^([A-Za-z]):[\\/]")
+
+
+def _windows_path_hint(raw: str) -> str:
+    """If `raw` looks like a Windows path (drive letter, or backslashes),
+    suggest the WSL mount equivalent — the most common reason a path that's
+    valid in the browser (Windows/WSLg) doesn't resolve in this process
+    (WSL Linux filesystem)."""
+    m = _WINDOWS_PATH_RE.match(raw)
+    if m:
+        drive = m.group(1).lower()
+        rest = raw[m.end():].replace("\\", "/")
+        return f" This looks like a Windows path — did you mean /mnt/{drive}/{rest}?"
+    if "\\" in raw:
+        return " This looks like a Windows path, but this server runs under WSL — use the /mnt/<drive>/... form."
+    return ""
 
 
 # ── JSON API ─────────────────────────────────────────────────────────────────
@@ -59,22 +77,30 @@ def api_files():
 
 @app.route("/api/load")
 def api_load():
-    path = Path(request.args.get("file", "")).expanduser()
+    raw = request.args.get("file", "")
+    path = Path(raw).expanduser()
     if not path.exists():
-        return jsonify({"error": f"Not found: {path}"}), 404
-    return jsonify({"content": path.read_text(encoding="utf-8"),
-                    "path": str(path.resolve())})
+        return jsonify({"error": f"Not found: {path}." + _windows_path_hint(raw)}), 404
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError as e:
+        return jsonify({"error": f"Could not read {path}: {e}"}), 400
+    return jsonify({"content": content, "path": str(path.resolve())})
 
 
 @app.route("/api/save", methods=["POST"])
 def api_save():
     data = request.json
-    path = Path(data["path"]).expanduser()
+    raw = data["path"]
+    path = Path(raw).expanduser()
     content = data["content"]
-    if path.exists():
-        path.with_suffix(path.suffix + ".bak").write_text(
-            path.read_text(encoding="utf-8"), encoding="utf-8")
-    path.write_text(content, encoding="utf-8")
+    try:
+        if path.exists():
+            path.with_suffix(path.suffix + ".bak").write_text(
+                path.read_text(encoding="utf-8"), encoding="utf-8")
+        path.write_text(content, encoding="utf-8")
+    except OSError as e:
+        return jsonify({"error": f"Could not write {path}: {e}." + _windows_path_hint(raw)}), 400
     return jsonify({"ok": True})
 
 
