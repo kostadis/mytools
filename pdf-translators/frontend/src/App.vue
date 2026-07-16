@@ -84,6 +84,11 @@ watchEffect(() => { document.title = title.value })
     <span v-if="store.dirty" class="dirty">●</span>
   </div>
 
+  <div v-if="store.errorMsg" class="error-banner">
+    <span>⚠ {{ store.errorMsg }}</span>
+    <button @click="store.dismissError()">✕</button>
+  </div>
+
   <div class="main">
     <TreePanel />
     <PreviewPanel />
