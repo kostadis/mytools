@@ -11,7 +11,7 @@ Unlike v1 (three separate heuristic scripts — see [README_v1.md](README_v1.md)
 
 The key design change: **structure extraction happens before Claude runs.** Marker (or the PDF's own bookmarks) produces an authoritative heading tree, so Claude only *renders prose inside pre-built structure* rather than inferring document structure from font heuristics. This eliminates the `[H1]`/`[ROOM-KEY-N]` annotations, the post-conversion repair scripts, and the content-filter trigger substitutions that v1 needed.
 
-A browser-based UI (`app.py`) wraps the converter so you never have to touch the command line.
+A browser-based UI (`editors/app.py`) wraps the converter so you never have to touch the command line.
 
 ---
 
@@ -19,20 +19,28 @@ A browser-based UI (`app.py`) wraps the converter so you never have to touch the
 
 ```
 pdf-translators/
-├── app.py                   Web UI (Flask, port 5100)
-├── pdf_to_5etools_v2.py     Unified converter (fast path + Marker path)
-├── cli_args.py              Shared argparse layer
-├── llm_backend.py           Provider/transport seam (claude / dgx / claude-code)
-├── claude_api.py            Retry / validation / recovery + prompt fragments
-├── pdf_utils.py             PDF bookmark + TOC extraction
-├── adventure_model.py       Typed 5etools data model
-├── validate_adventure.py    Structural validator
-├── validate_tags.py         {@tag} checker
-├── toc_editor.py            TOC editor UI (port 5101)
-├── toc_fixer.py             Heuristic TOC/nesting repair UI (port 5102)
-├── monster_editor.py        Stat-block extraction UI (port 5103)
-├── adventure_editor.py      Visual block editor UI (port 5104)
-└── README.md                This file
+├── lib/
+│   ├── cli_args.py           Shared argparse layer
+│   ├── llm_backend.py        Provider/transport seam (claude / dgx / claude-code)
+│   ├── claude_api.py         Retry / validation / recovery + prompt fragments
+│   ├── pdf_utils.py          PDF bookmark + TOC extraction
+│   ├── adventure_model.py    Typed 5etools data model
+│   ├── validate_adventure.py Structural validator
+│   ├── validate_tags.py      {@tag} checker
+│   └── fix_adventure_json.py Chapter-index normalizer
+├── converters/
+│   └── pdf_to_5etools_v2.py  Unified converter (fast path + Marker path)
+├── editors/
+│   ├── app.py                 Web UI (Flask, port 5100)
+│   ├── toc_editor.py          TOC editor UI (port 5101)
+│   ├── toc_fixer.py           Heuristic TOC/nesting repair UI (port 5102)
+│   ├── monster_editor.py      Stat-block extraction UI (port 5103)
+│   ├── editor_server.py       Markdown + Adventure editor UI (port 5107)
+│   ├── adventure_editor.py    Adventure editor Blueprint (served by editor_server.py)
+│   └── markdown_editor.py     Markdown editor Blueprint (served by editor_server.py)
+├── frontend/                  Vite/Vue SPA served by editors/editor_server.py
+├── tests/                     pytest suite
+└── README.md                  This file
 ```
 
 ---
@@ -73,7 +81,7 @@ The `dgx` and `claude-code` providers need **no API key** (see [Providers](#prov
 ## Web UI (recommended)
 
 ```bash
-python3 app.py
+python3 editors/app.py
 ```
 
 Then open **http://localhost:5100** in your browser.
@@ -87,7 +95,7 @@ Then open **http://localhost:5100** in your browser.
 To use a different port:
 
 ```bash
-PORT=8080 python3 app.py
+PORT=8080 python3 editors/app.py
 ```
 
 ---
@@ -95,39 +103,39 @@ PORT=8080 python3 app.py
 ## Command-line usage
 
 ```bash
-python3 pdf_to_5etools_v2.py <input.pdf> [options]
+python3 converters/pdf_to_5etools_v2.py <input.pdf> [options]
 ```
 
 **Common examples**
 
 ```bash
 # Quickstart — auto-route, all defaults, outputs <stem>_5etools.json next to the PDF
-python3 pdf_to_5etools_v2.py "Lost Mine of Phandelver.pdf"
+python3 converters/pdf_to_5etools_v2.py "Lost Mine of Phandelver.pdf"
 
 # Name the adventure and set the author
-python3 pdf_to_5etools_v2.py "MyAdventure.pdf" --id MYADV --author "Jane Smith"
+python3 converters/pdf_to_5etools_v2.py "MyAdventure.pdf" --id MYADV --author "Jane Smith"
 
 # Book (rulebook / sourcebook) instead of adventure
-python3 pdf_to_5etools_v2.py "Rulebook.pdf" --type book
+python3 converters/pdf_to_5etools_v2.py "Rulebook.pdf" --type book
 
 # Force the Marker path even though the PDF has bookmarks
 # (use when the text layer is OCR'd-to-PDF or has broken embedded fonts)
-python3 pdf_to_5etools_v2.py "ScannedModule.pdf" --force-marker
+python3 converters/pdf_to_5etools_v2.py "ScannedModule.pdf" --force-marker
 
 # Estimate token cost before committing (free, no inference)
-python3 pdf_to_5etools_v2.py "BigBook.pdf" --dry-run
+python3 converters/pdf_to_5etools_v2.py "BigBook.pdf" --dry-run
 
 # 50% cheaper via the Anthropic Batch API (async — completes in minutes)
-python3 pdf_to_5etools_v2.py "BigBook.pdf" --batch
+python3 converters/pdf_to_5etools_v2.py "BigBook.pdf" --batch
 
 # Send 4 chunks at a time on the streaming path
-python3 pdf_to_5etools_v2.py "BigBook.pdf" --concurrency 4
+python3 converters/pdf_to_5etools_v2.py "BigBook.pdf" --concurrency 4
 
 # Extract monster stat blocks as well as adventure text
-python3 pdf_to_5etools_v2.py "Adventure.pdf" --extract-monsters
+python3 converters/pdf_to_5etools_v2.py "Adventure.pdf" --extract-monsters
 
 # Extract monsters only (skip adventure text — cheapest path for bestiaries)
-python3 pdf_to_5etools_v2.py "MonsterManual.pdf" --monsters-only
+python3 converters/pdf_to_5etools_v2.py "MonsterManual.pdf" --monsters-only
 ```
 
 **Core options**
@@ -169,7 +177,7 @@ python3 pdf_to_5etools_v2.py "MonsterManual.pdf" --monsters-only
 
 ## Providers
 
-v2 routes every Claude call through a provider-agnostic transport seam (`llm_backend.py`). Pick the backend with `--provider`:
+v2 routes every Claude call through a provider-agnostic transport seam (`lib/llm_backend.py`). Pick the backend with `--provider`:
 
 | Provider | What it calls | API key | Batch / dry-run cost | Default concurrency |
 |---|---|---|---|---|
@@ -178,9 +186,9 @@ v2 routes every Claude call through a provider-agnostic transport seam (`llm_bac
 | `claude-code` | local `claude` CLI — spends your **Claude Code subscription** quota | none | no / size-only | 1 |
 
 ```bash
-python3 pdf_to_5etools_v2.py input.pdf --provider dgx           # local Spark model
-python3 pdf_to_5etools_v2.py input.pdf --provider dgx --endpoint http://HOST:8001/v1
-python3 pdf_to_5etools_v2.py input.pdf --provider claude-code   # your Claude subscription
+python3 converters/pdf_to_5etools_v2.py input.pdf --provider dgx           # local Spark model
+python3 converters/pdf_to_5etools_v2.py input.pdf --provider dgx --endpoint http://HOST:8001/v1
+python3 converters/pdf_to_5etools_v2.py input.pdf --provider claude-code   # your Claude subscription
 ```
 
 - **`dgx`** — the served model id is auto-discovered from `/v1/models` unless `--model` is given. vLLM serves many requests concurrently, so `--concurrency` is the main throughput lever (~20 tok/s single-stream vs ~130 tok/s at 20 concurrent on the Spark).
@@ -192,7 +200,7 @@ python3 pdf_to_5etools_v2.py input.pdf --provider claude-code   # your Claude su
 
 ## How it works
 
-The unified pipeline (`pdf_to_5etools_v2.py`):
+The unified pipeline (`converters/pdf_to_5etools_v2.py`):
 
 1. **Profile** — `profile_pdf()` samples ~10 pages. Has bookmarks **and** selectable text → fast path. Anything else → Marker path. `--force-marker` always uses Marker.
 2. **Extract structure**
@@ -208,8 +216,8 @@ The unified pipeline (`pdf_to_5etools_v2.py`):
 `call_claude` validates every parsed chunk through `adventure_model` and retries once with a correction prompt if structural errors are found (unknown `{@tag}`s, missing fields, etc.). After conversion, run the standalone checkers:
 
 ```bash
-python3 validate_adventure.py adventure.json   # structure: TOC/data alignment, entry types, braces, IDs
-python3 validate_tags.py adventure.json        # unknown {@tag}s (cause blank pages); --fix to strip them
+python3 lib/validate_adventure.py adventure.json   # structure: TOC/data alignment, entry types, braces, IDs
+python3 lib/validate_tags.py adventure.json        # unknown {@tag}s (cause blank pages); --fix to strip them
 ```
 
 ### Resuming a run
@@ -279,12 +287,12 @@ After conversion, several Flask UIs help review and fix the output:
 
 | Tool | Port | Purpose |
 |---|---|---|
-| `toc_editor.py` | 5101 | Review/correct the `contents[]` TOC; highlight TOC↔data mismatches |
-| `toc_fixer.py` | 5102 | Heuristic `data[]` re-nesting using the PDF bookmark outline (`--pdf file.pdf`) |
-| `monster_editor.py` | 5103 | Interactive stat-block discovery and extraction |
-| `adventure_editor.py` | 5104 | Visual block-tree editor with live 5etools preview, undo/redo, flags |
+| `editors/toc_editor.py` | 5101 | Review/correct the `contents[]` TOC; highlight TOC↔data mismatches |
+| `editors/toc_fixer.py` | 5102 | Heuristic `data[]` re-nesting using the PDF bookmark outline (`--pdf file.pdf`) |
+| `editors/monster_editor.py` | 5103 | Interactive stat-block discovery and extraction |
+| `editors/editor_server.py` | 5107 | Markdown Editor + visual Adventure block-tree editor (Vue SPA), undo/redo, live preview |
 
-Plus command-line post-processors: `fix_adventure_json.py` (chapter-index normaliser), `merge_patch.py` (patch specific pages into an existing JSON), `patch_5e_chapters.py`, `convert_1e_to_5e.py` (1e → 5e mechanical rewrite), `extract_monsters.py`. See [CLAUDE.md](CLAUDE.md) for full details.
+Plus command-line post-processors: `lib/fix_adventure_json.py` (chapter-index normaliser), `converters/merge_patch.py` (patch specific pages into an existing JSON), `converters/patch_5e_chapters.py`, `converters/convert_1e_to_5e.py` (1e → 5e mechanical rewrite), `converters/extract_monsters.py`. See [CLAUDE.md](CLAUDE.md) for full details.
 
 ---
 
@@ -292,9 +300,9 @@ Plus command-line post-processors: `fix_adventure_json.py` (chapter-index normal
 
 ```bash
 cd pdf-translators
-pytest test_adventure_model.py -v       # adventure data model
-pytest test_adventure_editor.py -v      # adventure editor
-pytest test_validate_adventure.py -v    # JSON validator (includes all official adventures)
+pytest tests/test_adventure_model.py -v       # adventure data model
+pytest tests/test_adventure_editor.py -v      # adventure editor
+pytest tests/test_validate_adventure.py -v    # JSON validator (includes all official adventures)
 ```
 
 Tests mock all external dependencies (PyMuPDF, Anthropic API) — no API key or system packages required.

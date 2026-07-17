@@ -16,6 +16,15 @@ marker-env/
 
 # Per-run batch conversion logs (one .log per module).
 ddex3-logs/
+batch/dmsguild-logs/
+
+# batch_convert.py working state (state DB, skiplist, manifest, nohup log) —
+# regenerated per run, lives next to the batch scripts in batch/.
+batch/dmsguild-state.db
+batch/dmsguild-state.db.bak-*
+batch/dmsguild-skiplist.tsv
+batch/dmsguild-manifest.json
+batch/dmsguild-batch.out
 
 # Mistral OCR batch resume maps (stem->pdf, regenerated each run).
 mistral-ocr-map.json
