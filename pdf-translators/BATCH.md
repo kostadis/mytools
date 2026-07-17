@@ -2,8 +2,10 @@
 
 How to convert a whole directory tree of PDFs to 5etools JSON, unattended and
 resumably — and how to recover when individual docs fail. This covers the four
-batch scripts (`batch_convert.py`, `batch_mistral_ocr.py`, `batch_marker.py`,
-`batch_state.py`); for the single-PDF converter itself see `README.md`.
+batch scripts (`batch/batch_convert.py`, `batch/batch_mistral_ocr.py`,
+`batch/batch_marker.py`, `lib/batch_state.py`) and their working data, which
+now lives alongside them in `batch/`; for the single-PDF converter itself see
+`README.md`.
 
 ---
 
@@ -12,7 +14,7 @@ batch scripts (`batch_convert.py`, `batch_mistral_ocr.py`, `batch_marker.py`,
 Conversion is split into three phases so the cheap, fast, deterministic work
 (structure extraction) is separated from the expensive, slow, ML/network work
 (OCR and LLM encoding). Each phase is independently resumable and writes its
-progress to a shared SQLite **state DB** (`dmsguild-state.db`), so a kill,
+progress to a shared SQLite **state DB** (`batch/dmsguild-state.db`), so a kill,
 reboot, or dropped endpoint never loses work.
 
 ```
@@ -46,7 +48,7 @@ slot in between, as above.
 |---|---|---|
 | `<stem>-extract.json` | extract / OCR pass | structural extract the encode pass consumes (`kind="lines"`) |
 | `<stem>.json` | encode pass | the finished 5etools adventure JSON — its existence means **done** |
-| `<stem>-mistral.md` | `batch_mistral_ocr` | raw OCR markdown (for cleanup in `markdown_editor.py`) |
+| `<stem>-mistral.md` | `batch_mistral_ocr` | raw OCR markdown (for cleanup in `editors/markdown_editor.py`) |
 | `<stem>-mistral-images/` | `batch_mistral_ocr` | decoded page images, links rewritten in the `.md` |
 | `<stem>-mistral-raw.json` | `batch_mistral_ocr` | complete raw OCR response (enables free re-render) |
 | `<stem>-responses/` | encode pass | per-chunk LLM responses (enables free resume) |
@@ -58,7 +60,7 @@ its output file. Delete the artifact (or pass `--force`) to redo just that doc.
 
 ## State DB and bookkeeping
 
-`batch_state.py` owns `dmsguild-state.db`. The `docs` table has one row per PDF
+`lib/batch_state.py` owns `batch/dmsguild-state.db`. The `docs` table has one row per PDF
 with a `status` and a `reason`:
 
 | status | meaning |
@@ -69,15 +71,15 @@ with a `status` and a `reason`:
 | `failed` | attempted and errored (timeout, too-big, bad request, partial) |
 
 Two flat files are written alongside for eyeballing:
-- `dmsguild-skiplist.tsv` — every `skipped` doc with its `reason`, page count, text size.
-- `dmsguild-logs/` — per-doc conversion logs.
+- `batch/dmsguild-skiplist.tsv` — every `skipped` doc with its `reason`, page count, text size.
+- `batch/dmsguild-logs/` — per-doc conversion logs.
 
 Inspect counts directly when you want ground truth:
 
 ```bash
-sqlite3 dmsguild-state.db \
+sqlite3 batch/dmsguild-state.db \
   "SELECT status, count(*) FROM docs GROUP BY status;"
-sqlite3 dmsguild-state.db \
+sqlite3 batch/dmsguild-state.db \
   "SELECT rel, reason, exit FROM docs WHERE status='failed';"
 ```
 
@@ -87,27 +89,27 @@ sqlite3 dmsguild-state.db \
 
 ```bash
 # 0. Dry plan: scan, classify, write state DB + skiplist, then stop.
-python3 batch_convert.py --list
+python3 batch/batch_convert.py --list
 
 # 1. Fast structural pass over the whole tree.
-python3 batch_convert.py --phase extract
+python3 batch/batch_convert.py --phase extract
 
 # 2a. OCR the deferred docs with Mistral (preferred — better output).
 export MISTRAL_API_KEY=...
-python3 batch_mistral_ocr.py --no-profile --limit 10   # free tier caps a job at 10
+python3 batch/batch_mistral_ocr.py --no-profile --limit 10   # free tier caps a job at 10
 #    ...repeat until the list is empty (already-extracted docs auto-skip):
-python3 batch_mistral_ocr.py --list                    # how many are left?
+python3 batch/batch_mistral_ocr.py --list                    # how many are left?
 
 # 2b. ...or OCR locally with Marker instead (GPU, no API key).
-python3 batch_marker.py
+python3 batch/batch_marker.py
 
 # 3. Encode everything that now has an extract on disk.
-python3 batch_convert.py --phase encode --plan reuse
+python3 batch/batch_convert.py --phase encode --plan reuse
 ```
 
 ### `--plan` (fresh vs reuse vs ask)
 
-`batch_convert.py` decides up front what to do with the existing state DB:
+`batch/batch_convert.py` decides up front what to do with the existing state DB:
 - `--plan reuse` — continue from the DB as-is (the normal resume; what you want
   after an interruption or between phases).
 - `--plan fresh` — re-plan from a clean scan.
@@ -116,10 +118,10 @@ python3 batch_convert.py --phase encode --plan reuse
 
 ---
 
-## `batch_mistral_ocr.py` — the OCR pass in detail
+## `batch/batch_mistral_ocr.py` — the OCR pass in detail
 
 ```bash
-python3 batch_mistral_ocr.py [--list] [--limit N] [--no-profile] [--force]
+python3 batch/batch_mistral_ocr.py [--list] [--limit N] [--no-profile] [--force]
                              [--no-images] [--rebuild-from-raw]
                              [--resume-job JOB_ID] [--poll-interval SEC] [--verbose]
 ```
@@ -154,7 +156,7 @@ Just re-run the encode phase. Cached per-chunk responses in `<stem>-responses/`
 are reused automatically, so only the missing chunks re-bill:
 
 ```bash
-python3 batch_convert.py --phase encode --plan reuse
+python3 batch/batch_convert.py --phase encode --plan reuse
 ```
 
 ### Skip known-bad docs and make progress on the rest
@@ -163,7 +165,7 @@ After a run leaves some `failed`, carry those failures forward and let the next
 run work the never-attempted docs instead of re-failing the known-bad ones:
 
 ```bash
-python3 batch_convert.py --phase encode --plan reuse --skip-failed
+python3 batch/batch_convert.py --phase encode --plan reuse --skip-failed
 ```
 
 ### Remediation pass — re-run ONLY the failures
@@ -172,7 +174,7 @@ Later, on a faster / less-contended box, attempt just the `failed` docs (cached
 chunks still reused), e.g. with a smaller pool:
 
 ```bash
-python3 batch_convert.py --phase encode --plan reuse --only-failed --pool 2
+python3 batch/batch_convert.py --phase encode --plan reuse --only-failed --pool 2
 ```
 
 ### A doc failed over a size cap (`chunk_too_big` / `prompt_too_big`)
@@ -181,7 +183,7 @@ These are auto-skipped on a verbatim re-run (it would fail identically). Either
 raise the matching cap (which re-queues them automatically):
 
 ```bash
-python3 batch_convert.py --phase encode --plan reuse --chunk-token-cap 28000
+python3 batch/batch_convert.py --phase encode --plan reuse --chunk-token-cap 28000
 ```
 
 …or force a re-attempt at the same caps with `--retry-too-big`.
@@ -205,13 +207,13 @@ directories is handled per-directory.
 
 ### A Mistral OCR job submitted but the script died before download
 
-The job ID is saved automatically to `mistral-ocr-map.json`. Re-poll the
+The job ID is saved automatically to `batch/mistral-ocr-map.json`. Re-poll the
 already-running (or already-SUCCESS) job and run the result handler without
 re-submitting — and **without** spending fresh quota:
 
 ```bash
-python3 batch_mistral_ocr.py \
-  --resume-job <JOB_ID> --resume-map mistral-ocr-map.json --verbose
+python3 batch/batch_mistral_ocr.py \
+  --resume-job <JOB_ID> --resume-map batch/mistral-ocr-map.json --verbose
 ```
 
 ### A Mistral job came back not-`SUCCESS` (`FAILED` / `TIMEOUT_EXCEEDED` / `CANCELLED`)
@@ -229,7 +231,7 @@ A `SUCCESS` job can still contain per-doc failures (a non-200 response for one
 PDF). The succeeded docs get their `<stem>-extract.json`; the run prints
 `FAIL <stem>: status …` for each bad one and ends with
 `extracted N, failed M` (and exits non-zero if `M > 0`). The failed docs simply
-have no extract, so the **next** `batch_mistral_ocr.py` run re-selects and
+have no extract, so the **next** `batch/batch_mistral_ocr.py` run re-selects and
 re-OCRs them in a fresh job. Note `--rebuild-from-raw` does **not** rescue these
 — a raw response is only saved for docs that returned a body, so a failed doc
 has nothing to rebuild from; it must be re-submitted.
@@ -240,7 +242,7 @@ The complete raw OCR response is kept in `<stem>-mistral-raw.json`. After fixing
 the renderer, refresh every already-OCR'd doc offline for free:
 
 ```bash
-python3 batch_mistral_ocr.py --rebuild-from-raw
+python3 batch/batch_mistral_ocr.py --rebuild-from-raw
 ```
 
 ### Force a clean redo of one doc
@@ -258,13 +260,13 @@ rm "Some Title/123-doc-extract.json"    # redo extract/OCR for one doc
 
 | situation | command |
 |---|---|
-| Plan only, don't convert | `batch_convert.py --list` |
-| Normal resume after interruption | `batch_convert.py --phase encode --plan reuse` |
+| Plan only, don't convert | `batch/batch_convert.py --list` |
+| Normal resume after interruption | `batch/batch_convert.py --phase encode --plan reuse` |
 | Make progress, ignore prior failures | `… --plan reuse --skip-failed` |
 | Re-run only the failures | `… --plan reuse --only-failed --pool 2` |
 | Re-queue size-cap failures | `… --plan reuse --chunk-token-cap N` (or `--retry-too-big`) |
-| OCR next 10 (free tier) | `batch_mistral_ocr.py --no-profile --limit 10` |
-| Resume a submitted OCR job | `batch_mistral_ocr.py --resume-job ID --resume-map mistral-ocr-map.json` |
-| Re-render OCR docs after a parse fix | `batch_mistral_ocr.py --rebuild-from-raw` |
+| OCR next 10 (free tier) | `batch/batch_mistral_ocr.py --no-profile --limit 10` |
+| Resume a submitted OCR job | `batch/batch_mistral_ocr.py --resume-job ID --resume-map batch/mistral-ocr-map.json` |
+| Re-render OCR docs after a parse fix | `batch/batch_mistral_ocr.py --rebuild-from-raw` |
 | Never convert specific files | add them to `<pdf-dir>/.extract_skip` |
 | Redo one doc | `rm <stem>.json` (or `<stem>-extract.json`) then re-run the phase |
