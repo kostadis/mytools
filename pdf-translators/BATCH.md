@@ -3,7 +3,7 @@
 How to convert a whole directory tree of PDFs to 5etools JSON, unattended and
 resumably — and how to recover when individual docs fail. This covers the four
 batch scripts (`batch_convert.py`, `batch_mistral_ocr.py`, `batch_marker.py`,
-`batch_state.py`); for the single-PDF converter itself see `README_v2.md`.
+`batch_state.py`); for the single-PDF converter itself see `README.md`.
 
 ---
 

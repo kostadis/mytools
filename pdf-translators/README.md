@@ -1,16 +1,17 @@
-# PDF → 5etools Converters
+# PDF → 5etools Converter (v2)
 
 Convert RPG sourcebook and adventure PDFs into [5etools](https://5e.tools) homebrew JSON, ready to load via **Manage Homebrew → Load from File** or install permanently on a self-hosted server.
 
-Three converters are provided:
+Unlike v1 (three separate heuristic scripts — see [README_v1.md](README_v1.md)), v2 is a **single unified converter** that auto-routes each PDF to the right extraction path:
 
-| Script | Best for |
-|---|---|
-| `pdf_to_5etools.py` | Digitally-typeset PDFs with selectable text |
-| `pdf_to_5etools_ocr.py` | Scanned or image-based PDFs; also handles mixed PDFs |
-| `pdf_to_5etools_1e.py` | Classic 1st/2nd Edition AD&D modules (T1-4, B2, S1, etc.) |
+| PDF type | Path | Speed |
+|---|---|---|
+| Digital, bookmarked, selectable text | **PyMuPDF fast path** — chunks by the bookmark tree | ~100× faster |
+| Scans, OCR'd modules, un-bookmarked digital | **Marker path** — ML layout/heading extraction, then synthesised TOC | ~5 s/page (GPU) |
 
-A browser-based UI (`app.py`) wraps all three scripts so you never have to touch the command line.
+The key design change: **structure extraction happens before Claude runs.** Marker (or the PDF's own bookmarks) produces an authoritative heading tree, so Claude only *renders prose inside pre-built structure* rather than inferring document structure from font heuristics. This eliminates the `[H1]`/`[ROOM-KEY-N]` annotations, the post-conversion repair scripts, and the content-filter trigger substitutions that v1 needed.
+
+A browser-based UI (`app.py`) wraps the converter so you never have to touch the command line.
 
 ---
 
@@ -18,45 +19,54 @@ A browser-based UI (`app.py`) wraps all three scripts so you never have to touch
 
 ```
 pdf-translators/
-├── app.py                  Web UI (Flask)
-├── pdf_to_5etools.py       Standard converter
-├── pdf_to_5etools_ocr.py   OCR-enhanced converter
-├── pdf_to_5etools_1e.py    1st/2nd Edition AD&D converter
-├── test_pdf_to_5etools.py  Unit tests (pytest)
-└── README.md               This file
+├── app.py                   Web UI (Flask, port 5100)
+├── pdf_to_5etools_v2.py     Unified converter (fast path + Marker path)
+├── cli_args.py              Shared argparse layer
+├── llm_backend.py           Provider/transport seam (claude / dgx / claude-code)
+├── claude_api.py            Retry / validation / recovery + prompt fragments
+├── pdf_utils.py             PDF bookmark + TOC extraction
+├── adventure_model.py       Typed 5etools data model
+├── validate_adventure.py    Structural validator
+├── validate_tags.py         {@tag} checker
+├── toc_editor.py            TOC editor UI (port 5101)
+├── toc_fixer.py             Heuristic TOC/nesting repair UI (port 5102)
+├── monster_editor.py        Stat-block extraction UI (port 5103)
+├── adventure_editor.py      Visual block editor UI (port 5104)
+└── README.md                This file
 ```
 
 ---
 
 ## Requirements
 
-### Standard converter
+### Core converter (fast path + UI)
 
 ```bash
-pip install pymupdf anthropic
+pip install pymupdf anthropic flask
 ```
 
-### OCR converter (additional)
+### Marker path (scans, un-bookmarked PDFs)
+
+Marker runs in its own virtualenv (gitignored):
 
 ```bash
-pip install pytesseract pillow pdf2image
-# Ubuntu / Debian system packages:
-sudo apt install tesseract-ocr tesseract-ocr-eng poppler-utils
+python3 -m venv marker-env
+source marker-env/bin/activate
+pip install marker-pdf pymupdf
+# First run downloads ~5 GB of model weights from HuggingFace.
 ```
 
-### Web UI (additional)
-
-```bash
-pip install flask
-```
+A CUDA GPU is strongly recommended (4080-class: ~5 s/page; CPU: 10–30 s/page).
 
 ### API key
 
-Both converters call the Anthropic API. Set your key once as an environment variable or pass it with `--api-key`:
+The default `claude` provider calls the Anthropic API. Set your key once or pass `--api-key`:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
+
+The `dgx` and `claude-code` providers need **no API key** (see [Providers](#providers) below).
 
 ---
 
@@ -68,12 +78,10 @@ python3 app.py
 
 Then open **http://localhost:5100** in your browser.
 
-The UI exposes every option from both scripts:
-
 - Drag-and-drop PDF upload
-- Standard or OCR-enhanced extraction mode
-- All output, Claude, and advanced options
-- Live streaming progress log
+- Automatic fast-path / Marker routing
+- All output, model, and advanced options
+- Live streaming progress log (Server-Sent Events)
 - Download button for the finished JSON
 
 To use a different port:
@@ -86,131 +94,144 @@ PORT=8080 python3 app.py
 
 ## Command-line usage
 
-### Standard converter
-
 ```bash
-python3 pdf_to_5etools.py <input.pdf> [options]
+python3 pdf_to_5etools_v2.py <input.pdf> [options]
 ```
 
 **Common examples**
 
 ```bash
-# Quickstart — all defaults, outputs <stem>_5etools.json next to the PDF
-python3 pdf_to_5etools.py "Lost Mine of Phandelver.pdf"
+# Quickstart — auto-route, all defaults, outputs <stem>_5etools.json next to the PDF
+python3 pdf_to_5etools_v2.py "Lost Mine of Phandelver.pdf"
 
 # Name the adventure and set the author
-python3 pdf_to_5etools.py "MyAdventure.pdf" --id MYADV --author "Jane Smith"
+python3 pdf_to_5etools_v2.py "MyAdventure.pdf" --id MYADV --author "Jane Smith"
 
 # Book (rulebook / sourcebook) instead of adventure
-python3 pdf_to_5etools.py "Rulebook.pdf" --type book
+python3 pdf_to_5etools_v2.py "Rulebook.pdf" --type book
 
-# Write output to a specific directory
-python3 pdf_to_5etools.py "MyAdventure.pdf" --output-dir ~/5etools/homebrew
-
-# Two-file server format (copies into data/ dirs for permanent install)
-python3 pdf_to_5etools.py "MyAdventure.pdf" --output-mode server --output-dir /tmp/out
+# Force the Marker path even though the PDF has bookmarks
+# (use when the text layer is OCR'd-to-PDF or has broken embedded fonts)
+python3 pdf_to_5etools_v2.py "ScannedModule.pdf" --force-marker
 
 # Estimate token cost before committing (free, no inference)
-python3 pdf_to_5etools.py "BigBook.pdf" --dry-run
+python3 pdf_to_5etools_v2.py "BigBook.pdf" --dry-run
 
-# 50 % cheaper via Batch API (async — completes in minutes, not seconds)
-python3 pdf_to_5etools.py "BigBook.pdf" --batch
+# 50% cheaper via the Anthropic Batch API (async — completes in minutes)
+python3 pdf_to_5etools_v2.py "BigBook.pdf" --batch
+
+# Send 4 chunks at a time on the streaming path
+python3 pdf_to_5etools_v2.py "BigBook.pdf" --concurrency 4
 
 # Extract monster stat blocks as well as adventure text
-python3 pdf_to_5etools.py "Adventure.pdf" --extract-monsters
+python3 pdf_to_5etools_v2.py "Adventure.pdf" --extract-monsters
 
-# Extract monsters only (skip adventure text — fastest option for bestiaries)
-python3 pdf_to_5etools.py "MonsterManual.pdf" --monsters-only
+# Extract monsters only (skip adventure text — cheapest path for bestiaries)
+python3 pdf_to_5etools_v2.py "MonsterManual.pdf" --monsters-only
 ```
 
-**All options**
+**Core options**
 
 | Option | Default | Description |
 |---|---|---|
+| `--provider claude\|dgx\|claude-code` | `claude` | LLM backend (see [Providers](#providers)) |
+| `--endpoint URL` | `http://192.168.1.147:8001/v1` | DGX vLLM base URL (`dgx` only) |
 | `--type adventure\|book` | `adventure` | Content type |
 | `--output-mode homebrew\|server` | `homebrew` | Single homebrew file or two-file server install |
 | `--id SHORT_ID` | Derived from filename | Uppercase identifier, e.g. `MYADV` |
 | `--author "Name"` | `Unknown` | Author string embedded in the JSON |
 | `--out output.json` | `<stem>_5etools.json` | Full output path (overrides `--output-dir`) |
 | `--output-dir DIR` | Same folder as the PDF | Directory to write output file(s) into |
-| `--api-key KEY` | `$ANTHROPIC_API_KEY` | Anthropic API key |
-| `--pages-per-chunk N` | `6` | Pages sent to Claude per API call |
-| `--model MODEL` | `claude-haiku-4-5-20251001` | Claude model to use |
-| `--batch` | off | Use Batch API (50 % cheaper, async) |
-| `--extract-monsters` | off | Second Claude pass to extract stat blocks |
+| `--api-key KEY` | `$ANTHROPIC_API_KEY` | Anthropic API key (`claude` only) |
+| `--pages-per-chunk N` | `1` | Pages per Claude call (Marker/TOC normally defines chunk boundaries) |
+| `--model MODEL` | `claude-haiku-4-5-20251001` | Model id (`dgx` auto-discovers if omitted) |
+| `--force-marker` | off | Bypass the fast path; always use Marker |
+| `--batch` | off | Anthropic Batch API (50% cheaper, async) |
+| `--concurrency N` | `1` claude / `8` dgx | Chunks sent at once on the streaming path |
+| `--extract-monsters` | off | Second pass to extract stat blocks into a bestiary file |
 | `--monsters-only` | off | Skip adventure text; extract stat blocks only |
-| `--dry-run` | off | Count tokens and estimate cost, no inference |
+| `--dry-run` | off | Estimate tokens/cost, no inference |
+| `--no-toc-hint` | off | Don't inject the PDF bookmark outline as a section hint |
+| `--pages RANGE` | — | Only process these pages, e.g. `10-20` or `5,10-15` |
+| `--page N` | — | Only process this single page |
 | `--debug-dir DIR` | off | Save raw chunk I/O for debugging |
 | `--verbose` | off | Print detailed progress |
 
+**Recovery options** (resume / rebuild without re-billing — see [Resuming a run](#resuming-a-run))
+
+| Option | Description |
+|---|---|
+| `--reuse-responses` | Resume a crashed run: re-send only the missing/unusable chunks (streaming or `--batch`) |
+| `--replay-responses DIR` | Rebuild output from a **complete** set of saved responses; no provider calls |
+| `--resume-batch BATCH_ID` | Fetch results from an already-completed Anthropic Batch run (Anthropic-only) |
+
 ---
 
-### OCR-enhanced converter
+## Providers
+
+v2 routes every Claude call through a provider-agnostic transport seam (`llm_backend.py`). Pick the backend with `--provider`:
+
+| Provider | What it calls | API key | Batch / dry-run cost | Default concurrency |
+|---|---|---|---|---|
+| `claude` *(default)* | Anthropic Messages API | required | yes / yes | 1 |
+| `dgx` | OpenAI-compatible vLLM endpoint on the DGX Spark | none | no / size-only | 8 |
+| `claude-code` | local `claude` CLI — spends your **Claude Code subscription** quota | none | no / size-only | 1 |
 
 ```bash
-python3 pdf_to_5etools_ocr.py <input.pdf> [options]
+python3 pdf_to_5etools_v2.py input.pdf --provider dgx           # local Spark model
+python3 pdf_to_5etools_v2.py input.pdf --provider dgx --endpoint http://HOST:8001/v1
+python3 pdf_to_5etools_v2.py input.pdf --provider claude-code   # your Claude subscription
 ```
 
-Accepts all the same options as the standard converter, plus:
+- **`dgx`** — the served model id is auto-discovered from `/v1/models` unless `--model` is given. vLLM serves many requests concurrently, so `--concurrency` is the main throughput lever (~20 tok/s single-stream vs ~130 tok/s at 20 concurrent on the Spark).
+- **`claude-code`** — requires the `claude` CLI installed and logged in (`claude login`) with a subscription. The transport scrubs `ANTHROPIC_API_KEY` from the child env so it uses the subscription login, not API billing. No `max_tokens` control and no truncation signal (the CLI always reports `end_turn`), so the tail/split *truncation* retry never fires for this provider — its validation/malformed-JSON retry still does. If you hit your usage cap mid-run the call errors cleanly; resume later with `--reuse-responses`.
 
-| Option | Default | Description |
-|---|---|---|
-| `--dpi N` | `300` | Render resolution for OCR pages |
-| `--force-ocr` | off | OCR every page, even those with digital text |
-| `--lang LANG` | `eng` | Tesseract language code(s), e.g. `eng+fra` |
-
-**When to use OCR mode**
-
-- The PDF is a scan (photographed pages, no selectable text)
-- Digital extraction produces garbled text, mojibake, or near-empty pages
-- The book uses decorative fonts that confuse the text layer
-
-The script tries digital extraction first on every page; it only falls back to Tesseract OCR when a page yields fewer than 50 readable characters. Use `--force-ocr` to bypass this and OCR everything.
-
-**Examples**
-
-```bash
-# Scanned module, load via UI
-python3 pdf_to_5etools_ocr.py "ScannedModule.pdf" --force-ocr
-
-# Higher resolution for small or dense text
-python3 pdf_to_5etools_ocr.py "Sourcebook.pdf" --dpi 400
-
-# French-language PDF
-python3 pdf_to_5etools_ocr.py "Module.pdf" --lang fra
-```
+`--batch`, `--resume-batch`, and dry-run **cost** figures are Anthropic-only and rejected up front for the other providers.
 
 ---
 
 ## How it works
 
-### Text extraction (standard)
+The unified pipeline (`pdf_to_5etools_v2.py`):
 
-1. **PyMuPDF** reads every page, extracting text with font-size and bold/italic metadata.
-2. A heuristic pass computes the median body font size and flags text as H1/H2/H3 based on size ratios (×1.4 / ×1.2 / ×1.05).
-3. Pages are grouped into chunks and sent to the **Anthropic API**. Claude receives annotated text (`[H1] Title`, `[italic]text[/italic]`, etc.) and returns a JSON array of 5etools entry objects.
-4. Chunks are merged, sequential IDs are assigned, a table of contents is synthesised, and the final JSON is written.
+1. **Profile** — `profile_pdf()` samples ~10 pages. Has bookmarks **and** selectable text → fast path. Anything else → Marker path. `--force-marker` always uses Marker.
+2. **Extract structure**
+   - *Fast path:* `get_toc_tree()` reads the PDF bookmark outline into a `TocNode` tree.
+   - *Marker path:* `run_marker()` shells out to `marker_single` to produce markdown with `#`/`##`/`###` headings; `parse_markdown_headings()` extracts them with line offsets; `normalise_numbered_rooms()` flattens keyed-room patterns (e.g. `101. ARMORY`) to a common level; `build_synthetic_toc()` reuses the same tree builder with line numbers standing in for page numbers.
+3. **Chunk** — one chunk per top-level `TocNode`. Fast path pulls page text via PyMuPDF; Marker path slices the markdown between heading line numbers.
+4. **Claude pass** — `build_prompt()` attaches sub-section hints from the node's children; `claude_api.call_claude` owns all retry / validation / recovery. The PDF's bookmark outline is prepended to each chunk as an authoritative section hint (disable with `--no-toc-hint`). Batch mode via `call_claude_batch`.
+5. **Assemble** — `assemble_adventure()` wraps each chunk's `entries[]` in a `SectionEntry` and calls `HomebrewAdventure.build()`, which auto-assigns IDs and builds the TOC from the section tree.
+6. **Write** — `.to_json()` writes the final document.
 
-### OCR fallback
+### Validation & retry
 
-Pages below the 50-character threshold are rendered to images at the configured DPI and processed by **Tesseract**. The script then:
+`call_claude` validates every parsed chunk through `adventure_model` and retries once with a correction prompt if structural errors are found (unknown `{@tag}`s, missing fields, etc.). After conversion, run the standalone checkers:
 
-- Detects two-column layouts by looking for gaps in the x-distribution of words, and re-orders text left-column-first.
-- Infers heading level from character height relative to the page average.
-- Detects boxed/inset text by checking block bounding-box indentation.
-- Detects tables by looking for runs of lines with 2+ whitespace-separated tokens.
+```bash
+python3 validate_adventure.py adventure.json   # structure: TOC/data alignment, entry types, braces, IDs
+python3 validate_tags.py adventure.json        # unknown {@tag}s (cause blank pages); --fix to strip them
+```
 
-Claude is then given the same structured prompt, extended with OCR-specific instructions.
+### Resuming a run
+
+Every run auto-saves each chunk's raw provider output to `<out_stem>-responses/{cid}-response.txt` (where `cid` is `{index:03d}-{slug}`). Chunking is deterministic, so three flags can reuse that work:
+
+- **`--reuse-responses`** — mid-run resume on either path. Loads each chunk's saved response if it parses to real entries; only the missing/unusable chunks are re-sent. Tolerates a **partial** set — this is the flag for finishing a run that died midway. Re-run the original command verbatim with `--reuse-responses` added, keeping the same output target. Don't change anything that alters chunking (PDF, page selection, `--force-marker`).
+- **`--replay-responses DIR`** — rebuild output from a **complete** set of saved responses; no provider calls. Use to re-parse a finished run after a parser fix.
+- **`--resume-batch BATCH_ID`** — Anthropic-only; fetch results from a completed Batch run.
+
+The cache key is `{index:03d}-{slug}` only — **not** model-aware — so a `claude --batch --reuse-responses` run will reuse chunks a prior `dgx` streaming run produced (cross-provider reuse is intentional).
+
+### Bestiary extraction
+
+- **`--extract-monsters`** — after the conversion, a second pass pulls stat blocks out of the generated JSON and writes `<stem>-bestiary.json` with source ID `{SOURCE}b` (separate so both homebrews load together without conflicting). Inherits `--model` and `--batch`.
+- **`--monsters-only`** — bypass the adventure pipeline entirely. Always runs Marker, splits on `##` headings, keeps sections that mention "Armor Class"/"AC N", and sends those to Claude. ~2–3× fewer tokens than a full conversion.
 
 ### Output format
 
-**Homebrew mode** (default) produces a single JSON file loadable via **Manage Homebrew → Load from File**:
+**Homebrew mode** (default) produces a single JSON loadable via **Manage Homebrew → Load from File**.
 
-```
-managebrew.html → Load from File → select <stem>_5etools.json
-```
-
-**Server mode** produces two files for a permanent self-hosted install:
+**Server mode** (`--output-mode server`) produces two files for a permanent self-hosted install:
 
 | File | Destination |
 |---|---|
@@ -226,73 +247,44 @@ managebrew.html → Load from File → select <stem>_5etools.json
 3. Click **Load from File** and select the generated `.json`.
 4. Navigate to **Adventures** (or **Books**) — your content appears in the list.
 
-For monster-only output, the creatures appear in **Bestiary** (`bestiary.html`).
+Bestiary output appears in **Bestiary** (`bestiary.html`). Named NPCs with `isNpc: true` are hidden by default — toggle the "Adventure NPC" filter to see them.
 
 ---
 
+## Extracting images from a PDF
+
+The converter handles text and structure only — it does **not** pull maps or artwork out of the PDF. To grab every embedded image (for adding maps/handouts to your homebrew), use **`pdfimages`** from poppler-utils:
+
+```bash
+sudo apt install poppler-utils          # Ubuntu/Debian, if not already installed
+
+mkdir -p images
+pdfimages -all input.pdf images/img     # extract every image in its native format → images/img-000.png, ...
+```
+
+Useful flags:
+
+| Flag | Effect |
+|---|---|
+| `-all` | Keep each image in its original encoding (jpg/png/…) — recommended |
+| `-png` | Force every image to PNG |
+| `-list` | List images (page, size, format) without extracting — preview first |
+| `-f N` / `-l N` | First / last page to extract from |
+
 ---
 
-## 1e Module converter
+## Editing & repair tools
 
-```bash
-python3 pdf_to_5etools_1e.py <input.pdf> [options]
-```
+After conversion, several Flask UIs help review and fix the output:
 
-Specifically tuned for classic TSR modules (T1-4 Temple of Elemental Evil,
-B2 Keep on the Borderlands, S1 Tomb of Horrors, A-series, GDQ series, etc.).
-
-### What it does differently
-
-**Structural recognition**
-- Detects numbered room/area keys (`17.`, `17)`, `17:`) and wraps them as 5etools
-  `{"type":"entries","name":"17. Room Name"}` blocks.
-- Identifies inline stat blocks (`AC 5; MV 9"; HD 2; THAC0 17; #AT 1; D 2-8`)
-  and named NPC blocks (with ability scores).
-- Tags wandering monster / random encounter tables.
-
-**Automatic stat conversion (1e → 5e)**
-
-| 1e value | Formula | Example |
+| Tool | Port | Purpose |
 |---|---|---|
-| Descending AC | `5e AC = 19 − 1e AC` | AC 5 → 15; AC 0 → 19; AC −2 → 21 |
-| THAC0 | `attack bonus = 20 − THAC0` | THAC0 17 → +3; THAC0 13 → +7 |
-| Movement (inches) | `feet = MV × 5` | MV 9" → 45 ft; MV 12" → 60 ft |
-| Hit Dice | table lookup | 2 HD → CR ½; 6 HD → CR 4; 10 HD → CR 8 |
-| Ability scores | estimated from HD + description | if not listed in stat block |
+| `toc_editor.py` | 5101 | Review/correct the `contents[]` TOC; highlight TOC↔data mismatches |
+| `toc_fixer.py` | 5102 | Heuristic `data[]` re-nesting using the PDF bookmark outline (`--pdf file.pdf`) |
+| `monster_editor.py` | 5103 | Interactive stat-block discovery and extraction |
+| `adventure_editor.py` | 5104 | Visual block-tree editor with live 5etools preview, undo/redo, flags |
 
-Claude receives detailed conversion instructions in the system prompt and embeds
-a `_1e_original` field with the verbatim 1e stat line for manual review.
-
-### Additional options
-
-| Option | Default | Description |
-|---|---|---|
-| `--module-code CODE` | From filename | TSR code, e.g. `T1-4`, `B2`, `S1` |
-| `--system 1e\|2e` | `1e` | AD&D edition |
-| `--skip-pages RANGE` | — | Skip pages, e.g. `1-3` or `127-128` (repeatable) |
-| `--no-cr-adjustment` | off | Disable CR bump for special abilities |
-| `--dpi N` | `400` | Higher default than OCR script (aged ink) |
-| `--force-ocr` | off | Recommended for scanned modules |
-
-All standard options (`--type`, `--author`, `--model`, `--extract-monsters`, etc.) also apply.
-
-> **Model note:** Classic AD&D modules often contain mature fantasy themes (violence, enslavement, demonic content, period-typical language) that can trigger content filters in smaller/stricter models.  Use `--model claude-sonnet-4-6` for the most reliable conversion of modules like T1-4 or GDQ.
-
-**Examples**
-
-```bash
-# Full T1-4 conversion including monsters (skip cover pages and maps)
-python3 pdf_to_5etools_1e.py "T1-4.pdf" \
-    --module-code T1-4 --author "Gary Gygax & Frank Mentzer" \
-    --skip-pages 1-3,127-128 --extract-monsters --force-ocr
-
-# Monsters-only bestiary from B2
-python3 pdf_to_5etools_1e.py "B2.pdf" \
-    --module-code B2 --monsters-only --force-ocr
-
-# Estimate API cost first
-python3 pdf_to_5etools_1e.py "T1-4.pdf" --module-code T1-4 --dry-run
-```
+Plus command-line post-processors: `fix_adventure_json.py` (chapter-index normaliser), `merge_patch.py` (patch specific pages into an existing JSON), `patch_5e_chapters.py`, `convert_1e_to_5e.py` (1e → 5e mechanical rewrite), `extract_monsters.py`. See [CLAUDE.md](CLAUDE.md) for full details.
 
 ---
 
@@ -300,11 +292,23 @@ python3 pdf_to_5etools_1e.py "T1-4.pdf" --module-code T1-4 --dry-run
 
 ```bash
 cd pdf-translators
-pytest test_pdf_to_5etools.py -v
+pytest test_adventure_model.py -v       # adventure data model
+pytest test_adventure_editor.py -v      # adventure editor
+pytest test_validate_adventure.py -v    # JSON validator (includes all official adventures)
 ```
 
-The tests cover all pure-logic functions across all three scripts — including
-the 1e conversion helpers (`ac_1e_to_5e`, `thac0_to_attack_bonus`,
-`mv_to_5e_speed`, `hd_to_cr`, `annotate_1e_patterns`, `post_process_monster_1e`,
-`_parse_skip_pages`) — and mock out all external dependencies so no API key or
-system packages are needed.
+Tests mock all external dependencies (PyMuPDF, Anthropic API) — no API key or system packages required.
+
+---
+
+## Model note
+
+The spike comparing Haiku vs Sonnet on Marker-processed content showed Haiku handles the rendering job correctly at ~4× lower cost, so v2 defaults to **Haiku**. This reverses the v1-era "use Sonnet for 1e" rule: with Marker doing the structure extraction up front, Claude only renders prose, and the smaller model is reliable. Override with `--model claude-sonnet-4-6` only if specific content needs it.
+
+Marker output also strips the dense bold-all-caps formatting that triggered content filters on raw 1e text, so the v1 trigger-substitution infrastructure is gone.
+
+---
+
+## v1 history
+
+The prior-generation heuristic converters (`pdf_to_5etools.py`, `pdf_to_5etools_ocr.py`, `pdf_to_5etools_1e.py`, plus their TOC variants and repair scripts) are documented in [README_v1.md](README_v1.md) and [ARCHITECTURE_V1.md](ARCHITECTURE_V1.md). **No `v1.0` git tag exists in this repo** despite this note previously claiming one — `files-8.zip` (`pdf_to_5etools.py`, `pdf_to_5etools_ocr.py`) and `v1/pdf_utils_old.py` are the only surviving v1 code; `pdf_to_5etools_1e.py` and the TOC/repair-script variants appear to be lost entirely.
