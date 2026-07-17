@@ -246,7 +246,7 @@ export const useEditor = defineStore('editor', {
     // ── Load / save ──────────────────────────────────────────────────────────
 
     async load(path: string) {
-      const r = await fetch('/api/load?file=' + encodeURIComponent(path))
+      const r = await fetch('/api/md/load?file=' + encodeURIComponent(path))
       if (!r.ok) {
         const body = await r.json().catch(() => null)
         const msg = body?.error || `Load failed: ${path}`
@@ -274,7 +274,7 @@ export const useEditor = defineStore('editor', {
         return
       }
       const md = blocksToMarkdown(this.blocks)
-      const r = await fetch('/api/save', {
+      const r = await fetch('/api/md/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: this.currentFile, content: md }),
