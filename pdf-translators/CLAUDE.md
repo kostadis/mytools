@@ -310,53 +310,36 @@ python3 monster_editor.py [file.json] [--port N]
 
 **Imports from sibling modules:** `extract_monsters.{_has_ac_table, statblock_to_text, SYSTEM_PROMPT}`, `claude_api.call_claude`, `toc_editor.list_json_files`.
 
-### `adventure_editor.py` — visual block editor
+### `editor_server.py` + `frontend/` — unified Markdown/Adventure editor (Vite/Vue SPA)
 
-Flask app (port 5104) for editing 5etools adventure/book JSON as a block tree with live preview. Two-panel layout: collapsible block tree (left) + CSS-approximated 5etools preview (right).
+Single Flask app (port 5107) serving a single Vue 3 SPA that hosts **two** editors behind a left sidebar: **Markdown Editor** (heading-tree cleanup for the Markdown that feeds `pdf_to_5etools_v2.py --from-markdown`, typically OCR output from `extract_markdown.py`) and **Adventure Editor** (visual block-tree editor for 5etools adventure/book JSON, with a live CSS-approximated preview). Switching editors in the sidebar swaps the central pane client-side — no page reload — and a file loaded in one editor stays loaded when you switch away and back.
 
 ```bash
-python3 adventure_editor.py [file.json] [--port N]
-# http://localhost:5104
-# or: ./start_editor.sh [file.json]
+python3 editor_server.py [file.md|adventure.json] [--port N]
+# http://127.0.0.1:5107
+# or: ./start_editor.sh [file]
 ```
+The CLI file argument's suffix decides which editor it preloads into (`.md`/`.markdown` → Markdown Editor, `.json` → Adventure Editor); the sidebar auto-selects that editor on load. Port 5104 (the old standalone `adventure_editor.py` port) is retired — both editors now live on 5107.
 
-**Block types supported:** section, entries, inset, insetReadaloud, list, table, image, quote, hr.
+**This is the one part of the project that is NOT single-file Flask apps with inline HTML** — a deliberate exception, and now covers *two* editors behind one server (`toc_editor.py`/`toc_fixer.py`/`monster_editor.py` remain the inline-HTML holdouts, so the "never put pk in onclick attributes" rule under **UI preferences** below still applies to those — it's structurally impossible in the Vue-based editors, since Vue never serializes JS values into HTML attribute strings for `@click` bindings). Both editors used to be their own hand-rolled single-file apps; each independently hit the same performance ceiling on large files (a full-document parse/adventure, thousands of rows) — every interaction rebuilt the whole tree via `innerHTML`. The fix was **list virtualization** (only render the ~40 rows on screen), impractical to maintain by hand, so both were rebuilt on one shared Vue 3 + Pinia + `vue-virtual-scroller` SPA.
 
-**Features:**
-- Collapsible block tree with row numbers, color-coded type badges; collapse/expand all, expand to level 1-3
-- Click a node to edit inline (buffered edit with Done/Cancel — no live re-rendering while typing)
-- Block operations: move up/down, promote (outdent)/demote (indent) nesting, add sibling/child, dissolve (remove block, keep children), delete
-- Multi-select: Ctrl+click to toggle, Shift+click for range select; bulk move up/down, promote, demote, dissolve, delete, flag
-- Add block modal with type picker; smart paste for tables (tab/pipe/colon-separated) and stat blocks (auto-parses AC/HP/CR/abilities/traits)
-- Tag toolbar for inserting `{@spell}`, `{@creature}`, `{@dc}`, `{@damage}`, etc. into textareas
-- "Join lines" button on text/quote editors for fixing PDF copy-paste line breaks (handles hyphenated words, preserves paragraph breaks)
-- Preview panel auto-scrolls to selected block with blue highlight
-- Persistent undo/redo log saved to `{filename}.undolog.json`; History dropdown to jump to any state; Ctrl+Z / Ctrl+Shift+Z keyboard shortcuts
-- Flag system: `_flags` metadata on entries (1e-stat, review, todo) with colored dots in tree, prev/next navigation, bulk flag/clear
-- Save rebuilds IDs and TOC via `fix_adventure_json`, auto-promotes non-section top-level entries to prevent TOC misalignment, creates `.bak` backup
+**Backend — Flask Blueprints, one process:**
+- **`editor_server.py`** — the entry point. Registers both blueprints below, serves the built bundle from `frontend/dist/` (hashed assets cached; `index.html` sent `no-store` so a rebuild is always picked up), and owns the unified `/api/config` route (CLI-preloaded editor + path — the one thing neither blueprint can determine alone).
+- **`markdown_editor.py`** — `Blueprint("markdown", url_prefix="/api/md")`: `/files`, `/load`, `/save`. Also owns `_windows_path_hint` (WSL/Windows path-mismatch error hinting).
+- **`adventure_editor.py`** — `Blueprint("adventure", url_prefix="/api/adv")`: `/files`, `/load`, `/save`, `/undolog/push`, `/undolog/undo`, `/undolog/redo`, `/undolog` (GET), `/undolog/jump`. Owns `load_adventure`/`save_adventure` (ID/TOC rebuild via `fix_adventure_json`) and the persistent disk-backed undo log (`{filename}.undolog.json` — full-snapshot-per-step, survives page reload and server restart).
 
-**Imports from sibling modules:** `toc_editor.list_json_files`, `fix_adventure_json.{assign_ids, reset_ids, build_toc}`.
+**Frontend (`frontend/`)** — Vite + Vue 3 + TypeScript + Pinia, zero external UI dependencies (no Bootstrap — modal/dropdown widgets are hand-rolled). `src/App.vue` is a thin shell: `Sidebar.vue` + a `v-show` swap between `views/MarkdownEditorView.vue` and `views/AdventureEditorView.vue` (both stay mounted so switching never loses in-progress state).
+- **Markdown Editor** — `src/lib/tree.ts` (pure heading-tree logic: parse/serialize/move/promote/delete), `src/stores/editor.ts` (Pinia store), `src/components/TreePanel.vue` + `PreviewPanel.vue` (both `RecycleScroller`-virtualized).
+- **Adventure Editor** — `src/lib/adventureTree.ts` (pure path-based block-tree logic: get/set/delete/insert by path, move/promote/demote/dissolve, bulk variants, flags — all clone-and-return, never mutate in place), `src/lib/blockParse.ts` (smart-paste table/statblock parsers), `src/lib/tagRender.ts` (`{@tag}` → styled HTML for the preview), `src/lib/textUtils.ts` (`joinLines`, `escapeHtml`). `src/stores/adventure.ts` is the Pinia store — mirrors the disk-backed undo log (push-before-mutate, matching the server contract) and wraps every `lib/adventureTree.ts` mutation. Components under `src/components/adventure/`: `AdventureTreePanel.vue` (`DynamicScroller`-virtualized — rows expand in place for the open edit form, so height is variable, unlike the Markdown tree's fixed-height rows), `AdventurePreviewPanel.vue` + `PreviewNode.vue` (recursive, not virtualized — preview blocks are variable-height rich content, not fixed rows), `NodeEditForm.vue` + `TableEditor.vue` + `ListEditor.vue` (buffered edit — Done/Cancel, not live), `TagToolbar.vue`, `MultiSelectBar.vue`, `AddBlockModal.vue`, `HistoryDropdown.vue`.
 
-**Tests:** `pytest test_adventure_editor.py -v` (81 tests covering load, save, undo, move, promote, demote, dissolve, bulk operations, flags, join lines, no-pk-in-onclick regression).
-
-### `markdown_editor.py` + `frontend/` — Markdown heading-tree editor (Vite/Vue SPA)
-
-Flask app (port 5107) for cleaning up the Markdown that feeds `pdf_to_5etools_v2.py --from-markdown` (typically OCR output from `extract_markdown.py`). Two-panel UI: a collapsible **heading tree** (left) + a heading **preview** (right). Per-row ops: expand/collapse, move section up/down (whole subtree), promote/demote heading level (`#` count), delete (undo recovers). Double-click a row to rename; keyboard: `u`/`d` move, `[`/`]` promote/demote, `Del` delete, `Ctrl+Z`/`Ctrl+Shift+Z` undo/redo, `Ctrl+S` save (writes a `.bak`).
-
-**Multi-select:** Ctrl/Cmd+click toggles a row, Shift+click selects a range (over visible rows from the anchor), `Ctrl+A` selects all visible, `Esc` clears. When more than one row is selected a **bulk action bar** appears above the tree (Promote / Demote / Delete / Clear), and `[`/`]`/`Del` apply to the whole selection. Bulk delete unions each selection's subtree range before filtering, so overlapping parent/child selections are handled correctly. Selection state participates in undo/redo. Mirrors the multi-select UX in `adventure_editor.py`.
-
-**This is the one editor in the project that is NOT a single-file Flask app** — it is the deliberate exception. It started as inline-HTML/vanilla-JS like the others, but hand-rolled DOM updates hit a hard performance ceiling on large OCR files (700 KB / 8000+ lines / 500+ headings): every interaction rebuilt the whole tree's `innerHTML`. The fix that actually mattered was **list virtualization** (only render the ~40 rows on screen), which is impractical to maintain by hand — so the front end was rebuilt as a proper SPA.
-
-**Architecture:**
-- **Backend (`markdown_editor.py`)** — thin Flask server. JSON API: `/api/config` (CLI-preloaded file path), `/api/files`, `/api/load`, `/api/save`. Serves the built bundle from `frontend/dist/` (hashed assets cached; `index.html` sent `no-store` so a rebuild is always picked up). No inline HTML anymore.
-- **Frontend (`frontend/`)** — Vite + **Vue 3** + TypeScript + **Pinia**, mirroring `rpg-lib/frontend` conventions. `src/lib/tree.ts` holds the pure heading-tree logic (parse/serialize/move/promote/delete — ported verbatim from the original vanilla JS, no DOM deps). `src/stores/editor.ts` is the Pinia store (blocks, selection, collapse set, undo/redo, load/save). `src/components/TreePanel.vue` and `PreviewPanel.vue` both use **`vue-virtual-scroller`** (`RecycleScroller`) — this is the performance fix.
+**Testing split:** pure tree/parse logic is tested in Vitest (`frontend/src/lib/*.test.ts`) against the real TS, not a hand-copied Python reimplementation — `test_adventure_editor.py` keeps only genuine backend coverage (load/save/ID-TOC-rebuild, undo-log persistence, the `/api/adv/*` routes).
 
 **Build step (required — the bundle is gitignored):**
 ```bash
-cd frontend && npm install && npm run build      # produces frontend/dist/
-python3 markdown_editor.py [file.md] [--port N]  # http://127.0.0.1:5107
+cd frontend && npm install && npm run build     # produces frontend/dist/
+python3 editor_server.py [file] [--port N]      # http://127.0.0.1:5107
 ```
-UI development with hot reload: run the backend, then `cd frontend && npm run dev` (Vite on :5173 proxies `/api` to the Flask backend; `BACKEND` env var overrides the target). `npm run typecheck` runs `vue-tsc`. `frontend/node_modules` and `frontend/dist` are gitignored — **a fresh checkout must `npm install && npm run build` before the editor will serve a UI** (the backend returns a 503 "Frontend not built" page otherwise).
+UI development with hot reload: run the backend, then `cd frontend && npm run dev` (Vite on :5173 proxies `/api` to the Flask backend; `BACKEND` env var overrides the target). `npm run typecheck` runs `vue-tsc`; `npm run test` runs the Vitest suite. `frontend/node_modules` and `frontend/dist` are gitignored — **a fresh checkout must `npm install && npm run build` before the editor will serve a UI** (the backend returns a 503 "Frontend not built" page otherwise).
 
 **Diagnostic:** `probe_editor.py` is a stdlib CLI that probes any of these Flask UIs and reports a per-phase timing breakdown (TCP connect / time-to-first-byte / body read) so "slow" can be localized to network vs. server vs. browser. `python3 probe_editor.py --port 5107`.
 
@@ -418,7 +401,7 @@ To resurrect any v1 file: `git checkout v1.0 -- pdf-translators/<filename>`.
 ## UI preferences
 
 - **No confirmation dialogs for undoable actions.** If an operation can be undone (delete, move, dissolve, etc.), do not show `confirm()` or `prompt()` dialogs. Instead, provide separate buttons for each action and rely on undo. Confirmation dialogs break flow and are unnecessary when undo exists.
-- **Never put `pk` (JSON path keys) in HTML strings or `onclick` attributes.** Path keys like `[0,"entries",2]` contain double quotes that break HTML attribute parsing. Always use `addEventListener` with closures instead. Use CSS class names (`.btn-done`, `.btn-cancel`, `.btn-add-child`) on the HTML elements, then attach handlers after setting `innerHTML`. See `buildTreeNode` and `buildEditForm` in `adventure_editor.py` for the pattern.
+- **Never put `pk` (JSON path keys) in HTML strings or `onclick` attributes.** Path keys like `[0,"entries",2]` contain double quotes that break HTML attribute parsing. Always use `addEventListener` with closures instead. Use CSS class names (`.btn-done`, `.btn-cancel`, `.btn-add-child`) on the HTML elements, then attach handlers after setting `innerHTML`. Applies to the remaining inline-HTML/vanilla-JS apps (`toc_editor.py`, `toc_fixer.py`, `monster_editor.py`) — the Vue-based editors (`editor_server.py` + `frontend/`) can't have this bug at all, since Vue's `@click` bindings never serialize JS values into HTML attribute strings.
 
 ## Refactoring rule
 
