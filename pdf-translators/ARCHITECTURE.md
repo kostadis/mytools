@@ -6,9 +6,12 @@ surface area: what each module does, the precise functions/constants you
 reuse vs. wrap, file:line references, the data-shape contracts between
 stages, and the safe extension points.
 
-The existing `architecture.md` is a v1-era diagram tour and is stale on
-some routing details (the six v1 converters are gone — see `v1.0` tag).
-This file supersedes it for planning purposes.
+The existing `ARCHITECTURE_V1.md` is a v1-era diagram tour and is stale
+on some routing details — the six v1 converters are gone from the working
+tree, and no `v1.0` git tag actually exists in this repo (despite prior
+notes claiming one). `files-8.zip` and `v1/pdf_utils_old.py` are what
+remain of that code. This file supersedes `ARCHITECTURE_V1.md` for
+planning purposes.
 
 ---
 
@@ -508,6 +511,7 @@ or system packages required to run them.
   errors, when `contents[]` and `data[]` lengths/names disagree
   (`adventure_model.py:1010`). The CLI can succeed with misaligned
   output; the editors will warn loudly on load.
-- **The two `architecture.md` files**: the older `architecture.md`
-  describes the v1 six-converter layout (preserved at git tag `v1.0`)
-  and is misleading for v2 work. Use this file for v2.
+- **`ARCHITECTURE.md` vs `ARCHITECTURE_V1.md`**: `ARCHITECTURE_V1.md`
+  describes the v1 six-converter layout. No `v1.0` git tag actually
+  exists in this repo — `files-8.zip` and `v1/pdf_utils_old.py` are the
+  only surviving v1 code. Use this file (`ARCHITECTURE.md`) for v2 work.
