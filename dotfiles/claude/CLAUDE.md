@@ -42,6 +42,21 @@ For most tasks, calling the Anthropic API would be faster, smarter, and cheaper 
 - Honest engineering pushback is still welcome — verbatim violations, dimension mismatches, precision-decision risks, architecture failure modes. Those aren't "this is suboptimal," they're "this is broken." Keep flagging them.
 - Treat exploratory implementations as legitimate work product even when they're a detour from the most efficient path.
 
+## Codebase Semantic Search (codebase-memory-mcp)
+
+1. For structural/relational code queries — definitions, references, call chains, cross-file or class relationships — use `codebase-memory-mcp` (`search_graph`, `trace_path`, `get_code_snippet`, `query_graph`) first, not Grep/Glob.
+2. Grep/Glob/Bash grep remain free to use for: non-code files, config values, exact string/regex matches, and sanity-checking a `codebase-memory-mcp` result that looks stale or incomplete.
+3. If a project isn't indexed yet, run `index_repository` before relying on graph queries for it.
+4. `auto_index` is off by default, so the graph does not track edits automatically — if `codebase-memory-mcp` returns nothing, or a result looks stale (e.g. after recent edits), fall back to Grep/Glob rather than reporting an absence as fact.
+
+## MemPalace Memory Search
+
+1. For questions about past work, prior decisions, people, or projects — "what did we decide", "who is X", "what happened last time" — search MemPalace (`mempalace_search`; `mempalace_kg_query` for relational/time-bound facts) first, not Grep or model memory.
+2. Grep/Glob/Bash grep remain free for: exact string/regex matches, current on-disk state, config values, and sanity-checking a MemPalace result that looks stale or incomplete.
+3. If a project hasn't been mined into a wing yet (check `mempalace_list_wings`), run `mempalace_mine` before relying on search for it.
+4. Mining isn't automatic — only Stop/PreCompact diary checkpoints happen on their own. If `mempalace_search` comes back empty or stale after recent edits/decisions, that likely means the source hasn't been (re-)mined — fall back to Grep/Read rather than reporting an absence as fact.
+5. The full recall protocol (verbatim quoting, unhappy paths, corrupt-index recovery) lives in the `mempalace-recall` skill — this section only sets the standing search-first default.
+
 ## An Unanswered Question Is Not a Decision
 
 When a question to the user comes back without a clear, explicit answer — a default or "recommended" option appears selected, the response is ambiguous, the question timed out, or the user was simply taking time — do NOT proceed as if the user decided. Re-ask and wait for an explicit answer.

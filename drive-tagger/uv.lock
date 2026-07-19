@@ -2416,10 +2416,9 @@ wheels = [
 
 [[package]]
 name = "turbovecdb"
-version = "0.2.0"
+version = "0.5.0"
 source = { editable = "../../turbovecdb" }
 dependencies = [
-    { name = "filelock" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -2427,7 +2426,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "filelock", specifier = ">=3.12" },
+    { name = "filelock", marker = "extra == 'dev'", specifier = ">=3.12" },
     { name = "numpy", specifier = ">=1.21" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },

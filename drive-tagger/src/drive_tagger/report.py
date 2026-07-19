@@ -63,10 +63,11 @@ def _category_page(
         link = m.get("web_view_link", "") or ""
         others = [c for c in (m.get("categories", []) or []) if c != name]
         also = ", ".join(f"[{c}]({slug_by_name[c]}.md)" for c in others if c in slug_by_name)
-        suffix = f" — also: {also}" if also else ""
         title = m.get("name", "(untitled)")
         entry = f"[{title}]({link})" if link else title
-        lines.append(f"- {entry}{suffix}")
+        lines.append(f"- {entry}")
+        if also:
+            lines.append(f"  - Also in: {also}")
     lines.append("")
 
     lines.append(f"## Connections ({len(local_links)})")

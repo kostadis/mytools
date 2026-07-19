@@ -246,7 +246,10 @@ circle` → "neverlight_grove_inner_circle". Surface the suggestion to the user 
 they may want a specific qualifier. *(GM ruling, OOTA 2026-07-13.)* Recurring qualifier shapes from the run:
 `<place>_<structure>` (`neverlight_grove_circle_of_masters`, `candlekeep_high_tower`,
 `blingdenstone_miners_guild`), `<owner>'s_<item>` ("Glabbagool's Bag of Holding", `daz_familiar_spider`),
-and `<thing>_<event>` (`midnight_tears_poison_used_to_kill_janussi`, `sylviras_abyssal_plague`).
+and `<thing>_<event>` (`midnight_tears_poison_used_to_kill_janussi`, `sylviras_abyssal_plague`). **These
+snake_case forms are informal shorthand for the note, not literal registry names** — when the candidate is
+actually executed, the registry entry should use the campaign's natural in-fiction phrasing instead (see
+"Applying a re-subject candidate" below).
 
 **Alias flags (cross-name sameness).** Type-merge only collapses *one* subject name across types; a
 *different* subject name for the same thing is the alias tool's job — but you will spot such aliases here, so
@@ -280,6 +283,81 @@ Report its summary line back to the user (merged groups / kept-separate files / 
 total). If anything is still "copied unchanged (no decision yet)" beyond the single-type entities, tell the
 user how many groups remain undecided and that re-running this skill will pick up where it left off.
 
+## Applying a re-subject candidate
+
+A group's `"note"` may flag it as a RE-SUBJECT CANDIDATE (see "Re-subject flags" in Step 4) — but that note
+only *records* the suggestion. Nothing executes it automatically, and it can sit for many sessions before
+anyone acts on it (three OOTA candidates — `high tower`, `miners guild`, `circle of masters` — sat flagged
+across two prior sessions before this flow was run). This skill's own merge step never renames anything
+in place; when the GM decides to act on one:
+
+### 1. Verify the qualifier against source text — don't trust the note verbatim
+
+The note may be stale or simply wrong, especially if it was written in an earlier session against a
+different chapter's phrasing. Grep `docs/chapters/` for the entity's distinguishing detail (a named
+representative, a specific scene) before picking a qualifier. Example: a persisted note said "Blingdenstone
+gnome guild," but the merged dossier's own body said "tied to the Stoneheart Enclave" — a *different*,
+already-registered faction. Only reading ch38-39 directly (a grand moot explicitly convened in Blingdenstone,
+with the guild's rep listed alongside Stoneheart Enclave as a separate attendee) confirmed the note's
+original qualifier was right — the Stoneheart mention was a co-attendee at the same meeting, not the guild's
+actual home.
+
+### 2. Pick the canonical name — natural phrasing, not the note's slug
+
+The note's suggested form (`<place>_<structure>`, `owner's_<item>`) is shorthand for the record, not a
+literal registry name. Check the registry's existing style first (this campaign favors natural in-fiction
+phrasing — "Hall of Miners", "Tower of Vengeance" — over snake_case) and watch for a collision with an
+already-registered *different* entity that could read confusingly next to the new name (a separate "The High
+Tower Library" sub-location was already registered when "Candlekeep's High Tower" was chosen, for instance).
+Confirm the exact string with the user via `AskUserQuestion` — naming a registry entity is an identity
+decision like the merge itself, not a rendering detail.
+
+### 3. Execute via `registry.py add` + `merge`, never `/entity-triage`
+
+`/entity-triage`'s queue (`registry.py triage-candidates`) only ever surfaces *unknown* surface forms diffed
+against the registry — a name that's already registered, just unqualified, will never appear there, so
+invoking that skill accomplishes nothing for this task. The verbs that actually rename an *already-registered*
+entity:
+
+```bash
+python registry.py add <dir> --name "<New Qualified Name>" --type <type> --note "..." --yes
+python registry.py merge <dir> --into "<New Qualified Name>" "<old bare name>"
+```
+
+`merge --into` requires the target to already exist (hence `add` runs first) and folds the old name in as an
+alias — validated, atomic, refuses on a distinct/rejected-pair guard. Never hand-edit `entity_registry.yaml`.
+Then:
+
+```bash
+python registry.py check <dir>     # confirm no new grouping-drift / fuzzy-near-dup vs. baseline
+python registry.py project <dir>   # regenerate aliases.json + entity_inventory.md
+```
+
+### 4. Sync the dossier files this skill already produced
+
+The registry rename does **not** retroactively touch `state_dossiers/` or `merged_dossiers/` — nothing in
+this pipeline rewrites dossier content in place. Two different consequences follow, and only one of them
+needs action:
+
+- **Future `facts_to_state.py` runs need nothing further**, if the campaign auto-discovers `--registry`
+  (check whether a separate `docs/ensemble/aliases.json` exists — if not, the campaign is on this modern
+  path): a future run canonicalizes mentions of the old name into the new one automatically, straight from
+  `entity_registry.yaml`.
+- **Dossiers already on disk are not covered, and this is the part that actually needs doing.**
+  `synthesise_world_state.py`'s dossier loader passes each file's raw text straight into the synthesis
+  prompt with no alias resolution applied — so if Stage 3 runs before this sync, the draft renders the old
+  bare name. Patch the `name:` frontmatter field in:
+  - every `state_dossiers/*.md` member of the original type-merge group (every type, not just the primary —
+    a group merged as `location`+`faction` needs both source files patched)
+  - the corresponding `merged_dossiers/*.md` file, including **every embedded frontmatter block** — a merged
+    file carries one full copy of each non-primary member's original text, source-marked, each with its own
+    `name:` line, not just the primary's leading one
+
+  Leave body prose mentioning the old name alone — this is a frontmatter sync, not a re-synthesis pass. Count
+  the files by hand before starting (a 2-member type-merge group means 2 `state_dossiers/` files + 1
+  `merged_dossiers/` file with 2 embedded blocks — easy to undercount by forgetting a non-primary member that
+  never got its own line in `merged_dossiers/`).
+
 ## Do not
 
 - Auto-merge without confirmation, even for cases that look obviously safe (Glabbagool). The whole point of
@@ -293,13 +371,20 @@ user how many groups remain undecided and that re-running this skill will pick u
 - Silently drop a "skip"/undecided group from `merged_dossiers/` — `apply_type_merge.py` always copies
   every member through unmerged until a decision says otherwise, so nothing is missing from the synthesis
   corpus even mid-review.
-- Confuse this with `ensemble-alias-review`/`ensemble-alias-merge` (name-variant merging, a different axis).
+- Confuse this with `ensemble-alias-review` (name-variant merging, a different axis).
   If a group here turns out to actually be a spelling/name variant rather than a type-duplicate, say so but
   don't act on it — that's the other skill's job. You *may* leave an alias/re-subject `"note"` as a
   breadcrumb (see Step 4); just never merge across two *different* subject names yourself.
 - Treat an ambiguous, mis-clicked, or timed-out batch answer as **approval**. It is a non-decision — re-ask
   the exact groups it left unresolved. Only an explicit "approve" (of all, or of the named remainder) is a
   decision; an answer that only refines one group in a batch does not silently ratify the rest.
+- Invoke `/entity-triage` to execute a re-subject candidate. Its queue only ever surfaces *unknown* surface
+  forms — an already-registered bare name never appears there. Use `registry.py add` + `merge --into`
+  directly (see "Applying a re-subject candidate").
+- Assume a registry re-subject rename is done once `registry.py merge` succeeds. It doesn't touch
+  `state_dossiers/` or `merged_dossiers/` — if those dossiers already exist from a prior `facts_to_state.py`
+  run, the old bare name is what `synthesise_world_state.py` will actually see until the frontmatter is
+  patched (see "Applying a re-subject candidate", step 4).
 
 ## Why this design
 
