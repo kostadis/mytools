@@ -1,0 +1,4 @@
+# Installed on the Spark box, not the workstation. See spark/setup_spark_venv.sh --
+# ctranslate2 must come from the NVIDIA index (pypi.nvidia.com) for a CUDA-enabled
+# aarch64 wheel; the default PyPI aarch64 wheel is CPU-only.
+faster-whisper
