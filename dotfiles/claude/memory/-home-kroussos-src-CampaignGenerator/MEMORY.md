@@ -13,3 +13,4 @@
 - [Host aliases not IPs](feedback_host_aliases_not_ips.md) — refer to Spark hosts as `spark`/`spark2`, never by IP or `.local` name
 - [enhance_summary on Spark test](reference_enhance_summary_spark_test.md) — 2026-06-02 calibration: Spark output passes canon gate clean; ~1.6× slower than Sonnet; real sessions ~12–15K tok (VTT ≈7.4 ch/tok); clean 400 choke at 131072. Report in ~/src/dgx/
 - [dgxlib shared package](project_dgxlib_shared.md) — per-model DGX config lives in dgx-fun's `dgxlib` (installed in ~/.venvs/main); CampaignGenerator + mytools consume it. Landing via PRs dgx-fun#20 / mytools#49 / CG#97.
+- [Orchestrate vs code](feedback_orchestrate_vs_code.md) — "Opus orchestrates, sonnet codes": for approved multi-file plans, delegate implementation to Agent subagents per phase, stay as reviewer/coordinator in the main thread

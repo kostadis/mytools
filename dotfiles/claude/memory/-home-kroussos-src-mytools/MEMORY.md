@@ -12,3 +12,5 @@
 - [drive-tagger prompt vs consolidation](project_drive_tagger_prompt_vs_consolidation.md) — facet prompt stops NEW compound invention but can't stop neighbor imitation of existing compounds; needs consolidation too — don't retry regeneration with prompting alone
 - [drive-tagger link consolidation](project_drive_tagger_link_consolidation.md) — /drive-consolidate-links skill + link_consolidate.py clean up drifted relation vocabulary; drift comes from the MCP path; never auto-merge directional antonyms (sequel/prequel)
 - [drive-tagger dedup blind spot](project_drive_tagger_dedup_blind_spot.md) — Pass 1 misses 3 ways: empty-desc cats embed on bare name, 0.05 threshold too tight for paraphrases, prefix-pairs ambiguous; see DEDUP_BLIND_SPOTS.md
+- [Codebase search policy](feedback_codebase_search_policy.md) — MCP-first for structural queries, never hard-ban grep; check installed hooks before propagating cross-repo agent rules
+- [audio-to-vtt tool](project_audio_to_vtt.md) — m4a→VTT via faster-whisper on DGX Spark; no prebuilt aarch64 CUDA wheel, built from source; LD_LIBRARY_PATH mid-process doesn't work, use ctypes.CDLL preload; decode-once fix gave 65x speedup

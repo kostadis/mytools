@@ -32,11 +32,14 @@ Decisions file schema:
   }
 
 A "merged" sub-group's members are concatenated (densest/primary file's name
-and frontmatter lead) with an HTML-comment source marker before each member's
-full text, separated by a `---` divider — the exact format the Stage 2e
-heredoc snippet already produced by hand. "kept_separate" members, and any
-member not mentioned in any decision, are copied through under their
-original filename, unchanged.
+and frontmatter lead) with an HTML-comment source marker before each
+*non-primary* member's full text, separated by a `---` divider — the exact
+format the Stage 2e heredoc snippet already produced by hand. The primary's
+own text is written unmarked and first, so the merged file's frontmatter
+still starts at byte 0 (campaignlib.npc.parse_dossier requires this — a
+leading marker before it silently breaks name/alias parsing, falling back to
+the filename stem). "kept_separate" members, and any member not mentioned in
+any decision, are copied through under their original filename, unchanged.
 """
 
 from __future__ import annotations
@@ -83,13 +86,18 @@ def main() -> None:
                 primary = sub.get("primary") or members[0]
                 if primary not in members:
                     primary = members[0]
-                ordered = [primary] + [m for m in members if m != primary]
-                parts = []
-                for name in ordered:
-                    parts.append(f"<!-- source: {name} -->\n")
-                    parts.append(all_files[name].read_text(encoding="utf-8").rstrip())
+                others = [m for m in members if m != primary]
+                # Primary is unmarked and first — its own frontmatter must
+                # start at byte 0 (see module docstring). Non-primary members
+                # get a source marker glued to their own text, not floated
+                # as a separate joined part, so it isn't split from its
+                # content by the inter-member --- divider.
+                blocks = [all_files[primary].read_text(encoding="utf-8").rstrip()]
+                for name in others:
+                    text = all_files[name].read_text(encoding="utf-8").rstrip()
+                    blocks.append(f"<!-- source: {name} -->\n\n{text}")
                 (dst / primary).write_text(
-                    "\n\n---\n\n".join(parts) + "\n", encoding="utf-8")
+                    "\n\n---\n\n".join(blocks) + "\n", encoding="utf-8")
                 n_merged_groups += 1
                 n_merged_files += len(members)
                 handled.update(members)
