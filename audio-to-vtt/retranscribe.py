@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import proper_noun_review  # noqa: E402
 import spark_runner  # noqa: E402
 import vocab  # noqa: E402
 import vtt_scaffold  # noqa: E402
@@ -170,7 +171,25 @@ def main(argv=None) -> int:
         cleaned_path = raw_path
         print("Skipping glossary post-pass (no glossary found or --skip-glossary-pass set).")
 
+    review_path = None
+    if vocabulary:
+        retr_cues = vtt_scaffold.parse_zoom_vtt(
+            cleaned_path.read_text(encoding="utf-8", errors="replace"))
+        try:
+            flagged = proper_noun_review.review(groups, retr_cues, vocabulary)
+        except ValueError as e:
+            print(f"WARNING: proper-noun review skipped: {e}", file=sys.stderr)
+        else:
+            report = proper_noun_review.render_report(flagged, len(groups), args.vtt, cleaned_path)
+            review_path = cleaned_path.with_name(cleaned_path.stem + ".proper_nouns.md")
+            review_path.write_text(report, encoding="utf-8")
+            print(f"Scanned {len(groups)} cue groups, flagged {len(flagged)} possible "
+                  f"proper-noun misses in Zoom's transcript. Wrote {review_path}")
+
     print(f"\nNext step: run /vtt-spell-pass on {cleaned_path}")
+    if review_path:
+        print(f"Also check {review_path} for spots the retranscription suggests Zoom's "
+              f"transcript missed a name -- Zoom's own wording is left untouched either way.")
     return 0
 
 

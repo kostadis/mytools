@@ -63,6 +63,23 @@ goes VTT -> speech; this one goes audio -> VTT).
   `spark_runner.py` mirrors the existing `ssh spark2 'bash ~/spin-up-vllm-...sh'`
   pattern: SSH-invoke a one-shot script that loads, runs, writes its
   output, and exits.
+- **Flagging missed proper nouns is vocabulary-anchored, not a text diff.**
+  `proper_noun_review.py` compares Zoom's transcript against the
+  retranscription per cue group, but does not diff the two texts directly --
+  two independent ASR passes over the same audio disagree on phrasing,
+  fillers, and punctuation almost everywhere, so a plain diff is mostly
+  noise unrelated to proper nouns. Instead, for each cue group: if a
+  campaign vocabulary term is confidently present in the retranscription
+  (fuzzy match, since hotword bias isn't perfect) but does **not** appear
+  verbatim anywhere in Zoom's text for that same span, it's flagged. The
+  "already present in Zoom" check is deliberately exact-match, not fuzzy --
+  a fuzzy threshold there would treat a near-miss like "Toblin" against
+  canonical "Toblen" as *close enough* and silently skip it, which is
+  exactly the class of one-or-two-letter mangle this tool exists to catch.
+  Zoom's transcript is never rewritten by this pass; it only produces a
+  `<cleaned-stem>.proper_nouns.md` report for the GM to check by hand,
+  wired into `retranscribe.py`'s end-of-run flow and also runnable
+  standalone against an already-completed pair.
 - **Not Ollama.** Verified before building this: Ollama does not support
   real audio-in ASR models (long-open, unresolved upstream feature
   requests -- `ollama/ollama` issues #8202, #7976, #4168, #1168, #2815 --
