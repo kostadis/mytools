@@ -76,6 +76,26 @@ Detect or ask:
    If no dictionary exists, proceed without one — it is an enhancement, not
    a hard dependency.
 
+6. **Retranscription context (when available)** — if `<vtt>`'s filename
+   contains `.retranscribed` or `.retranscribed.cleaned` (i.e. it's an
+   `audio-to-vtt` output, not a plain Otter/Zoom export), two extra
+   sources exist and should be used:
+   - **Zoom's original transcript**, the sibling file with those suffixes
+     stripped (`<x>.transcript.retranscribed.cleaned.vtt` →
+     `<x>.transcript.vtt`). `zoom_context.py` (this skill's directory)
+     looks up Zoom's original cue for any context excerpt — see "Cross-
+     referencing Zoom's original" under Phase 3.
+   - **`<vtt-stem>.proper_nouns.md`**, if `retranscribe.py` already
+     produced it — a report (from the sibling `audio-to-vtt` project)
+     flagging cue groups where the campaign vocabulary is confidently
+     present in the retranscription but doesn't appear in Zoom's original
+     for that span. Skim it before Phase 3; it's the same underlying
+     technique as `zoom_context.py` run in bulk ahead of time, and gives
+     useful priors on which names this session's ASR struggled with most.
+   Both are enhancements, not hard dependencies — a plain Otter/Zoom VTT
+   with no `.retranscribed` sibling has neither, and the skill runs
+   exactly as it always has.
+
 ## Workflow
 
 ### Phase 1 — gather candidates (deterministic, no LLM)
@@ -194,6 +214,47 @@ Per the user's stated preferences (memories: `feedback_question_style`,
 TaskCreate to enumerate clusters and AskUserQuestion to walk them one at
 a time as multiple choice.
 
+**Cross-referencing Zoom's original (when a `.retranscribed` sibling
+exists — see Required input #6).** Before asking about a cluster, look up
+Zoom's original text for one representative context excerpt:
+
+```bash
+python ~/.claude/skills/vtt-spell-pass/zoom_context.py \
+  --vtt <vtt> --context "<a ~40-80 char excerpt containing the candidate>"
+```
+
+Prints `null` if there's no `.retranscribed` sibling, the pair doesn't
+align (different `--max-group-seconds` than the original retranscribe.py
+run — pass `--max-group-seconds` to match if known), or the excerpt isn't
+found verbatim (try a shorter/exact substring from the candidate's own
+`contexts` field). When it returns a hit, include Zoom's original line in
+the question — it's often decisive, not just supporting color:
+
+- It can **confirm a proposed canonical is right** even for a large,
+  unusual mangle a fuzzy-match cluster would otherwise flag as
+  low-confidence (obelisk session 6: "Zerabira" looked like a new
+  character on its own, but Zoom's original for that exact cue was
+  "...sorry, Vera is a 19" — clearly the existing PC "Veyra", not new).
+- It can **overturn a high-confidence bound-cluster match**. Run this
+  check even for clusters `cluster_unknowns.py` already scored high-
+  confidence — a strong edit-distance/phonetic match to a known canonical
+  says nothing about whether the underlying cue was intelligible speech at
+  all (obelisk session 6: "Redbrand Exo" edit-distance-matched "Redbrand"
+  at high confidence, got confirmed, and was only caught as wrong after
+  the fact — Zoom's original for that exact cue turned out to be
+  "Welcome Maxwell Press PS6 Short Short Short", equally unintelligible
+  gibberish on both sides, not a real Redbrand mention either system
+  missed).
+- It can **rule out a mangle as a real name entirely** when Zoom's
+  original is a plausible, coherent ordinary phrase at that span
+  (obelisk session 6: retranscription's "...in the back of and Povit"
+  vs. Zoom's cleaner "...back and forward" — "Povit" was a Whisper
+  hallucination of "forward", not a name to fix).
+
+This is a deterministic lookup (no LLM judgment), so it's cheap enough to
+run for every cluster and singleton when the sibling exists — do not
+skip it just because a cluster already looks high-confidence.
+
 **Hard rule: every new wrong→right mapping requires explicit user
 confirmation before being written to the glossary.** The cluster
 proposal is exactly that — a *proposal*. The user always picks.
@@ -236,6 +297,23 @@ B) Misspelling — I'll type the right form
 C) New canon — add to known set
 D) Not a name (ignore — saved to state)
 ```
+
+When `zoom_context.py` returns a hit for either template, add it as a
+line under the context/members before the options, e.g.:
+
+```
+Token: "Povit"  (1 occurrence)
+Context: "...what could be useful to us in the back of and Povit."
+Zoom's original for this cue: "...what could be useful to us back and forward."
+
+A) Misspelling — I'll type the right form
+B) New canon — add to known set
+C) Not a name (ignore — saved to state)
+```
+
+Let it inform your own recommended default (if the question format
+supports one) as well as the user's decision — Zoom's original is often
+the tie-breaker between "real garbled name" and "ASR noise on both sides."
 
 **(D) "Ignore" decisions** must be persisted via `state.py` so the same
 token doesn't resurface next session:
