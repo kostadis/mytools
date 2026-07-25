@@ -47,7 +47,11 @@ version bump means redoing the from-source CUDA build.
    speaker labels.
 6. Runs the campaign's misspelling glossary as a mandatory cleanup pass
    (the same script `/vtt-spell-pass` already uses).
-7. Tells you to run `/vtt-spell-pass` next, so any genuinely new unknowns
+7. Checks whether the retranscription's vocabulary-biased text found a
+   campaign name that Zoom's own transcript doesn't have, and writes a
+   report of just those spots (`proper_noun_review.py`) -- Zoom's transcript
+   stays the base text; nothing is rewritten automatically.
+8. Tells you to run `/vtt-spell-pass` next, so any genuinely new unknowns
    get the usual human-confirmation loop rather than being silently
    trusted.
 
@@ -126,9 +130,15 @@ siblings next to the original VTT:
 - `<stem>.retranscribed.cleaned.vtt` -- the above, after the campaign's
   `vtt_transcription_corrections.md` glossary is applied (mandatory
   unless `--skip-glossary-pass`).
+- `<stem>.retranscribed.cleaned.proper_nouns.md` -- a report (not an edit)
+  flagging cue groups where the retranscription's vocabulary match doesn't
+  appear anywhere in Zoom's own text for that same span. Only genuine misses
+  get listed -- see [`proper_noun_review.py`](#files) below for why this
+  isn't just a diff of the two transcripts.
 
-Giving a three-way audit trail on disk: Zoom's text, Whisper's text, and
-Whisper's text after the known-corrections pass.
+Giving a four-way audit trail on disk: Zoom's text, Whisper's text,
+Whisper's text after the known-corrections pass, and a targeted list of
+spots worth double-checking against the recording.
 
 Always finish with `/vtt-spell-pass <output>.retranscribed.cleaned.vtt`.
 
@@ -162,6 +172,17 @@ Always finish with `/vtt-spell-pass <output>.retranscribed.cleaned.vtt`.
 - `retranscribe.py` -- main CLI / orchestrator (workstation side).
 - `vtt_scaffold.py` -- Zoom VTT parsing/cue-grouping/rendering.
 - `vocab.py` -- campaign vocabulary gathering (glossary/registry/inventory).
+- `proper_noun_review.py` -- flags cue groups where the retranscription's
+  vocabulary-biased text found a campaign name Zoom's transcript doesn't
+  have. Wired into `retranscribe.py`'s end-of-run flow; also runnable
+  standalone against an already-completed pair:
+  `proper_noun_review.py <zoom.vtt> <retranscribed.vtt> --campaign-root <dir>`.
+  Deliberately not a text diff of the two transcripts -- two independent ASR
+  passes disagree on phrasing, fillers, and punctuation almost everywhere,
+  so a plain diff is mostly noise. This anchors on campaign-vocabulary
+  membership instead: a cue group is only flagged when the retranscription
+  confidently contains a vocabulary term that doesn't appear verbatim
+  anywhere in Zoom's text for that same span.
 - `spark_runner.py` -- SSH/SCP orchestration to the Spark.
 - `spark/transcribe_remote.py` -- the actual faster-whisper worker,
   deployed to the Spark via `scp` (flat-copy, not git-synced -- see
