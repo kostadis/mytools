@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 95497cf4-83b2-4ae6-98b1-3add34661b4f
-  modified: 2026-07-19T15:50:22.424Z
+  modified: 2026-07-20T00:10:55.136Z
 ---
 
 Built `~/src/mytools/audio-to-vtt/` (2026-07-18/19): re-transcribes a D&D
@@ -135,31 +135,99 @@ NeMo/Parakeet ASR family is worth porting to. Findings:
   materially changes context-biasing precision) — this was a real,
   reasonably thorough trial, not an abandoned-early one.
 
-**Added `diff_review.py` (2026-07-19):** a vocabulary-aware triage step
-between retranscription and `/vtt-spell-pass`. Diffs each cue-group's
-Zoom-original text against the final (post-glossary-pass) text using
-`vtt_scaffold.CueGroup.original_text` (already aligned 1:1 with the
-retranscription by index — no separate alignment step needed); skips
-cues that are identical once case/punctuation are ignored; splits the
-rest into HIGH priority (a changed word doesn't match the campaign
-vocabulary — likely hallucination or an uncatalogued fix) vs. LOW
-(every changed word matches known vocabulary — likely an intended
-hotword fix). Wired into `retranscribe.py`'s end-of-run flow, writing
-`<cleaned-stem>.review.md`; also runnable standalone
-(`diff_review.py <zoom.vtt> <new.vtt> --campaign-root <dir>`) against
-any already-completed run. Deliberately kept separate from
-`vtt-spell-pass` (different inputs — vtt-spell-pass works on one VTT in
-isolation and only catches proper-noun misspellings against a known-names
-set; this needs the Zoom/retranscription pair and catches non-proper-noun
-hallucinations too, e.g. "We will" → "Weeble").
-Validated against the real obelisk session 006 files (662 cue groups,
-507 changed, 155 identical-skip): correctly bucketed real hotword fixes
-as LOW ("Sister Mela"→"Maela", "great brand"→"Redbrand",
-"Zenimon"→"Zenvon") and a genuine hallucination as HIGH ("...it's still
-hot **Albrek**" appended to an unrelated AC conversation). **Known
-limitation, not yet fixed:** the vocab-match check is purely word-level,
-so a large-magnitude rewrite that happens to consist entirely of
-vocabulary words can still land LOW even when the sheer size of the
-change (e.g. "Okay, okay." → "Albrek, Lord Albrek") is itself suspicious
-— word-level matching can't yet tell "targeted name fix" from "a
-hallucination that happens to hit real vocabulary."
+**`diff_review.py` is real — earlier self-correction in this memory was
+itself wrong (2026-07-19).** A prior session built `diff_review.py`
+(HIGH/LOW bucketing by whether changed words match campaign vocabulary),
+wired it into `retranscribe.py`, and validated it against a real 662-cue
+obelisk session 006 run (507 changed, 462 high-priority, 155 identical —
+these exact numbers, and the exact hallucination example quoted below,
+were independently re-derived from the real files and match precisely).
+The commit (`af8dbfa`, "Add vocabulary-aware diff-review triage...") was
+never merged to `main` — parked on branch
+`wip/audio-to-vtt-diff-review-triage` with the commit message explaining
+why: "the review artifact (accept/reject/discuss triage) didn't end up
+matching the workflow the user actually wanted." A later session (same
+day) mid-read this as fabricated — checked `git log` on `main` only,
+never `git branch -a` / `git log --all`, and ran a whole-filesystem search
+for retranscribed output that hit the 120s backgrounding timeout and was
+read from its partial/interim output before it finished, missing
+`~/obelisk/` entirely — and wrote a "correction" into this memory
+asserting the opposite of the truth. **Lesson, not just for this file:**
+"I checked and it doesn't exist" requires actually confirming the check
+completed and covered the right scope (`--all` branches, not just the
+current one; the real checkout, not a stale sibling; a finished background
+job, not its interim output) — a clean negative from a narrow or
+incomplete search is not evidence of absence.
+
+**Two local checkouts of the same `campaigns` repo exist at different
+sync points — check `git log -1` before concluding data doesn't exist.**
+`~/campaigns/<name>/` and `~/<name>/<name>/` (e.g. `~/obelisk/obelisk/`)
+are both local clones of `github.com/kostadis/campaigns.git`, both on
+`main`, but not kept in sync by hand. As of 2026-07-19: `~/campaigns` was
+a day stale (last commit 07-18, only had obelisk session 004); `~/obelisk`
+had that morning's real work (last commit 07-19 15:59, "add session 6
+transcripts, retranscribe s...") — sessions 004-007, including session
+006's real `.m4a` + real `.retranscribed.vtt`/`.retranscribed.cleaned.vtt`
+from an actual completed Spark run. Session 007 has
+`.transcript.retranscribed.cleaned.vtt` but no raw `.retranscribed.vtt`
+and no `.m4a` in that directory — worth asking rather than assuming why,
+if it comes up again.
+
+**Built `proper_noun_review.py` (2026-07-19, same day) as a redesign, not
+a replacement of something imaginary.** Same goal as `diff_review.py` —
+flag where Zoom's transcript likely missed a proper noun using the
+retranscription as signal — but anchored on campaign-vocabulary membership
+per cue group instead of diff-opcode word-changes, specifically to fix the
+"didn't match the workflow" problem `diff_review.py`'s own commit message
+named: a term counts as a hit if it's confidently present (fuzzy match) in
+the retranscription AND does **not** appear verbatim (exact match)
+anywhere in Zoom's text for that span — only those get flagged. Zoom's
+text is never rewritten, only reported on
+(`<cleaned-stem>.proper_nouns.md`). Caught one real design bug before
+shipping: the "already present in Zoom" check must be exact-match, not
+fuzzy — a fuzzy threshold there (first draft used one) would treat
+"Toblin" as "close enough" to canonical "Toblen" and silently skip it,
+exactly the one-letter-mangle class this tool exists to catch. Wired into
+`retranscribe.py`'s end-of-run flow; also runnable standalone.
+**Validated against the real session 006 data** (`~/obelisk/obelisk/summaries/006/`,
+546 vocab terms, 662 cue groups): **115 cue groups flagged (246 findings
+across 39 unique vocab terms)** vs. `diff_review.py`'s 507/462 on the same
+data — a real, large noise reduction, not just a synthetic-fixture result.
+Top recurring flags (`Veyra` ×25, `Redbrand(s)` ×64 combined, `Sister
+Maela` ×22, `Albrek` ×14, `Zenvon` ×13, `Nezznar`/`Spider` variants ×46
+combined) are the campaign's actual recurring PC/NPC/faction names, so
+Zoom is consistently mangling the same handful of names throughout the
+session — exactly the intended catch. **Known limitation, inherent to the
+signal, not a new gap:** can't fully distinguish "Zoom genuinely missed a
+real name" from "Whisper hallucinated a vocab-matching word where Zoom was
+right to have nothing there" — one of the 14 `Albrek` flags is the same
+confirmed hallucination `diff_review.py` caught ("...it's still hot
+**Albrek**" appended to an unrelated AC/temperature conversation).
+`PRESENT_THRESHOLD = 0.90` in `proper_noun_review.py` is the knob to
+revisit if a future real run under- or over-flags.
+
+**Real end-to-end run, same day, confirms the wiring works live, not just
+against stale pre-existing output.** Ran `retranscribe.py` for real against
+session 006's actual `.m4a` (dry-run -> smoke-test -> confirm -> full-run
+via the `/audio-to-vtt` skill, spark2, cuda): 658/662 cue groups sent
+(4 system-caption skips), 409.8s ASR pass (RTF 0.069), 36 glossary
+replacements applied (`Sister Mela`->`Sister Maela` ×16, `Xenophon`/
+`Zenomon`/`Zenon`->`Zenvon`, etc.), then `proper_noun_review.py` auto-ran
+as part of the same command and flagged **97 cue groups / 167 findings**
+(vs. 115/246 from the earlier same-day standalone run against
+already-existing output — a different actual ASR decode of the same
+audio, non-identical results). Two real findings from this live run:
+- **Smoke-test extrapolation undersold the real full-run time by ~4.5x.**
+  The `--smoke-test` default (first 300s / 4 cue groups) measured RTF
+  0.0146 and extrapolated ~1.5 min for the full session; the real full run
+  took 409.8s (~6.8 min) for the ASR pass alone, RTF 0.069 — much closer
+  to this project's documented ~9x-realtime finding than the smoke test's
+  own number. Likely per-call SSH/network round-trip overhead that doesn't
+  show up in a tiny 4-group sample. Set full-run time expectations off the
+  RTF 0.06-0.11 range in this file's earlier hardware findings, not off a
+  fresh smoke-test extrapolation alone.
+- **The previously-confirmed "Albrek" hallucination did not reproduce** on
+  this fresh decode of the same audio/vocabulary. faster-whisper's output
+  isn't perfectly deterministic run-to-run even on identical input --
+  don't treat one run's flagged (or unflagged) hallucination as a fixed
+  property of a given cue group.
