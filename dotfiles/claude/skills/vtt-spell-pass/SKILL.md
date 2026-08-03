@@ -96,7 +96,83 @@ Detect or ask:
    with no `.retranscribed` sibling has neither, and the skill runs
    exactly as it always has.
 
+7. **A second, independent transcription (when one exists)** — the same
+   session transcribed by a *different* tool, with no shared timestamps and
+   different segmentation (e.g. a voice-detection markdown export alongside a
+   D&D-tuned WebVTT). This is NOT the `.retranscribed` pairing in #6, which is
+   filename- and cue-aligned; here nothing lines up, so matching is by text.
+   Use `sibling_context.py` (Phase 3). Check the session directory for one
+   before starting — if two transcripts of the same date exist, you have this.
+
 ## Workflow
+
+### Scratch files — one namespace per run, never a fixed path
+
+Every intermediate below goes in a per-run scratch directory. Set it once and
+use `$SCRATCH` everywhere:
+
+```bash
+SCRATCH="${CLAUDE_SCRATCH:-/tmp}/spell_pass_$(basename <session_dir>)_$$"
+mkdir -p "$SCRATCH"
+```
+
+This matters because the intermediates are **read back**, not just written.
+Phase 1's collapse step writes a preview, then re-scans that preview to compute
+the true residual. With a fixed `/tmp/preview_current.vtt`, two runs in flight at
+once — two chapters, two terminals, two agents — silently interleave: run A
+writes its preview, run B overwrites it, run A scans B's chapter. Nothing
+crashes and no output looks wrong; run A just reports a residual for a transcript
+it never read. Same hazard for `/tmp/scan_src.txt` and the cluster JSON.
+
+If you are processing more than one transcript, **assert before every re-scan**
+that the file you are about to read is the one you just wrote — compare line
+count or sha256 against your own input. A cheap check here is the difference
+between a wrong answer and a caught mistake.
+
+### Phase 0 — normalise the input (deterministic, no LLM)
+
+Do not assume the input is a plain Otter/Zoom WebVTT. Run:
+
+```bash
+python ~/.claude/skills/vtt-spell-pass/prepare_input.py \
+  --input <transcript> --scan-copy "$SCRATCH/scan_src.txt"
+```
+
+It reports three things that change the rest of the run:
+
+- **`format`** — `webvtt`, `labelled_markdown`, `labelled_text` or `plain`.
+  `find_unknowns.py` strips `Name:` / `Name (Player):` labels but NOT
+  markdown-bold ones (`**dave:**`), so for `labelled_markdown` you MUST scan
+  the `--scan-copy`, not the original. Apply replacements to the ORIGINAL in
+  Phase 5 — the scan copy is only for candidate gathering.
+- **`speakers`** — who is attributed and how often. A file reporting *no*
+  speakers cannot support quote attribution at all; if the GM needs speakers
+  (they usually do), that file cannot be the deliverable no matter how clean
+  its text is. Say so before doing the work, not after.
+- **people in the room who are not at the table.** A partner, a child, or a
+  housemate wandering through gets transcribed like anyone else, and every
+  proper noun in their speech becomes a candidate the GM must dismiss by hand
+  (`Ben didn't find this funny` → `Ben`). If the speaker list contains a label
+  you don't recognise as a player or the GM, **ask** who it is before Phase 1
+  rather than scanning their lines. Then:
+
+  ```bash
+  # keep their lines in the file, just don't mine them for names
+  prepare_input.py --input <t> --exclude-speaker natasha --scan-copy "$SCRATCH/scan.txt"
+  # only if the GM says the lines should not ship at all
+  prepare_input.py --input <t> --exclude-speaker natasha --filtered-output <t>.filtered.md
+  ```
+
+  `--scan-copy` filtering is always safe. `--filtered-output` deletes content
+  from the deliverable, so it needs the GM to have said so explicitly — feed
+  its output to `apply_replacements.py` in Phase 5 in place of the original.
+- **`duplication`** — whether the body is recorded twice. This does not break
+  replacement, but it **doubles every occurrence count**, so every "26x" you
+  put in front of the GM is really 13. Detect it here, and pass
+  `--dedup-output` to write a single-copy file. Do not eyeball this with a
+  midpoint split: one split or merged utterance shifts everything after it and
+  makes a 99.8%-identical duplicate look ~60% similar. The script anchors on
+  the repeated first line and aligns with difflib.
 
 ### Phase 1 — gather candidates (deterministic, no LLM)
 
@@ -113,7 +189,7 @@ python ~/.claude/skills/vtt-spell-pass/find_unknowns.py \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
   --npcs-dir <campaign>/docs/npcs \
   --extra-known <campaign>/notes/proper_nouns_adventure.txt \
-  > /tmp/spell_pass_clusters.json
+  > "$SCRATCH/clusters.json"
 ```
 
 `--extra-known` accepts multiple paths — pass every dictionary the user
@@ -163,9 +239,9 @@ and leaves the **true residual** — the tokens that actually need a decision.
 
 ```bash
 python ~/.claude/skills/vtt-spell-pass/apply_replacements.py \
-  --vtt <vtt> --glossary <glossary> --output /tmp/preview_current.vtt
+  --vtt <vtt> --glossary <glossary> --output "$SCRATCH/preview_current.vtt"
 python ~/.claude/skills/vtt-spell-pass/find_unknowns.py \
-  --vtt /tmp/preview_current.vtt --glossary <glossary> \
+  --vtt "$SCRATCH/preview_current.vtt" --glossary <glossary> \
   --npcs-dir <npcs> --extra-known <dicts> --min-count 1 \
 | python ~/.claude/skills/vtt-spell-pass/cluster_unknowns.py \
   --glossary <glossary> --npcs-dir <npcs> --extra-known <dicts>
@@ -206,6 +282,73 @@ DO NOT drop:
 - **Multi-word capitalised phrases** — these are almost always real.
 
 For everything that survives, you have your **candidate list**.
+
+### Phase 2.5 — adjudicate against the second transcription (MANDATORY when one exists)
+
+If Phase 0 / required-input #7 found a second transcription, check **every**
+candidate against it BEFORE putting any of them to the GM:
+
+```bash
+python ~/.claude/skills/vtt-spell-pass/sibling_context.py \
+  --sibling <other-transcript> --context "<excerpt from the candidate's contexts>"
+```
+
+This is not a spot-check and not an optional enrichment. It is the only
+evidence available that distinguishes *a real name transcribed badly* from
+*a word the ASR invented*, and fuzzy-match confidence cannot tell them apart —
+a garbled token scores just as well against a known name whether or not the
+underlying audio contained a name at all.
+
+Read the result four ways:
+
+- **Sibling spells the name correctly** → confirms the proposed canonical.
+- **Sibling has ordinary words at that span** → there is no name here; the
+  token is an ASR hallucination. Ignore it, do not "correct" it. Real examples:
+  `You can just barely see the Grygum` vs `…see the game`; `Oh yeah, it's me.
+  Summer, all right` vs `Oh, yeah, it's me. All right.`; `Orsick … he's not
+  Orsick` vs `He's not late stage or sick.` — none of those names were spoken.
+- **Both transcriptions produce the same odd string** → usually genuine audio.
+  Route it to "new canon", not to a correction — but see the contamination
+  warning below before trusting agreement on a *name*.
+- **Sibling shows a DIFFERENT plausible name** → do not rule. See below.
+
+A low score (<0.55) is inconclusive, not negative — the sibling may not cover
+that span. Say so rather than ruling.
+
+**Establish what kind of transcriber the sibling is before weighing it.**
+An acoustic ASR fails phonetically: it turns a name into a similar-sounding
+non-word. An LLM-based, domain-tuned transcriber fails *semantically*: it
+substitutes a plausible name it already knows — including one from a
+**different campaign** — for the name actually spoken. The second failure mode
+produces confident, well-formed, entirely fictitious output that looks like
+strong evidence.
+
+Confirmed instance (Phandalin chapter 04): the D&D-tuned VTT rendered
+**Valphine** as **"Bramgrim"** five times. Bramgrim is a cleric in another of
+the GM's campaigns; Valphine is a cleric in this one. Nothing phonetic connects
+them. Reasoning from the sibling's spelling produced a proposal to rewrite a PC
+name to another campaign's NPC — caught only because the GM recognised the
+name. Note this also poisons the "both agree" rule: agreement with an LLM
+transcriber is not independent corroboration.
+
+So weight the sibling's evidence **by kind, not by score**:
+
+| Sibling shows | Trust | Why |
+|---|---|---|
+| ordinary words / plain prose | high | contamination swaps names for names; it does not invent coherent filler |
+| a campaign-correct name | high | it is recovering real vocabulary |
+| a *different* plausible name | **none** | possible cross-campaign substitution — GM rules, you do not |
+
+When the two transcriptions disagree on *which character* was named, that is a
+question for the GM with both readings shown, never a proposal.
+
+**Why this is mandatory.** In the session this phase was written from, five
+candidates (`Grygum`, `Grym`, `Gryumary`, `Gilly`, `Summer`) were proposed
+from fuzzy matching, approved by the GM on that framing, applied, and only
+then caught by the sibling check — every one was a hallucinated word, and one
+more (`Thalne`) pointed at the wrong character. Confirmation by the GM does
+not validate the evidence you gave them; it only validates their reading of
+it. Get the evidence right first.
 
 ### Phase 3 — ask the user, one CLUSTER at a time, ALWAYS
 
@@ -380,10 +523,46 @@ The glossary keeps its own running landmine list (a "Notes for future passes"
 section flagging risky case-insensitive rows like `Char→Shar`, `Cal→Kalan`).
 Re-read it and grep the VTT for those lowercase forms before every apply.
 
-### Phase 5 — apply replacements
+### Phase 5 — lint the glossary, then apply replacements
 
-Once all candidates have been classified, apply the now-updated glossary
-to the transcript:
+**Lint first.** The glossary is a standing rewrite rule applied to every
+future transcript, so a bad row is not a one-off. Run:
+
+```bash
+python ~/.claude/skills/vtt-spell-pass/lint_glossary.py \
+  --glossary <campaign>/notes/vtt_transcription_corrections.md \
+  --corpus <vtt>
+```
+
+Exit 1 means ERRORs. Show them to the user before applying; each names the
+offending row with a `<file>:<line>` location.
+
+- `doubling` — the canonical contains the wrong-form as a word, so the rule
+  fires on *already-correct* text (`Brin Bundlewine` →
+  `Brin Bundlewine Bundlewine`). Note the trigger is a **correct** transcript,
+  not a mangled one — the better the ASR, the more damage. `apply_replacements.py`
+  now refuses these rules and prints what it skipped, so the row is inert until
+  rewritten. Fix by dropping the row (a bare short name standing alone is fine)
+  rather than by editing the canonical.
+- `conflict` / `noop` — one wrong-form with two canonicals; or a row mapping
+  a form to itself.
+- `chained` (warn) — a canonical is also someone else's wrong-form, so output
+  depends on rule order.
+- `split_section` (warn) — same canonical with rows in two sections; the next
+  `add_to_glossary.py --section` append will silently create a third.
+- `common_word` / `corpus_lower` (warn) — the automated form of the
+  case-insensitivity gate described in Phase 4. `common_word` consults a small
+  built-in list; `--corpus` is the reliable one, flagging wrong-forms that
+  genuinely occur lowercase in a real transcript. Warnings are for review, not
+  automatic rejection: `Brewberry` and `Thunder Wave` both trip `corpus_lower`
+  and both are correct rules.
+
+Replacement is expected to be **idempotent** — running the pass twice must
+equal running it once. After Phase 6, re-applying the glossary to the cleaned
+file should produce a byte-identical result; if it doesn't, a row is corrupting
+correct text and the lint will say which.
+
+Then apply the now-updated glossary to the transcript:
 
 ```bash
 python ~/.claude/skills/vtt-spell-pass/apply_replacements.py \
@@ -436,6 +615,11 @@ python ~/.claude/skills/vtt-spell-pass/state.py \
   first-name canonical (`Kellen → Kalan`) and let the surname row fix the
   surname independently; reserve full-name wrong-forms for inputs that
   actually contain a surname token (`Callan Strongfeld → Kalan Strongbranch`).
+  **`lint_glossary.py` does not catch this** — the row is fine in isolation and
+  only doubles when the transcript already supplies the surname, so grep the
+  *cleaned output* for repeated surnames every run. It recurs: this pass found
+  `Toblin → Toblen Stonehill` turning "Toblin Stonehill" into
+  "Toblen Stonehill **Stonehill**"; fixed by demoting it to `Toblin → Toblen`.
 - **Don't silently expand the user's variant lists.** If the user says
   "add X as a misspelling of Y", add exactly X — not your guesses about
   related forms. (See memory: `feedback_scope_discipline`.)
