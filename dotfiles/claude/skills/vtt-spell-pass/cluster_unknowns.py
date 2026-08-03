@@ -294,8 +294,25 @@ def main():
     extra = load_extra(args.extra_known)
     wrong_forms = {w for w, _ in replacements}
     knowns_set = set(canonicals) | npc_names | extra | wrong_forms
-    # Keep only multi-character names; single letters are noise
-    knowns = [k for k in knowns_set if len(k) >= 3]
+    # Keep only multi-character names; single letters are noise.
+    #
+    # ORDER IS LOAD-BEARING, so it must not come from a set. best_known_match()
+    # returns early on the first exact/substring hit and uses a strict `<` for
+    # edit distance, so every tie is decided by position in this list. Iterating
+    # `knowns_set` directly made that position depend on PYTHONHASHSEED: three
+    # identical invocations over one transcript produced three different cluster
+    # sets, i.e. which canonical a garbled token bound to changed run to run.
+    #
+    # Shortest-first, then lexicographic. Sorting by length is not cosmetic:
+    # the substring rule returns the first known name that CONTAINS the token,
+    # and a real known set contains long polluted entries (registry slugs like
+    # 'daran_edermath_silverleaf', dossier headers like 'Ondrae - server, the
+    # Moonstone Mask (DRAFT)'). Longest-first binds to those; shortest-first
+    # binds 'silver' to 'Silverymoon', which is the tighter and more useful
+    # proposal. Measured on one transcript: length-descending and plain
+    # lexicographic both bound 'silver' to the slug; length-ascending did not.
+    knowns = sorted((k for k in knowns_set if len(k) >= 3),
+                    key=lambda k: (len(k), k.lower(), k))
 
     # Map wrong-forms to their canonical so a match on "Glabigle" proposes
     # "Glabbagool" (the canonical) rather than "Glabigle" itself.
