@@ -10,3 +10,5 @@
 - [Chat palace switched to turbovec (DONE)](project_chat_palace_turbovec_switch.md) — chat palace migrated to turbovec (~41k records), read+write paths flipped; chroma kept as frozen backup
 - [Canonical mempalace venv = ~/.venvs/main](project_mempalace_canonical_venv.md) — hooks point there; stray worldanvil_pipeline copy removed
 - [v3.5.0 backend reconciliation](project_v350_backend_reconciliation.md) — adopt upstream pluggable-backend framework; re-home turbovec as adapter (scoped exception to keep-local rule)
+- [v3.6.0 sync DONE](project_v360_sync_done.md) — PR #37 merged, fork/main fast-forwarded; coverage gap traced to upstream's new milvus.py, not a regression
+- [main-branch pushes need user permission](feedback_main_branch_push_needs_user_permission.md) — gh pr merge / git push *:main blocked by Claude Code's own classifier, hand to user rather than retry
