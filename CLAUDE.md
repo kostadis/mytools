@@ -22,6 +22,7 @@ When working in a subdirectory, defer to that subdirectory's `CLAUDE.md` if one 
 - **`flexai-combat/`** — Flask GM tool (port 5106) implementing FlexAI for Combat Encounters from the *FlexAI Guidebook* (Infinium Game Studios, 2020), driven by the official Digital Resource Companion workbook. See `flexai-combat/README.md`.
 - **`flexai-social/`** — Flask GM tool (port 5105) implementing FlexAI for Social Encounters from the same Guidebook. Pairs with `flexai-combat`. See `flexai-social/README.md`.
 - **`vtt-to-tts/`** — Single script (`transcript_to_mp3.py`) that converts a Zoom closed-caption transcript into an MP3 with per-speaker `edge-tts` voices. No API key required. Caches chunks next to the output for incremental regeneration.
+- **`md-to-vtt/`** — Single script (`md_transcript_to_vtt.py`, stdlib only) that converts a speaker-labelled Zoom `.md` transcript (`**dave:** …`) into WebVTT, so CampaignGenerator's `enhance_summary`/`scene_extract` can read it — they glob `*.vtt` only, and the whisper-derived VTTs carry no speaker labels. Timestamps are synthetic; the payload is `speaker: text`. See `md-to-vtt/README.md` for the pipeline gotchas (NOTE-block leakage, doubled Zoom transcripts, `--max-tokens 30000`).
 
 ### Cloud-drive and document tooling
 
