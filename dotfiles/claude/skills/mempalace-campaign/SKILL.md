@@ -17,19 +17,17 @@ Before starting, verify mempalace is installed:
 
 ```bash
 pip show mempalace
-# or check venv locations
-ls /home/kroussos/worldanvil_pipeline/venv/bin/mempalace 2>/dev/null
 ```
 
 If not installed, tell the user: `pip install mempalace` (needs Python 3.9+).
 Stop and report if installation fails.
 
-Find the mempalace binary path — it's usually one of:
-- `$(which mempalace)`
-- `/home/kroussos/worldanvil_pipeline/venv/bin/mempalace`
-
-Store as `$MP` for the rest of the workflow. The matching Python for MCP
-registration is the sibling `python` in the same `bin/` dir.
+mempalace is installed editable in the shared venv `~/.venvs/main`
+(`~/.venvs/main/bin/mempalace`, sibling console script
+`~/.venvs/main/bin/mempalace-mcp`). Find the binary with `$(which mempalace)`;
+if that doesn't resolve (venv not activated), fall back to the explicit
+`~/.venvs/main/bin/mempalace` path. Store as `$MP` for the rest of the
+workflow.
 
 ## Required Information
 
@@ -297,11 +295,21 @@ Report the final drawer counts per wing/room.
 
 ### Phase 10: Register the MCP server (project-scoped)
 
+`mempalace-mcp` is a console script, not a module — invoke it directly rather
+than via `<venv_python> -m ...`:
+
 ```bash
-claude mcp add mempalace -- <venv_python> -m mempalace.mcp_server
+claude mcp add mempalace -- mempalace-mcp --palace <palace-path>
 ```
 
-Run this from inside the campaign directory. Uses the venv's Python.
+Run this from inside the campaign directory. If `mempalace-mcp` doesn't
+resolve on `$PATH`, use the venv's absolute path instead:
+`~/.venvs/main/bin/mempalace-mcp`. `<palace-path>` is an absolute path to
+where this campaign's palace lives — conventionally
+`~/.mempalace/palaces/<campaign_name>` (mempalace's own default naming
+pattern; see `DEFAULT_PALACE_PATH` in `mempalace/config.py`). A bare alias
+name also works if one is registered in `~/.mempalace/config.json`'s
+`palaces` map.
 
 ### Phase 11: Verify
 
@@ -345,7 +353,8 @@ Tell the user:
 - MCP server location
 - Path to `MEMPALACE.md`
 - Any classification quirks to tune later
-- How to do a full rebuild: `rm -rf ~/.mempalace/palace/` then re-mine
+- How to do a full rebuild: `rm -rf ~/.mempalace/palaces/<campaign_name>/`
+  then re-mine
 
 ## Key Principles
 
@@ -369,8 +378,8 @@ Tell the user:
 - **Project-scoped MCP.** Each campaign gets its own MCP server.
 - **No hooks by default.** Use `mempalace_add_drawer` for manual filing.
 - **Dry-run before committing.** Always preview classification.
-- **Palace clearing:** `rm -rf ~/.mempalace/palace/` then re-mine all wings.
-  No built-in reset command.
+- **Palace clearing:** `rm -rf ~/.mempalace/palaces/<campaign_name>/` then
+  re-mine all wings for that palace. No built-in reset command.
 
 ## Ongoing Usage: Session Prep Workflow
 
