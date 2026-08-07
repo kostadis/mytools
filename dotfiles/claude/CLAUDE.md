@@ -49,22 +49,6 @@ For most tasks, calling the Anthropic API would be faster, smarter, and cheaper 
 3. If a project isn't indexed yet, run `index_repository` before relying on graph queries for it.
 4. `auto_index` is off by default, so the graph does not track edits automatically — if `codebase-memory-mcp` returns nothing, or a result looks stale (e.g. after recent edits), fall back to Grep/Glob rather than reporting an absence as fact.
 
-## MemPalace Memory Search
-
-1. For questions about past work, prior decisions, people, or projects — "what did we decide", "who is X", "what happened last time" — search MemPalace (`mempalace_search`; `mempalace_kg_query` for relational/time-bound facts) first, not Grep or model memory.
-2. Grep/Glob/Bash grep remain free for: exact string/regex matches, current on-disk state, config values, and sanity-checking a MemPalace result that looks stale or incomplete.
-3. If a project hasn't been mined into a wing yet (check `mempalace_list_wings`), run `mempalace_mine` before relying on search for it.
-4. Mining isn't automatic — only Stop/PreCompact diary checkpoints happen on their own. If `mempalace_search` comes back empty or stale after recent edits/decisions, that likely means the source hasn't been (re-)mined — fall back to Grep/Read rather than reporting an absence as fact.
-5. The full recall protocol (verbatim quoting, unhappy paths, corrupt-index recovery) lives in the `mempalace-recall` skill — this section only sets the standing search-first default.
-
-## An Unanswered Question Is Not a Decision
-
-When a question to the user comes back without a clear, explicit answer — a default or "recommended" option appears selected, the response is ambiguous, the question timed out, or the user was simply taking time — do NOT proceed as if the user decided. Re-ask and wait for an explicit answer.
-
-- Never fill in a recommended choice on the user's behalf. "The user was taking too long" is never a reason to decide for them.
-- Treat only an explicit, affirmative response as a decision. If in doubt whether an answer was really given, ask again and say why.
-- This is the human-checkpoint principle from the LLM Pipeline Design Rule applied to conversation: a timeout is not a checkpoint.
-
 ## Search mempalace Before Answering From Memory
 
 mempalace (`mcp__mempalace__*`) is the deep archive of past work. It is **read-only for you**: search it, never write to it. It is populated by a separate process — `mempalace_kg_add`, `mempalace_diary_write`, and `mempalace_add_drawer` are off-limits unless I explicitly ask.
@@ -76,9 +60,19 @@ The auto-loaded `MEMORY.md` files are an index, not the archive. They hold a han
 1. **I appeal to history** — "remember when", "last time", "we decided", "didn't we already", "what did we do about X".
 2. **The loaded context does not answer the question** — search mempalace *before* saying "I don't know", before guessing, and before asking me something I may have already told you.
 
-**Entry point:** `mempalace_search` — semantic, returns verbatim drawer content. Use `mempalace_search_hierarchical` when a flat search returns noise. Pass **keywords only** in `query`: that is the string that gets embedded and it is capped at 250 chars. Background goes in `context`, which is *not* embedded — putting a paragraph in `query` degrades the result.
+**Entry point:** `mempalace_search` — semantic, returns verbatim drawer content. Use `mempalace_search_hierarchical` when a flat search returns noise, and `mempalace_kg_query` for relational or time-bound facts. Pass **keywords only** in `query`: that is the string that gets embedded and it is capped at 250 chars. Background goes in `context`, which is *not* embedded — putting a paragraph in `query` degrades the result.
 
-A search that returns nothing is a real answer. Say so and move on; do not silently fall back to guessing.
+Grep/Glob/Bash grep remain free for: exact string/regex matches, current on-disk state, config values, and sanity-checking a mempalace result that looks stale or incomplete.
+
+A search that returns nothing is a real answer. Say so and move on; do not silently fall back to guessing. If a whole project looks absent, `mempalace_list_wings` will show whether it has been mined at all — but **do not mine it yourself**. Mining is my job, not yours: report that the wing is missing or stale and leave the re-mine to me. Ad-hoc `mempalace mine` runs are what polluted the chat palace with 19,120 junk drawers that had to be purged.
+
+## An Unanswered Question Is Not a Decision
+
+When a question to the user comes back without a clear, explicit answer — a default or "recommended" option appears selected, the response is ambiguous, the question timed out, or the user was simply taking time — do NOT proceed as if the user decided. Re-ask and wait for an explicit answer.
+
+- Never fill in a recommended choice on the user's behalf. "The user was taking too long" is never a reason to decide for them.
+- Treat only an explicit, affirmative response as a decision. If in doubt whether an answer was really given, ask again and say why.
+- This is the human-checkpoint principle from the LLM Pipeline Design Rule applied to conversation: a timeout is not a checkpoint.
 
 @RTK.md
 # graphify
