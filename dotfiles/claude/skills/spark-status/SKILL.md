@@ -11,7 +11,7 @@ have to ask the user what's running.
 
 ## What to do
 
-1. Read `~/src/dgx/current-setup.md` in full.
+1. Read `~/src/dgx-fun/current-setup.md` in full.
 2. Extract and report, in a compact table:
    - Which model is live on which box and port
    - Context window length
@@ -30,7 +30,14 @@ have to ask the user what's running.
   counts.
 - **Never use `spark`, `spark1`, or `spark2` as hostnames in commands or configs.**
   These names do not resolve in WSL2. Always use the IP addresses from the file
-  (e.g. `192.168.1.147:8001` for chat, `192.168.1.121:8000` for embed).
+  (e.g. `192.168.1.147:8001` for chat, `192.168.1.147:11434` for embed).
+- **Do not use `:8000` for embed.** `vllm-embed` was removed 2026-06-30 and
+  replaced by Ollama `qwen3-embedding:0.6b` on **`:11434`**, served from both
+  boxes. Port 8000 is not listening.
+- **The LAN IPs in the file are not the only way in.** When reaching the boxes
+  over Tailscale the addresses are in the `100.x.y.z` range instead — if the
+  user gives you one, prefer it over the LAN address rather than "correcting"
+  it back to `192.168.1.x`.
 
 ## After loading
 

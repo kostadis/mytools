@@ -65,4 +65,22 @@ When a question to the user comes back without a clear, explicit answer — a de
 - Treat only an explicit, affirmative response as a decision. If in doubt whether an answer was really given, ask again and say why.
 - This is the human-checkpoint principle from the LLM Pipeline Design Rule applied to conversation: a timeout is not a checkpoint.
 
+## Search mempalace Before Answering From Memory
+
+mempalace (`mcp__mempalace__*`) is the deep archive of past work. It is **read-only for you**: search it, never write to it. It is populated by a separate process — `mempalace_kg_add`, `mempalace_diary_write`, and `mempalace_add_drawer` are off-limits unless I explicitly ask.
+
+The auto-loaded `MEMORY.md` files are an index, not the archive. They hold a handful of facts; mempalace holds the rest. MEMORY.md being silent on a topic is not evidence the topic is undocumented.
+
+**Search it when either of these is true:**
+
+1. **I appeal to history** — "remember when", "last time", "we decided", "didn't we already", "what did we do about X".
+2. **The loaded context does not answer the question** — search mempalace *before* saying "I don't know", before guessing, and before asking me something I may have already told you.
+
+**Entry point:** `mempalace_search` — semantic, returns verbatim drawer content. Use `mempalace_search_hierarchical` when a flat search returns noise. Pass **keywords only** in `query`: that is the string that gets embedded and it is capped at 250 chars. Background goes in `context`, which is *not* embedded — putting a paragraph in `query` degrades the result.
+
+A search that returns nothing is a real answer. Say so and move on; do not silently fall back to guessing.
+
 @RTK.md
+# graphify
+- **graphify** (`~/.claude/skills/graphify/SKILL.md`) - any input to knowledge graph. Trigger: `/graphify`
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
