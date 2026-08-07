@@ -1,6 +1,11 @@
 # Credentials
 .credentials.json
 
+# Auto-recall memory — owned by ~/src/claude-memory (github.com/kostadis/claude-memory),
+# which syncs it across machines on a cron. Tracking it here too created a second
+# authority that drifted; do not re-add.
+memory/
+
 # Runtime / ephemeral data
 backups/
 cache/
