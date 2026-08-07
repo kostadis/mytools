@@ -169,6 +169,12 @@ class Config:
     consolidate_cluster_threshold: float = field(
         default_factory=lambda: _env_float("DT_CONSOLIDATE_CLUSTER_THRESHOLD", 0.05)
     )
+    # Link-relation consolidation: single-linkage threshold over normalized
+    # string edit-distance between relation names (not embeddings — the relation
+    # vocabulary is tiny). Groups near-synonym relations (e.g. complementary*).
+    relation_cluster_threshold: float = field(
+        default_factory=lambda: _env_float("DT_RELATION_CLUSTER_THRESHOLD", 0.34)
+    )
 
     @property
     def db_dir(self) -> Path:

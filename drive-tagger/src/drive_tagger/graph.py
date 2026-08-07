@@ -59,6 +59,58 @@ class Graph:
         self._conn.commit()
         return cur.rowcount > 0
 
+    def merge_relations(self, sources: list[str], into: str) -> dict:
+        """Fold every link whose ``relation`` is in ``sources`` into ``into``.
+
+        Rewrites the relation string on matching edges, deduping against the
+        ``UNIQUE(src_id, dst_id, relation)`` constraint: if a (src, dst) pair
+        already carries ``into`` — or two source relations map onto ``into`` for
+        the same pair — the edges collapse to one (a note may be dropped on the
+        collision, mirroring category-merge metadata behavior).
+
+        Self-filters ``into`` out of ``sources``. Idempotent: re-running after the
+        sources are already gone rewrites nothing and deletes nothing (no-op).
+        Returns ``{"into", "sources", "rewritten", "deduped"}`` where ``rewritten``
+        is the number of surviving edges now carrying ``into`` that came from a
+        source, and ``deduped`` is how many source edges collapsed onto an
+        existing ``into`` edge.
+        """
+        into = into.strip()
+        if not into:
+            raise ValueError("into must be non-empty")
+        sources = [s.strip() for s in sources if s and s.strip() and s.strip() != into]
+        if not sources:
+            return {"into": into, "sources": [], "rewritten": 0, "deduped": 0}
+
+        placeholders = ",".join("?" for _ in sources)
+        # How many source edges exist, and how many are new vs. collide with an
+        # existing `into` edge — computed before mutating so counts are exact.
+        n_source = int(
+            self._conn.execute(
+                f"SELECT COUNT(*) FROM links WHERE relation IN ({placeholders})",
+                sources,
+            ).fetchone()[0]
+        )
+        # Rewrite: insert the `into` form for every source edge, ignoring any that
+        # would collide with an existing (src, dst, into) row; then drop the sources.
+        cur = self._conn.execute(
+            f"INSERT OR IGNORE INTO links(src_id, dst_id, relation, note, created_at) "
+            f"SELECT src_id, dst_id, ?, note, created_at FROM links "
+            f"WHERE relation IN ({placeholders})",
+            [into, *sources],
+        )
+        rewritten = cur.rowcount
+        self._conn.execute(
+            f"DELETE FROM links WHERE relation IN ({placeholders})", sources
+        )
+        self._conn.commit()
+        return {
+            "into": into,
+            "sources": sources,
+            "rewritten": rewritten,
+            "deduped": n_source - rewritten,
+        }
+
     def links_for(self, file_id: str) -> list[dict]:
         rows = self._conn.execute(
             "SELECT src_id, dst_id, relation, note FROM links WHERE src_id=? OR dst_id=?",
