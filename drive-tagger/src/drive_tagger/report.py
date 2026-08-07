@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from .config import CONFIG
@@ -209,6 +209,15 @@ def generate() -> dict[str, Path]:
         "links that touch them. The full link list is in `graph.json`."
     )
     lines.append("")
+
+    # Relation breakdown — the verification surface for link consolidation.
+    if links:
+        rel_counts = Counter(ln["relation"] for ln in links)
+        lines.append(f"## Relations ({len(rel_counts)} types)")
+        lines.append("")
+        for rel, n in sorted(rel_counts.items(), key=lambda kv: (-kv[1], kv[0])):
+            lines.append(f"- `{rel}` — {n}")
+        lines.append("")
 
     lines.append("## Categories")
     lines.append("")

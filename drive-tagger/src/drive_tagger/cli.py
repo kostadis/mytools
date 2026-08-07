@@ -528,5 +528,46 @@ def backfill_apply_descriptions(
         typer.echo(f"  (skipped {s.get('name')}: {s.get('reason')})")
 
 
+@consolidate_app.command("collect-links")
+def consolidate_collect_links(
+    threshold: Optional[float] = typer.Option(
+        None, "--threshold", help="Override DT_RELATION_CLUSTER_THRESHOLD for this run only."
+    ),
+) -> None:
+    """Group near-synonym link relations -> reports/consolidation/link_clusters.json."""
+    from .link_consolidate import collect_relations
+
+    result = collect_relations(threshold=threshold)
+    typer.echo(f"\nWrote {result['path']}")
+    typer.echo(
+        f"{result['n_clusters']} relation family(ies) proposed from "
+        f"{result['n_rogue_types']} rogue relation type(s) ({result['n_rogue_edges']} edges)."
+    )
+
+
+@consolidate_app.command("apply-links")
+def consolidate_apply_links(
+    decisions: Path = typer.Option(
+        None,
+        "--decisions",
+        help="Path to link_decisions.json (default: reports/consolidation/link_decisions.json).",
+    ),
+) -> None:
+    """Apply approved relation-merge decisions to the graph, then regenerate reports/."""
+    from .link_consolidate import apply_relations
+
+    path = decisions or (CONFIG.consolidation_dir / "link_decisions.json")
+    if not path.exists():
+        typer.secho(f"No decisions file at {path}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    result = apply_relations(path)
+    typer.echo(f"Merged {len(result['merged'])} relation family(ies); skipped {len(result['skipped'])}.")
+    for m in result["merged"]:
+        typer.echo(
+            f"  -> {m['canonical']}  (absorbed: {', '.join(m['sources'])}; "
+            f"{m['rewritten']} rewritten, {m['deduped']} deduped)"
+        )
+
+
 if __name__ == "__main__":
     app()
