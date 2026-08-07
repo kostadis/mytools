@@ -1,7 +1,7 @@
 ---
 name: staged-consistency
 description: Run consistency checks at every LLM-pipeline boundary (gm-assist → session-summary → scene extractions → narration) with a human-review gate between stages. Use when the user invokes /staged-consistency [session-dir] and wants the multi-stage check rather than a one-shot. Prevents fix-propagation drift where stale per-scene quotes silently re-inject errors into the next narration run.
-tools: Bash, Read, Edit
+tools: Bash, Read, Write, Edit, Glob, AskUserQuestion
 ---
 
 # Staged Consistency
@@ -9,6 +9,22 @@ tools: Bash, Read, Edit
 Run the multi-stage consistency check pattern documented in `~/campaigns/STAGED_CONSISTENCY_HOWTO.md`. The pattern: a `check_consistency.py` run gated by a human-review/fix cycle at each LLM extraction boundary in the session-doc pipeline — gm-assist, session-summary, scene extractions, and (optionally) the final narration.
 
 The point of this skill is to **catch verbatim transcription errors before they reach the narrator**. A single late-stage check misses the per-scene-quote layer, which is the layer that silently re-injects errors into every subsequent narration run. See `STAGED_CONSISTENCY_HOWTO.md` for the rationale.
+
+## This skill is an orchestrator, not a second implementation
+
+Every stage below runs the **full `/consistency-check` workflow**. That skill owns the method — context selection, the script's failure modes, VTT adjudication, the triage rules, the manifest. This skill owns only the *staging*: which artifact, in what order, with a human gate between each.
+
+**Do not shortcut the delegated workflow.** In particular these `/consistency-check` steps are REQUIRED and apply at every stage:
+
+| Step | What it is | Why staging makes it more important, not less |
+|---|---|---|
+| 2 | Config resolution | `find_default_config()` is CWD-only with a fallback to CampaignGenerator's *own* config. Get it wrong once and every stage checks against the wrong campaign. |
+| 2.5 | Prep discovery + tiered choice | Prep is what catches transcription errors — the entire reason this skill exists. |
+| 3 | Campaign-standard context set | See below. Staged runs it N+3 times; a dropped source is dropped N+3 times. |
+| 4.7 | VTT adjudication | Stage 2 is *made of* verbatim quotes. The grounding docs are structurally blind to them; only the tape settles a quote. |
+| 4.5 + 6 | YAML manifest (sources + rulings) | With many stages, the manifest is the only record of what was ruled where. |
+
+Read `/consistency-check`'s SKILL.md before the first stage and keep its guidance in play throughout. When it and this file disagree on *method*, `/consistency-check` wins; this file only overrides on *sequencing*.
 
 ## When to use this skill vs. the others
 
@@ -18,22 +34,35 @@ The point of this skill is to **catch verbatim transcription errors before they 
 
 ## Workflow
 
-### 0. Locate the session directory and prep
+### 0. Locate the session directory, the script, and the context set
 
 If the user passed a path argument, use it. Otherwise:
 - Run `pwd` to confirm CWD is a campaign workspace (contains `docs/`, `summaries/`, `config.yaml`).
 - List recent session directories: `ls -t summaries/ | head -10`
 - Ask: "Which session — pass the path under `summaries/` (e.g. `summaries/20260512`)?"
 
-Then locate the prep file(s) for this session — this is non-negotiable, the same as in `/consistency-check`:
+**Locate the script; don't assume the path.** It lives at `<repo>/session_doc/check_consistency.py` (it moved out of the repo root), and the repo may be `~/CampaignGenerator` **or** `~/src/CampaignGenerator`. There is also an installed console script, `check_consistency`. `ls` before building any command.
 
-1. Look in `notes/session_prep/`, `notes/prep/`, `notes/sessions/`, `notes/<date>/`.
-2. List candidates: `ls notes/session_prep/ 2>/dev/null; ls notes/prep/ 2>/dev/null`
-3. **Ask the user explicitly**: "Which session prep file(s) should I fact-check against? Found: [list]. Or pass `none` if there is no prep for this session."
+**Resolve config once, here.** Per `/consistency-check` step 2: run from the workspace root, or pass `--config <abs-path>`. Some workspaces (Phandalin) have no root `config.yaml` at all and need a throwaway absolute-path config. Settle this before stage 0 — a config mistake repeated across every stage is the most expensive error this skill can make.
 
-If the user says `none`, run the skill anyway but explicitly note in the final summary that the run was prep-less and will have missed transcription errors. Do not silently proceed without asking.
+#### Prep discovery — delegate to `/consistency-check` step 2.5, do not use a shortened version
 
-Hold the prep path list in the conversation — every stage's check uses it.
+Run that step's **full** sweep, not a two-directory `ls`. It is date-bounded (an old session may predate the entire prep corpus), it covers three different real-world prep layouts including flat location-named files (`notes/redbrand_hideout.md` *is* prep), and it ends in a tiered HIGH/MEDIUM/LOW choice presented via `AskUserQuestion`.
+
+**Ask explicitly and do not proceed without an explicit answer.** If the user says `none` — or prep genuinely does not exist for this session — run anyway and record `session_prep_used: false` with the reason in every stage's manifest.
+
+Hold the resolved prep list in the conversation. **Discover once, reuse at every stage** — that is the one thing this skill legitimately does differently from N independent `/consistency-check` runs.
+
+#### The campaign-standard context set — passed at EVERY stage
+
+Per `/consistency-check` step 3, none of these are auto-loaded, and all of them go in a single `--context` flag (`nargs="+"` — a second flag silently overwrites the first):
+
+- `docs/party.md` — the PCs.
+- `docs/entity_registry.yaml` — canonical entities **with aliases**. Highest-yield source for the most common finding class; it is what separates a legitimate alternate name from a transcription error. Skip only if the campaign has no registry.
+- `notes/vtt_transcription_corrections.md` — the wrong→right ASR glossary. Literally a table of the errors this skill hunts.
+- `notes/vtt_known_additions.md` — names confirmed real but not yet promoted to the registry.
+
+Pre-read the glossaries while building the tiers; they routinely surface findings outright.
 
 ### 1. Inventory the pipeline artifacts in this session
 
@@ -48,7 +77,18 @@ ls "$SESSION"/narration/enhanced_sections.md 2>/dev/null
 ls "$SESSION"/narration/*.md 2>/dev/null   # final narration if generated
 ```
 
-Tell the user which stages were found and what will be checked. Some sessions may be partial — e.g. gm-assist + session-summary done but scene extractions not yet generated. Run the check on whatever exists; don't try to generate missing artifacts (that's the pipeline's job, not this skill's).
+**Also inventory the transcripts, and check which carry speaker labels** — step 4.7 needs one at every stage, and Stage 2 cannot be done properly without one:
+
+```bash
+ls -la "$SESSION"/*.vtt "$SESSION"/*.md
+grep -oE '^\*\*[a-zA-Z][a-zA-Z ._-]{1,30}:\*\*' <candidate>.md | sort | uniq -c | sort -rn
+```
+
+Prefer `*.retranscribed.cleaned.vtt` for wording questions and a speaker-labelled Zoom `.md` for attribution questions. Count distinct speakers against the party: **a missing player means someone else ran their PC all session**, which is the usual root cause of attribution collapse — see `/consistency-check` step 4.7.
+
+**Check for prior `*.sources.yaml` manifests in the session dir and read them.** They record what was already fixed, what the GM ruled, and what is still `OPEN` in `carry_forward`. Treat their claims as hypotheses, not settled facts — re-verify any your findings touch.
+
+Tell the user which stages were found and what will be checked. Some sessions may be partial. Run the check on whatever exists; don't try to generate missing artifacts (that's the pipeline's job, not this skill's).
 
 ## Report format (mandatory at every stage)
 
@@ -78,15 +118,17 @@ After each stage's check, **always** present findings as a severity-ranked table
 | **Minor** | Misspelling of a proper noun, wrong pronoun, single-word transcription error, inconsistency within the same document. Easy to fix; fix before narrating. |
 | **Trivial** | Stylistic quirk, table-chatter artifact, item you flagged as "leave as-is" in a prior stage, or flavour call that is defensible either way. Surface but do not push. |
 
-Sort the table by severity (Critical first, then Moderate, Minor, Trivial). Number issues sequentially across the whole table. If there are zero issues, say so in one line and advance automatically to the next stage.
+Sort by severity (Critical first). Number issues sequentially across the whole table.
+
+**Severity ranks findings; it does not rule on them.** `/consistency-check` step 5's triage still applies underneath — a **canon-judgment** finding (a new fact no doc establishes, or a beat that contradicts prep because play diverged) is the user's call regardless of how severe it looks. Mark those in the table (e.g. `Critical · GM ruling needed`) and never auto-apply one. Run step 5's false-positive filters — table rulings that outrank the PHB, module-vs-table vocabulary, backfilled-chapter anachronism, the report pointing at the wrong half of a contradiction — **before** anything reaches this table.
+
+**Never auto-advance on a zero count from the banner.** `check_consistency.py` counts the literal string `**Location**`, but models routinely emit `**Location:**`, so `No issues found.` is an unreliable false negative while the body lists a dozen issues. Derive your own count from the saved report (`grep -c "^### "`) and trust the body. Advance automatically only when *your* count is zero and you have read the body. Likewise, if `--backend claude-code` printed an auto-continuation warning, inspect the report for a seam before believing any count.
 
 ### 2. Stage 0 — gm-assist check
 
-Delegate to `/consistency-check`:
+> Stage 0 — running `/consistency-check $SESSION/gm-assist.md` with the standard context set + prep.
 
-> Stage 0 — running `/consistency-check $SESSION/gm-assist.md` with prep as context.
-
-Invoke the consistency-check skill workflow against `$SESSION/gm-assist.md`, passing `docs/party.md` and all prep files via `--context`. After it returns:
+Run the full `/consistency-check` workflow against `$SESSION/gm-assist.md`, passing the standard context set and every prep file from step 0 in one `--context` flag, with `--backend claude-code`. Then:
 
 - Present the severity table (format above).
 - Ask: "Apply any of these fixes to `gm-assist.md` before moving to stage 1?"
@@ -96,69 +138,97 @@ Invoke the consistency-check skill workflow against `$SESSION/gm-assist.md`, pas
 
 ### 3. Stage 1 — session-summary check
 
-Delegate to `/consistency-check`:
+> Stage 1 — running `/consistency-check $SESSION/session-summary.md` with the standard context set + prep.
 
-> Stage 1 — running `/consistency-check $SESSION/session-summary.md` with prep as context.
+Same flow. **Also pass `gm-assist.md` as context**: `session-summary.md` is an `enhance_summary` output built from it plus the VTT, so every difference between them is *something the enhancement pass added* — exactly the material under test. `/consistency-check` step 3 calls this the single highest-value context file for this document class.
 
-Same flow: invoke `/consistency-check`, present the severity table (format above), ask about applying fixes, edit if approved.
+The **enhancement-pass failure modes** in `/consistency-check` step 4.7 apply in full here, and none are catchable from grounding docs — verify each against the tape:
 
-Pay particular attention at this stage to:
-- **Cross-section contradictions** (Summary prose vs. bulleted scene log)
-- **Pronoun drift** on player characters
-- **NPC affiliation fabrications** (the canonical Phandalin example: Prutha "committed to the Order of the Gauntlet" — party.md says Lathander convert)
-- **Killing-blow attribution** in combat scenes (LLM extractors often credit the wrong character)
+- Invented precise dice values (grep the VTT for the literal number; timestamp-only hits mean invented)
+- Attribution drift toward the prominent character (heals and kills migrate)
+- Event duplication alongside event loss
+- Quote truncation with the `*(truncated)*` marker left in
+- DM asides relocated onto the wrong mechanical result
+
+Plus the classic session-summary catches: cross-section contradictions (Summary prose vs. bulleted scene log), pronoun drift on PCs, NPC affiliation fabrications (Prutha "committed to the Order of the Gauntlet" — `party.md` says Lathander convert), and killing-blow attribution.
 
 ### 4. Stage 2 — scene extractions check (the load-bearing one)
 
-For each scene extraction `$SESSION/scene_extractions_new/0N_*.md` (excluding `.prev` and `.scaffold` files), delegate to `/consistency-check`. Run them in numbered order so the user sees them in scene order. Present a severity table (format above) per scene.
+For each `$SESSION/scene_extractions_new/0N_*.md` (excluding `.prev` and `.scaffold`), run `/consistency-check` in numbered order. Present a severity table per scene.
 
 This stage exists because **the scene extractions contain the verbatim quotes the narrator reads literally**. Fixes applied only at the session-summary layer get silently undone the next time the narrator runs.
 
+**This is the stage where VTT adjudication is not optional.** A quote is a span of the tape or it isn't, and no grounding doc can settle one. For every flagged quote, go to the transcript per `/consistency-check` step 4.7 — and watch for its two highest-value catches:
+
+- **Retracted GM slips** — a name the GM misspoke, was corrected on, and fixed *on tape*, which the extractor captured in its uncorrected form. Grep ±20 lines for `"I meant"`, `"sorry"`, `"you're right"`, `"hold on"`, `"different character"`.
+- **A garble that fused two characters.** A single invented name can hold two PCs' actions; a blind glossary replace then credits one character's deeds to another and looks *more* canonical afterwards. Read every instance in context and discriminate by class feature before replacing. A race+class pair matching nobody in `party.md` ("the tortle barbarian") is the loudest possible signal.
+
 When applying fixes to verbatim quotes:
 - **Preserve the speaker attribution and tone** of the original quote when correcting transcription drift — the players' table voice is the whole point of these quotes.
-- **Add an italic editorial note** in the speaker attribution explaining the discrepancy between raw Otter/Zoom capture and prep canon. Future readers (and the next narrator pass) get a transparent audit trail.
+- **Add an italic editorial note** in the speaker attribution explaining the discrepancy between raw Otter/Zoom capture and prep canon, so the next narrator pass has an audit trail.
   - Example: `**GM** — *voicing Prutha (transcript per session-prep canon; raw Otter capture said "my uncle Seidan comes for everyone" — a mishearing of "great-uncle said dawn")*`
-- **Do not strip table chatter, jokes, or player improvisations** that the table values. Some "errors" the check flags are intentional flavor. The Phandalin "blacklist" / "blood money list" terminology is real OOC table vocabulary — preserve those.
+- **Do not strip table chatter, jokes, or player improvisations** that the table values. Some "errors" the check flags are intentional flavor. The Phandalin "blacklist" / "blood money list" terminology is real OOC table vocabulary — preserve it.
 
 After each scene's fixes, ask: "Continue to next scene, or revisit this one?" Don't auto-advance through all scenes silently.
 
 ### 5. Stage 3 — narration check (optional)
 
-If a final narration file exists (typically `$SESSION/narration/<something>.md` or the session_doc output), delegate to `/consistency-check` on it. Present a severity table (format above).
+If a final narration file exists, run `/consistency-check` on it and present a severity table.
 
 At this stage the check is mostly catching narrator-layer voice drift and prose fabrications. Findings here are usually candidates for a narrator re-run (after fixing upstream) rather than direct edits, since editing final prose tends to fight the narrator's voice.
 
 ### 6. Fix-propagation pass
 
-After all stages have been checked and fixed, do a quick propagation sweep — fixes applied to a deep stage may need to propagate upward, and fixes at a shallow stage may need to propagate downward. Use grep to verify:
+After all stages have been checked and fixed, sweep for residual bad patterns — fixes applied to a deep stage may need to propagate upward, and vice versa:
 
 ```bash
-# Grep all touched files for residual bad patterns
 grep -n "<bad pattern>" $SESSION/gm-assist.md $SESSION/gm-assist-update.md \
   $SESSION/session-summary.md $SESSION/narration/enhanced_sections.md \
   $SESSION/scene_extractions_new/0*.md 2>/dev/null | grep -v ".prev\|.scaffold"
 ```
 
-Where "<bad pattern>" is the specific text that was wrong (e.g. `"bear comes"`, `"Order of the Gauntlet"`, `"Elemental Cleaver"`). Run this for every fix that was applied.
+Run this for every applied fix. If grep finds the bad pattern in a file that wasn't checked or fixed, surface it and ask whether to apply the fix there. **This step is what catches the scenario where session-summary was fixed but the scene extractions still carry the original error.**
 
-If grep finds the bad pattern in a file that wasn't checked or fixed, surface it to the user and ask whether to apply the corresponding fix there. **This propagation step is what catches the scenario where session-summary was fixed but the scene extractions still carry the original error.**
+**Also sweep the grounding docs.** Per `/consistency-check` step 5, a VTT-confirmed correction usually lands in more places than the recap — `world_state.md`'s timeline and `party.md`'s per-character notes both carry attributions. Check the direction before editing: in one run the GM asked for a grounding-doc fix and the docs were already right; the recap was the wrong one. Survey first, then say plainly which file was actually wrong. Anything you don't fix goes in `carry_forward`.
 
-### 7. Final summary
+**Never bulk-replace a name, colour, adjective or title across the campaign.** Enumerate and read every hit first.
+
+### 7. Manifests — REQUIRED
+
+Per `/consistency-check` steps 4.5 and 6, every check gets a provenance record. Staging changes only the granularity:
+
+- **One manifest per stage**, in the session dir, named for the stage: `consistency_stage0_gmassist.sources.yaml`, `consistency_stage1_summary.sources.yaml`, `consistency_stage2_scenes.sources.yaml`, `consistency_stage3_narration.sources.yaml`.
+- Stage 2 gets **one manifest for the whole stage**, not one per scene — with a `scenes:` list recording per-scene issue counts and rulings. N per-scene manifests are unreadable and nobody will consult them.
+- Use the schema from `/consistency-check` 4.5 (sources half) + 6 (ruling half), including `document_class`, `speaker_map`, `vtt_adjudicated`, and `carry_forward` with a `status:` on every entry.
+- Record which transcript was consulted, and note it was read **by hand** — it is provenance for the ruling, not a `--context` input.
+
+Validate each parses (`python -c "import yaml; yaml.safe_load(open(...))"`).
+
+Carry `carry_forward` forward *between stages within this run*, not just between runs — an item opened at stage 0 is often closed at stage 2.
+
+### 8. Final summary
 
 End with a tight summary:
 
-- Stages run, issue counts per stage
+- Stages run, issue counts per stage (your counts, from the report bodies — not the banner)
 - Fixes applied per stage
-- Anything deferred (with the location)
+- **What the VTT caught that the check structurally could not** — on this skill's target artifacts that is usually most of the real defects
+- Anything deferred, with its location
 - Whether prep was available (or whether the run was prep-less and possibly blind to transcription errors)
+- The merged `carry_forward` list across stages
 - Recommendation on next action — usually one of:
-  - "Re-run `session_doc.py` to produce a clean narration from the corrected scene extractions"
+  - "Re-run `sd_narrate` to produce a clean narration from the corrected scene extractions"
   - "Ready to share session-doc with players"
   - "Stage X still has unresolved issues — revisit those before narrating"
+
+Don't commit unless asked.
 
 ## Notes
 
 - This skill is intentionally heavy. It exists for sessions that matter — chapter releases, sessions you're sharing externally, sessions where you've already produced a bad narration and need to root out why. For a quick sanity check on a single document, use `/consistency-check` directly.
+- **Method lives in `/consistency-check`; sequencing lives here.** When adding a lesson learned about *how to check*, put it there — it will reach this skill through the delegation. Only staging, gating and propagation rules belong in this file. Duplicating method here is how the two drifted apart before.
 - Skipping the prep step (step 0) collapses the value of this skill the same way it collapses `/consistency-check`. The whole reason this pattern beats a one-shot check is that prep is wired into every stage's check. Do not skip.
+- **The standard context set is not optional and not `party.md` alone.** An earlier version of this skill passed only `docs/party.md`, silently dropping `entity_registry.yaml` and the VTT glossaries from every stage — the three sources that carry the name/alias/garble finding class this skill exists to catch.
+- Different pipeline stages fail differently, and the staging should reflect it: **gm-assist** fails on names (prep + glossaries catch it), **session-summary** is an enhanced recap and fails on numbers, attribution and ordering (only the VTT catches those), **scene extractions** fail on verbatim quote fidelity (only the VTT), **narration** fails on voice drift. Expect a poor report hit-rate on the enhanced and verbatim stages and say so, so it doesn't read as the documents being clean.
 - The Phandalin Ch 41 run (2026-05-17) was the discovery case — 11 prep-canonical issues survived a late-stage one-shot check that returned "no major issues." The same issues were trivially catchable at stage 0 with prep wired in. That's the failure mode this skill exists to prevent.
 - See `~/campaigns/STAGED_CONSISTENCY_HOWTO.md` for the methodology rationale, the pipeline diagram, and the per-stage table of what each check catches that the others miss.
