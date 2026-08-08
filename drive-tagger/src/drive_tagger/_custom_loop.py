@@ -125,15 +125,16 @@ async def _run_openai_compat(
     system_parts = []
     if disable_thinking:
         system_parts.append("/no_think")
-    # Do NOT name other tools here, even to forbid them. Qwen exhibits negation
-    # blindness: "calling link_files first is FORBIDDEN" reliably makes it call
-    # link_files first (verified 0/5 vs 5/5 on both DGX boxes). Salience wins
-    # over logic — only ever mention the tool we want called.
+    # Do NOT name tools here, even to forbid or require them. Qwen takes any
+    # named tool as an immediate imperative: "calling link_files first is
+    # FORBIDDEN" made it call link_files first, and "your first response MUST
+    # be next_file" made it re-call next_file after the primed seed turn
+    # (both verified 0/5 vs 5/5 on the DGX). The first next_file call is made
+    # by the harness (see seed priming below), so no tool needs naming at all.
     system_parts.append(
         "You are an autonomous agent. You MUST use tool calls for ALL actions. "
         "NEVER describe, simulate, or narrate tool calls in text. "
-        "Your very first response MUST be a call to the `next_file` tool — "
-        "do not output any text before making that call."
+        "Do not stop until the worklist reports done."
     )
     if system_instructions:
         system_parts.append(system_instructions)
@@ -157,7 +158,35 @@ async def _run_openai_compat(
                 for t in tools_resp.tools
             ]
             messages: list[dict] = seed_messages + [{"role": "user", "content": prompt}]
-            steps = 0
+
+            # Prime the loop: the harness makes the first next_file call itself
+            # and injects it as a synthetic assistant turn. Qwen picks the wrong
+            # first tool often enough to kill runs (it behaves fine mid-loop),
+            # so we never let it make that decision.
+            seed_result = await session.call_tool("next_file", {})
+            seed_text = _mcp_result_text(seed_result)
+            print("\n[tool] next_file (primed)", file=sys.stderr, flush=True)
+            if _is_done(seed_text):
+                print("\n[batch done: worklist exhausted]", file=sys.stderr, flush=True)
+                return
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "seed_next_file",
+                            "type": "function",
+                            "function": {"name": "next_file", "arguments": "{}"},
+                        }
+                    ],
+                }
+            )
+            messages.append(
+                {"role": "tool", "tool_call_id": "seed_next_file", "content": seed_text}
+            )
+
+            steps = 1
             done_since: int | None = None
 
             while steps < max_steps:
@@ -183,12 +212,18 @@ async def _run_openai_compat(
                 if choice.finish_reason != "tool_calls" or not msg.tool_calls:
                     break
 
-                # Guard: if the very first tool call isn't next_file the model has
-                # entered hallucination mode — abort rather than burn the batch.
-                if steps == 0 and msg.tool_calls[0].function.name != "next_file":
+                # Guard: the harness already called next_file to seed the loop, so
+                # the model opening with next_file again means it is skipping the
+                # file it was just handed. next_file marks the previously returned
+                # file processed, so that file would be recorded as done having
+                # never been categorized or linked — silently, and permanently.
+                # Qwen did exactly this while the prompt still named the tool
+                # (0/5). Prompt wording alone is too fragile to rely on: fail loud.
+                if steps == 1 and msg.tool_calls[0].function.name == "next_file":
                     print(
-                        f"\n[batch aborted: first tool was "
-                        f"{msg.tool_calls[0].function.name!r}, expected next_file]",
+                        "\n[batch aborted: model re-called next_file on its first "
+                        "turn — the seeded file would be marked processed without "
+                        "being categorized]",
                         file=sys.stderr,
                         flush=True,
                     )
