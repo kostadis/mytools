@@ -212,6 +212,23 @@ async def _run_openai_compat(
                 if choice.finish_reason != "tool_calls" or not msg.tool_calls:
                     break
 
+                # Guard: the harness already called next_file to seed the loop, so
+                # the model opening with next_file again means it is skipping the
+                # file it was just handed. next_file marks the previously returned
+                # file processed, so that file would be recorded as done having
+                # never been categorized or linked — silently, and permanently.
+                # Qwen did exactly this while the prompt still named the tool
+                # (0/5). Prompt wording alone is too fragile to rely on: fail loud.
+                if steps == 1 and msg.tool_calls[0].function.name == "next_file":
+                    print(
+                        "\n[batch aborted: model re-called next_file on its first "
+                        "turn — the seeded file would be marked processed without "
+                        "being categorized]",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    break
+
                 # Rebuild as plain dict — avoids Pydantic serialisation surprises
                 assistant_msg: dict = {
                     "role": "assistant",
