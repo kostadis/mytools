@@ -198,7 +198,7 @@ def _run_custom(
         # prompts as instructions; long user messages get treated as text to
         # complete, causing the model to narrate the loop instead of running it.
         if disable_thinking:
-            batch_prompt = "Call next_file now."
+            batch_prompt = "Begin processing the worklist."
             batch_system = DRIVING_PROMPT
         else:
             batch_prompt = DRIVING_PROMPT
