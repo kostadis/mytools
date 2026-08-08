@@ -66,6 +66,8 @@ Grep/Glob/Bash grep remain free for: exact string/regex matches, current on-disk
 
 A search that returns nothing is a real answer. Say so and move on; do not silently fall back to guessing. If a whole project looks absent, `mempalace_list_wings` will show whether it has been mined at all — but **do not mine it yourself**. Mining is my job, not yours: report that the wing is missing or stale and leave the re-mine to me. Ad-hoc `mempalace mine` runs are what polluted the chat palace with 19,120 junk drawers that had to be purged.
 
+The deeper protocol — verbatim quoting, unhappy paths, corrupt-index recovery, anti-patterns — lives in the **`mempalace-recall` skill**, shipped by the mempalace plugin. This section only sets the standing search-first default; read that skill when a recall gets complicated.
+
 ## An Unanswered Question Is Not a Decision
 
 When a question to the user comes back without a clear, explicit answer — a default or "recommended" option appears selected, the response is ambiguous, the question timed out, or the user was simply taking time — do NOT proceed as if the user decided. Re-ask and wait for an explicit answer.
