@@ -68,6 +68,39 @@ If a file does not exist, omit it from the critique inputs. Note in the report w
 
 **Mechanical scan B — register-wrong vocabulary.** Grep for words such as: `shape`, `shaped`, `filed`, `geometry`, `geometric`, `aligned`, `configured`, `structure`, `structural`, `axis`, `angle`, `vector`, `plane`, `arc`, `perimeter`, `dimensions`, `calculated`, `formula`. Flag any occurrence in *narration prose* (not inside verbatim dialogue or italic VTT quotes). These are analytical/architectural/mathematical defaults the LLM reaches for when describing arrangement or form; none of the narrators in this party think in those terms. The suggested rewrite should use the narrator's sensory or experiential vocabulary instead.
 
+Two traps in scan B. Do not anchor the regex with a fixed-width prefix
+(`.{55}\bfiled\b`) — it silently drops hits near the start of a line. And
+`shaped` has legitimate uses (`the man who had shaped my devotion`); flag on
+`the shape of X`, not on every inflection.
+
+**Mechanical scan C — the taxonomising-appositive family.** `_genre.md`
+bans "with the [Adj] [Noun] of someone who…", but **the tic rotates surface
+form between renders rather than disappearing.** Observed across two renders
+of the same scene: `with the grace of a man who understood…` became
+`that grin he gets when…`, `had a way of saying…`, `with that quiet,
+watchful look he gets`, and `that slight, fond squint he gets`. Scan for the
+whole family, allowing adjectives between the determiner and the noun:
+
+```bash
+grep -nEi "\bthat\b[^.]{0,45}\b(look|thing|grin|pinch|edge|squint|air|hunger)\b[^.]{0,45}\b(he|she|they)\s+(gets?|does|do|had)\b|\bwith that\b[^.]{0,40}\b(look|expression|air|squint|hunger)\b|\b(the|with the) (look|hunger|expression|grace|air) of (a man|a woman|someone|people)\b|\bhad a way of \w+ing\b" <scene.md>
+```
+
+Even this under-matches: instances split across a sentence boundary
+(`that look in his eye. The one he gets when…`) and nouns outside the list
+still slip through. **Treat all three scans as a floor, not a ceiling** —
+reading found 2–3 additional instances per scene that no pattern caught, in
+every scene checked. Say so in the report rather than implying the scan was
+exhaustive.
+
+**Mechanical scan D — canon facts.** Before critiquing prose, check the
+narration's factual claims about the party against `docs/party.md` and
+`characters/<name>.md`: species, class, stature, relationships, equipment.
+One render described a **goliath** (7–8 ft, Path of the Giant) as "all five
+and a half feet of immediate presence", contradicting both his sheet and
+another scene in the same session. A canon error outranks every stylistic
+flag in the report and should be listed first. Watch for anachronism too —
+`split an atom` appeared in a Faerûn tortle's narration.
+
 Then read the narration sentence by sentence. **Flag** a sentence when it falls into one of these categories:
 
 1. **Generic fantasy prose** — could appear in any narrator's section. Stock metaphors ("the silence stretched", "his hand fell to his sword", "a chill ran down her spine") with nothing this character would specifically notice or say.
@@ -77,14 +110,69 @@ Then read the narration sentence by sentence. **Flag** a sentence when it falls 
 5. **Cliché / on-the-nose simile** — workshopped fantasy similes (`like a coiled spring`, `like a tomb`) where the per-character examples show a more specific image vocabulary.
 6. **Register-wrong vocabulary** — catches anything the mechanical scan missed: analytical, bureaucratic, or clinical words that no one in this party would reach for. Use judgment; the scan list is a starting point, not an exhaustive inventory.
 
+7. **GM stage direction inside quoted dialogue.** The upstream extraction
+   sometimes quotes the GM's out-of-fiction narration, and the voice pass is
+   *forbidden* from touching anything between quotation marks — so it passes
+   through as character speech. Symptoms: a speech tag inside the quote
+   (`"Toblen says: well—…"`), second-person address to a player
+   (`"And you immediately remember that…"`), stage direction as dialogue
+   (`"Then he looks at Valphine and notices…"`), third-person reporting
+   inside a character's own quote (`"But she says there's been a small
+   problem"`), and worst, the POV character referring to herself by name in
+   the third person. Detect with:
+   ```bash
+   grep -nEi '"[^"\n]*\b(he goes|he says|she says|she wonders|so he says|and you immediately remember|he does point out|Then he looks at)\b[^"\n]*"' <scene.md>
+   ```
+   Use a newline-excluding character class — `"[^"]*…"` spans paragraph
+   breaks in most regex engines and produces cross-paragraph false
+   positives. This is an upstream defect: re-running the pipeline reproduces
+   it, because the immutable-quote rule guarantees it. Say that explicitly
+   rather than recommending a re-render.
+
 **Do NOT flag:**
 
 - Verbatim dialogue (lines inside `"..."` quotation marks that came from the source extraction — these are load-bearing and must not be rewritten).
 - Action beats that simply describe what happened, even if plain. Plain ≠ generic.
 - Prose that already matches the per-character examples — even if it would look generic on its own, matching the writer's established voice is the *goal*.
 - Sentences merely because they are short or long. Rhythm variation is intentional.
+- **A construction the character's own examples establish as theirs.**
+  `ever the X` looks like a house-style tic, and is one in most narrators —
+  but `examples/valphine.md` uses it natively, so its appearance in
+  Valphine's section is voice, not drift. Check the examples before calling
+  something convergence. Repetition within a single scene is still worth
+  flagging; existence is not.
 
 Flag every genuine issue. Do not drop real problems to keep the list short.
+
+### Phase 3b: verify before you assert
+
+Two failure modes cost real credibility in practice. Both are avoidable.
+
+**Verify claims about tooling by reading the tool.** A structural flag once
+asserted that `assemble.py` needed an in-body `### <Narrator>` heading to
+mark POV boundaries. It does not — it builds `## {narrator} — {scene_name}`
+from the *frontmatter* and never reads the body heading, so the flag was
+backwards: the scenes that *had* the heading were duplicating the narrator's
+name. Before flagging anything as structural or pipeline-breaking, open the
+consuming code.
+
+**Never propose a rewrite that lands inside `"..."`.** Before drafting a
+suggestion, confirm the span you are rewriting is narration. One suggested
+fix targeted a line of tax-code English that read badly for the character —
+but the VTT confirmed the player said it verbatim, so the "fix" would have
+edited real player speech. When a quoted line reads wrong for a character,
+the available moves are: check the VTT for a mis-attribution, fix the
+*attribution* in the narration, or report it as an upstream note. Rewriting
+the quote is not one of them.
+
+**Check the inputs against each other.** The specs and the examples can
+disagree. `examples/soma.md` is half terse and half lush, while
+`voice/soma_new_pipeline.md` forbids the lush half in three separate
+failure-prevention rules — so narration that drifts literary is obeying half
+its own inputs. When a tic appears in the example corpus itself
+(`ever the X` occurs in three of four example files), it is **inherited, not
+drift**; report it as an input problem with a recommendation to amend
+`_genre.md`, not as a per-scene failure.
 
 ### Phase 4: Write the report
 
@@ -140,6 +228,16 @@ Each per-scene report uses this structure:
 ## Output
 
 Report each file written and the flag count. Surface the strongest recurring issue across scenes (e.g. "three scenes flagged Unla for stock simile usage") so the user knows where to focus their re-narration budget.
+
+**On a second pass over a re-rendered scene**, open the report with what
+*resolved* since the last render before listing new flags, and mark any
+withdrawn flag as withdrawn rather than deleting it — the record of what was
+found matters. Re-rendering genuinely fixes structural problems (one
+re-render eliminated a 60-line stretch with no narrator and recovered
+speaker attributions I had said were unrecoverable) while simultaneously
+regressing on tics, so report both directions honestly. If earlier reports
+in the same session now contain superseded claims, annotate them rather than
+leaving them to mislead.
 
 Remind the user:
 - The report is review-only — they decide which flags to act on.

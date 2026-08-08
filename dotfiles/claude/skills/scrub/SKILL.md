@@ -103,6 +103,13 @@ worth of candidates in one breath.
 Check `state.py show` first — skip any file already listed under
 `processed` unless the GM explicitly asks to redo it.
 
+**`processed` does not track content.** It records a path, not a hash or
+mtime, so a scene that has been re-rendered since its last scrub still looks
+done. Before skipping a `processed` file, compare it against its
+`.scrubbed.md`: if the raw `.md` is newer, or the `.scrubbed.md` is missing
+entirely, the recorded state is stale and the scene needs a fresh pass. Say
+so rather than silently skipping.
+
 ### Phase 1 — collapse known rules, then scan (deterministic, no LLM)
 
 Apply any durable rules the GM has already approved in a prior run, so the
@@ -140,6 +147,66 @@ can't tell those apart and isn't trying to — that's Phase 2's job. Don't
 pre-filter these out of the candidate list; surface them and let the GM
 reject the non-residue ones (and optionally `state.py ignore` the exact
 phrase so it never resurfaces).
+
+### Phase 1b — supplementary read pass (REQUIRED)
+
+**The scanner reliably misses about half the real residue.** Measured over
+several sessions on the Phandalin ch46 narration: of 11 items in one pass, 6
+came from reading rather than scanning; of 4 in another, 1; of 3 in another,
+1. The misses are systematic, not random, and they fall into known shapes:
+
+| What was missed | Why the pattern can't fire |
+|---|---|
+| `I **only** got a ten` | an adverb between `I` and `got` breaks `roll_result_dialogue` |
+| `**The roll** came up short` / `The roll — I felt it go` | no pronoun, so `dice_verb` can't fire |
+| `those are some amazing **rolls**` | noun, not pronoun-plus-verb |
+| `Insight. **Natural One** Insight.` | bare skill name + spelled die result; no number token |
+| `A **17** where a flat roll would have been a **1**` | bare numerals, no result construction |
+| `"17. 17."` | bare numerals in dialogue |
+| `quest tracker` | table vocabulary, matches nothing |
+| `*Inaudible.*` promoted out of a quote into prose | transcription marker, not a residue category |
+
+So after Phase 1, **read the file** and grep for the shapes the categories
+cannot express. A serviceable starting sweep:
+
+```bash
+grep -nEi "\bthe roll\b|\brolls?\b|\bDM\b|\bGM\b|natural (one|1|20)|\bnat [0-9]\b|\badvantage\b|initiative|saving throw|\bmodifier\b|\bDC\b|hit point|\bcheck\b|, guys|quest tracker|sidebar|\bI (only |just )?(got|have|rolled)\b|\[inaudible\]|\bInaudible\b|\b(insight|perception|arcana|persuasion|intimidation|investigation|deception|athletics|stealth|medicine|religion|survival)\b" <scene.md>
+```
+
+**This does not weaken the hard invariant.** The grep is a reading aid for
+*you*, not a new category in `find_residue.py` — nothing it turns up is
+auto-applied, and every hit goes to the GM in Phase 2 like any other
+candidate. Label them explicitly as **supplementary (found by reading, not
+by the scanner)** so the GM knows which findings carry deterministic backing
+and which carry your judgement. Expect false positives from this sweep
+(`check in on`, `pressed his advantage`, `and I have a plan` are idioms, not
+residue); reject them yourself before presenting rather than padding the
+queue.
+
+Never silently add a vocabulary-matching category to `find_residue.py` to
+close these gaps — that is a scope decision and it goes to the GM (see **The
+hard invariant**).
+
+### Phase 1c — debris that belongs to no category
+
+Two things recur that are neither numbers nor fixed phrases nor player
+names, and both are worth surfacing:
+
+- **Transcription markers relocated into prose.** In one case the narration
+  pass lifted `[inaudible]` *out of* a quoted line and re-sited it as a
+  standalone italic thought (`*Inaudible.*`), leaving the quote itself
+  ungrammatical (`"…Has heard about that?"`). Fixing this has two halves —
+  delete the promoted marker *and* restore it inside the quote — and the
+  second half is easy to forget.
+- **Out-of-fiction vocabulary inside locked dialogue**, e.g. `"I'm gonna
+  write that down on the quest tracker."` The immutable-quote rule means no
+  pass will touch it. Report it as an upstream note for
+  `notes/vtt_transcription_corrections.md` rather than editing it.
+
+**Known limit of the immutable-quote rule:** it protects the *contents* of a
+quote, but nothing stops an upstream pass from moving material out of a
+quote into narration. When a quote reads as ungrammatical, suspect that
+something was lifted out of it.
 
 ### Phase 2 — the GM reviews, one candidate at a time, ALWAYS
 
@@ -226,6 +293,22 @@ Collect every (A)/(B) decision from Phase 2 into a JSON array:
 candidate's `context`, don't retype it from memory. Write this to a
 scratchpad file, e.g. `/tmp/scrub_decisions.json`.
 
+Three things that bite here:
+
+- **`line` is the absolute file line number**, counting the YAML
+  frontmatter. `apply_scrub.py` computes `line - body_start_line` itself.
+  Use the numbers `find_residue.py` reports and the numbers Read shows —
+  don't subtract the frontmatter yourself.
+- **Build the decisions file programmatically, don't retype.** Read the
+  target line out of the file and slice it, then assert the slice matches
+  before writing anything. Retyped strings fail on curly vs. straight
+  quotes, em-dash vs. hyphen, and doubled spaces. Do not attempt to
+  construct an em-dash via escape tricks (`"—".encode().decode(...)`
+  mangles it) — paste the literal character.
+- **Assert before you write.** Build the whole edit list, verify every
+  `old` matches exactly once, and only then write the file. A failed
+  assertion mid-loop must leave the file untouched.
+
 ### Phase 4 — apply (deterministic)
 
 ```bash
@@ -242,6 +325,24 @@ guessing. Re-run Phase 1's scan on any skipped-decision lines and re-ask.
 
 The original `session_doc_scene_*.md` is never modified. Frontmatter
 (the `---` YAML block) passes through untouched.
+
+**Whitespace after deletions.** `apply_scrub.py` replaces a span on a line;
+a decision with `"new": ""` blanks the line rather than removing it, so
+deleting a contiguous block leaves a run of blank lines. Most of that is
+cosmetic — Markdown renders three blank lines the same as one — but one case
+is a real structural defect: a blank line left between a speaker tag and its
+quote (`**[GM]**` / blank / `> "…"`) orphans the tag against the file's own
+convention. After applying deletions, check for both, and if you clean them
+up do it as an explicit whitespace-only pass that **verifies no non-blank
+line changed**:
+
+```python
+a=[x for x in original if x.strip()]; b=[x for x in cleaned if x.strip()]
+assert a==b, "whitespace pass altered content"
+```
+
+Report the cleanup to the GM; do not silently hand-edit the applier's output
+in ways that alter text, or the deterministic guarantee is gone.
 
 ### Phase 5 — re-scan to confirm, record processed
 
@@ -277,6 +378,27 @@ python ~/.claude/skills/scrub/state.py --state <campaign>/notes/.scrub_state.jso
   `state.py rule`, grep the target file(s) for the match text in contexts
   where it *shouldn't* translate. Prefer a per-instance decision unless the
   phrase is genuinely unique boilerplate.
+- **Promote a decision to a rule the second time you re-ask it.** If a scene
+  is re-rendered and the same line comes back, that is the signal: the
+  per-instance decision will keep costing a question every render. A long,
+  distinctive match (`you can ask the GM, whether it helps`) is safe; grep
+  first to confirm every occurrence is the same call, then
+  `state.py rule`. This works — a rule added mid-session self-applied on the
+  next run and removed the line without a question.
+- **Scrubbing an upstream layer propagates, but only if it is complete.**
+  When a scrubbed extraction file is promoted to be the narration pipeline's
+  source, its deletions carry through: eight mechanical items removed
+  upstream stayed out of the re-narration. But partial scrubbing backfires —
+  a bare `> "17. 17."` left in place because it was out of scope was
+  **expanded** by the next render into a full paragraph with a roll total
+  and a flat 1. If you scrub an upstream layer, scrub it completely, or tell
+  the GM plainly which residue you are leaving for the renderer to inflate.
+- **Scrub sits downstream of narration** (`extraction → narration → scrub →
+  assemble`). That means a re-narration is re-scrubbed anyway, so "scrub the
+  upstream layer to stop regressions" is a weaker argument than it sounds.
+  The real reason to scrub upstream is to stop the renderer *elaborating*
+  mechanics into prose, which is a different and worse failure than passing
+  them through.
 - **This skill does not touch `scrub_mechanics.py` or the Session Doc
   Editor's Scrub button.** Those remain as-is (the OOTA per-campaign
   override prompt stays in place as the existing stopgap). Wiring the
