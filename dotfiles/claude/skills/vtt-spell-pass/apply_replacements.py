@@ -23,6 +23,22 @@ sys.path.insert(0, str(Path(__file__).parent))
 from find_unknowns import parse_glossary  # type: ignore
 
 
+def word_pattern(literal: str) -> re.Pattern:
+    """Compile a boundary-safe, case-insensitive pattern for a wrong-form.
+
+    ``\\b`` asserts a transition between a word char and a non-word char, so a
+    wrong-form whose first or last char is punctuation (``L.A.``, ``Glabagul-``)
+    can never match its normal context -- ``\\bL\\.A\\.\\b`` needs a WORD char
+    after the final period, but real text has a space there. Such rows sit in
+    the glossary looking valid and never fire (or worse, only fire glued to the
+    next word). Use ``\\b`` for word-char edges and explicit lookarounds for
+    punctuation edges; word-char-edged forms behave exactly as before.
+    """
+    lead = r"\b" if re.match(r"\w", literal[:1]) else r"(?<!\w)"
+    tail = r"\b" if re.match(r"\w", literal[-1:]) else r"(?!\w)"
+    return re.compile(lead + re.escape(literal) + tail, re.IGNORECASE)
+
+
 def is_self_matching(wrong: str, right: str) -> bool:
     """True if applying ``wrong -> right`` is not idempotent.
 
@@ -38,7 +54,7 @@ def is_self_matching(wrong: str, right: str) -> bool:
     substitution cannot do safely -- it has no way to tell an unexpanded
     mention from an already-expanded one. Skip the rule rather than corrupt.
     """
-    return re.search(r"\b" + re.escape(wrong) + r"\b", right, re.IGNORECASE) is not None
+    return word_pattern(wrong).search(right) is not None
 
 
 def apply(
@@ -56,15 +72,13 @@ def apply(
         # Case-insensitive match so mid-sentence lowercase forms are caught
         # (VTT transcripts capitalise at sentence start; wrong-forms in the
         # glossary are Title Case but appear lowercase mid-sentence in the VTT)
-        pattern = re.compile(r"\b" + re.escape(wrong) + r"\b", re.IGNORECASE)
-        new_text, n = pattern.subn(right, text)
+        new_text, n = word_pattern(wrong).subn(right, text)
         if n:
             log.append((wrong, right, n))
             text = new_text
         # Possessive auto-extension: only if the wrong form doesn't already end in 's
         if not wrong.endswith("'s"):
-            poss_pattern = re.compile(r"\b" + re.escape(wrong) + r"'s\b", re.IGNORECASE)
-            new_text, n = poss_pattern.subn(right + "'s", text)
+            new_text, n = word_pattern(wrong + "'s").subn(right + "'s", text)
             if n:
                 log.append((wrong + "'s", right + "'s", n))
                 text = new_text
