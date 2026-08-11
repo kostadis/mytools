@@ -62,11 +62,33 @@ If a file does not exist, omit it from the critique inputs. Note in the report w
 
 ### Phase 3: Apply the critic lens
 
-**Before the sentence-by-sentence pass, run two mechanical scans and include their findings directly in the flags list:**
+**Before the sentence-by-sentence pass, run three mechanical scans and include their findings directly in the flags list:**
+
+**The scans are a floor, not a ceiling.** In the #245 Opus-vs-Fable benchmark every mechanical scan returned **zero** tic hits across all 12 scenes, while reading the same prose found three confirmed instances of the banned behavioral-taxonomy move. A clean scan is not evidence of clean prose. The sentence-by-sentence pass below is what actually catches this family; the scans only buy you the cheap hits.
 
 **Mechanical scan A — em-dashes.** Grep the narration for `—`. Flag every narration-level em-dash for conversion (comma, colon, or period depending on clause relationship). Do NOT flag em-dashes inside `"..."` dialogue or `*...*` italic spans — those are VTT-captured speech disfluencies or truncated lines and must stay verbatim. For each flagged em-dash, give a suggested replacement in the report.
 
 **Mechanical scan B — register-wrong vocabulary.** Grep for words such as: `shape`, `shaped`, `filed`, `geometry`, `geometric`, `aligned`, `configured`, `structure`, `structural`, `axis`, `angle`, `vector`, `plane`, `arc`, `perimeter`, `dimensions`, `calculated`, `formula`. Flag any occurrence in *narration prose* (not inside verbatim dialogue or italic VTT quotes). These are analytical/architectural/mathematical defaults the LLM reaches for when describing arrangement or form; none of the narrators in this party think in those terms. The suggested rewrite should use the narrator's sensory or experiential vocabulary instead.
+
+Also flag the phrase `filed (it|that) away` specifically. `filed` is already in the word list above, but the full phrase is worth calling out as its own reflex: it appeared in three scenes across **both** arms of the #245 benchmark (opus Valphine 02, opus Soma 04, fable Vukradin 03), which makes it a cross-model register default rather than one model's quirk.
+
+**Mechanical scan C — behavioral taxonomy in a rotated shell.** Grep the narration for:
+
+```
+\b(in )?the way (he|she|they|men|women|people|\w+)\s+(do|does|say|says|said|get|gets)\b.{0,40}?(\bwhen\b|\bat (that|his|her|their) age\b)
+```
+
+The trailing alternation is load-bearing. CG#251 proposed this scan requiring a `when` clause, but the third instance it cites has no `when` in it — it generalises via "at that age" instead — so the `when`-only form catches 2 of the 3 cases the scan exists to catch. Dropping the trailing requirement altogether over-fires instead: it flags "I liked the way she said my name" (one person, specific, fine) and "He fixed it the way Brewbarry does" (a named individual, not a class). Requiring *either* a `when` clause *or* an age appeal catches 3/3 with no false positives on that set.
+
+Flag every match in *narration prose* (not inside verbatim dialogue or italic VTT quotes). This is the `base.md` HARD BANS behavioral-taxonomy family wearing a shell that the older "with the [Adj] [Noun] of someone who…" pattern does not match. The banned move is explaining an observed behaviour by generalising it to a class of people, and it survives renaming — so treat a match as a prompt to check the *move*, and check for unmatched variants by reading too.
+
+The three instances this scan was built from — all found by reading, after every existing scan returned zero:
+
+- "He said *aha*, in the way men say it when they have understood nothing." (opus, scene 02)
+- "…everyone looked at me the way they do when they want someone else to decide." (opus, scene 05)
+- "The third one said it plain, the way they say things at that age…" (opus, scene 05)
+
+The suggested rewrite names what the POV character actually saw — the hands, the pause, the word they chose — and stops there.
 
 Then read the narration sentence by sentence. **Flag** a sentence when it falls into one of these categories:
 
