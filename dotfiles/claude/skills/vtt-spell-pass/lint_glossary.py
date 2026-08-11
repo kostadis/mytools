@@ -179,7 +179,13 @@ def lint(rows, corpus_text: str | None):
         # lowercase occurrence -- case-folding the corpus would make every
         # wrong-form match itself.
         if corpus_text and wrong.lower() not in COMMON_WORDS and wrong.lower() != wrong:
-            if re.search(r"\b" + re.escape(wrong.lower()) + r"\b", corpus_text):
+            # Same edge-aware boundaries as apply_replacements.word_pattern, so
+            # this check agrees with what the applier would actually rewrite
+            # (\b around punctuation-edged forms like "L.A." never matches).
+            lw = wrong.lower()
+            lead = r"\b" if re.match(r"\w", lw[:1]) else r"(?<!\w)"
+            tail = r"\b" if re.match(r"\w", lw[-1:]) else r"(?!\w)"
+            if re.search(lead + re.escape(lw) + tail, corpus_text):
                 findings.append((
                     SEV_WARN, "corpus_lower", line_no,
                     f"{wrong!r} occurs in lowercase in the corpus; this rule would "
