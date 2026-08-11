@@ -24,8 +24,8 @@ Detect or ask for:
    - A directory of per-scene files (critique all of them).
    When given a directory, prefer `session_doc_scene_NN_*.scrubbed.md` over the raw `session_doc_scene_NN_*.md` for each scene — the scrubbed files are the canonical pre-assembly source. Fall back to the raw `.md` only when no scrubbed variant exists for that scene.
 2. **Campaign directory** — root of the campaign workspace (derive from the narration path, or ask).
-3. **Voice spec directory** — usually `<campaign>/voice/`. Each narrator's spec lives at `<narrator>_voice.md` or `<narrator>.md` (case-insensitive, first-name match).
-4. **Per-character examples directory** (optional) — usually `<campaign>/examples/`. Files named `<narrator>.md` or `<narrator>_examples.md` route per-character; everything else is global.
+3. **Voice spec directory** — usually `<campaign>/voice/`. Filenames vary by campaign and are **not** limited to `<narrator>_voice.md`; resolve them with the full rule in Phase 2, which mirrors what Pass 5 actually does.
+4. **Per-character examples directory** (optional) — usually `<campaign>/examples/`. Routing is per-character for files whose stem matches a narrator's first name and **global for everything else** — see Phase 2, and note it is a *different* rule from the voice-spec one.
 5. **Party doc** (optional) — `<campaign>/docs/party.md` for character relationships and class info.
 
 If invoked with a directory or glob, iterate every scene file. If a referenced voice spec is missing, fall back to the per-character examples; if both are missing, skip that scene with a one-line note rather than fabricating a critique.
@@ -52,13 +52,38 @@ When collecting files from a directory, deduplicate by scene number: for each sc
 
 ### Phase 2: Load voice context for the narrator
 
-For the narrator's first-name lowercase (e.g. `Unla Key` → `unla`):
+**Resolve the voice spec exactly the way Pass 5 resolves it.** The pipeline's rule lives in `session_doc/voice.py` (`load_voice_files` + `_resolve_voice_key`, CampaignGenerator#247). A critic that uses a narrower rule reports "spec missing" for a file the render actually *used*, then grounds every suggestion in nothing and can never fire the spec-conflict category — the mirror image of the bug #247 fixed in the pipeline.
 
-- `<campaign>/voice/<key>_voice.md` or `<campaign>/voice/<key>.md` — the **authoritative voice spec**.
-- `<campaign>/examples/<key>.md` or `<campaign>/examples/<key>_examples.md` — verbatim prose passages for this character.
-- `<campaign>/docs/party.md` — backstory / relationships / class.
+**Step 1 — build the key set.** Glob `<campaign>/voice/*.md`. **Skip every file whose name begins with `_`**: `_genre.md` and friends are shared campaign material, not a per-character spec. For each remaining file, the key is the lowercased stem with a trailing `_voice` removed — `Brewbarry_voice.md` → `brewbarry`, `vukradin_new_pipeline.md` → `vukradin_new_pipeline`.
 
-If a file does not exist, omit it from the critique inputs. Note in the report which inputs were available.
+**Step 2 — resolve the narrator against that key set, in this order, stopping at the first hit:**
+
+| | Rule | Example |
+|---|---|---|
+| a | exact full lowercased name | narrator `Unla Key` → key `unla key` |
+| b | first name only | `Unla Key` → `unla` |
+| c | the **unique** key beginning with the first name followed by `_` or `-` | `Vukradin` → `vukradin_new_pipeline` |
+
+**Step 3 — refuse on ambiguity.** If rule (c) matches two or more keys, this narrator has *no* resolvable spec: do not guess which file the render used. Report it as ambiguous, list the candidates, and treat the spec as missing for grounding purposes.
+
+Rule (c) is the one that matters in practice, and it fires for two distinct reasons:
+
+- **Suffixed filenames.** Phandalin's `voice/` holds `brewbarry_new_pipeline.md`, `soma_new_pipeline.md`, `valphine_new_pipeline.md` and `vukradin_new_pipeline.md` — so a critic checking only `<key>_voice.md` / `<key>.md` reports "spec missing" for **all four** narrators of the campaign the fable benchmark was run on, while Pass 5 had delivered all four specs to the prompt.
+- **Multi-word names.** stormgiants stores `Unla Key` as `unla_key.md`. First-name-only lookup asks for `unla` and misses. Note this skill's previous text used `Unla Key → unla` as its *worked example* of correct behaviour — an example that fails on the very campaign it was drawn from.
+
+Campaigns whose files happen to be named `daz.md`, `grygum.md` (out-of-the-abyss) hit rules (a)/(b) and hid this for months.
+
+**Per-character examples use a different rule — do not reuse the voice rule for them.** From `<campaign>/examples/` (`session_doc/sd_narrate.py::_load_examples`, `session_doc/examples.py`):
+
+- Skip `_`-prefixed files.
+- A file routes to a narrator when its lowercased stem **equals** their first name, or **starts with** `<first>_` or `<first>-`.
+- Several matching files for one character are **concatenated** into that character's block, in sorted order — so check for more than one.
+- **Any file matching no character is GLOBAL** — it reached every narrator's prompt. Read those as house style the render was steered toward, never as evidence of *this* character's voice. A sentence that echoes a global example is doing what it was told.
+- Lookup is first name, then full lowercased name.
+
+Also load `<campaign>/docs/party.md` — backstory, relationships, class. Note that its roster block can be silently *partial*: the pipeline warns only when no character roster parses at all, so a missing PC section reaches the prompt unannounced (campaigns#144).
+
+If a file does not exist, omit it from the critique inputs. Record what resolved and what did not in the report's resolution table (Phase 4) — a miss must never be silent, because a miss is what makes every downstream suggestion ungrounded.
 
 ### Phase 3: Apply the critic lens
 
@@ -124,8 +149,15 @@ Each per-scene report uses this structure:
 # Voice Critique — {narrator}, scene {NN}: {scene_name}
 
 **Narration:** {path}
-**Voice spec:** {path or "missing"}
-**Per-char examples:** {path or "none"}
+
+## Inputs resolved
+
+| Input | Resolved to | How |
+|---|---|---|
+| Voice spec | {filename, or **MISSING**, or **AMBIGUOUS: a, b**} | {rule a / b / c, or the key set searched on a miss} |
+| Per-char examples | {filename(s), or none} | {matched `<first>_…`, or n/a} |
+| Global examples | {filenames, or none} | reached every narrator |
+| Party doc | {path, or none} | {roster N/M PCs} |
 
 ## Flags
 
@@ -155,7 +187,8 @@ Each per-scene report uses this structure:
 - **Never modify the narration file during the critique pass.** The report is a separate artifact. When the user subsequently applies fixes, they belong in the `.scrubbed.md` file (not the raw `.md`) so that `assemble.py` picks them up.
 - **Never auto-apply rewrites.** Suggestions are exactly that — suggestions for the user to consider.
 - **Quote verbatim.** When flagging a sentence, paste it exactly from the narration. The user will search for it; an approximate quote wastes their time.
-- **Suggested rewrites must be grounded.** Pull rhythm and vocabulary from the voice spec and per-character examples. If the spec is missing, mark the suggestion `[grounded in examples only]` or `[no spec available — best guess]`.
+- **Suggested rewrites must be grounded.** Pull rhythm and vocabulary from the voice spec and per-character examples. If the spec is missing, mark the suggestion `[grounded in examples only]` or `[no spec available — best guess]`. **Earn that tag by running Phase 2's full three-rule resolution first** — a whole report tagged `[no spec available]` is far more likely to be a lookup bug than a campaign with no voice files, so check the key set before believing it.
+- **Never critique a spec you could not read.** If a spec resolves, the spec-conflict category is live and you are expected to use it; if it does not, say so in the resolution table and drop that category rather than inferring what the spec probably said.
 - **No commentary on the critique itself.** Don't write "this scene is generally well-narrated but..." in the verdict's first sentence. State the strongest specific issue and stop.
 - **No invented examples.** If the per-character examples are absent, don't fabricate the "right" voice — say what's missing and degrade gracefully.
 
