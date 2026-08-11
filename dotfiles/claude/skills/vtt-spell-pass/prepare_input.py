@@ -194,9 +194,12 @@ def main():
                     help="Write de-duplicated original-format file here (if duplicated)")
     ap.add_argument("--filtered-output", type=Path,
                     help="Write the transcript with --exclude-speaker utterances REMOVED. "
-                         "Unlike --scan-copy this keeps speaker labels and format, so it "
-                         "can feed apply_replacements.py and become the deliverable. Use "
-                         "only when the GM has said those lines should not ship.")
+                         "Unlike --scan-copy this keeps speaker labels and format. Use only "
+                         "when the GM has said those lines should not ship — and do NOT feed "
+                         "it to apply_replacements.py: dropping cues breaks the cue-index "
+                         "pairing `sd_corrections import` needs, so the pass could not be "
+                         "recorded. Removing a speaker from a session tape is its own "
+                         "cue-level decision in transcript_corrections.yaml.")
     ap.add_argument("--exclude-speaker", nargs="*", default=[],
                     help="Speaker labels whose utterances are not campaign content "
                          "(people in the room but not at the table). Filtered from "
