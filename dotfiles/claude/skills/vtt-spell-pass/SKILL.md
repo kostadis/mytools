@@ -21,6 +21,36 @@ The user's stated invariant: *"I know all the NPCs. If a proper name appears
 in a transcript that isn't in our notes, it's a misspelling."* The skill
 operationalises that: the unknown set IS the candidate-misspelling set.
 
+## What this skill delivers — read this before Phase 5
+
+**The deliverable is a set of entries in `transcript_corrections.yaml`, not a
+cleaned `.vtt`.**
+
+A session's `<stem>.transcript.cleaned.vtt` is *generated* by
+CampaignGenerator's `sd_corrections apply` from that cue-indexed record
+(issue #250 R4); the raw `<stem>.transcript.vtt` is the archive and is never
+written. So this skill never writes either file. It writes a **candidate**
+transcript to scratch, and Phase 7 converts the candidate's diff into record
+entries the GM reviews.
+
+This is not bookkeeping pedantry. The arrangement that predated the record —
+a spell pass writing the cleaned tape directly — put 74 unenumerated
+substitutions into Phandalin ch46, three of which inserted a surname nobody
+spoke. Every verbatim guarantee downstream is measured against that file. If
+you write it here instead of recording the diff, `sd_corrections check`
+reports the cues as unexplained and the next `apply` throws the whole pass
+away.
+
+Two consequences to keep in mind from Phase 0 onward:
+
+- **Never write into the session directory.** Not the cleaned tape, and not a
+  stray `.vtt` either: `sd_corrections` finds the raw tape by globbing every
+  non-`.cleaned` `*.vtt` in the directory and demands exactly one, so a
+  candidate parked next to the original makes its commands fail. `$SCRATCH`
+  for everything.
+- **`apply_replacements.py --output` is required and has no default**, and it
+  refuses to write a file an existing record claims. There is no `--in-place`.
+
 ## Required inputs
 
 Detect or ask:
@@ -163,9 +193,17 @@ It reports three things that change the rest of the run:
   prepare_input.py --input <t> --exclude-speaker natasha --filtered-output <t>.filtered.md
   ```
 
-  `--scan-copy` filtering is always safe. `--filtered-output` deletes content
-  from the deliverable, so it needs the GM to have said so explicitly — feed
-  its output to `apply_replacements.py` in Phase 5 in place of the original.
+  `--scan-copy` filtering is always safe. `--filtered-output` deletes content,
+  so it needs the GM to have said so explicitly.
+
+  **But do not feed a `--filtered-output` or `--dedup-output` file to Phase 5.**
+  Both drop cues, and `sd_corrections import` pairs the two transcripts by cue
+  index — it refuses a mismatched pair outright (*"the two transcripts do not
+  carry the same cue indices"*), so a filtered candidate cannot be recorded at
+  all. Filtered and deduped copies are for **scanning**; apply against the full
+  transcript. If the GM genuinely wants a speaker's lines gone from the tape,
+  that is a separate cue-level decision recorded in
+  `transcript_corrections.yaml`, not a side effect of the spell pass.
 - **`duplication`** — whether the body is recorded twice. This does not break
   replacement, but it **doubles every occurrence count**, so every "26x" you
   put in front of the GM is really 13. Detect it here, and pass
@@ -513,11 +551,31 @@ appears lowercase. Before writing a *new* wrong-form to the glossary, grep
 the VTT for lowercase occurrences of it. If any exist — or the wrong-form is
 a common word (`Embrace`, `Close`, `Home`), a generic phrase (`Call and`),
 or a non-name transcription fix (`Izzy` → `he's`) — **do not add it to the
-glossary.** Apply that one correction as a targeted `Edit` on the *cleaned*
-output in Phase 5, touching only the specific line(s). This keeps the
-glossary safe to auto-apply to every future transcript. Examples this run:
-`Embrace → Fembris` (a blanket rule would corrupt "corrosive embrace"),
-`Call and → Kalan`, `Izzy → he's`.
+glossary.** This keeps the glossary safe to auto-apply to every future
+transcript. Examples this run: `Embrace → Fembris` (a blanket rule would
+corrupt "corrosive embrace"), `Call and → Kalan`, `Izzy → he's`.
+
+**Write these as record entries, not as edits.** A one-off fix used to be a
+targeted `Edit` on the cleaned output; it is now a `transcript_corrections.yaml`
+entry, which is a strictly better fit — the entry is *cue-scoped*, so it does
+not need to be globally safe the way a glossary row does, and unlike an edit it
+survives the next `sd_corrections apply`. Note the cue number and the exact
+before/after text now (`find_unknowns.py` contexts give you the span; grep the
+transcript for the cue index), and add them in Phase 7 alongside the imported
+glossary entries:
+
+```yaml
+- id: cue-0224-fembris
+  cue: 224
+  was: 'Gary Young: The corrosive embrace of Embrace is upon us.'
+  now: 'Gary Young: The corrosive embrace of Fembris is upon us.'
+  recorded: <today>
+  verified: true
+  note: one-off; not glossaried because a blanket Embrace rule corrupts "corrosive embrace".
+```
+
+`was` must match the cue exactly, speaker prefix included — that check is what
+makes a stale entry fail loudly instead of pasting an old repair over new words.
 
 The glossary keeps its own running landmine list (a "Notes for future passes"
 section flagging risky case-insensitive rows like `Char→Shar`, `Cal→Kalan`).
@@ -558,27 +616,31 @@ offending row with a `<file>:<line>` location.
   and both are correct rules.
 
 Replacement is expected to be **idempotent** — running the pass twice must
-equal running it once. After Phase 6, re-applying the glossary to the cleaned
-file should produce a byte-identical result; if it doesn't, a row is corrupting
-correct text and the lint will say which.
+equal running it once. Re-applying the glossary to the candidate (to a second
+scratch path) should produce a byte-identical result; if it doesn't, a row is
+corrupting correct text and the lint will say which. This property is what makes
+Phase 7's import trustworthy — a non-idempotent row puts a corruption in the
+record's `now` text, where it reads as an approved correction.
 
-Then apply the now-updated glossary to the transcript:
+Then apply the now-updated glossary to the transcript, **to scratch**:
 
 ```bash
 python ~/.claude/skills/vtt-spell-pass/apply_replacements.py \
   --vtt <vtt> \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
-  --output <vtt-stem>.cleaned.vtt
+  --output "$SCRATCH/candidate.cleaned.vtt"
 ```
 
-(Default output: `<vtt-stem>.cleaned.vtt` next to the original. Pass
-`--in-place` only if the user explicitly asks to overwrite.)
+`--output` is required, there is no `--in-place`, and the script refuses to
+write a `.cleaned.vtt` that an existing `transcript_corrections.yaml` claims
+(see "What this skill delivers"). The candidate is an input to Phase 7, not the
+deliverable — nothing downstream reads it.
 
 Report the per-pair replacement count back to the user.
 
-### Phase 6 — re-scan to confirm + record processed VTT
+### Phase 6 — re-scan to confirm
 
-Re-run `find_unknowns.py` against the cleaned VTT. Any remaining
+Re-run `find_unknowns.py` against the candidate. Any remaining
 unknowns mean either (a) a candidate slipped through pre-classification
 or (b) a new word the user didn't get to. Show the user the diff and ask
 whether to do another pass.
@@ -587,11 +649,59 @@ Expect **false residuals** to remain (see Phase 1) — multi-word capitalised
 runs like `And Kalan`, `The Helmed Horror`, `Helmed Horror No` whose embedded
 name is already correct. These are *not* a reason for another pass; only a
 residual whose embedded proper noun is actually *wrong* is. Also grep the
-cleaned output for accidental doubling from full-name wrong-forms (e.g.
-`Strongbranch Strongbranch`) and fix any with a targeted edit.
+candidate for accidental doubling from full-name wrong-forms (e.g.
+`Strongbranch Strongbranch`). **Fix these in the glossary and re-run Phase 5**,
+not by editing the candidate — a doubling is a bad *row*, and an edit leaves it
+in place to fire again next session. `lint_glossary.py` names the fix.
 
-After confirming, record the VTT as processed so future runs against the
-same path are no-ops:
+### Phase 7 — hand the diff to `sd_corrections`, then regenerate
+
+The candidate is a proposal. Turn it into record entries, get them reviewed,
+and let CampaignGenerator generate the tape:
+
+```bash
+cd <session-dir>
+
+# 1. one entry per differing cue, all verified: false
+sd_corrections import --dir . \
+  --raw <stem>.transcript.vtt \
+  --edited "$SCRATCH/candidate.cleaned.vtt" \
+  --record "$SCRATCH/proposed.yaml"
+
+# 2. review, then merge into ./transcript_corrections.yaml (hand-merge if one
+#    already exists — `import --force` discards its notes and verified flags)
+
+# 3. generate the tape and confirm
+sd_corrections apply --dir .
+sd_corrections check --dir .          # expect: no findings
+```
+
+Notes that matter:
+
+- **Pass `--raw` explicitly whenever the session has more than one non-cleaned
+  `.vtt`** (any `audio-to-vtt` run leaves `<stem>.transcript.retranscribed.vtt`
+  beside the original). Auto-detection demands exactly one and exits 2
+  otherwise. The raw you name is the one the record is written against, and it
+  determines which `.cleaned.vtt` `apply` produces.
+- **Every imported entry lands `verified: false`.** Here that is a formality,
+  not a backlog: Phase 3 already put each cluster to the GM. Flipping
+  `verified: true` is transcribing rulings that were already made — so do it
+  entry by entry against your Phase 3 answers, and **delete** rather than
+  approve any cue the GM did not rule on. An import captures *whatever* differs,
+  including a substitution a glossary row made in a context nobody looked at.
+- **`import` writes one entry per cue, not per substitution.** Two glossary
+  rows firing in one cue produce one entry whose `now` holds both fixes; that is
+  correct, and the record refuses two entries on a single cue.
+- Add the Phase 4 one-off entries here too, with `verified: true` — they never
+  went through the glossary, so `import` does not know about them.
+- **`apply` is all-or-nothing.** If any `was` no longer matches the tape,
+  nothing is written and every failure is named. A stale entry means the raw
+  tape changed under the record; fix `was` or drop the entry.
+- Deleting an entry is how you *revert* a substitution: drop it and the next
+  `apply` restores what was spoken.
+
+Finally, record the transcript as processed so future runs against the same path
+are no-ops:
 
 ```bash
 python ~/.claude/skills/vtt-spell-pass/state.py \
@@ -617,7 +727,7 @@ python ~/.claude/skills/vtt-spell-pass/state.py \
   actually contain a surname token (`Callan Strongfeld → Kalan Strongbranch`).
   **`lint_glossary.py` does not catch this** — the row is fine in isolation and
   only doubles when the transcript already supplies the surname, so grep the
-  *cleaned output* for repeated surnames every run. It recurs: this pass found
+  *candidate* for repeated surnames every run. It recurs: this pass found
   `Toblin → Toblen Stonehill` turning "Toblin Stonehill" into
   "Toblen Stonehill **Stonehill**"; fixed by demoting it to `Toblin → Toblen`.
 - **Don't silently expand the user's variant lists.** If the user says
@@ -630,6 +740,13 @@ python ~/.claude/skills/vtt-spell-pass/state.py \
 - **The glossary lives in `notes/`, which is excluded from the mempalace.**
   This is intentional — the glossary is a cleanup-pass reference, not
   campaign canon. Don't try to mine it.
+- **Glossary and record are different objects; keep them straight.** The
+  glossary (`notes/vtt_transcription_corrections.md`) is a *standing rule set*,
+  campaign-wide and reusable, so every row must be safe applied blind to any
+  future transcript. The record (`<session-dir>/transcript_corrections.yaml`) is
+  *what actually happened to this one tape*, cue-scoped and auditable. A fix too
+  dangerous to generalise belongs only in the record. Nothing belongs only in a
+  file you edited by hand.
 
 ## Why this design
 
@@ -644,3 +761,14 @@ This matches the global rule: *LLMs are renderers, not architects. Good
 pattern: LLM extracts → human reviews and imposes structure → LLM renders
 inside that structure.* Phase 1 is deterministic extraction; Phase 3 is
 the human checkpoint; Phase 5 is deterministic rendering.
+
+Phase 7 exists because that checkpoint used to leave no trace. The pass applied
+what the GM approved, wrote the cleaned tape, and kept the *rules* in the
+glossary — but not what any individual cue became, and not the one-off edits
+that never earned a rule at all. So the tape everything downstream measures
+verbatim against was, in the end, unreviewable: on Phandalin ch46, 74
+substitutions nobody could enumerate, three of them inventing a surname. The
+record closes that gap without moving any decision away from the GM: the
+glossary still holds the approved rules, and the record now holds the approved
+*results*. That is also why the applier's `--output` has no default — the one
+path it used to default to is the one it must never write.
