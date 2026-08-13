@@ -13,8 +13,8 @@ Turn the raw, transcriber-corrected verbatim quotes into **readable prose that s
 ```
 VTT  (raw verbatim — IMMUTABLE, forever the record + the voice-file raw material)
   → scene_extractions/           (verbatim; transcriber errors fixed by /session-summary-consistency)
-  → [THIS SKILL] voice-smooth    (readable, in-voice; guarded by voice/<char>_voice.md)
-      → scene_extractions_smoothed/   (DERIVED — what session_doc reads)
+  → [THIS SKILL] voice-smooth    (readable, in-voice; guarded by the voice/ specs)
+      → scene_extractions_smoothed/   (DERIVED — `## Voiced moments`, what session_doc reads)
   → session_doc narration
   → /voice-critic (checks the finished narration against the voice spec)
 ```
@@ -36,19 +36,36 @@ Smooth *corrected* quotes, not garbled ones. If the verbatim still contains obvi
 
 - **session-dir** — `summaries/YYYYMMDD/`. Default: CWD (if CWD is the campaign root, ask which session).
 - **scene dir** — `<session-dir>/scene_extractions_new/` **or** `<session-dir>/scene_extractions/` (suffix varies). Detect it; call it `<scene-dir>`.
-- **voice files** — `<campaign-root>/voice/<char>_voice.md`, plus `voice/_genre.md` (overall tone). **Authoritative** for how each character speaks.
+- **voice files** — from `<campaign-root>/voice/`. Filenames are **not** limited to `<char>_voice.md`; resolve them with the three-rule lookup in step 1, which mirrors what the pipeline does. Plus `voice/_genre.md` (overall tone). **Authoritative** for how each character speaks.
 - **player→character map** — from the glossary `## Player names → characters` section (only needed if any labels still carry real names — they shouldn't after /session-summary-consistency).
 
 ## Workflow
 
 ### 1. Locate + load the guardrails
 - Detect `<scene-dir>`; if missing, stop.
-- `ls voice/` and read **every** `voice/*_voice.md` + `voice/_genre.md`. Build a `speaker → voice-spec` map. **Read a character's voice file before smoothing a single one of their lines** (voice files are authoritative — global campaign rule).
+- Read `voice/_genre.md` for overall tone.
+- **Resolve voice files the way the pipeline resolves them.** The rule lives in CampaignGenerator `session_doc/voice.py` (`load_voice_files` + `_resolve_voice_key`, CampaignGenerator#247). Do not use a narrower one: `voice/*_voice.md` matches **zero** files in Phandalin, whose specs are `brewbarry_new_pipeline.md`, `soma_new_pipeline.md`, `valphine_new_pipeline.md` and `vukradin_new_pipeline.md` — so all four PCs of the campaign smoothing is standard on would get no spec, and this skill's own "voice files are authoritative" rule could not be honoured.
+
+  **Build the key set.** Glob `voice/*.md`. **Skip every file whose name begins with `_`** — `_genre.md` and friends are shared campaign material, not a per-character spec. For each remaining file the key is the lowercased stem with a trailing `_voice` removed: `Brewbarry_voice.md` → `brewbarry`, `vukradin_new_pipeline.md` → `vukradin_new_pipeline`.
+
+  **Resolve each speaker against that key set, stopping at the first hit:**
+
+  | | Rule | Example |
+  |---|---|---|
+  | a | exact full lowercased name | `Unla Key` → `unla key` |
+  | b | first name only | `Unla Key` → `unla` |
+  | c | the **unique** key beginning with the first name followed by `_` or `-` | `Vukradin` → `vukradin_new_pipeline` |
+
+  **Refuse on ambiguity.** If rule (c) matches two or more keys, that speaker has no resolvable spec: do not guess which file the pipeline would use. Report it as ambiguous, list the candidates, and treat the spec as missing.
+
+  Campaigns whose files happen to be named `daz.md`, `grygum.md` (out-of-the-abyss) hit rules (a)/(b), which is how the narrower rule went unnoticed.
+
+- **Read a character's voice file before smoothing a single one of their lines** (voice files are authoritative — global campaign rule). If a speaker's spec does not resolve, say so before smoothing their lines rather than rendering them from nothing.
 - Speakers with no voice file:
   - **GM** (narration / OOC / rules) → render as clean, plain GM prose; do not invent a voice.
   - **GM as <NPC>** → draw the NPC's characterization from its dossier (`docs/npcs/`) **or the session prep docs** (`notes/session_prep/`, `notes/sessions/`) if either gives you one, else a neutral, readable rendering. Never flatten a distinctive NPC into GM-neutral when a source gives you a voice — this run rendered Kalan (precise, professorial), Bookwyrm (compliment-as-warning, maternal-turned-glacial), Grygum (warm-as-method reassurance), and Daral (effusive) from prep/dossier characterization, not from PC voice files.
 
-### 2. Smooth each quote (per scene, under `## Verbatim moments`)
+### 2. Smooth each quote (per scene, from the source's `## Verbatim moments`)
 For every quote block:
 1. Identify the **speaker** and load their voice spec.
 2. Produce a **smoothed** version that is:
@@ -59,8 +76,13 @@ For every quote block:
 4. **Mixed-attribution blocks.** The extraction often tucks a reply from another speaker *inside* a quote block (a GM or NPC line under a PC's label). Render each line in the correct voice and **tag the interloper inline** (`[GM]`, `[Kalan]`, `[Bookwyrm]`, `[Dawnbringer]`), but do **not** re-attribute the block's label — that is an upstream fix; flag it, don't silently move it.
 
 ### 3. Write the derived layer
-Write `<session-dir>/scene_extractions_smoothed/NN_slug.md`, **mirroring the verbatim file's structure** (frontmatter, `## Scene summary`, the moments section, and the same speaker labels) so it is a drop-in for `session_doc`. Mark it as derived:
+Write `<session-dir>/scene_extractions_smoothed/NN_slug.md`, mirroring the verbatim file's structure (frontmatter, `## Scene summary`, a moments section, and the same speaker labels) so it is a drop-in for `session_doc` — **with one deliberate exception, below.** Mark it as derived:
 - frontmatter `source: voice-smoothed` and `from: ../scene_extractions/NN_slug.md`
+- **rename the moments heading to `## Voiced moments`.** Do NOT copy `## Verbatim moments` across. The heading is a *claim*, and CampaignGenerator's `session_doc/io.py` binds it to one: `## Verbatim moments` says *these are the tape's words*, which this skill has just stopped being true. `## Voiced moments` says *tidied for reading; not exact* — which is what a smoothed file is (CampaignGenerator#250 R5).
+
+  This is not cosmetic. The heading is what drops the file out of the **contract axis**: rules R1 and R3 police exactness inside a span marked verbatim, and firing them on prose that openly declares it was edited produces refusals for edits this layer exists to make. (It does not change the verdict counts — `unverified` still means untraceable to any transcript line, which is a fabrication or a splice either way, and remains a defect here too.)
+
+  Phandalin's `scene_extractions_smoothed/` currently carries `## Verbatim moments` on every file, which is the state CampaignGenerator#304 detects and warns about.
 - copy the `## Scene summary` across, but **scrub player real names as you copy** (e.g. `Kostadis → GM`, via the glossary `## Player names → characters` map) — these summaries routinely leak the GM's real name, and copying it forward propagates the leak. **Flag** (don't rewrite) any transcription garble you notice in the summary (its origin is gm-assist / the scene-extract step). Leave the summary's wording and facts otherwise unchanged.
 - replace each verbatim quote's text with its smoothed rendering under the same speaker label
 
@@ -84,6 +106,7 @@ Note that `session_doc` should now read from `scene_extractions_smoothed/` (the 
 ## Conventions
 
 - **Verbatim is immutable.** Never write to the VTT or `scene_extractions/`. This skill's only output is `scene_extractions_smoothed/`.
+- **Never carry a claim you cannot keep.** The output heads its moments section `## Voiced moments`, never `## Verbatim moments` — see step 3.
 - **Voice files are authoritative** — read them first, preserve the voice, never homogenize. When a player corrects a characterization, the voice file wins; update it there, not here.
 - **Preserve, don't rewrite.** Readability + voice only. Names, numbers, mechanics, attribution, and *meaning* are off-limits.
 - **Don't over-smooth.** Deliberate style is voice; only transcription noise and genuine unreadability get cleaned. A character who rambles on purpose should still ramble.
