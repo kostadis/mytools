@@ -156,7 +156,11 @@ Its output has three streams and they mean different things:
 
 - `ERROR` — a hard breach. Include as a flag.
 - `warn` — at or approaching a cap. Include as a flag.
-- `note` — **a check that did not run.** Most often `[skipped] bookkeeping/filing checks — this campaign's rulebook declares no voice_lint bookkeeping block`. Surface it in the ledger as *not checked*. It is not a pass, and reporting it as one is the exact defect this delegation fixes: those rules used to be hardcoded to out-of-the-abyss' four narrators, so three other campaigns got a clean bill from a check that never ran.
+- `note` — **a check that did not run.** Every one starts `[skipped]` or `[config]`. Surface it in the ledger as *not checked*. It is not a pass, and reporting it as one is the exact defect this delegation fixes: those rules used to be hardcoded to out-of-the-abyss' four narrators, so three other campaigns got a clean bill from a check that never ran.
+
+**Read the skip's reason, do not assume it.** A `[skipped]` note names one of five causes, and they are not interchangeable: no rulebook was asked for, the file is not there, it has no `yaml voice_lint` block, the block declares no `bookkeeping` section, or that section did not parse. Only the third and fourth mean *this campaign has no filing register*. The others mean the rulebook did not arrive, which is a finding about the run, not about the campaign — report it as one.
+
+**Exit codes.** `1` means a hard ERROR fired. `2` means the `--genre-file` path could not be read: the invocation is wrong, so fix the path and run again rather than reporting the critique. `0` with `[skipped]` notes is still an incomplete pass, not a clean one.
 
 `voice_lint` has no equivalent for two scans, so run them yourself, with the *rulebook-derived* rule from Phase 3c:
 
