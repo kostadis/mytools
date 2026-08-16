@@ -166,6 +166,33 @@ Its output has three streams and they mean different things:
 
 **Scan A — em-dashes**, against what the rulebook actually says (see 3c). Report the total count and the flagged subset separately; they are usually not the same number. For each flagged one, give a suggested replacement (comma, colon, or period depending on clause relationship).
 
+**Scan A2 — trailing em-dash PROVENANCE, at the end of a verbatim quote.** This is a different question from Scan A and it is the one the "do NOT flag verbatim dialogue" rule below will hide from you, so run it deliberately.
+
+A quote ending `—"` is not decoration: it **asserts that the speaker was interrupted**. That assertion can be false, and when it is false the narrator did not invent it — an upstream layer did. Phandalin ch48 is the measured case. `session_doc.yaml`'s `scene_extractions_dir` pointed at `scene_extractions_smoothed/`, and the smoothing pass had rewritten the verbatim layer wholesale:
+
+| | raw `scene_extractions/` | smoothed (what the narrator read) |
+|---|---|---|
+| `*(truncated)*` markers | 57 | 1 |
+| quote endings `—"` | **0** | **59**, across all 8 scenes |
+
+Most of that is genuine repair — it merges artificially split VTT cues into whole sentences, which is why zero `(truncated)` markers reach the narration. But it renders **every** residual trail-off as an interruption. 41 reached the narration; 40 were legitimate interruptions (`"Or my—"`, `"It's just an—"`, `"Disguise self as—"`) and one was a speaker trailing off with nobody speaking over her.
+
+Why the reading pass cannot catch this: every one of the 41 sits inside `"…"`, so the Phase 5 rule correctly skips them all. The critique reports the scene clean and the false assertion ships.
+
+Run it as a diff, not a judgment:
+
+```bash
+for d in scene_extractions scene_extractions_smoothed; do \
+  echo "$d: $(grep -rhc '—"$' $d/0*.md | paste -sd+ | bc)"; done
+```
+
+**A nonzero delta is the finding.** Then adjudicate only the deltas, against the tape — a trailing em-dash is *correct* when someone speaks over them and *wrong* when they trail off. Both transcripts having a full stop, plus no overlapping speaker in the next cues, means trail-off. Prefer the raw extraction's punctuation, which is the pre-smoothing capture.
+
+Two riders, both learned the hard way on that run:
+
+- **Position makes a trail-off load-bearing.** A campaign may carry a standing "repair only load-bearing truncations" ruling, which normally leaves table trail-offs alone — correctly, they are an accurate record of how people talk. But a truncation that is the **scene's or the document's final line** is load-bearing by position: the chapter ends mid-sentence. That was the one wrong dash of the 41.
+- **Removing the dash can strand the attribution verb.** `"…yourself—" Soma starts.` parses only while the dash marks her as cut off. Swap to a period and `starts` dangles. Check the attribution clause in the same edit, and flag that second change separately — it alters narrator prose, not punctuation.
+
 **Scan B — register-wrong vocabulary**, using the vocabulary the rulebook and the voice specs establish for this campaign. The suggested rewrite should use the narrator's sensory or experiential vocabulary instead.
 
 **The scans are a floor, not a ceiling.** In the #245 Opus-vs-Fable benchmark every mechanical scan returned **zero** tic hits across all 12 scenes, while reading the same prose found three confirmed instances of the banned behavioral-taxonomy move. A clean scan is not evidence of clean prose. The reading pass below is what actually catches this family; the scans only buy you the cheap hits — and under fable they buy less, because fable flags at roughly half opus's rate (≈1.1 vs ≈2.4 per 1000 words on matched corpora; the numbers are owned by `Issue245Followups_handoff.md`, not re-derived here).
@@ -186,7 +213,7 @@ Then read the prose sentence by sentence. **Flag** a sentence when it falls into
 
 **Do NOT flag:**
 
-- Verbatim dialogue inside `"…"` — load-bearing, must not be rewritten.
+- Verbatim dialogue inside `"…"` — load-bearing, must not be rewritten. **One exception, and it is not a style flag:** a quote *ending* `—"` asserts an interruption, and that assertion is inherited from the extraction layer rather than authored by the narrator. It is checked by provenance diff in Scan A2, not by reading.
 - Prose inside a `<!-- table-speech reclassified: … -->` hatch — Phase 7 handles it.
 - Action beats that simply describe what happened, even if plain. Plain ≠ generic.
 - Prose that already matches the per-character examples — even if it would look generic on its own, matching the writer's established voice is the *goal*. The same goes for prose that echoes a *global* example: it is obeying instructions.
