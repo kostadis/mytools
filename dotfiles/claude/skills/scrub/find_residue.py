@@ -152,6 +152,32 @@ def split_frontmatter(text: str) -> tuple[str, str, int]:
     return fm, text[end + 5:], fm.count("\n") + 1
 
 
+_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def mask_html_comments(text: str) -> str:
+    """Blank out <!-- ... --> spans so no pattern can match inside them.
+
+    Every character is replaced with a space except newlines, so offsets and
+    line numbers stay exact and `context` can still be taken from the
+    unmasked line.
+
+    Why: sd_narrate writes a `<!-- table-speech reclassified: ... -->` hatch
+    quoting the raw table speech it pulled — roll instructions included
+    ("Valphine, roll your insight."). That is an audit record of text already
+    removed from the fiction, and assemble.py strips the comment at assembly.
+    A match inside it is therefore always a false positive. This mirrors the
+    existing frontmatter handling: a region the scanner should not read.
+
+    Narrowing only — this can suppress false hits, never mask a real one,
+    because prose outside comments is left byte-identical.
+    """
+    def _blank(m: re.Match) -> str:
+        return "".join("\n" if ch == "\n" else " " for ch in m.group(0))
+
+    return _COMMENT_RE.sub(_blank, text)
+
+
 def load_player_names(party_md: Path | None) -> list[str]:
     if not party_md or not party_md.is_file():
         return []
@@ -187,6 +213,9 @@ def load_state_ignored(state_path: Path | None) -> set[str]:
 def scan(body: str, body_start_line: int, player_names: list[str],
          protect: set[str], ignored: set[str]) -> list[dict]:
     lines = body.split("\n")
+    # Matched against the masked copy so <!-- --> spans are unreadable to every
+    # pattern; `context` is still taken from the unmasked line above.
+    masked_lines = mask_html_comments(body).split("\n")
     candidates = []
     cid = 0
 
@@ -206,12 +235,13 @@ def scan(body: str, body_start_line: int, player_names: list[str],
 
     for i, line in enumerate(lines):
         line_no = body_start_line + i
-        stripped = line.strip()
+        scan_line = masked_lines[i]
+        stripped = scan_line.strip()
         if not stripped:
             continue
 
         for category, pattern, scale in PATTERNS:
-            for m in pattern.finditer(line):
+            for m in pattern.finditer(scan_line):
                 match_text = m.group(0)
                 hint = None
                 if scale is not None:
@@ -221,14 +251,14 @@ def scan(body: str, body_start_line: int, player_names: list[str],
                         hint = tier_hint(val, scale)
                 add(category, line_no, match_text, line, hint)
 
-        low = line.lower()
+        low = scan_line.lower()
         for phrase in TABLE_SPEAK_PHRASES:
             if phrase.lower() in low:
                 idx = low.find(phrase.lower())
-                add("table_speak", line_no, line[idx: idx + len(phrase)], line)
+                add("table_speak", line_no, scan_line[idx: idx + len(phrase)], line)
 
         for name in player_names:
-            if re.search(rf"\b{re.escape(name)}\b", line):
+            if re.search(rf"\b{re.escape(name)}\b", scan_line):
                 add("player_name", line_no, name, line)
 
     return candidates
