@@ -8,6 +8,12 @@ Inputs:
   --npcs-dir <path>    docs/npcs/
   --extra-known <path> Optional plain-text file, one canonical name per line
                        (PCs, players, common module proper nouns, etc.)
+  --registry <path>    Optional docs/entity_registry.yaml — every entity name
+                       + alias is added to the known set directly (no manual
+                       flatten-to-txt step needed; see load_registry_names).
+                       CampaignGenerator#141: registry names/aliases are
+                       identity data, never ASR mishearings — those stay in
+                       --glossary. See registry-cleanup/SKILL.md.
 
 Outputs JSON to stdout:
   {
@@ -145,6 +151,32 @@ def parse_npc_dossiers(npcs_dir: Path) -> set[str]:
                     a = alias.strip().strip("`*\"'")
                     if a:
                         names.add(a)
+    return names
+
+
+def load_registry_names(registry_path: Path | None) -> set[str]:
+    """Every entity name + alias from docs/entity_registry.yaml.
+
+    Same source and same fields as audio-to-vtt/vocab.py's registry_names()
+    (kept as a separate copy — that module builds a ranked list for Whisper
+    hotword biasing, a different shape and consumer, so sharing one function
+    across the two would be a coincidental-duplication coupling, not a real
+    one). A registry alias is, by construction (registry-cleanup/SKILL.md),
+    an approved canonical alternate name — never a misspelling — so every
+    name returned here is safe to treat as known-correct.
+    """
+    if not registry_path or not registry_path.exists():
+        return set()
+    import yaml
+    data = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+    names: set[str] = set()
+    for entity in data.get("entities", []) or []:
+        name = entity.get("name")
+        if name:
+            names.add(name)
+        for alias in entity.get("aliases", []) or []:
+            if alias:
+                names.add(alias)
     return names
 
 
@@ -401,6 +433,10 @@ def main():
     ap.add_argument("--extra-known", type=Path, nargs="*", default=[],
                     help="One or more flat one-name-per-line dictionaries of "
                          "verified nouns (e.g. notes/proper_nouns_adventure.txt)")
+    ap.add_argument("--registry", type=Path, default=None,
+                    help="docs/entity_registry.yaml — every entity name + "
+                         "alias is added to the known set (see "
+                         "load_registry_names)")
     ap.add_argument("--min-count", type=int, default=1,
                     help="Only report unknowns appearing at least this many times")
     args = ap.parse_args()
@@ -411,12 +447,13 @@ def main():
     replacements, canonicals = parse_glossary(args.glossary)
     npc_names = parse_npc_dossiers(args.npcs_dir)
     extra = load_extra(args.extra_known)
+    registry_names = load_registry_names(args.registry)
 
-    # Known set = canonicals + npc names + extras + already-classified
-    # wrong-forms (so we don't re-ask about misspellings the user already
-    # decided about) + their constituent words.
+    # Known set = canonicals + npc names + extras + registry names/aliases +
+    # already-classified wrong-forms (so we don't re-ask about misspellings
+    # the user already decided about) + their constituent words.
     wrong_forms = {w for w, _ in replacements}
-    known = set(canonicals) | npc_names | extra | wrong_forms
+    known = set(canonicals) | npc_names | extra | registry_names | wrong_forms
     # Add single-word forms of multi-word names so "Asha" alone is also known
     for name in list(known):
         for w in name.split():
@@ -440,6 +477,7 @@ def main():
             for k, v in sorted_items
         ],
         "known_names_count": len(known),
+        "registry_names_count": len(registry_names),
     }
     print(json.dumps(out, indent=2))
 
