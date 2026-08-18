@@ -64,20 +64,28 @@ Detect or ask:
    glossary already exists in the documented format — see Out of the Abyss
    for the canonical example).
 4. **NPC dossier dir** — `<campaign>/docs/npcs/` if present.
-5. **Verified-noun dictionaries** — flat, one-name-per-line files of
+5. **Entity registry** — if `<campaign>/docs/entity_registry.yaml` exists,
+   pass it directly via `--registry` on **both** scripts (`find_unknowns.py`
+   and `cluster_unknowns.py` read it natively — no flattening, no
+   `registry.py project` regeneration first, always current with the last
+   registry edit). A registry name or alias is, by construction
+   (`registry-cleanup/SKILL.md`'s rule), an approved canonical alternate
+   name — **never** a mishearing — so it is always safe to treat as known.
+   If no registry exists yet but `docs/entity_inventory.md` (its older,
+   generated markdown projection) does, fall back to flattening that one
+   file per the bullet steps below and pass it via `--extra-known` instead.
+
+6. **Verified-noun dictionaries** — flat, one-name-per-line files of
    confirmed proper nouns (module NPCs, creatures, spells, locations,
    deities) that should be treated as known and therefore never surfaced
    as candidate misspellings. These are *not* the glossary — they are
    pre-verified vocabulary that suppresses false positives and improves
    clustering (dictionary entries also become canonical replacement
    targets). **Auto-detect the conventional flat path
-   `<campaign>/notes/proper_nouns_adventure.txt`. Also check whether the
-   campaign keeps a generated entity inventory: `docs/entity_inventory.md`
-   (produced from `docs/entity_registry.yaml` by `registry.py project`) is
-   the current OOTA source. Surface what you found and ask the user to
-   confirm or add more before running Phase 1.** Pass every confirmed flat
-   file to both scripts via `--extra-known` (the flag accepts multiple
-   paths).
+   `<campaign>/notes/proper_nouns_adventure.txt`. Surface what you found
+   and ask the user to confirm or add more before running Phase 1.** Pass
+   every confirmed flat file to both scripts via `--extra-known` (the flag
+   accepts multiple paths).
 
    Format matters: `--extra-known` treats every non-`#` line as a name, so
    only feed flat one-per-line dumps. Do **not** pass a markdown file raw
@@ -85,10 +93,10 @@ Detect or ask:
    and prose fragments into the known set and can silently suppress real
    unknowns.
 
-   **Flatten generated markdown sources first.** `entity_inventory.md` and
-   `notes/vtt_known_additions.md` are valuable name sources but are
-   markdown, not flat. Extract each into a throwaway `.txt` in your
-   scratchpad, then pass the `.txt`:
+   **Flatten generated markdown sources first.** `notes/vtt_known_additions.md`
+   (and `docs/entity_inventory.md`, only when used per #5's fallback) are
+   valuable name sources but are markdown, not flat. Extract each into a
+   throwaway `.txt` in your scratchpad, then pass the `.txt`:
    - pull every `**bold**` span from each `- ` bullet line;
    - split each span on ` / ` (multi-alias entries like
      `**Whistlerites / Miloites / Protanthians**` become three names);
@@ -102,11 +110,15 @@ Detect or ask:
    but the glossary maps it → `Kalan Strongbranch`; a stale "known" entry
    silently suppresses a real unknown. When you flatten it, flag any entry
    that also appears as a glossary wrong-form to the user — the glossary wins.
+   (`vtt_known_additions.md` is also not yet fed into the registry's own
+   `triage-candidates` queue — CampaignGenerator#141 — so a name confirmed
+   here today does not promote itself into the registry; that's still a
+   separate, manual step via `/entity-triage` or `registry add`.)
 
    If no dictionary exists, proceed without one — it is an enhancement, not
    a hard dependency.
 
-6. **Retranscription context (when available)** — if `<vtt>`'s filename
+7. **Retranscription context (when available)** — if `<vtt>`'s filename
    contains `.retranscribed` or `.retranscribed.cleaned` (i.e. it's an
    `audio-to-vtt` output, not a plain Otter/Zoom export), two extra
    sources exist and should be used:
@@ -126,10 +138,10 @@ Detect or ask:
    with no `.retranscribed` sibling has neither, and the skill runs
    exactly as it always has.
 
-7. **A second, independent transcription (when one exists)** — the same
+8. **A second, independent transcription (when one exists)** — the same
    session transcribed by a *different* tool, with no shared timestamps and
    different segmentation (e.g. a voice-detection markdown export alongside a
-   D&D-tuned WebVTT). This is NOT the `.retranscribed` pairing in #6, which is
+   D&D-tuned WebVTT). This is NOT the `.retranscribed` pairing in #7, which is
    filename- and cue-aligned; here nothing lines up, so matching is by text.
    Use `sibling_context.py` (Phase 3). Check the session directory for one
    before starting — if two transcripts of the same date exist, you have this.
@@ -222,16 +234,21 @@ python ~/.claude/skills/vtt-spell-pass/find_unknowns.py \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
   --npcs-dir <campaign>/docs/npcs \
   --extra-known <campaign>/notes/proper_nouns_adventure.txt \
+  --registry <campaign>/docs/entity_registry.yaml \
   --min-count 1 \
 | python ~/.claude/skills/vtt-spell-pass/cluster_unknowns.py \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
   --npcs-dir <campaign>/docs/npcs \
   --extra-known <campaign>/notes/proper_nouns_adventure.txt \
+  --registry <campaign>/docs/entity_registry.yaml \
   > "$SCRATCH/clusters.json"
 ```
 
+Omit `--registry` if `<campaign>/docs/entity_registry.yaml` doesn't exist (required-input #5's fallback applies instead — flatten `entity_inventory.md` and pass it via `--extra-known`).
+
 `--extra-known` accepts multiple paths — pass every dictionary the user
-confirmed in required-input #5 (omit the flag if none exist).
+confirmed in required-input #6 (omit the flag if none exist). Pass
+`--registry` too if required-input #5 found a registry (or its fallback).
 
 `find_unknowns.py` emits the raw unknown-token list with counts and
 contexts. `cluster_unknowns.py` then:
@@ -267,6 +284,9 @@ already said "not a name, ignore" in a prior run.
 `known_names_count` should be in the hundreds for a mature campaign. If
 it's <50 the glossary or `docs/npcs/` isn't being read correctly —
 investigate before bothering the user with hundreds of false positives.
+If `--registry` was passed, also check `registry_names_count` is nonzero
+(0 with a real registry file usually means the wrong path was passed, or
+the YAML has no `entities:` key).
 
 **Collapse the set first: apply the current glossary, then re-scan.**
 Before surfacing anything, run `apply_replacements.py` with the *existing*
@@ -280,9 +300,9 @@ python ~/.claude/skills/vtt-spell-pass/apply_replacements.py \
   --vtt <vtt> --glossary <glossary> --output "$SCRATCH/preview_current.vtt"
 python ~/.claude/skills/vtt-spell-pass/find_unknowns.py \
   --vtt "$SCRATCH/preview_current.vtt" --glossary <glossary> \
-  --npcs-dir <npcs> --extra-known <dicts> --min-count 1 \
+  --npcs-dir <npcs> --extra-known <dicts> --registry <registry> --min-count 1 \
 | python ~/.claude/skills/vtt-spell-pass/cluster_unknowns.py \
-  --glossary <glossary> --npcs-dir <npcs> --extra-known <dicts>
+  --glossary <glossary> --npcs-dir <npcs> --extra-known <dicts> --registry <registry>
 ```
 
 Many survivors are **false residuals**: multi-word capitalised runs whose
@@ -323,7 +343,7 @@ For everything that survives, you have your **candidate list**.
 
 ### Phase 2.5 — adjudicate against the second transcription (MANDATORY when one exists)
 
-If Phase 0 / required-input #7 found a second transcription, check **every**
+If Phase 0 / required-input #8 found a second transcription, check **every**
 candidate against it BEFORE putting any of them to the GM:
 
 ```bash
@@ -396,7 +416,7 @@ TaskCreate to enumerate clusters and AskUserQuestion to walk them one at
 a time as multiple choice.
 
 **Cross-referencing Zoom's original (when a `.retranscribed` sibling
-exists — see Required input #6).** Before asking about a cluster, look up
+exists — see Required input #7).** Before asking about a cluster, look up
 Zoom's original text for one representative context excerpt:
 
 ```bash
