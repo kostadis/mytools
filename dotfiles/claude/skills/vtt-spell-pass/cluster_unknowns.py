@@ -3,7 +3,10 @@
 decision covers many variants.
 
 Reads the JSON output of `find_unknowns.py` (passed on stdin or via --in)
-plus the same glossary + npcs-dir, then groups unknowns into clusters:
+plus the same glossary + npcs-dir + registry (pass the identical --registry
+value used for that run, or a registry-bound token can bind to a canonical
+find_unknowns.py had already ruled out as known), then groups unknowns into
+clusters:
 
 1. **Bound to known canonical**: every unknown that's "close enough" to a
    known canonical (edit distance ≤ 3, OR Double Metaphone code match, OR
@@ -60,6 +63,7 @@ from find_unknowns import (  # type: ignore
     parse_glossary,
     parse_npc_dossiers,
     load_extra,
+    load_registry_names,
 )
 
 try:
@@ -276,6 +280,10 @@ def main():
     ap.add_argument("--extra-known", type=Path, nargs="*", default=[],
                     help="One or more flat one-name-per-line dictionaries of "
                          "verified nouns (e.g. notes/proper_nouns_adventure.txt)")
+    ap.add_argument("--registry", type=Path, default=None,
+                    help="docs/entity_registry.yaml — same source find_unknowns.py "
+                         "uses; pass the same value here so the two scripts' "
+                         "known sets don't diverge")
     args = ap.parse_args()
 
     if args.in_path:
@@ -292,8 +300,9 @@ def main():
     replacements, canonicals = parse_glossary(args.glossary)
     npc_names = parse_npc_dossiers(args.npcs_dir)
     extra = load_extra(args.extra_known)
+    registry_names = load_registry_names(args.registry)
     wrong_forms = {w for w, _ in replacements}
-    knowns_set = set(canonicals) | npc_names | extra | wrong_forms
+    knowns_set = set(canonicals) | npc_names | extra | registry_names | wrong_forms
     # Keep only multi-character names; single letters are noise.
     #
     # ORDER IS LOAD-BEARING, so it must not come from a set. best_known_match()
@@ -319,7 +328,12 @@ def main():
     wrong_to_canon: dict[str, str] = {}
     for w, c in replacements:
         wrong_to_canon[w.lower()] = c
-    canonicals_lc = {c.lower() for c in canonicals} | {n.lower() for n in npc_names} | {e.lower() for e in extra}
+    canonicals_lc = (
+        {c.lower() for c in canonicals}
+        | {n.lower() for n in npc_names}
+        | {e.lower() for e in extra}
+        | {r.lower() for r in registry_names}
+    )
 
     def resolve_canonical(matched: str) -> str:
         """If the matched name is a known wrong-form, return its canonical."""
