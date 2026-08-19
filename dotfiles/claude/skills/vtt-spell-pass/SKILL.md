@@ -1,7 +1,7 @@
 ---
 name: vtt-spell-pass
 description: Clean up Otter/Zoom VTT transcripts for a D&D campaign — applies the known-misspellings glossary and prompts the user about unrecognised proper nouns. Invoke as /vtt-spell-pass [vtt-path].
-tools: Read, Glob, Grep, Bash, Edit, Write, AskUserQuestion, TaskCreate, TaskUpdate, ToolSearch
+tools: Read, Glob, Grep, Bash, Edit, Write, AskUserQuestion, TaskCreate, TaskUpdate, ToolSearch, Artifact, WebFetch
 ---
 
 # VTT Spell Pass
@@ -105,6 +105,18 @@ Detect or ask:
    before starting — if two transcripts of the same date exist, you have this.
 
 ## Workflow
+
+### Phase -1 — choose the review mode
+
+Before anything else, one `AskUserQuestion`:
+
+> **Review the candidates in an artifact, or here in the shell?**
+> - **Artifact** — one page, every pair that needs a ruling, mark them at your own pace, save once.
+> - **Shell** — one cluster at a time, the way this skill has always worked.
+
+Ask this every run; do not remember a default. If they choose the artifact,
+Phases 0–2.5 run exactly as written and **Artifact mode** below replaces
+Phase 3. Phases 4–6 are shared.
 
 ### Scratch files — one namespace per run, never a fixed path
 
@@ -598,6 +610,74 @@ python ~/.claude/skills/vtt-spell-pass/state.py \
   --state <campaign>/notes/.vtt_spell_pass_state.json \
   processed <vtt-path>
 ```
+
+## Artifact mode (batch review)
+
+Replaces Phase 3 only. Phases 0–2.5 and 4–6 are unchanged, and the shell path
+stays exactly as documented. Full contract:
+`~/.claude/skills/_shared/review-artifact/CONTRACT.md`.
+
+### The consent unit is the PAIR, never the cluster
+
+**This is not negotiable and it is why this skill produces more cards than the
+others.** `merge_proposals.py` states it directly:
+
+> *"Consent granularity: the unit is the (wrong_form → canonical) PAIR.
+> Questions are grouped by canonical for batching, but every member carries
+> its own count and sibling verdict so the GM can accept some and reject
+> others. **Collapsing a group into one yes/no would approve hallucinated
+> members invisibly.**"*
+
+So one card per `(token → canonical)` pair. Group them by canonical in card
+order so the GM reads a canonical's members together, but never merge them
+into a single card, and never let approving one member imply another.
+
+### What is auto-applied, footer only
+
+- `action ∈ {leave_alone, add_to_known_set}` — no ruling needed.
+- `auto_dismissed[]` under the `AGENT_BRIEF.md` gate: **`count == 1` AND
+  `kind == ordinary_words`**. Never on `inconclusive`, never on `count ≥ 2`.
+- Glossary rows that already exist — Phase 0's known-misspellings pass.
+
+Name the counts in the `footer` so the GM can see what ran without them.
+
+### What becomes a card
+
+`action ∈ {propose, propose_low_confidence, escalate, escalate_blocking}`.
+
+```json
+{ "id":  "vucherton__vukradin",
+  "t":   "<code>Vucherton</code> → <b>Vukradin</b> · 3 occurrences, 2 chapters",
+  "y":   "Add the row to <code>vtt_transcription_corrections.md</code>, lint, and rewrite 3 occurrences to <b>Vukradin</b>.",
+  "n":   "Not a garbling of Vukradin. Saved to <code>.vtt_spell_pass_state.json</code> as ignored, and never asked again.",
+  "ev":  "Verbatim: <em>…a no-skimming clause that Mr. Vucherton insisted…</em> · rule <code>edit_distance,metaphone</code> · confidence <code>medium</code> · sibling: <code>agent_corrected</code>" }
+```
+
+Card ids must round-trip to the pair. Use `<token>__<canonical>`, lowercased
+and non-alphanumerics collapsed to `_`, and keep a sidecar map in `$SCRATCH`
+from id → `{token, canonical, section, count}` — the page returns ids only.
+
+**Always put the verbatim excerpt in `ev`.** A pair judged without its context
+is the exact failure the pair-consent rule exists to prevent.
+
+### Publish, then stop
+
+Hand over the link and **do not poll**. When the GM says they are done,
+`WebFetch` the URL and run `read_decisions.py`.
+
+### Verdict mapping — feeds Phase 4 unchanged
+
+| verdict | action |
+|---|---|
+| **approve** | `add_to_glossary.py --wrong <token> --right <canonical> --section <matching the canonical's EXISTING row>` |
+| **reject** | `state.py ignore "<token>"`, unless the card's `n` says "real name" — then append to `notes/vtt_known_additions.md` instead |
+| **discuss** + note naming a canonical | treat as approve with the GM's canonical, not the proposed one |
+| **discuss**, no note | back to the shell, grouped with the other discussed pairs |
+| **unmarked** | undecided — leave the pair for the next run and say so |
+
+Then Phase 5 as written: **lint before applying.** `lint_glossary.py` exit 1
+blocks the run — a batch of approvals is exactly when a `doubling` or
+`conflict` row does the most damage.
 
 ## Important conventions
 
