@@ -264,6 +264,41 @@ distinctive real-world noun is exactly the kind of thing a later line calls
 back to. Removing `Houston, Texas` from one line stranded `Nobody asks him
 what a Houston is.` two sentences on.
 
+#### The third disposition: annotate — the sage's marginal note
+
+Keep and replace are not the only rulings. When the anachronism sits inside
+**verbatim player speech**, the joke is loved, and no in-world swap survives
+inside the quote without rewriting what the player said, offer **annotate**:
+leave the quote byte-exact and add an in-world scholarly gloss immediately
+after the beat it explains, as an italic paragraph in this shape:
+
+> *Marginal note in a later hand: "<term>" — <invented in-world explanation>.
+> — <sage persona>*
+
+Established precedent (Phandalin ch3 scene 07, GM-approved 2026-08-18):
+`"He's dead, Jim,"` stayed verbatim, Brewbarry's `I do not know Jim. Dead is
+dead.` stayed, and the note invented **Jimble the Unmoved** — a cleric of the
+old coastal sagas who pronounced companions dead rather than spend the prayer
+— which simultaneously explains why coastal Soma knows the phrase and mountain
+Brewbarry does not.
+
+Rules for the device:
+
+- **The persona must be the campaign's established in-world scholar** —
+  Phandalin: **Kostadinious the Sage** (the campaign's in-world biographer).
+  Never mint a new sage per note; if a campaign has no such persona, that is
+  a GM decision to make before the first note, not something to improvise.
+- **The note is narration-layer apparatus**, not dialogue and not direct
+  thought — the `Marginal note in a later hand:` preamble is what keeps the
+  italics from reading as the genre's thought convention. `assemble.py`
+  passes it through untouched.
+- **Both obligations above apply in full**: whatever the note invents is
+  canon (`provenance: on_the_fly`), and the note is a deliberate divergence
+  from the tape — record it as GM-authored.
+- **It is a spice, not a default.** Propose it per instance alongside keep
+  and replace; one note per session doc is apparatus, a note per joke is
+  clutter.
+
 ### Phase 2 — the GM reviews, one candidate at a time, ALWAYS
 
 **Hard rule: nothing is rewritten without an explicit per-candidate
