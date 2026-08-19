@@ -305,8 +305,26 @@ the rewrite should land in.
 eight scenes' worth of candidates in one artifact is the same breath problem
 in a different shape.
 
-**Publish**, hand over the link, and **stop — do not poll**. When the GM says
-they are done, `WebFetch` the URL and run `read_decisions.py`.
+**Publish**, hand over the link, and **stop**.
+
+**Two ways the save reaches you, and one that is forbidden.**
+
+- **The notification.** Publishing arms a live subscription on this session. When
+  the GM saves, an `artifact-changed` task-notification naming this artifact
+  arrives on its own — **that is the save signal.** Act on it: `WebFetch` the URL
+  and read the decisions without waiting to be told. It can lag (the subscription
+  arms in the background), and it only lives as long as the session that
+  published.
+- **The GM's word.** If the session was restarted, or the notification never
+  comes, the GM simply says they are done. Same action.
+- **Never poll.** Not on a timer, not "just checking" — the two routes above
+  cover every case, and a poll loop burns a turn per check for nothing.
+
+A notification means *the page was republished*, nothing more. It is not the GM
+speaking and it is not approval of anything: the decisions come from the state
+block, and `read_decisions.py` still refuses a page whose `savedAt` is null.
+
+Then `WebFetch` the URL and run `read_decisions.py`.
 
 **Map the verdicts back into the Phase 3 decisions array:**
 

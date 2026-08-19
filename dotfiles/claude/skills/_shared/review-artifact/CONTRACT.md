@@ -32,8 +32,8 @@ which ran a real `/staged-consistency` pass this way. Do not reauthor it.
    **`capabilities: {"artifact": {}}`** — without it the page cannot save and
    the GM gets the read-only fallback. Give it a stable `favicon` and a
    noun-phrase `title`.
-4. **Stop.** Hand over the link and say nothing further. **Do not poll.** The
-   GM marks the page, presses **Save decisions**, and tells you in chat.
+4. **Stop.** Hand over the link and say nothing further. See **Pickup** below
+   for how the save comes back — it is usually automatic, and it is never a poll.
 5. **Read back.** `WebFetch` the artifact URL — it returns raw HTML for
    `claude.ai/code/artifact` URLs, and for a large page also writes it to a
    local file whose path it reports. Point the reader at that file:
@@ -47,6 +47,35 @@ which ran a real `/staged-consistency` pass this way. Do not reauthor it.
 **Redeploying to the same URL:** republish the same `file_path` in the same
 conversation, or pass `url:` from another one. `staged-consistency` does this
 once per stage.
+
+---
+
+## Pickup — how the save comes back
+
+**Publishing arms a live subscription on the publishing session.** When the GM
+presses Save, the page republishes itself, and an `artifact-changed`
+task-notification naming that artifact arrives on its own. **That is the save
+signal** — act on it, `WebFetch` the URL and read the decisions without waiting
+to be told.
+
+Two things it is not:
+
+- **Not the GM speaking.** It means *the page was republished*, nothing more. It
+  is never approval, never confirmation, and never an answer to a question you
+  asked. The rulings come from the state block and nowhere else.
+- **Not guaranteed.** The subscription arms in the background and can lag, and it
+  only lives as long as the session that published. A GM who closes the terminal
+  and comes back tomorrow just says they are done — same action, same read-back.
+
+So the rule is: **publish, stop, and take whichever arrives first — the
+notification, or the GM's word.** Never poll on a timer; the two routes cover
+every case and a poll loop burns a turn per check for nothing.
+
+**On republished pages** (`staged-consistency` publishes once per stage), every
+republish re-arms the subscription, so a later notification names the same
+artifact. Before treating one as a fresh set of rulings, check that the state's
+`savedAt` is **newer than the one you already processed** — otherwise you will
+re-apply a stage you have already applied.
 
 ---
 
@@ -131,7 +160,7 @@ undecided, not as rejected, and say so when you report back.
 
 ## Rules
 
-- **Never poll.** Publish, hand over the link, stop.
+- **Never poll.** Publish, hand over the link, stop — see **Pickup**.
 - **Never auto-apply something you put on the page.** Anything that reaches
   the page is the GM's call by construction.
 - **Shell mode is untouched.** Artifact mode is strictly additive.

@@ -183,8 +183,30 @@ instead of copying the error forward. Do not collate all stages into a single
 end-of-run page — that gives up the gate the skill exists for.
 
 Sequence per stage: run the check → present the severity table in the shell →
-build the items → publish → **stop** → the GM saves and says so → read back →
-apply → **then** start the next stage.
+build the items → publish → **stop** → the save comes back → read back → apply
+→ **then** start the next stage.
+
+**Two ways the save reaches you, and one that is forbidden.**
+
+- **The notification.** Publishing arms a live subscription on this session. When
+  the GM saves, an `artifact-changed` task-notification naming this artifact
+  arrives on its own — **that is the save signal.** Act on it: `WebFetch` the URL
+  and read the decisions without waiting to be told. It can lag (the subscription
+  arms in the background), and it only lives as long as the session that
+  published.
+- **The GM's word.** If the session was restarted, or the notification never
+  comes, the GM simply says they are done. Same action.
+- **Never poll.** Not on a timer, not "just checking" — the two routes above
+  cover every case, and a poll loop burns a turn per check for nothing.
+
+A notification means *the page was republished*, nothing more. It is not the GM
+speaking and it is not approval of anything: the decisions come from the state
+block, and `read_decisions.py` still refuses a page whose `savedAt` is null.
+
+**One subscription per stage.** Each republish re-arms it, so the notification
+for stage 2 names the same artifact as stage 1 — check that the state's
+`savedAt` is newer than the one you already processed before treating it as a
+fresh set of rulings.
 
 Set the `eyebrow` to `<campaign> · <chapter> · stage N — <filename>` so the GM
 can tell which stage they are looking at after a republish. Keep `title`
