@@ -148,6 +148,10 @@ For every quote block:
    - **In-voice** — keeps the character's register, characteristic vocabulary, sentence rhythm, and signature tics. Thorin's clipped bluntness and Zalthir's hedging verbosity are **voice, not error** — preserve them. Do **not** homogenize everyone into the same neutral prose.
    - **Faithful** — same meaning, same content, **same names, numbers, mechanics, and attribution**. Add nothing; drop no substance. If you can't smooth a line without changing what it means, leave it closer to verbatim.
 3. **OOC / table chatter** (jokes, rules talk, real-world tangents): smooth *lightly* for readability only — do **not** force it into in-character voice, and keep any OOC marker. When in doubt, leave OOC lines near-verbatim.
+
+   **Exception — pure tooling/logistics noise gets cut, not smoothed.** Not all OOC content is table talk. A distinct sub-class carries zero narratable content and doesn't belong in `## Voiced moments` even lightly smoothed: VTT/roll20 tool-fighting ("Where's the init thing?... run script... screw it"), map-token placement ("put this here — Bloodstained"), and off-mic real-world asides to someone in the room ("get out of there... sorry"). None of it is banter *about the game* — it's the players operating the software, or talking to someone who isn't at the table. Phandalin ch3 (2025-05-28 session): the GM ruled the init-tracker fight in scene 01 should be **deleted** from the smoothed layer, not merely smoothed — and that standard was then applied to every other instance of the same class found while smoothing the rest of the session (the map-token line, Soma's off-mic aside), not just the one line the GM actually reviewed. Generalizing a ruling beyond its original scope is itself a judgment call — flag it explicitly for confirmation rather than assuming the GM's intent covers every future instance silently.
+
+   **Cut it; don't fake-render it.** Deleting is different from marking `[inaudible]` (that tag is for lost *meaningful* content) — this is content that was captured cleanly but isn't part of the scene. Leave an italic note at the top of the affected sub-section recording what was cut and why, so the omission stays auditable rather than silent: `*Cut from this layer: a beat of VTT map-token placement (...) — table/tooling logistics, not narratable content. See voice_smooth.sources.yaml.*` Record each cut in the manifest's `calibration_decisions` (or equivalent) so a later reader can see the ruling was made once and applied consistently, not re-litigated per line.
 4. **Mixed-attribution blocks.** The extraction often tucks a reply from another speaker *inside* a quote block (a GM or NPC line under a PC's label). Render each line in the correct voice and **tag the interloper inline** (`[GM]`, `[Kalan]`, `[Bookwyrm]`, `[Dawnbringer]`), but do **not** re-attribute the block's label — that is an upstream fix; flag it, don't silently move it.
 5. **Split stage direction out of NPC speech — this is the single biggest win this skill delivers to narration.** A GM speaks narration and NPC dialogue in one unbroken breath, and the extractor captures the whole breath inside one pair of quotation marks. The result is a "quote" that is not a quote:
 
@@ -190,6 +194,23 @@ Any repair that changes a *word* rather than punctuation, filler, or sentence bo
 A third tier appears once the run is long: candidates that are *mechanical applications of a ruling the GM already made this session* (a proper noun settled two scenes ago, recurring in a new one). Those can join the batch — but say so, and name the earlier ruling you are applying.
 
 **Never batch:** anything that establishes canon, any name not already settled, and anything where your recommendation is a guess. Those stay 1x1 no matter how long the queue is.
+
+#### Reporting at volume — the interactive review artifact
+
+Batch-vs-1x1 is about how many decisions to bundle into one *question*; it doesn't solve the problem of 74 rulings across 8 scenes exhausting the GM's attention regardless of bundling. For a full-session run, publish an interactive **Approve / Reject / Discuss** HTML artifact instead of (or as well as) walking the queue in chat. Demonstrated end-to-end on Phandalin ch3 (2025-05-28): a full 10-scene pass reviewed in two rounds, each round-tripped by download.
+
+Build it with the `Artifact` tool (`artifact-design` skill for treatment — this is a utilitarian tool, not editorial; `artifact-capabilities` skill for the `downloads` contract):
+
+- Declare `capabilities: {"downloads": true}`.
+- One card per candidate, grouped by scene (or by decision class for calibration pairs — step 4). Each card carries exactly what a 1x1 chat question would: every transcript's reading named, corroboration found, the voice-file/framing rationale, the full-sentence before→after preview, and a keep-verbatim option.
+- Each card gets a segmented **Approve / Reject / Discuss** control. **Discuss** reveals a `<textarea>` for the GM's own words — never force a bare reject when they want to explain or counter-propose.
+- A sticky tally dock (counts per verdict + how many remain undecided) so a long queue stays legible instead of becoming a wall to skim.
+- A "Download decisions" button: `claude.use("downloads")`, then `downloads.save({filename, data})`; if the namespace resolves `null`, reveal a fallback `<textarea>` pre-filled with the same content so the GM can copy-paste manually instead.
+- Export a single Markdown decision record, one section per candidate, verdict + any discuss-text — structured so you can parse it back mechanically.
+
+**The round trip:** the GM downloads the record, then either pastes it into chat or names the saved path (on WSL2, a Windows-side save lands at `/mnt/c/Users/<user>/Downloads/...`, directly readable). Read it back and apply per verdict: **Approve** → apply the garble fix or calibration ruling exactly as a chat "yes" would; **Reject** → skip, don't re-litigate; **Discuss** → resolve using the GM's own text in conversation before acting — never auto-apply a Discuss item on your own reading of their note.
+
+This does not relax the confirmation requirement — every garble ruling still needs an explicit GM verdict, per-item. It changes the delivery mechanism at volume, not the checkpoint itself. Below the batch threshold (a handful of candidates in one scene), a chat question is still simpler; reach for the artifact once the queue is long enough that serial chat would exhaust the reviewer.
 
 For each candidate, bring:
 
@@ -252,6 +273,8 @@ Smoothing changes words, so the human is the checkpoint (LLM drafts → human re
 Ask: *"Approve these, edit specific ones, or want a different smoothing pass on any character?"*
 
 **Once calibration is locked, do not dump pairs for the remaining scenes.** A full session is many hundreds of quote lines and a wall of pairs gets skimmed, which is worse than no review. The real review of the rest happens through the garble rulings in step 2.5 — those are the changes that can actually go wrong. For each remaining scene, report what you rendered, the count of stage-direction splits and truncations handled, and then go to its rulings.
+
+If the calibration pairs themselves run long (many representative pairs, several decision classes), the same **interactive review artifact** described under step 2.5 applies here too — one card per pair, grouped by decision class, Approve/Reject/Discuss, download-and-read-back. Use plain chat for a single calibration scene's handful of pairs; reach for the artifact only if that set grows past what a reviewer can hold in view at once.
 
 Apply all edits to the `scene_extractions_smoothed/` files only.
 

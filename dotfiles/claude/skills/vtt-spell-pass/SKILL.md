@@ -530,6 +530,64 @@ you don't know whether it's a player or an NPC, ask. Mistakes here cost
 real corrections. Clustering already cuts the question count — don't
 compound that with silent dismissals.
 
+#### At volume, use the interactive review artifact instead of serial `AskUserQuestion`
+
+Clustering cuts question count, but a mature campaign's residual can still run
+to dozens of clusters and singletons per session — enough that a serial
+one-at-a-time chat walk exhausts the user before Phase 3 finishes, and an
+exhausted user starts rubber-stamping (the same failure mode this skill's
+Phase 2.5 exists to prevent for evidence quality — don't reintroduce it at
+the delivery stage). Once the queue is longer than a handful of clusters,
+publish an interactive **Approve / Reject / Discuss** HTML artifact instead.
+
+This does not relax the hard rule above — every new wrong→right mapping still
+needs the user's explicit confirmation, one candidate at a time. It changes
+*how* that confirmation is collected, not whether it's required.
+
+Build it with the `Artifact` tool (`artifact-design` skill for treatment —
+this is a utilitarian tool, not editorial; `artifact-capabilities` skill for
+the `downloads` contract):
+
+- Declare `capabilities: {"downloads": true}`.
+- One card per cluster/singleton, in the same yield-ordered sequence as the
+  chat walk (high-confidence bound clusters first, low-count singletons
+  last). Each card carries exactly the fields the cluster/singleton templates
+  above already collect: proposed canonical, members with counts and context
+  excerpts, Zoom's-original cross-reference when `zoom_context.py` returned a
+  hit, and the sibling-transcription read from Phase 2.5 when one exists.
+- Each card gets the same option set as its chat template, rendered as
+  controls rather than lettered choices — confirm-canonical / different-
+  canonical / not-a-name(ignore) / split-ask-1x1 for clusters; the per-token
+  equivalent for singletons. Fold these into a segmented **Approve / Reject /
+  Discuss** control: Approve = confirm the proposed canonical, Reject = not a
+  name (ignore), Discuss = reveals a `<textarea>` for the user to type a
+  different canonical, a split instruction, or anything else the lettered
+  options don't cover.
+- A sticky tally dock (approved/rejected/discussed/remaining) — this is what
+  makes a 40-cluster residual reviewable in one sitting instead of forty
+  separate messages.
+- A "Download decisions" button: `claude.use("downloads")` →
+  `downloads.save({filename, data})`; if the namespace resolves `null`,
+  reveal a fallback `<textarea>` pre-filled with the same content for manual
+  copy-paste.
+- Export one Markdown decision record, one section per cluster/singleton,
+  structured so it parses back mechanically into the same shape Phase 4
+  expects (wrong-form(s) → canonical, or ignore, or new-canon).
+
+**The round trip:** the user downloads the record, then pastes it into chat
+or names the saved path (WSL2: a Windows-side save lands at
+`/mnt/c/Users/<user>/Downloads/...`, directly readable). Read it back and
+route each entry exactly as its chat-template letter would have: Approve →
+Phase 4's `add_to_glossary.py` call; Reject → no action, and persist via
+`state.py ignore` same as a chat "D"; Discuss → resolve using the user's own
+text in conversation (a typed canonical, a split request, a new-canon
+decision) before taking any Phase 4 action — never guess what a Discuss note
+means and apply it silently.
+
+Below the volume threshold — a short residual, or a rerun where only a few
+new tokens surfaced — the chat/`AskUserQuestion` walk above is simpler and
+there is no reason to reach for the artifact.
+
 ### Phase 4 — record decisions
 
 For each "misspelling" decision (A or B), call:
