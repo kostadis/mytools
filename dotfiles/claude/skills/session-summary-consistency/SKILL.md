@@ -104,15 +104,28 @@ Include a summary table at the end:
 
 Output the full report in the conversation. Do not apply any edits yet.
 
+**For a large report, offer the interactive review artifact instead of (or alongside) the chat report.** A full-session run across ~10 scenes can produce dozens of findings, and a wall of `Original → Proposed` pairs in chat gets skimmed past a certain length. Build an **Approve / Reject / Discuss** HTML artifact with the `Artifact` tool (`artifact-design` skill for treatment — utilitarian tool, not editorial; `artifact-capabilities` skill for the `downloads` contract) instead:
+
+- Declare `capabilities: {"downloads": true}`.
+- One card per finding, grouped by scene file — the same grouping as the chat report, so nothing is reorganized between formats.
+- Each card shows category, speaker, `Original`/`Proposed`, and the one-sentence reason — exactly the fields the chat report's per-item block already has.
+- Segmented **Approve / Reject / Discuss** control per card. **Discuss** reveals a `<textarea>` for the user's own note — don't force a bare reject when they want to counter-propose a different correction.
+- A sticky tally dock (approved/rejected/discussed/remaining) so a long list of findings stays legible.
+- A "Download decisions" button: `claude.use("downloads")` → `downloads.save({filename, data})`; if the namespace resolves `null`, reveal a fallback `<textarea>` pre-filled with the same content for manual copy-paste.
+- Export one Markdown decision record, one section per finding, structured so it parses back mechanically.
+
+The round trip: the user downloads the record, then pastes it into chat or names the saved path (WSL2: a Windows-side save lands at `/mnt/c/Users/<user>/Downloads/...`, directly readable). Read it back and route by verdict — **Approve** feeds step 6 exactly like an "apply all" confirmation would for that item; **Reject** is skipped and not re-raised; **Discuss** is resolved using the user's own text in conversation before any edit is applied. This doesn't change the approval requirement (every fix still needs an explicit user verdict) — only how the request for that verdict is delivered at volume. For a short report (a scene or two, a handful of findings), the plain chat report below is simpler and there's no reason to reach for the artifact.
+
 ### 5. Wait for user approval
 
-After presenting the report, ask:
+After presenting the report (or publishing the artifact), ask:
 
 > "Want me to apply all of these, or go through them selectively?"
 
 - **"apply all"** — apply every proposed fix using the Edit tool, one per Edit call. Do fixes to different files in parallel; fixes within the same file sequentially.
 - **"selective"** — walk through the report item by item and apply only what the user confirms.
 - **"none"** / **"just the report"** — stop here.
+- If an artifact was published, a downloaded decision record supersedes this prompt — parse it and apply per verdict as described above.
 
 ### 6. Apply fixes
 
