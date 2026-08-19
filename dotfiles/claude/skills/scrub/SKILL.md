@@ -10,7 +10,7 @@ description: >
   apply step then writes `.scrubbed.md`. Replaces the autonomous
   `scrub_mechanics.py` LLM pass per CampaignGenerator issue #151 (the
   spell-stripping incident). Invoke as /scrub [narration-dir-or-file].
-tools: Read, Glob, Bash, Write, Edit, AskUserQuestion, TaskCreate, TaskUpdate, ToolSearch
+tools: Read, Glob, Bash, Write, Edit, AskUserQuestion, TaskCreate, TaskUpdate, ToolSearch, Artifact, WebFetch
 ---
 
 # Scrub
@@ -95,6 +95,17 @@ If `AskUserQuestion` is not loaded, run `ToolSearch` with
 ## Workflow
 
 ### Phase 0 — pre-flight
+
+**First, ask how the GM wants to review.** Before anything else, one
+`AskUserQuestion`:
+
+> **Review the candidates in an artifact, or here in the shell?**
+> - **Artifact** — one page, all candidates, mark them at your own pace, save once.
+> - **Shell** — one candidate at a time, the way this skill has always worked.
+
+Ask this every run; do not remember a default. If they choose the artifact,
+run Phase 1 as written and then jump to **Artifact mode** below instead of
+Phase 2. Everything from Phase 3 onward is shared.
 
 Use `TaskCreate` to enumerate the target files. For each, run Phase 1–4
 below. Process one file at a time so the GM isn't asked about 8 scenes'
@@ -256,6 +267,59 @@ Once clean:
 python ~/.claude/skills/scrub/state.py --state <campaign>/notes/.scrub_state.json \
   processed <scene.md-path>
 ```
+
+## Artifact mode (batch review)
+
+Replaces Phase 2 only. Phases 1 and 3–5 are unchanged, and the shell path
+stays exactly as documented above. Full contract:
+`~/.claude/skills/_shared/review-artifact/CONTRACT.md`.
+
+**What is auto-applied, and it is deliberately almost nothing.** Only the
+durable `state.rules` matches that Phase 1's `apply_known_rules.py` pre-pass
+already collapses, plus `state.ignored` suppressions. **Every remaining
+candidate becomes a card.** This skill's hard invariant is that nothing else
+is rewritten without a per-candidate decision, and moving to a batch UI does
+not relax it — it only stops the questions arriving one at a time.
+
+**Build the items.** One card per `find_residue.py` candidate, keeping its
+own `id` (`c1`, `c2`…) so Phase 3 can map decisions back to `line`/`match`.
+Draft the proposed rewrite exactly as you would have in Phase 2 — the card
+has to carry it, or the GM is approving a blank cheque. Keep the Phase 2
+review ORDER as the card order: `roll_result_dialogue` / `roll_callout`
+first, then the numeric categories, then `foot_count` / `round_count` /
+`initiative` / `advantage_with_number` / `dice_verb`, then `table_speak` /
+`player_name`.
+
+```json
+{ "id":  "c1",
+  "t":   "Roll result spoken as a number — scene 01, line 21",
+  "y":   "Rewrite <code>\"I have twenty-two.\"</code> → <code>\"Let me look.\"</code>",
+  "n":   "Not residue — protect this exact phrase, never ask again (state.py ignore)",
+  "ev":  "Context: <em>So I stepped up. \"I have twenty-two.\"</em> · category <code>roll_result_dialogue</code>" }
+```
+
+Put the `hint` tier in `ev` for the numeric categories — it is the register
+the rewrite should land in.
+
+**One page per file.** Phase 0's "process one file at a time" still holds:
+eight scenes' worth of candidates in one artifact is the same breath problem
+in a different shape.
+
+**Publish**, hand over the link, and **stop — do not poll**. When the GM says
+they are done, `WebFetch` the URL and run `read_decisions.py`.
+
+**Map the verdicts back into the Phase 3 decisions array:**
+
+| verdict | action |
+|---|---|
+| **approve** | `{"line": <candidate line>, "old": <candidate match>, "new": <the drafted rewrite>}` |
+| **reject** | `state.py ignore "<match>"` — no entry in the decisions array |
+| **discuss** + note | the note text becomes `new`; if the note says the phrase should *always* translate this way, use `state.py rule --match --replacement --category` instead of a one-off |
+| **discuss**, no note | bring back to the shell, grouped with the other discussed cards |
+| **unmarked** | undecided — say so, and leave the candidate for the next run |
+
+`old` must still appear exactly once on that line — take it from the
+candidate's `context`, never retype it. Then continue at Phase 3.
 
 ## Important conventions
 

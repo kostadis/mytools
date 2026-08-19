@@ -1,7 +1,7 @@
 ---
 name: voice-smooth
 description: Render the verbatim scene-extraction quotes into readable, in-voice prose — a derived scene_extractions_smoothed/ layer that sits between /session-summary-consistency and session_doc. Uses each character's voice file as the guardrail. Fixes garble, run-ons, and disfluencies for readability WITHOUT changing what was said; never touches the verbatim (the VTT stays the raw record). Invoke as /voice-smooth [session-dir].
-tools: Read, Bash, Write, Edit, Glob, AskUserQuestion
+tools: Read, Bash, Write, Edit, Glob, AskUserQuestion, Artifact, WebFetch
 ---
 
 # Voice-Smooth — voice-aware readability rendering of quotes
@@ -40,6 +40,19 @@ Smooth *corrected* quotes, not garbled ones. If the verbatim still contains obvi
 - **player→character map** — from the glossary `## Player names → characters` section (only needed if any labels still carry real names — they shouldn't after /session-summary-consistency).
 
 ## Workflow
+
+### 0. Choose the review mode
+Before anything else, one `AskUserQuestion`:
+
+> **Review the smoothed pairs in an artifact, or here in the shell?**
+> - **Artifact** — one page of the flagged renderings, mark them at your own pace, save once.
+> - **Shell** — pairs grouped by scene in the conversation, the way this skill has always worked.
+
+Ask this every run; do not remember a default. **The one-scene calibration in
+step 4 happens in the shell either way** — it is a conversation about how hard
+to smooth, not a list of rulings, and it has to settle before there is
+anything worth batching. Artifact mode replaces only the *post-calibration*
+review. See **Artifact mode** below.
 
 ### 1. Locate + load the guardrails
 - Detect `<scene-dir>`; if missing, stop.
@@ -80,6 +93,64 @@ Ask: *"Approve these, edit specific ones, or want a different smoothing pass on 
 
 ### 5. Hand-off
 Note that `session_doc` should now read from `scene_extractions_smoothed/` (the verbatim `scene_extractions/` and the VTT remain the record).
+
+## Artifact mode (batch review)
+
+Replaces the second half of step 4 — the full-run pair review. Steps 1–3, the
+calibration gate, and step 5 are unchanged. Full contract:
+`~/.claude/skills/_shared/review-artifact/CONTRACT.md`.
+
+**Calibrate in the shell first.** Do not build an artifact until the GM has
+approved the smoothing register on one representative scene. A page built at
+the wrong aggressiveness is a page of wrong answers.
+
+### What is auto-applied, footer only
+
+Renderings that trip **none** of step 4's three flags — they do not risk
+changing meaning, do not risk flattening the character's voice, and did not
+require repairing an ambiguous fragment. These are already written to
+`scene_extractions_smoothed/`; list the count per scene in the `footer`.
+
+### What becomes a card
+
+The flagged ones, and only those. One card per verbatim → smoothed pair.
+
+```json
+{ "id":  "s04-q07",
+  "t":   "Brewbarry, scene 04 — ambiguous fragment repaired",
+  "y":   "Keep the smoothed rendering in <code>scene_extractions_smoothed/04_*.md</code>.",
+  "n":   "Revert this quote to the verbatim text. Nothing else in the file changes.",
+  "ev":  "Verbatim: <em>“we got a nail Bookwyrm”</em><br>Smoothed: <em>“we've got to nail Bookwyrm”</em><br>Flag: <b>repaired an ambiguous fragment</b> · voice file <code>voice/brewbarry_voice.md</code>" }
+```
+
+**Both texts go in `ev`, verbatim first.** The GM is judging a rewrite; a card
+that shows only the result is unreviewable. Say which of the three flags
+fired, and name the voice file that governed the rendering.
+
+Id as `s<NN>-q<NN>` (scene, quote index) so the apply step can find the line.
+Keep cards grouped by scene, in scene order.
+
+### Publish, then stop
+
+Hand over the link and **do not poll**. When the GM says they are done,
+`WebFetch` the URL and run `read_decisions.py`.
+
+### Verdict mapping
+
+| verdict | action |
+|---|---|
+| **approve** | Nothing to do — the rendering is already in the smoothed layer |
+| **reject** | Revert that one quote to its verbatim text in `scene_extractions_smoothed/` only |
+| **discuss** + note | Apply the GM's wording; if the note asks for a different pass on a character, re-smooth **all** of that character's quotes and bring the new pairs back |
+| **discuss**, no note | Back to the shell, grouped with the other discussed pairs |
+| **unmarked** | Undecided — the smoothed rendering stands, but say which ones were never looked at before step 5 hands off |
+
+**Never touch `<scene-dir>/` or the VTT.** Reverting means rewriting the
+derived file to match the verbatim, not editing the record.
+
+**Transcription errors still escalate.** If the GM's note says a quote is
+wrong in the *source*, that is a `/session-summary-consistency` item — flag
+it, do not smooth it away.
 
 ## Conventions
 

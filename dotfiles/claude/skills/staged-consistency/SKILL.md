@@ -1,7 +1,7 @@
 ---
 name: staged-consistency
 description: Run consistency checks at every LLM-pipeline boundary (gm-assist → session-summary → scene extractions → narration) with a human-review gate between stages. Use when the user invokes /staged-consistency [session-dir] and wants the multi-stage check rather than a one-shot. Prevents fix-propagation drift where stale per-scene quotes silently re-inject errors into the next narration run.
-tools: Bash, Read, Edit
+tools: Bash, Read, Edit, AskUserQuestion, Artifact, WebFetch
 ---
 
 # Staged Consistency
@@ -17,6 +17,18 @@ The point of this skill is to **catch verbatim transcription errors before they 
 - `/staged-consistency [session-dir]` — **this skill**. The full pipeline with checks at every boundary. Use when you're preparing a session-doc you'll share with players, or when a prior narration run produced output that doesn't match prep.
 
 ## Workflow
+
+### 0a. Choose the review mode
+
+Before locating anything, one `AskUserQuestion`:
+
+> **Review each stage's findings in an artifact, or here in the shell?**
+> - **Artifact** — one page per stage at a single URL, mark the rulings at your own pace, save once per stage.
+> - **Shell** — the severity table and "Going 1x1?", the way this skill has always worked.
+
+Ask this every run; do not remember a default. In artifact mode the severity
+table is still presented in the shell — it is the at-a-glance summary — but
+the *rulings* move to the page. See **Artifact mode** below.
 
 ### 0. Locate the session directory and prep
 
@@ -155,6 +167,72 @@ End with a tight summary:
   - "Re-run `session_doc.py` to produce a clean narration from the corrected scene extractions"
   - "Ready to share session-doc with players"
   - "Stage X still has unresolved issues — revisit those before narrating"
+
+## Artifact mode (batch review)
+
+Replaces the "Going 1x1?" adjudication at each stage. The severity table, the
+stage order, the fix-propagation pass and the final summary are all unchanged.
+Full contract: `~/.claude/skills/_shared/review-artifact/CONTRACT.md`.
+
+### One page per stage, one URL for the run
+
+**Publish once per stage, republishing to the same `file_path` so the URL
+never changes.** This is the whole point of the staged pattern: a stage-1
+error ruled on now is fixed in one file, and stage 2 runs on corrected input
+instead of copying the error forward. Do not collate all stages into a single
+end-of-run page — that gives up the gate the skill exists for.
+
+Sequence per stage: run the check → present the severity table in the shell →
+build the items → publish → **stop** → the GM saves and says so → read back →
+apply → **then** start the next stage.
+
+Set the `eyebrow` to `<campaign> · <chapter> · stage N — <filename>` so the GM
+can tell which stage they are looking at after a republish. Keep `title`
+stable across the run so the artifact keeps one identity in the gallery.
+
+### What is auto-applied, footer only
+
+- **Trivial**, per the rubric — surface but do not push. List them; do not ask.
+- Unambiguous mechanical corrections with exactly one right answer: the GM's
+  real name scrubbed to **GM**, a two-word factual correction, a proper-noun
+  spelling already settled in the glossary or the entity registry.
+
+Everything else — every Critical, Moderate and Minor needing a judgement —
+becomes a card. Name the auto-applied count and the files touched in the
+`footer`.
+
+### Card shape
+
+Reuse the finding's table number as the id (`s1-03` = stage 1, finding 3) so
+the shell table and the page line up.
+
+```json
+{ "id":  "s1-03",
+  "t":   "Manshoon in person, or a simulacrum?",
+  "y":   "Edit <code>entity_registry.yaml:2361</code> to drop “appears as Manshoon’s Simulacrum.” The recap and both grounding docs are correct; the registry is the stale side.",
+  "n":   "He was a simulacrum. The recap, campaign_state and world_state get corrected instead.",
+  "ev":  "All four checks ruled against the recap citing the registry under “canon outranks generated docs.” But <code>20260810_race_to_the_vile_door.md:28</code> rebuilds him as “the real man, depleted” at CR 12." }
+```
+
+**Where the audit itself may be wrong, say so in `ev`.** The most valuable
+cards are the ones where a check fired against stale canon — the GM is the
+only one who can overturn that, and they can only do it if the card shows
+both sides.
+
+### Verdict mapping
+
+| verdict | action |
+|---|---|
+| **approve** | Apply the fix with `Edit`, then run the step-6 fix-propagation grep across every touched artifact |
+| **reject** | Log as deferred, with the location, for the final summary |
+| **discuss** + note | Follow the note; if it settles a canon question, the fix may belong in a grounding doc rather than the recap |
+| **discuss**, no note | Back to the shell, grouped with the other discussed findings for that stage |
+| **unmarked** | Undecided — carry into the final summary as unresolved, and do not advance past a stage with unresolved Criticals without saying so |
+
+**Grounding-doc rewrites still stop.** `campaign_state.md`, `world_state.md`,
+`planning.md` and `party.md` are CampaignGenerator outputs. An approved card
+that implies changing one of them means fixing the *source* and regenerating
+— never a hand-edit. Say this on the card's `y` when it applies.
 
 ## Notes
 
