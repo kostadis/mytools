@@ -2,15 +2,75 @@
   "permissions": {
     "defaultMode": "auto"
   },
-  "model": "sonnet",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/cbm-code-discovery-gate",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/cbm-session-reminder"
+          }
+        ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/cbm-session-reminder"
+          }
+        ]
+      },
+      {
+        "matcher": "clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/cbm-session-reminder"
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/cbm-session-reminder"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/cbm-subagent-reminder"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/src/mempalace/hooks/mempal_save_hook.sh",
+            "command": "$HOME/src/Mempalace/hooks/mempal_save_hook.sh",
             "timeout": 30
           }
         ]
@@ -21,7 +81,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/src/mempalace/hooks/mempal_precompact_hook.sh",
+            "command": "$HOME/src/Mempalace/hooks/mempal_precompact_hook.sh",
             "timeout": 30
           }
         ]
@@ -32,8 +92,9 @@
     "frontend-design@claude-plugins-official": true
   },
   "effortLevel": "xhigh",
+  "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,
   "theme": "dark",
   "skipAutoPermissionPrompt": true,
-  "advisorModel": "opus"
+  "agentPushNotifEnabled": true
 }

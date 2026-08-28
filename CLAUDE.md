@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-Personal tools repository. Each top-level directory is an independent project with its own dependencies and (where relevant) its own `CLAUDE.md` with deeper guidance. Most projects are oriented around two themes: **tabletop RPG tooling** (PDF library, adventure conversion, GM combat/social aids, transcript narration) and **architectural analysis** (the Kostadis Engine lenses, mirrored as Claude skills).
+Personal tools repository. Each top-level directory is an independent project with its own dependencies and (where relevant) its own `CLAUDE.md` with deeper guidance. Most projects are oriented around two themes: **tabletop RPG tooling** (PDF library, adventure conversion, GM combat/social aids, transcript narration) and **architectural analysis** (the Kostadis Engine lenses).
 
 When working in a subdirectory, defer to that subdirectory's `CLAUDE.md` if one exists — it is the source of truth for that project.
 
@@ -13,7 +13,6 @@ When working in a subdirectory, defer to that subdirectory's `CLAUDE.md` if one 
 ### Architectural analysis
 
 - **`kostadis-engine/`** — Standalone browser-based architectural document analysis tool. Single-file `index.html`, no backend, no build. Streams to `api.anthropic.com/v1/messages` directly. Five lenses: L0 preprocessor, L1 Tribunal, L2 Anti-Gravity, L3 Lagrange, L4 Value Bridge. `PROMPTS.md` is the source of truth for system prompts. See `kostadis-engine/.claude/CLAUDE.md`.
-- **`dotfiles/claude/`** — Version-controlled Claude Code configuration: `settings.json`, custom skills, plugin marketplace. Skills mirror the engine's lenses (tribunal, anti-gravity, lagrange, value-bridge, k-preprocess, k-parallel, k-sequential) plus campaign helpers (mempalace-campaign, voice-file, style-examples, dossier-merge).
 
 ### RPG tooling
 
@@ -36,6 +35,7 @@ When working in a subdirectory, defer to that subdirectory's `CLAUDE.md` if one 
 ### Shared
 
 - **`lib/claudelib.py`** — Generic Anthropic Claude API wrapper with retry logic (rate limits, server errors, timeouts). Extracted from CampaignGenerator's `campaignlib.py` for reuse across projects in this repo.
+- **`dotfiles/claude/`** — Version-controlled Claude Code configuration, symlinked into `~/.claude/`: global `CLAUDE.md`, `settings.json`, 29 skills, 2 agents (`kostadis-architect`, `ux-reviewer`), plugin marketplace config. Machine-level config rather than a project — it configures the sessions that work on everything else here. The skills are mostly the D&D session pipeline for `CampaignGenerator`/`campaigns` (consistency checks, voice/narration, entity triage, VTT cleanup) plus infrastructure (`codebase-memory`, `spark-status`, `drive-consolidate`); they do **not** mirror the kostadis-engine lenses — no tribunal/anti-gravity/lagrange/value-bridge skill exists. Per-project memory is **not** here; it lives in the separate `~/src/claude-memory` repo. See `dotfiles/CLAUDE.md`.
 
 ## kostadis-engine — hard constraints
 
