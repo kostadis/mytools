@@ -1,8 +1,8 @@
 # Batch review artifact — contract
 
-Shared machinery for the four review skills (`vtt-spell-pass`, `scrub`,
-`staged-consistency`, `voice-smooth`). Not a skill: no `SKILL.md`, so it stays
-out of the skill list. Each skill calls these two scripts.
+Shared machinery for the five review skills (`vtt-spell-pass`, `scrub`,
+`staged-consistency`, `voice-smooth`, `session-summary-consistency`). Not a skill:
+no `SKILL.md`, so it stays out of the skill list. Each skill calls these two scripts.
 
 **Why it exists.** Every one of those skills ends in a human adjudication loop
 that runs one item at a time in the terminal — dozens to hundreds of blocking
@@ -17,12 +17,12 @@ which ran a real `/staged-consistency` pass this way. Do not reauthor it.
 
 ## The loop
 
-1. **Ask first.** Every run of every one of the four skills opens with an
+1. **Ask first.** Every run of every one of the five skills opens with an
    `AskUserQuestion`: *artifact (batch)* or *shell (one at a time)*. Shell is
    the existing behaviour and must stay byte-for-byte intact.
 2. **Apply what needs no ruling.** Only genuine judgement calls become items.
    Everything mechanical is applied and named in the `footer`.
-3. **Build and publish.**
+3. **Build and publish.** Name the files per **File names** below.
    ```bash
    python ~/.claude/skills/_shared/review-artifact/build_review.py \
        --in  $SCRATCH/review_items.json \
@@ -47,6 +47,29 @@ which ran a real `/staged-consistency` pass this way. Do not reauthor it.
 **Redeploying to the same URL:** republish the same `file_path` in the same
 conversation, or pass `url:` from another one. `staged-consistency` does this
 once per stage.
+
+### File names — one items file per page
+
+`--in` and `--out` take any path and nothing is defaulted, so the names are a
+convention, and it is the caller's to keep.
+
+- **A run that publishes one page** uses the plain names: `review_items.json`,
+  `review.html`, `decisions.json`. `session-summary-consistency`, `voice-smooth`
+  and `vtt-spell-pass` are one-page runs.
+- **A run that publishes more than one page** — `staged-consistency`, one page
+  per stage; `scrub`, one page per file — suffixes the items file and the
+  decisions file with that page's own key: `review_items_stage2.json`,
+  `decisions_stage2.json`. **The `--out` html stays on one path for the whole
+  run:** the artifact URL follows the `file_path`, so renaming it per page would
+  claim a new URL and give up the single page the pattern is built on.
+
+**Why the items file is the one that must not collide.** A multi-page run
+republishes over its own page, so the wording of an earlier page — the question
+the GM was actually asked, and the evidence shown beside it — survives only in
+that page's items file; reuse one name and each page silently overwrites the
+last. It is not recoverable from the applied diffs or the decisions, and it is
+what the next run reads back out of `consistency_report_stage*.md`. (Phandalin
+Ch 50, 2026-08-28: only stage 2's file survived; stages 0 and 1 were gone.)
 
 ---
 
@@ -114,7 +137,7 @@ an unescaped `</script`.
 
 ### Why `y` and `n` are mandatory
 
-One uniform verdict set has to work across four skills whose natural verdicts
+One uniform verdict set has to work across five skills whose natural verdicts
 differ. It only works because **each card states its own consequences** — the
 buttons say Approve/Reject, but the card says what that means *here*. A card
 without a concrete `y`/`n` is a card the GM has to guess at.
@@ -167,6 +190,8 @@ undecided, not as rejected, and say so when you report back.
 - **Ids must round-trip.** If your apply step needs a line number or a file, put
   it in the id or keep a sidecar map — the page only returns ids.
 - **One page, one skill, one run.** Do not collate two skills into one artifact.
+- **One page, one items file.** A run that publishes more than one page names
+  each page's items and decisions file for that page — see **File names**.
 - **Read-only viewers.** The page already degrades: marks stay on screen, the
   copy says read-only, and it tells the GM to report picks in chat. If they do
   that, take it — do not insist on the artifact.

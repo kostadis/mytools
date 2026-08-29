@@ -1,7 +1,7 @@
 ---
 name: session-summary-consistency
 description: Quote-level consistency check on scene_extractions_new/ — flags VTT transcription errors, garbled phrases, and clarity issues in verbatim quote blocks, then proposes corrections for user approval. Invoke as /session-summary-consistency [session-dir].
-tools: Read, Bash, Edit
+tools: Read, Bash, Edit, Artifact, AskUserQuestion
 ---
 
 # Session Summary Quote Consistency Check
@@ -17,6 +17,19 @@ This skill is **quote-level only** — it does not check scene summaries, canon 
 - Corrections glossary is at `<campaign-root>/notes/vtt_transcription_corrections.md`.
 
 ## Workflow
+
+### 0. Choose the review mode
+
+Before locating anything, one `AskUserQuestion`:
+
+> **Review the proposed quote fixes in an artifact, or here in the shell?**
+> - **Artifact** — one page for the whole run, mark the rulings at your own pace, save once.
+> - **Shell** — the grouped proposal report and "apply all / selective", the way this skill has always worked.
+
+Ask this every run; do not remember a default. In artifact mode the per-scene
+counts and the summary table are still printed in the shell — they are the
+at-a-glance summary — but the *rulings* move to the page. See **Artifact mode**
+below.
 
 ### 1. Locate files
 
@@ -137,6 +150,95 @@ This pass catches classes that `vtt-spell-pass`'s deterministic scanner structur
 - ❌ Do **not** add: `teeth → tea`, `high → ki`, `fake → point`, `snake → sneak`, `allowed → Avowed` — these are real words; a global replacement corrupts legitimate uses. They are inherently this pass's (context-aware) job, not the scanner's.
 
 Append the safe pairs to the appropriate section of `notes/vtt_transcription_corrections.md`. This closes the loop: what this pass confirms once, `vtt-spell-pass` applies automatically next session.
+
+## Artifact mode (batch review)
+
+Replaces the "apply all / selective" adjudication in step 5. Steps 1-4, the
+apply step, the verification grep and the step-7 glossary loop are unchanged.
+Full contract: `~/.claude/skills/_shared/review-artifact/CONTRACT.md`.
+
+### One page for the run
+
+Sequence: read every scene -> classify -> apply what needs no ruling -> print the
+per-scene counts and summary table in the shell -> build -> publish -> **stop** ->
+the save comes back -> read back -> apply -> verification grep -> offer the
+glossary loop.
+
+```bash
+python ~/.claude/skills/_shared/review-artifact/build_review.py \
+    --in  $SCRATCH/review_items.json --out $SCRATCH/review.html
+```
+
+The plain `review_items.json` is correct here: this skill publishes **one** page
+per run, so there is no second build to overwrite it. `/staged-consistency`
+publishes one per stage over the same URL and must suffix the name
+(`review_items_stage<N>.json`) or it loses the earlier stages' card text — see
+**File names** in the contract.
+
+Publish with **`capabilities: {"artifact": {}}`**. Set the `eyebrow` to
+`<campaign> · <chapter> · scene quotes`. Never poll for the save — the
+`artifact-changed` notification or the GM's word, whichever arrives first.
+
+### What is auto-applied, footer only
+
+A quote fix needs no ruling only when **two independent transcripts agree on the
+correction**, or the glossary/registry already settles it AND the surrounding
+dialogue confirms the referent:
+
+- Glossary/registry proper nouns whose corrected form is confirmed in a second
+  transcript (`Helspergaster` -> House Margaster; `Brewerdin` -> Vukradin).
+- Plain homophones with one possible reading (`and no true power` -> `and know
+  true power`; `Constitution safe` -> `Constitution save`).
+- Player-name scrubs in **speaker labels and scene summaries** (never inside
+  quote content — that is a card).
+
+Name the count and the files in the `footer`.
+
+### What is always a card
+
+- **Reconstructions.** Any fix where you are splicing two transcripts, or where
+  both transcripts are garbled and you are proposing the intended words. Say in
+  `ev` which transcript said what.
+- **Identity calls.** A name-garble whose referent is uncertain, or that could
+  map to more than one entity.
+- **Possible authentic coinages.** A variant that might be a real table nickname
+  or in-character malapropism rather than a mishearing — this campaign's
+  DO-NOT-CORRECT list exists because that call was got wrong before
+  (`find-us fee`, `Big Al`, `Orcanese`). Check the glossary's garble lists and the
+  DO-NOT-CORRECT table first, and **say in `ev` that the check found no
+  corroboration** rather than asserting it is an error.
+- **Unrecoverable lines** where the choice is between `[inaudible]` and a
+  bracketed guess.
+- **Player names inside quote content** — step 3 says these may stand; whether
+  they do is the GM's call, not yours.
+
+### Card shape
+
+Use `sNN-MM` as the id — scene number, then the finding's number within that
+scene — so the shell counts and the page line up, and the apply step knows which
+file to edit.
+
+```json
+{ "id":  "s03-04",
+  "t":   "“Brube’s world” — mishearing, or Brewbarry’s own shortening?",
+  "y":   "Correct to “Brewbarry’s world” in <code>03_....md</code>. The Zoom .txt renders the same line that way.",
+  "n":   "Keep “Brube”. It is Brewbarry shortening his own name, and the glossary gains a nickname row.",
+  "ev":  "The .txt has “that’s how it works in Brewbarry’s world” (1797). But <b>“Brube” is not in the glossary’s 50-variant Brewbarry garble list and not in DO-NOT-CORRECT</b>, so nothing corroborates it either way." }
+```
+
+### Verdict mapping
+
+| verdict | action |
+|---|---|
+| **approve** | Apply with `Edit`, then run the step-6 verification grep |
+| **reject** | Leave the quote as transcribed; log it |
+| **discuss** + note | Follow the note. A note confirming a coinage is a **DO-NOT-CORRECT** row, not a garble row |
+| **discuss**, no note | Back to the shell, grouped |
+| **unmarked** | Undecided — leave the quote alone and say so in the summary |
+
+After applying, run step 7 as usual — but only feed the glossary the **safe
+non-word** garbles the GM approved, and route any confirmed coinage to the
+DO-NOT-CORRECT table instead.
 
 ## Conventions
 

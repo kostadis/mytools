@@ -104,6 +104,18 @@ Detect or ask:
    Use `sibling_context.py` (Phase 3). Check the session directory for one
    before starting — if two transcripts of the same date exist, you have this.
 
+8. **The published module, via the `5etools` MCP server (when the campaign
+   runs one).** The campaign's own stores — glossary, registry, dossiers —
+   only know names the table has already written down correctly at least
+   once. A name the party met for the *first time* this session is in none of
+   them, so every fuzzy-match and cluster signal will call it new canon. The
+   module knows it, and knows how it is spelled.
+
+   `search` (the whole name, or a distinctive fragment) and `get_section` are
+   the two verbs. Scope with `source_ids` when you know the module, or search
+   unscoped and read which source comes back. See "Consult the module" under
+   Phase 2.5 for when to reach for it.
+
 ## Workflow
 
 ### Phase -1 — choose the review mode
@@ -314,11 +326,13 @@ underlying audio contained a name at all.
 Read the result four ways:
 
 - **Sibling spells the name correctly** → confirms the proposed canonical.
-- **Sibling has ordinary words at that span** → there is no name here; the
-  token is an ASR hallucination. Ignore it, do not "correct" it. Real examples:
+- **Sibling has ordinary words at that span** → *probably* no name here; the
+  token is likely an ASR hallucination. Real examples:
   `You can just barely see the Grygum` vs `…see the game`; `Oh yeah, it's me.
-  Summer, all right` vs `Oh, yeah, it's me. All right.`; `Orsick … he's not
-  Orsick` vs `He's not late stage or sick.` — none of those names were spoken.
+  Summer, all right` vs `Oh, yeah, it's me. All right.` — neither name was
+  spoken. **But run the two checks below before ruling**: this is the reading
+  that has been wrong in practice, because it is also exactly what a
+  *successful* vocabulary-primed recovery looks like from the other side.
 - **Both transcriptions produce the same odd string** → usually genuine audio.
   Route it to "new canon", not to a correction — but see the contamination
   warning below before trusting agreement on a *name*.
@@ -326,6 +340,41 @@ Read the result four ways:
 
 A low score (<0.55) is inconclusive, not negative — the sibling may not cover
 that span. Say so rather than ruling.
+
+**Two checks before calling any name invented.** Both were skipped in the
+Phandalin chapter-04 pass, and skipping them produced a confident, fully
+evidenced, wrong ruling.
+
+1. **Normalise every source through the glossary first.** Run
+   `apply_replacements.py` over the sibling and the pre-retranscription VTT,
+   not just the file under review. A raw token comparison reports "the sibling
+   does not contain this name" whenever the sibling spelled it a *different
+   wrong way* — and the glossary exists precisely because names have many wrong
+   spellings. Also flatten the sibling across speaker labels before testing
+   containment: a mid-sentence speaker flip puts the corroborating half of a
+   sentence under someone else's label, where a per-line search will not see it.
+
+2. **Grep the previous session's transcripts for the candidate.** A name the
+   table used recently is live vocabulary and is the single strongest signal
+   that the audio really contained it.
+
+Worked example — the ruling this section used to cite as a hallucination, and
+which was wrong. The re-transcription read *"He's not late-stage Orsik. He's
+not Orsik."*; the pre-retranscription pass read *"He's not late stage or not or
+sick"*, and a raw search said Zoom had no "Orsik". All three readings of that
+evidence were artifacts:
+
+- Zoom **did** have it, spelled `Orsick` — an existing glossary wrong-form.
+- Zoom's sentence was split four ways by mid-sentence speaker flips, so the
+  corroborating fragment sat under a different speaker.
+- `Orsik` is a real NPC, and the same player had said the name three times in
+  the *previous session*.
+
+The vocabulary priming had recovered a real name that generic ASR mangled into
+"or sick" — the success case, misread as the failure case. **A
+vocabulary-primed recovery and a hallucination are indistinguishable from the
+transcripts alone**; what separates them is whether the name is already canon
+and recently spoken.
 
 **Establish what kind of transcriber the sibling is before weighing it.**
 An acoustic ASR fails phonetically: it turns a name into a similar-sounding
@@ -347,7 +396,7 @@ So weight the sibling's evidence **by kind, not by score**:
 
 | Sibling shows | Trust | Why |
 |---|---|---|
-| ordinary words / plain prose | high | contamination swaps names for names; it does not invent coherent filler |
+| ordinary words / plain prose | medium | contamination swaps names for names, so this is usually a real absence — but only *after* the two checks above. Un-normalised, it is also what a correct recovery looks like (`Orsick` → "or sick") |
 | a campaign-correct name | high | it is recovering real vocabulary |
 | a *different* plausible name | **none** | possible cross-campaign substitution — GM rules, you do not |
 
@@ -361,6 +410,52 @@ then caught by the sibling check — every one was a hallucinated word, and one
 more (`Thalne`) pointed at the wrong character. Confirmation by the GM does
 not validate the evidence you gave them; it only validates their reading of
 it. Get the evidence right first.
+
+**The error runs both ways, and the second direction is worse.** That session
+over-corrected — it proposed fixes for words nobody said. The Phandalin
+chapter-04 pass made the opposite mistake: it presented a real, canon, recently
+spoken NPC name as an invented one, with a confident three-source table behind
+it. The GM caught it from memory alone. An over-correction adds a phantom the
+registry audit will eventually surface; **a wrongly rejected name deletes a real
+one and leaves nothing behind to notice** — no unknown token, no candidate, no
+audit trail. When the two readings are close, prefer the one that keeps a name
+alive and put it to the GM with both spellings shown.
+
+**Consult the module before calling anything new canon.**
+
+The sibling check answers *"was a name spoken here?"* It cannot answer *"is
+that a real name, and is this how it is spelled?"* — for that, ask the module.
+
+Run a `5etools` `search` for any candidate that is about to be routed to
+**new canon**, and for any candidate whose surrounding line describes a thing
+the module would name: a creature guarding a room, a clan, a shop, a deity, a
+titled NPC, a magic item. Two lookups per session is typical; it is cheap and
+it is often decisive.
+
+Three outcomes:
+
+- **The module has it, spelled differently** → it is a *correction*, not new
+  canon. This is the case the rest of the skill cannot reach on its own.
+- **The module has it, spelled exactly** → confirms the name and gives you the
+  section to cite in the question.
+- **The module does not have it** → genuinely new (GM invention, or a name the
+  party coined). Route to `vtt_known_additions.md` as before.
+
+Worked example (obelisk session 8). `Sarnak` appeared 5×, **both**
+transcriptions agreed on the spelling every time, and the line was an NPC
+introducing himself — textbook "real new name", and it was about to be logged
+to `vtt_known_additions.md` as one. A `5etools` search returned *Phandelver
+and Below: The Shattered Obelisk*, ch. 2, R8: *"a nothic named **Ssarnak**
+guards this cave."* Double S. Independent-ASR agreement had confirmed that a
+name was spoken; it said nothing at all about the spelling, because both
+systems heard the same audio and neither had read the book.
+
+That search paid a second dividend. Its results also named the magic sword
+**Talon** — one letter from `Talan`, a wrong-form approved earlier in the same
+run for `Thel`. The party looted Talon at the end of that session, so from the
+next session on the rule is a live hazard. **Read what the module search
+returns around your hit, not just the hit** — near-collisions with the row you
+are about to write are exactly what you cannot see from the transcript.
 
 ### Phase 3 — ask the user, one CLUSTER at a time, ALWAYS
 

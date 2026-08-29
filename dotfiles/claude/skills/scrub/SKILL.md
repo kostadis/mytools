@@ -305,6 +305,17 @@ the rewrite should land in.
 eight scenes' worth of candidates in one artifact is the same breath problem
 in a different shape.
 
+> ⛔ **One items file per file, one `--out` html for the whole run.** A scrub
+> over eight scenes publishes eight pages over the same URL, so name the items
+> and decisions files after the file being scrubbed —
+> `review_items_<NN>_<slug>.json`, `decisions_<NN>_<slug>.json` — and leave
+> `--out $SCRATCH/review.html` alone. Reusing `review_items.json` overwrites the
+> previous scene's cards, and those cards are the only record of the question the
+> GM was actually asked; the applied diffs and the decisions do not reconstruct
+> them. Renaming the html instead would claim a new artifact URL per scene and
+> give up the single page the pattern is built on. See **File names — one items
+> file per page** in the contract.
+
 **Publish**, hand over the link, and **stop**.
 
 **Two ways the save reaches you, and one that is forbidden.**
