@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: reference
   originSessionId: feaa7733-d4a1-415e-9e68-4ad5a507344c
-  modified: 2026-07-27T06:56:38.521Z
+  modified: 2026-08-14T14:37:50.666Z
 ---
 
 `~/.venv/lib/python3.12/site-packages/_editable_impl_campaigngenerator.pth` contains
@@ -50,4 +50,61 @@ strip can't remove it and it outranks the `.pth` entry.
   copied from the main checkout or `test_extract_facts::test_cli_parallel_fully_cached`
   fails.
 
-Related: [[project_venv_console_scripts_install]] (the same venv, different failure).
+**Second mechanism, same symptom (2026-08-09, PR #246):** `tests/` has no
+`__init__.py`, so a cross-file `from tests.test_roster import FIXTURE` imports the
+module a *second time* under a second name and re-executes it; combined with WSL2's
+coarse mtime granularity this produced intermittent stale-bytecode resolution of
+`session_doc.roster` to the main checkout. Fix: keep a local fixture copy per test
+file (the duplication is load-bearing — an in-file comment says so) and
+`find <worktree> -name __pycache__ -exec rm -rf {} +` before trusting any run there.
+
+**Also (2026-08-09):** with a `cd`-less Bash call the shell cwd resets to the MAIN
+checkout, and `sys.path[0]=cwd` outranks `PYTHONPATH` — a worktree import check that
+passed earlier can fail later in the same session. Always `cd <worktree>` first.
+
+**Third mechanism — the *guard* is now the hazard (2026-08-12, PR #285 / issue #286):**
+six test files defend themselves with a module-level
+`pytest.skip(allow_module_level=True)` when `campaignlib` resolved outside their own
+repo root — `test_verify_quotes.py`, `test_editor_verify_routes.py`,
+`test_locate_quote_parity.py`, `test_sd_agent.py`, `test_transcript_corrections.py`,
+`test_vtt_voice_compare_reader.py`. The skip is correct but **invisible in the totals**:
+a module-level skip contributes exactly **one** entry to the skip count, not one per
+test, so ~100 tests disappear behind a `+1`.
+
+Measured: clean `origin/main` in a worktree = 3016 passed / 167 skipped; the same tree
+plus a change adding 3 tests and deleting 1 = 3016 passed / **168** skipped. The
+arithmetic should be +2; it was 0. This produced a false verification — a green
+full-suite run was reported as evidence for PR #282, whose two edited test files
+(97 tests) are both guarded and never ran.
+
+**How to apply:** a full-suite pass/fail count from a worktree is not evidence for a
+change. Always *also* run the specific test files the change touches, directly, and
+report that number. Compare passed-count deltas against `git stash`ed clean base —
+if the delta isn't what the diff implies, something skipped.
+
+**Fourth mechanism, and the one that finally got fixed (2026-08-14, feature 008):**
+the `python -m pytest` advice above does **not** hold in a Claude Code session — the
+harness's rtk wrapper rewrites it to the venv's `pytest` entry point (probe printed
+`sys.argv[0] = /home/kroussos/.venv/bin/pytest`). That entry point puts neither the cwd
+nor `PYTHONPATH` on `sys.path`; under `prepend` import mode with no `tests/__init__.py`
+pytest contributes only `tests/` and `tests/benchmarks/`. So the `.pth` wins outright,
+`tests/benchmarks/test_rlm_benchmark_rpg_gate2.py` (collected first, does a bare
+`from pipelines.rlm import rpg_retriever` with no repo-root insert) caches main's
+`campaignlib` in `sys.modules`, and every module after it inherits it. Measured: a
+worktree full-suite run reported **3178 passed against code the branch never touched**;
+the two new test modules were the only thing that failed, and only because main's
+`campaignlib` genuinely lacked the new files.
+
+**Fix landed:** `tests/conftest.py` now does `sys.path.insert(0, REPO_ROOT)` at import
+time — conftest is imported before any test module, so it closes this for the whole
+suite instead of per-module. No-op in the main checkout (the `.pth` already put that
+path there). If a worktree run still resolves to main, that insert is the first thing
+to check.
+
+**How to apply:** don't reach for `PYTHONPATH` — it is stripped twice over (mempalace's
+`_strip_leaked_pythonpath_from_sys_path`, and the wrapper's entry point ignoring it).
+Verify by probing inside the run, not before it: a throwaway test printing
+`campaignlib.__path__` is the only reliable check.
+
+Related: [[project_venv_console_scripts_install]] (the same venv, different failure),
+[[reference_campaigns_repo_is_under_src]] (the sibling "wrong tree" trap).

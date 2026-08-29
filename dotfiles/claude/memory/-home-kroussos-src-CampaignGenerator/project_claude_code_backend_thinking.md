@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 7a8eadea-7c7d-458a-a0be-08623b6aad0f
-  modified: 2026-08-03T04:50:59.954Z
+  modified: 2026-08-10T12:43:10.340Z
 ---
 
 `--backend claude-code` runs `claude -p`, which does **extended thinking by
@@ -32,6 +32,26 @@ VTT, ch03), same box, concurrent:
 
 **Why:** thinking is the entire gap. Raising `--max-tokens` only stops the
 auto-continue loop; it does not stop the trace.
+
+**UPDATE 2026-08-10 — the overflow failure mode has INVERTED.** The CLI no
+longer auto-continues on output-ceiling overflow; it returns no text and
+`_claude_code_generate` raises:
+
+> `RuntimeError: claude -p hit the 16000-token output ceiling and returned no
+> text (this CLI version errors on overflow rather than auto-continuing).`
+
+So the symptom is now a **hard failure mid-run**, not the runaway hang above.
+Same underlying cause (thinking eats the ceiling), opposite presentation.
+Confirmed by contrast on one identical workload: `sd_narrate` ch46 scene 3
+(Phandalin 20260623, ~11K est. output, `claude-fable-5`, `--narrate-tokens
+16000`) **auto-continued** on 2026-08-09 (`scratch_output/bench_245/bench_fable/run2.log:5`
+— "hit its output ceiling mid-generation and AUTO-CONTINUED") and **errored** on
+2026-08-10. With `MAX_THINKING_TOKENS=0` the same call completed clean in 7m37s.
+
+Practical consequence: any pinned `narrate_tokens` that used to "work" via
+auto-continue is now a latent hard failure. Fix by suppressing thinking (below)
+rather than by raising the ceiling — raising it just re-buys headroom for the
+trace, and the auto-continue seam it used to produce was a quality problem anyway.
 
 **How to apply:** for render pipelines (`enhance_summary`, `scene_extract`,
 `sd_narrate`) set `MAX_THINKING_TOKENS=0` in the `claude -p` env. Keep it

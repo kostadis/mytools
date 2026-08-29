@@ -47,3 +47,17 @@
 - [Alias = identity, not substitution](project_alias_identity_not_substitution.md) — never pass the equivalence set to a model as a text transform; it destroys which form was spoken (PR #231 fixed scene_extract; 7 call sites in 6 files still do it, `sd_narrate.py:191` is the verbatim-critical one)
 - [Probe Spark before trusting the doc](feedback_probe_spark_before_trusting_doc.md) — `current-setup.md` lags real swaps ("no drift" note was wrong); curl `/v1/models` on both boxes before wiring or reporting
 - [Similarity can't separate semantic edits](project_similarity_cannot_separate_semantic_edits.md) — 0.92 = meaning-changing misquote, 0.94 = harmless disfluency; no threshold splits them. Treat a similarity band as "an edit happened", never "safe"
+- [codebase-memory ADR wipe](reference_codebase_memory_adr_wipe.md) — ANY `index_repository` destroys the stored ADR, in-place included (the old "in-place preserves it" note was WRONG). Save `manage_adr(mode='get')` content before indexing, re-store after; no on-disk backup exists. `detect_changes` also unreliable post-merge.
+# Memory Index
+
+| File | Type | Description |
+|---|---|---|
+| `reference_scene_file_formats.md` | reference | Exact format of sceneN.md and extraction files; assembly stripping rules |
+| `project_ui_redesign.md` | project | Three core workflows the app should guide users through; origin of UX confusion |
+| `project_ui_phase2_phase3.md` | project | Remaining Streamlit UI fixes: Phase 2 (consolidation) and Phase 3 (UX polish) |
+- [#245 narrate fixes — PRs open, benchmark pending](project_245_narrate_fixes.md) — CG#246 + campaigns#140 await merge; then Opus5-vs-Fable5 on SUBSCRIPTION backend only; re-sync narrate.genre from _genre.md first; roster follow-up unfiled
+- [#245 narrate fixes — DONE, benchmark posted](project_245_narrate_fixes.md) — fable 1.1 vs opus 2.4 flags/1000w, comment on #245; DEFAULT_MODEL = user's call. NEW unfiled bug: voice specs never delivered (get_voice_note can't match *_new_pipeline.md keys); roster + genre-textarea follow-ups still open
+- [Narration pickup plan](project_narration_next_steps.md) — read `docs/design/NarrationNextSteps_handoff.md` before any Pass 5 / voice-critic / genre-config work; mytools#125's D2 is blocked on a GM ruling (#276 fix 2 vs #220), not on work
+- [Worktree imports main checkout](reference_worktree_editable_install_shadowing.md) — the editable-install .pth hardcodes /home/kroussos/src/CampaignGenerator, so in a worktree `import campaignlib` may resolve to MAIN's copy; a green worktree test run isn't proof you tested the branch. PYTHONPATH does NOT fix it under the rtk pytest wrapper; tests/conftest.py now inserts REPO_ROOT.
+- [campaigns repo is ~/src/campaigns](reference_campaigns_repo_is_under_src.md) — `~/campaigns` is a stale second copy (pre-#291 config-relative rosters); verifying campaign facts there yields confident wrong answers.
+- [Speckit worktree targeting](project_speckit_worktree_feature_json.md) — /speckit-* reads MAIN's .specify/feature.json (forked skills run in main's CWD); use an absolute feature_directory or it analyses the wrong feature
