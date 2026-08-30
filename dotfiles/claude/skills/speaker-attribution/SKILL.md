@@ -78,7 +78,7 @@ one named after the session:
 
 ```
 GMT<date>_Recording.transcript.vtt   Zoom ASR    real timeline, mangled text
-GMT<date>_Recording.md               Descript    real timeline, decent text, anonymous clusters
+GMT<date>_Recording.md/.txt          Descript    real timeline, decent text, anonymous clusters
 session_<date>_transcript.vtt        Whisper     real timeline, best text, NO speakers
 ```
 
@@ -86,9 +86,42 @@ Take timings and text from the best ASR; take nothing from Zoom but the fact of
 the recording. Quality is visible at a glance — Zoom rendered `Lodge of Faces`
 as *"the best answer for why"* and `Szith Morcane` not at all.
 
+### Descript: convert it before anything reads it
+
+Descript is the second clustering, and the only one that picks its **own**
+speaker count — so it is the only tool here that can tell you a voice exists
+that you did not budget for. But its `.txt` export matches no input format in
+this skill: labels are not bolded, and a per-word timestamp stream runs through
+the body. Convert once, up front:
+
+```bash
+python ~/.claude/skills/speaker-attribution/descript_turns.py \
+  --input GMT<date>_Recording.txt \
+  --md descript.md --turns turns_descript.json --audio-duration 6894
+```
+
+- `--md` → the `[ts] **Speaker:** text` form `diarize_label.py --md` parses.
+- `--turns` → a turns envelope, so **Descript can stand in as the primary
+  clustering when no GPU is free.** Both Sparks running one tensor-parallel
+  vLLM leaves ~4 GB of 121 GB, and pyannote OOMs on the model load.
+
+It reports the cluster shares and marks anything under 3% as a fragment. Read
+those lines before dismissing them — see Phase 3.
+
+**It anchors start times on words, not on the block header.** A header stamp is
+when the block begins, and leading silence is timestamped too: the opening block
+of one session was headed `00:00:00` while its first word landed at `00:16:16`.
+24% of blocks in that file needed the correction, and the worst offender was the
+greeting that named a player.
+
 If the chosen file is a **concatenation**, pass `--limit-seconds` so only the
 portion covering this `.m4a` is used. Without it, cues from the afternoon
 session get joined against morning diarization turns.
+
+While you are here, note whether `GMT<date>_RecordingnewChat.txt` exists. It is
+not a text layer and it is usually one or two lines, but it is the only place in
+the whole session where a **real name** is attached to a **timestamp** by the
+person themselves. Keep it for Phase 4 — see *Closing a SPLIT*.
 
 ## Phase 2 — diarize on the Spark
 
@@ -123,18 +156,54 @@ a GB10: ~4 minutes wall clock, almost all of it the embedding pass.
 
 ```bash
 python ~/.claude/skills/speaker-attribution/diarize_label.py \
-  --turns turns.json --vtt <best-text>.vtt --md <descript>.md \
+  --turns turns.json --vtt <best-text>.vtt --md descript.md \
   --limit-seconds 5610 --output <stem>.speakers.vtt
 ```
+
+**Pass `--md` the `--turns` JSON, not the `.md`.** Both parse, but they join
+differently and it is worth ~10 points:
+
+| `--md` given | join | ch02 agreement | `[?]` cues |
+|---|---|---|---|
+| `descript.md` (starts only) | nearest preceding utterance | 79.5% | 522 |
+| `descript_turns.json` (real spans) | max overlap, same rule as the diarization | **89.9%** | 347 |
+
+The `.md` form carries no end times, so every cue inherits whoever spoke last —
+including cues sitting in a silence gap. That misassignment is not real
+disagreement between the two tools, and it was depressing the headline number.
+The raw Descript `.txt` parses as **zero** utterances either way.
+
+### `--md-label` — naming a voice the diarization cannot see
+
+pyannote has exactly `num_speakers` bins, so a voice you did not budget for is
+forced into somebody. Descript picks its own count and keeps it separate. When
+the fragment turns out to be a real person (Phase 3), name it from the second
+clustering's id:
+
+```bash
+--md-label '{"Speaker 6": "Room (not at table)", "Speaker 7": "Room (not at table)"}'
+```
+
+The override wins outright and drops the `[?]`: the disagreement that flag marks
+is the *reason* this cue is being named from the other tool, not something the
+reader can act on. It applies only where the named cluster holds ≥50% of the cue
+(`--md-label-coverage`), so short backchannels stay with whoever actually holds
+them — a coverage rule that hand-editing gets wrong. On ch02, relabelling every
+cue the room voice merely *overlapped* claimed 32 cues; requiring it to be the
+dominant speaker gives 24, and the 8 it gives back are Kostadis answering the
+room person ("All right, we'll tell it to them in a little bit") rather than the
+room person speaking. The header records which cluster each override came from.
 
 Each cue takes the diarization speaker holding the most of its duration. Then —
 and this is the point — the result is checked against the editor's **own**
 clustering. The two share no information: one is pyannote's speaker embedding,
 the other is Descript's. Agreement therefore means something.
 
-**Expect ~80% word-level agreement.** Measured: 81.2% here, 82.2% on Phandalin
-ch04. Below ~70%, one of the two has failed — find out which before labelling
-anything.
+**Expect ~80% word-level agreement**, and ~90% when `--md` is given real spans:
+81.2% here and 82.2% on Phandalin ch04 (both nearest-preceding), 89.9% on ch02
+with a `descript_turns.json`. Read the join line the tool prints before comparing
+runs — the two joins are not on the same scale. Below ~70% either way, one of the
+signals has failed; find out which before labelling anything.
 
 The confusion matrix also sorts real clusters from artefacts. Descript found six
 speakers for three people:
@@ -150,9 +219,32 @@ Speaker 6                 4            0            0   ← 4 words, spurious sp
 ```
 
 Three clusters at 86/80/68% and three fragments totalling 2.6% of words.
-**Fragments are not people.** They are usually one person's NPC voices — a GM
-doing a different register splits off — which is exactly what you would expect
-and exactly what you must not promote to a participant.
+**Fragments are not people** — *usually.* They are most often one person's second
+register, a GM doing NPC voices splitting off, which you must not promote to a
+participant.
+
+**But read their lines before you dismiss them.** On Phandalin ch02 two Descript
+fragments (89 words, 1.5%) were a real fifth voice: someone in the GM's room, not
+at the table.
+
+```
+[01:36:54] Speaker 6: Are you gonna make coffee?
+[01:36:56] Speaker 4: No, there's a whole other bag of coffee there.
+[01:39:04] Speaker 7: Tell Dave that when he says polymorphism it's beautiful
+```
+
+Domestic, addressed to the GM, and answered by him. That is not a register split;
+it is a person. Label them **`Room (not at table)`** so `/scene-extract` cannot
+attribute coffee to a PC. The size test alone would have thrown them away — the
+content test takes ten seconds and is the one that decides.
+
+**Only Descript can see this, and only because it picks its own speaker count.**
+pyannote is told `num_speakers=N` and has exactly N bins, so a surprise voice is
+forced into somebody: here it landed in the player whose cluster it least
+resembled semantically. Raising to `num_speakers=5` did **not** recover it —
+agreement fell 79.5% → 72.1% and the fifth cluster split the *GM* (37%/50%, no
+clear home) instead. So: keep `num_speakers` at the number of people you know
+about, and let Descript find the ones you do not.
 
 ## Phase 4 — name the clusters. Human checkpoint, not automation.
 
@@ -184,7 +276,56 @@ Read the output honestly. On the real session it produced:
   address. A human closed it in one sentence.
 
 That last case is the skill working, not failing. Then re-run Phase 3 with
-`--names '{"SPEAKER_00":"Nicholas",...}'`.
+`--names '{"SPEAKER_00":"Nicholas",...}'` (inline JSON, or a path to a JSON
+file — both work).
+
+### Closing a SPLIT: the chat sidecar is a real-name anchor
+
+`name_clusters.py` scores **who answers when the name is spoken**, so it is blind
+to exactly one case: **a player who is not in the room.** An absent player never
+answers his own vocative. The replies that follow his name are other people
+noticing he is gone, and the tool spreads them across every cluster and reports
+`SPLIT`. That is correct behaviour and you cannot fix it from the audio.
+
+Zoom's chat export closes it. Look for the sidecar beside the recording:
+
+```
+GMT<date>_RecordingnewChat.txt
+00:26:59<TAB>Gary Young:<TAB>Kid needs a phonecall. Sorry a few minutes please
+```
+
+That is a **human-written real name on the session clock** — the only such anchor
+when both transcripts are anonymous, and it does not care that the person was
+silent. Use it as an absence probe: find the cluster that goes quiet across the
+window, and that is the person.
+
+```bash
+python - turns.json <<'PY'          # speech per cluster inside the stated window
+import json,sys; from collections import defaultdict
+d=json.load(open(sys.argv[1])); per=defaultdict(float)
+A,B = 1266, 1885                    # the chat timestamp, padded either side
+for t in d["turns"]:
+    if t["end"]>A and t["start"]<B:
+        per[t["speaker"]] += min(t["end"],B)-max(t["start"],A)
+for k,v in sorted(per.items()): print(f"{k}: {v:6.1f}s")
+PY
+```
+
+Phandalin ch02, where `Gary → SPLIT` and the tool could not close it:
+
+```
+SPEAKER_00: 155.7s   SPEAKER_01: 126.7s   SPEAKER_02:   8.2s   SPEAKER_03: 157.1s
+```
+
+`SPEAKER_02`, and its single longest silence of the whole session (5.6 min,
+00:25:09→00:30:48) sits on the chat timestamp. Decided, on the diarization's own
+timeline, with no reference to the second clustering.
+
+Two properties make this worth reaching for before you give up on a SPLIT: the
+name is **typed by the person themselves**, so it cannot be an ASR garble; and it
+is **evidence from silence**, so it works precisely when vocative scoring cannot.
+Check `git log` or the directory for the sidecar during Phase 0 — it is small,
+easy to miss, and it is often the only real name in the whole session.
 
 **Label with players, not characters,** and say so in the header. Characters
 move between players; the voice does not. Where a player's real name collides
@@ -219,6 +360,13 @@ Every one of these was hit for real.
   turns). Detect it, then slice it with `--limit-seconds`.
 - **`num_speakers` is the count of *people*, not of clusters any tool reports.**
   Descript said six. There were three.
+- **A GPU that is "free" may not be.** Both Sparks run one tensor-parallel vLLM
+  (TP0 on .147, TP1 on .121) holding ~105 GB of 121 GB each, and `nvidia-smi`
+  truncates that to `10528...` in the process table — which reads as 10 GB. Check
+  `free -g` and `--query-compute-apps`, and expect pyannote to OOM on
+  `pipeline.to("cuda")` *after* it has decoded the audio, so the log looks like
+  it got further than it did. Descript via `descript_turns.py --turns` is the
+  no-GPU fallback.
 - **Do not infer PC ownership from a speaker label.** Verify per scene when the
   party splits; `party.md` listing every PC under one D&D Beyond account is a
   strong tell that characters float.
