@@ -59,15 +59,49 @@ def load_vtt(path: Path, limit: float | None) -> list[dict]:
     return cues
 
 
-def load_md(path: Path) -> list[tuple[float, str]]:
-    """Anonymous-cluster transcript: (start_seconds, cluster_id). No end times --
-    Descript emits a start stamp per utterance and nothing else."""
+def load_md(path: Path) -> list[tuple[float, float | None, str]]:
+    """Anonymous-cluster transcript: (start, end, cluster_id).
+
+    Two accepted shapes. The `[ts] **Speaker:**` text form carries starts only,
+    so `end` is None and a cue can only be assigned to the nearest preceding
+    utterance -- fine for the statistical cross-validation, where a stray cue in
+    a silence gap washes out. A turns.json from descript_turns.py carries real
+    spans, which lets a cue be assigned by max overlap exactly as the
+    diarization join does. Prefer it: --md-label rewrites individual cues, and
+    "whoever spoke last" is not good enough to rewrite a label on."""
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    s = raw.lstrip()
+    # Sniff by PARSING, not by first character: the text form's own first line
+    # is `[00:16:16] **Speaker:** ...`, which opens with '[' and would be taken
+    # for a JSON array.
+    if s[:1] in "{[":
+        try:
+            d = json.loads(s)
+        except json.JSONDecodeError:
+            d = None
+        if d is not None:
+            turns = d["turns"] if isinstance(d, dict) else d
+            return sorted((float(t["start"]), float(t["end"]), t["speaker"]) for t in turns)
     out = []
-    for m in _MD_UTT.finditer(path.read_text(encoding="utf-8", errors="replace")):
+    for m in _MD_UTT.finditer(raw):
         t = int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3])
-        out.append((t, m[4].strip()))
+        out.append((float(t), None, m[4].strip()))
     out.sort()
     return out
+
+
+def load_names(arg: str | None) -> dict[str, str]:
+    """--names accepts inline JSON or a path to a JSON file.
+
+    Inline is what SKILL.md shows and what a one-off run reaches for; a file
+    keeps the mapping under version control across re-runs. Accepting only the
+    file form failed with a FileNotFoundError whose "filename" was the JSON
+    itself, which reads as a missing-file bug rather than a usage error."""
+    if not arg:
+        return {}
+    s = arg.strip()
+    return json.loads(s if s.startswith("{")
+                      else Path(s).read_text(encoding="utf-8"))
 
 
 def main() -> int:
@@ -76,7 +110,14 @@ def main() -> int:
     ap.add_argument("--turns", required=True, help="turns.json from diarize_remote.py")
     ap.add_argument("--vtt", required=True, help="real-timeline, speakerless VTT (the good text)")
     ap.add_argument("--md", help="second clustering for cross-validation (e.g. Descript export)")
-    ap.add_argument("--names", help='JSON: {"SPEAKER_00": "Nicholas", ...}')
+    ap.add_argument("--names", help='inline JSON or a path to a JSON file: '
+                                    '{"SPEAKER_00": "Nicholas", ...}')
+    ap.add_argument("--md-label", help='inline JSON or a path: name cues by their '
+                                       'SECOND-clustering id, overriding the diarization. '
+                                       'For voices only the second tool can see, e.g. '
+                                       '{"Speaker 6": "Room (not at table)"}')
+    ap.add_argument("--md-label-coverage", type=float, default=0.5,
+                    help="fraction of a cue the named cluster must hold (default 0.5)")
     ap.add_argument("--output", help="labelled VTT; omit to report only")
     ap.add_argument("--note", action="append", default=[], help="extra NOTE line in the output header")
     ap.add_argument("--limit-seconds", type=float,
@@ -121,9 +162,30 @@ def main() -> int:
     if args.md:
         utts = load_md(Path(args.md))
         u_starts = [u[0] for u in utts]
+        spans = all(u[1] is not None for u in utts)
         for c in cues:
-            i = bisect.bisect_right(u_starts, c["s"]) - 1
-            c["de"] = utts[i][1] if i >= 0 else None
+            if spans:
+                ov = collections.Counter()
+                i = max(0, bisect.bisect_left(u_starts, c["s"]) - 1)
+                for st, en, sp in utts[i:]:
+                    if st >= c["e"]:
+                        break
+                    if en > c["s"]:
+                        ov[sp] += min(en, c["e"]) - max(st, c["s"])
+                top = ov.most_common(1)
+                c["de"] = top[0][0] if top else None
+                c["de_cov"] = top[0][1] / max(c["e"] - c["s"], 1e-9) if top else 0.0
+            else:
+                i = bisect.bisect_right(u_starts, c["s"]) - 1
+                c["de"] = utts[i][2] if i >= 0 else None
+                c["de_cov"] = None
+        if not utts:
+            print(f"⚠ --md {Path(args.md).name} parsed as 0 utterances — no cross-validation.")
+            print("  Expected a descript_turns.py --turns JSON, or its --md text form")
+            print("  ([00:17:16] **Speaker 2:** ...). A raw Descript .txt is neither; convert it.")
+            return 1
+        print(f"second clustering: {len(utts)} utterances, "
+              f"{'real spans (max-overlap join)' if spans else 'starts only (nearest-preceding join)'}")
 
         words = collections.Counter()
         for c in cues:
@@ -163,26 +225,50 @@ def main() -> int:
                 print("   ⚠ below 70% — the two signals disagree. One is broken; find out which")
                 print("     before labelling anything.")
 
-    names = json.loads(Path(args.names).read_text(encoding="utf-8")) if args.names else {}
+    names = load_names(args.names)
+    md_labels = load_names(args.md_label)
+    if md_labels and not args.md:
+        print("⚠ --md-label needs --md — that is where the second clustering's ids come from.")
+        return 1
+    if md_labels:
+        unseen = sorted(set(md_labels) - {c.get("de") for c in cues})
+        if unseen:
+            print(f"⚠ --md-label names no cue in {', '.join(unseen)} — check the cluster ids "
+                  f"against the cross-validation rows above.")
     if args.output:
         out = ["WEBVTT", "", "NOTE",
                f"Speakers: {d.get('model')}, num_speakers={d.get('num_speakers_requested')}.",
                f"Text: {Path(args.vtt).name} (real timeline)."]
         if args.md:
             out.append(f"Cross-validated against {Path(args.md).name}.")
+        for cid, lab in sorted(md_labels.items()):
+            out.append(f"'{lab}' is named from {Path(args.md).name} cluster {cid}, "
+                       f"a voice the diarization could not separate.")
         out += [f"{n}" for n in args.note]
         out += ["[?] marks a cue where the two clusterings disagree.", ""]
         n = 0
         flagged = 0
+        overridden = collections.Counter()
         for c in cues:
             exp = mapping.get(c.get("de"))
             flag = " [?]" if (exp and c["py"] and exp != c["py"]) else ""
-            flagged += bool(flag)
+            label = names.get(c["py"], c["py"] or "UNKNOWN")
+            # A second-clustering override wins outright, and drops the [?]: the
+            # disagreement it marks is the whole reason this cue is being named
+            # from the other tool, not a warning the reader can act on.
+            forced = md_labels.get(c.get("de"))
+            if forced and (c.get("de_cov") is None or c["de_cov"] >= args.md_label_coverage):
+                label, flag = forced, ""
+                overridden[forced] += 1
+            else:
+                flagged += bool(flag)
             n += 1
             out += [str(n), f"{fmt(c['s'])} --> {fmt(c['e'])}",
-                    f"{names.get(c['py'], c['py'] or 'UNKNOWN')}{flag}: {c['text']}", ""]
+                    f"{label}{flag}: {c['text']}", ""]
         Path(args.output).write_text("\n".join(out), encoding="utf-8")
         print(f"\nwrote {args.output} — {n} cues, {flagged} flagged [?]")
+        for lab, k in overridden.most_common():
+            print(f"   {k} cues labelled '{lab}' from the second clustering")
         if not names:
             print("   labels are raw cluster IDs. Name them with name_clusters.py, then re-run")
             print("   with --names.")

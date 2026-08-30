@@ -51,7 +51,18 @@ _BRACKET_TS = re.compile(r"\[\d\d:\d\d:\d\d\]")
 # A Descript/Zoom export is a transcript; a chapter summary is prose ABOUT one.
 # Prose shares proper nouns with its own transcript but almost no 4-grams, so it
 # lands near the noise floor and only adds clutter. Require speaker markup.
-_TRANSCRIPT_MD = re.compile(r"^\s*(\[\d\d:\d\d:\d\d\]\s*)?\*\*[^*\n]{1,40}:?\*\*", re.M)
+#
+# Two markup styles count. Bold labels are the Zoom/markdown convention; a raw
+# Descript .txt export does NOT bold them, and requiring bold made the real
+# second clustering invisible here until --include-prose was passed by hand --
+# which then let the chapter summary back in, exactly what this gate is for.
+# The plain form is anchored on a leading bracket timestamp, so ordinary prose
+# containing a colon cannot reach the 20-line threshold by accident.
+_TRANSCRIPT_MD = re.compile(
+    r"^\s*(?:(?:\[\d\d:\d\d:\d\d\]\s*)?\*\*[^*\n]{1,40}:?\*\*"
+    r"|\[\d\d:\d\d:\d\d\]\s*[^:\n]{1,40}:)", re.M)
+# Plain "[ts] Label:" prefixes, stripped so cluster names never enter the n-grams.
+_PLAIN_SPEAKER = re.compile(r"^\s*\[\d\d:\d\d:\d\d\]\s*[^:\n]{1,40}:\s*", re.M)
 
 
 def vtt_tokens(path: Path) -> list[str]:
@@ -70,7 +81,9 @@ def vtt_tokens(path: Path) -> list[str]:
 
 def md_tokens(path: Path) -> list[str]:
     s = path.read_text(encoding="utf-8", errors="replace")
-    s = _BRACKET_TS.sub(" ", _MD_SPEAKER.sub(" ", s))
+    # Plain labels first: they are anchored on the bracket timestamp that
+    # _BRACKET_TS would otherwise strip out from under the anchor.
+    s = _BRACKET_TS.sub(" ", _MD_SPEAKER.sub(" ", _PLAIN_SPEAKER.sub(" ", s)))
     return re.findall(r"[a-z']+", s.lower())
 
 
@@ -210,11 +223,21 @@ def main() -> int:
     # The dangerous case is not a bare .m4a -- it is a transcript sitting beside
     # an .m4a it does not transcribe. That reads as a matched pair to every
     # human and every downstream tool.
+    # Vouching is per GROUP, not per file. A filename is an assertion, not
+    # evidence -- and that cuts both ways: the group was built from 4-gram
+    # overlap, so once any one member stem-matches the audio, every member
+    # transcribes it and none of them is stray. Testing each member's own
+    # filename in isolation flagged a correctly-named Whisper VTT that matched
+    # the audio beside it at 68%, purely because it was not named after the
+    # recording -- which is the normal case for the best text layer, and trains
+    # the reader to scroll past the warning that matters.
     for g in groups:
+        vouched = {a for a in audio for m in g
+                   if a.parent == m.parent
+                   and (a.stem.split(".")[0] in m.name or m.stem.split(".")[0] in a.name)}
         for m in g:
             stray = [a for a in audio if a.parent == m.parent]
-            if stray and not any(a.stem.split(".")[0] in m.name or m.stem.split(".")[0] in a.name
-                                 for a in stray):
+            if stray and not any(a in vouched for a in stray):
                 print(f"⚠ {m}")
                 print(f"    sits beside audio it does NOT transcribe: "
                       f"{', '.join(a.name for a in stray)}")
