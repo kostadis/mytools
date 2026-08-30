@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""Attach diarization turns to a speakerless real-timeline VTT, cross-validate
+against a second independent clustering, and emit a labelled VTT.
+
+This is the single-room case: everyone shares one microphone, so the conference
+tool's own speaker labels carry NO information (Zoom labels all 866 cues of a
+three-person session with the host's name). Diarization is not a second opinion
+here -- it is the only signal. That makes cross-validation mandatory rather
+than optional, because there is nothing else to catch a collapsed clustering.
+
+The second opinion comes free: Descript (or any editor that diarizes on import)
+has already clustered the same audio with a different embedding model. Its
+cluster IDs are anonymous and usually too numerous -- 6 clusters for 3 people --
+but agreement between the two is meaningful precisely because they share no
+information. One is pyannote's speaker embedding, the other is Descript's.
+
+Expect ~80% word-level agreement. Measured: 81.3% (Hillsfar, 3 speakers, one
+room), 82.2% (Phandalin ch04, 4 speakers, mixed remote). Below ~70%, one of the
+two has failed -- find out which before building on either.
+"""
+from __future__ import annotations
+
+import argparse
+import bisect
+import collections
+import json
+import re
+from pathlib import Path
+
+_CUE = re.compile(r"(\d\d):(\d\d):(\d\d)[.,](\d+)\s*-->\s*(\d\d):(\d\d):(\d\d)[.,](\d+)")
+_MD_UTT = re.compile(r"\[(\d\d):(\d\d):(\d\d)\]\s*\*\*([^*]+?):?\*\*\s*(.*?)(?=\n\n|\Z)", re.S)
+_INLINE_TS = re.compile(r"\[\d\d:\d\d:\d\d\]")
+
+
+def fmt(sec: float) -> str:
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    return f"{int(h):02d}:{int(m):02d}:{s:06.3f}"
+
+
+def load_vtt(path: Path, limit: float | None) -> list[dict]:
+    cues, cur = [], None
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = _CUE.match(line.strip())
+        if m:
+            a = int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3]) + float("0." + m[4])
+            b = int(m[5]) * 3600 + int(m[6]) * 60 + int(m[7]) + float("0." + m[8])
+            cur = {"s": a, "e": b, "t": []}
+            cues.append(cur)
+        else:
+            s = line.strip()
+            if cur is not None and s and not s.isdigit() and not s.startswith(("WEBVTT", "NOTE")):
+                cur["t"].append(s)
+    for c in cues:
+        c["text"] = " ".join(c["t"]).strip()
+    cues = [c for c in cues if c["text"]]
+    if limit is not None:
+        cues = [c for c in cues if c["s"] < limit]
+    return cues
+
+
+def load_md(path: Path) -> list[tuple[float, float | None, str]]:
+    """Anonymous-cluster transcript: (start, end, cluster_id).
+
+    Two accepted shapes. The `[ts] **Speaker:**` text form carries starts only,
+    so `end` is None and a cue can only be assigned to the nearest preceding
+    utterance -- fine for the statistical cross-validation, where a stray cue in
+    a silence gap washes out. A turns.json from descript_turns.py carries real
+    spans, which lets a cue be assigned by max overlap exactly as the
+    diarization join does. Prefer it: --md-label rewrites individual cues, and
+    "whoever spoke last" is not good enough to rewrite a label on."""
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    s = raw.lstrip()
+    # Sniff by PARSING, not by first character: the text form's own first line
+    # is `[00:16:16] **Speaker:** ...`, which opens with '[' and would be taken
+    # for a JSON array.
+    if s[:1] in "{[":
+        try:
+            d = json.loads(s)
+        except json.JSONDecodeError:
+            d = None
+        if d is not None:
+            turns = d["turns"] if isinstance(d, dict) else d
+            return sorted((float(t["start"]), float(t["end"]), t["speaker"]) for t in turns)
+    out = []
+    for m in _MD_UTT.finditer(raw):
+        t = int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3])
+        out.append((float(t), None, m[4].strip()))
+    out.sort()
+    return out
+
+
+def load_names(arg: str | None) -> dict[str, str]:
+    """--names accepts inline JSON or a path to a JSON file.
+
+    Inline is what SKILL.md shows and what a one-off run reaches for; a file
+    keeps the mapping under version control across re-runs. Accepting only the
+    file form failed with a FileNotFoundError whose "filename" was the JSON
+    itself, which reads as a missing-file bug rather than a usage error."""
+    if not arg:
+        return {}
+    s = arg.strip()
+    return json.loads(s if s.startswith("{")
+                      else Path(s).read_text(encoding="utf-8"))
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--turns", required=True, help="turns.json from diarize_remote.py")
+    ap.add_argument("--vtt", required=True, help="real-timeline, speakerless VTT (the good text)")
+    ap.add_argument("--md", help="second clustering for cross-validation (e.g. Descript export)")
+    ap.add_argument("--names", help='inline JSON or a path to a JSON file: '
+                                    '{"SPEAKER_00": "Nicholas", ...}')
+    ap.add_argument("--md-label", help='inline JSON or a path: name cues by their '
+                                       'SECOND-clustering id, overriding the diarization. '
+                                       'For voices only the second tool can see, e.g. '
+                                       '{"Speaker 6": "Room (not at table)"}')
+    ap.add_argument("--md-label-coverage", type=float, default=0.5,
+                    help="fraction of a cue the named cluster must hold (default 0.5)")
+    ap.add_argument("--output", help="labelled VTT; omit to report only")
+    ap.add_argument("--note", action="append", default=[], help="extra NOTE line in the output header")
+    ap.add_argument("--limit-seconds", type=float,
+                    help="ignore cues past this offset (use when the VTT spans more than this audio)")
+    args = ap.parse_args()
+
+    d = json.loads(Path(args.turns).read_text(encoding="utf-8"))
+    turns = d["turns"]
+    limit = args.limit_seconds if args.limit_seconds is not None else d.get("audio_duration")
+    cues = load_vtt(Path(args.vtt), limit)
+    if not cues:
+        print("no cues in range -- check --limit-seconds and the VTT timeline")
+        return 1
+
+    starts = [t["start"] for t in turns]
+    for c in cues:
+        ov = collections.Counter()
+        i = max(0, bisect.bisect_left(starts, c["s"]) - 1)
+        for t in turns[i:]:
+            if t["start"] >= c["e"]:
+                break
+            if t["end"] > c["s"]:
+                ov[t["speaker"]] += min(t["end"], c["e"]) - max(t["start"], c["s"])
+        c["py"] = ov.most_common(1)[0][0] if ov else None
+        c["mixed"] = len(ov) > 1
+
+    speech = collections.Counter()
+    for t in turns:
+        speech[t["speaker"]] += t["end"] - t["start"]
+    total = sum(speech.values())
+    print(f"audio {d.get('audio_duration', 0)/60:.1f} min · {len(turns)} turns · "
+          f"{total/60:.1f} min speech · model {d.get('model')} · {d.get('device_used')}")
+    for s, v in speech.most_common():
+        print(f"   {s}  {v/60:6.1f} min  {100*v/total:5.1f}%")
+    top = 100 * max(speech.values()) / total
+    if top > 70:
+        print(f"   ⚠ largest cluster is {top:.0f}% of speech — clustering has probably collapsed.")
+        print("     Re-run with speaker-diarization-community-1 and an explicit num_speakers.")
+    print(f"\n{len(cues)} cues · {sum(c['mixed'] for c in cues)} span >1 turn (crosstalk)")
+
+    mapping: dict[str, str] = {}
+    if args.md:
+        utts = load_md(Path(args.md))
+        u_starts = [u[0] for u in utts]
+        spans = all(u[1] is not None for u in utts)
+        for c in cues:
+            if spans:
+                ov = collections.Counter()
+                i = max(0, bisect.bisect_left(u_starts, c["s"]) - 1)
+                for st, en, sp in utts[i:]:
+                    if st >= c["e"]:
+                        break
+                    if en > c["s"]:
+                        ov[sp] += min(en, c["e"]) - max(st, c["s"])
+                top = ov.most_common(1)
+                c["de"] = top[0][0] if top else None
+                c["de_cov"] = top[0][1] / max(c["e"] - c["s"], 1e-9) if top else 0.0
+            else:
+                i = bisect.bisect_right(u_starts, c["s"]) - 1
+                c["de"] = utts[i][2] if i >= 0 else None
+                c["de_cov"] = None
+        if not utts:
+            print(f"⚠ --md {Path(args.md).name} parsed as 0 utterances — no cross-validation.")
+            print("  Expected a descript_turns.py --turns JSON, or its --md text form")
+            print("  ([00:17:16] **Speaker 2:** ...). A raw Descript .txt is neither; convert it.")
+            return 1
+        print(f"second clustering: {len(utts)} utterances, "
+              f"{'real spans (max-overlap join)' if spans else 'starts only (nearest-preceding join)'}")
+
+        words = collections.Counter()
+        for c in cues:
+            if c["py"] and c.get("de"):
+                words[(c["de"], c["py"])] += len(c["text"].split())
+        pys = sorted(speech)
+        des = sorted({de for de, _ in words}, key=lambda x: -sum(words[(x, p)] for p in pys))
+        print("\ncross-validation — words, second clustering (rows) × diarization (cols)")
+        print(f"{'':14s}" + "".join(f"{p:>13s}" for p in pys) + "     share")
+        for de in des:
+            row = [words[(de, p)] for p in pys]
+            tot = sum(row)
+            if not tot:
+                continue
+            best = max(range(len(pys)), key=lambda i: row[i])
+            print(f"{de:14s}" + "".join(f"{v:13d}" for v in row) + "   "
+                  + " / ".join(f"{100*v/tot:.0f}%" for v in row))
+            # only clusters carrying real weight get to define the mapping
+            if tot >= 0.05 * sum(words.values()) and 100 * row[best] / tot >= 60:
+                mapping[de] = pys[best]
+            else:
+                print(f"{'':14s}   ↑ {tot} words, no clear home — treated as a spurious split")
+
+        ag = dis = 0
+        for c in cues:
+            exp = mapping.get(c.get("de"))
+            if exp and c["py"]:
+                w = len(c["text"].split())
+                if exp == c["py"]:
+                    ag += w
+                else:
+                    dis += w
+        if ag + dis:
+            pctv = 100 * ag / (ag + dis)
+            print(f"\nword-level agreement: {pctv:.1f}%")
+            if pctv < 70:
+                print("   ⚠ below 70% — the two signals disagree. One is broken; find out which")
+                print("     before labelling anything.")
+
+    names = load_names(args.names)
+    md_labels = load_names(args.md_label)
+    if md_labels and not args.md:
+        print("⚠ --md-label needs --md — that is where the second clustering's ids come from.")
+        return 1
+    if md_labels:
+        unseen = sorted(set(md_labels) - {c.get("de") for c in cues})
+        if unseen:
+            print(f"⚠ --md-label names no cue in {', '.join(unseen)} — check the cluster ids "
+                  f"against the cross-validation rows above.")
+    if args.output:
+        out = ["WEBVTT", "", "NOTE",
+               f"Speakers: {d.get('model')}, num_speakers={d.get('num_speakers_requested')}.",
+               f"Text: {Path(args.vtt).name} (real timeline)."]
+        if args.md:
+            out.append(f"Cross-validated against {Path(args.md).name}.")
+        for cid, lab in sorted(md_labels.items()):
+            out.append(f"'{lab}' is named from {Path(args.md).name} cluster {cid}, "
+                       f"a voice the diarization could not separate.")
+        out += [f"{n}" for n in args.note]
+        out += ["[?] marks a cue where the two clusterings disagree.", ""]
+        n = 0
+        flagged = 0
+        overridden = collections.Counter()
+        for c in cues:
+            exp = mapping.get(c.get("de"))
+            flag = " [?]" if (exp and c["py"] and exp != c["py"]) else ""
+            label = names.get(c["py"], c["py"] or "UNKNOWN")
+            # A second-clustering override wins outright, and drops the [?]: the
+            # disagreement it marks is the whole reason this cue is being named
+            # from the other tool, not a warning the reader can act on.
+            forced = md_labels.get(c.get("de"))
+            if forced and (c.get("de_cov") is None or c["de_cov"] >= args.md_label_coverage):
+                label, flag = forced, ""
+                overridden[forced] += 1
+            else:
+                flagged += bool(flag)
+            n += 1
+            out += [str(n), f"{fmt(c['s'])} --> {fmt(c['e'])}",
+                    f"{label}{flag}: {c['text']}", ""]
+        Path(args.output).write_text("\n".join(out), encoding="utf-8")
+        print(f"\nwrote {args.output} — {n} cues, {flagged} flagged [?]")
+        for lab, k in overridden.most_common():
+            print(f"   {k} cues labelled '{lab}' from the second clustering")
+        if not names:
+            print("   labels are raw cluster IDs. Name them with name_clusters.py, then re-run")
+            print("   with --names.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
