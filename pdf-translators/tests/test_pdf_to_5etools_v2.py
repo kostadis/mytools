@@ -1157,3 +1157,178 @@ class TestBuildBestiary:
             )
         assert len(out["monster"]) == 1
         assert out["monster"][0]["cr"] == "2"
+
+
+# ---------------------------------------------------------------------------
+# extract_labeled_statblocks: modern 5e stat blocks written as bold label lines
+# ---------------------------------------------------------------------------
+
+def _book(*sections):
+    """Minimal homebrew *book* document wrapping *sections* in bookData."""
+    return {
+        "_meta": {"sources": [{"json": "TEST"}]},
+        "book": [{"name": "Test", "id": "test", "contents": []}],
+        "bookData": [{"data": list(sections)}],
+    }
+
+
+_LABEL_LINES = [
+    "**Armor Class** 13 (natural armor)",
+    "**Hit Points** 45 (6d10 + 12)",
+    "**Speed** 30 ft.",
+    "**Challenge** 3 (700 XP)",
+]
+
+
+class TestExtractLabeledStatblocks:
+    def test_finds_bold_label_statblock(self):
+        doc = _book({
+            "type": "section", "name": "Phantom Servant",
+            "entries": ["*Medium undead, any alignment*", *_LABEL_LINES],
+        })
+        blocks = _mon.extract_labeled_statblocks(doc)
+        assert [b["name"] for b in blocks] == ["Phantom Servant"]
+        assert "Armor Class" in blocks[0]["text"]
+        assert blocks[0]["text"].startswith("=== Phantom Servant ===")
+
+    def test_finds_tag_wrapped_labels(self):
+        doc = _book({
+            "type": "section", "name": "Skelephant",
+            "entries": [
+                "{@i Huge undead, lawful evil}",
+                "{@b Armor Class} 13 (natural armor)",
+                "{@b Hit Points} 67 (9d12 + 9)",
+                "{@b Speed} 40 ft.",
+            ],
+        })
+        assert [b["name"] for b in _mon.extract_labeled_statblocks(doc)] == ["Skelephant"]
+
+    def test_finds_labels_bolded_with_their_value(self):
+        doc = _book({
+            "type": "section", "name": "Ghast",
+            "entries": ["**Armor Class 13**", "**Hit Points 36**", "**Speed 30 ft.**"],
+        })
+        assert [b["name"] for b in _mon.extract_labeled_statblocks(doc)] == ["Ghast"]
+
+    def test_two_labels_is_not_enough(self):
+        # A player option that mentions AC is the exact false positive the
+        # three-of-four rule exists to reject (Wild Shape forms, barding...).
+        doc = _book({
+            "type": "section", "name": "Bear Form",
+            "entries": [
+                "While transformed you gain the following.",
+                "**Armor Class** 11 (natural armor)",
+                "**Hit Points** equal to your druid level.",
+            ],
+        })
+        assert _mon.extract_labeled_statblocks(doc) == []
+
+    def test_label_without_a_number_does_not_count(self):
+        doc = _book({
+            "type": "section", "name": "Prose",
+            "entries": ["Armor Class is explained here.", "Hit Points too.",
+                        "Speed as well.", "Challenge ratings are covered later."],
+        })
+        assert _mon.extract_labeled_statblocks(doc) == []
+
+    def test_keeps_monster_split_across_generic_subheadings(self):
+        # Some chunks come back with the stat lines distributed over generic
+        # sub-entries; the whole node is one monster, not several.
+        doc = _book({
+            "type": "section", "name": "Ghoul King",
+            "entries": [
+                {"type": "entries", "name": "Defenses",
+                 "entries": ["**Armor Class** 15", "**Hit Points** 82"]},
+                {"type": "entries", "name": "Statistics",
+                 "entries": ["**Speed** 30 ft.", "**Challenge** 5 (1,800 XP)"]},
+            ],
+        })
+        blocks = _mon.extract_labeled_statblocks(doc)
+        assert [b["name"] for b in blocks] == ["Ghoul King"]
+        assert "Armor Class" in blocks[0]["text"]
+        assert "Challenge" in blocks[0]["text"]
+
+    def test_does_not_swallow_a_chapter_of_monsters(self):
+        doc = _book({
+            "type": "section", "name": "Chapter 1: Undead",
+            "entries": [
+                "Undead are the restless dead.",
+                {"type": "entries", "name": "Ghoul", "entries": list(_LABEL_LINES)},
+                {"type": "entries", "name": "Ghast", "entries": list(_LABEL_LINES)},
+            ],
+        })
+        assert [b["name"] for b in _mon.extract_labeled_statblocks(doc)] \
+            == ["Ghoul", "Ghast"]
+
+    def test_walks_adventure_data_as_well_as_book_data(self):
+        doc = {
+            "_meta": {"sources": [{"json": "TEST"}]},
+            "adventure": [{"name": "Test", "id": "test", "contents": []}],
+            "adventureData": [{"data": [
+                {"type": "section", "name": "Wight", "entries": list(_LABEL_LINES)},
+            ]}],
+        }
+        assert [b["name"] for b in _mon.extract_labeled_statblocks(doc)] == ["Wight"]
+
+    def test_deduplicates_identical_blocks(self):
+        section = {"type": "section", "name": "Ghoul", "entries": list(_LABEL_LINES)}
+        doc = _book(section, dict(section))
+        assert len(_mon.extract_labeled_statblocks(doc)) == 1
+
+    def test_inherits_name_from_nearest_non_generic_ancestor(self):
+        doc = _book({
+            "type": "section", "name": "Plague-Born Troll",
+            "entries": [{"type": "entries", "name": "Description",
+                         "entries": list(_LABEL_LINES)}],
+        })
+        assert [b["name"] for b in _mon.extract_labeled_statblocks(doc)] \
+            == ["Plague-Born Troll"]
+
+    def test_flattens_ability_table_into_the_prompt_text(self):
+        doc = _book({
+            "type": "section", "name": "Ghoul", "entries": [
+                *_LABEL_LINES,
+                {"type": "table",
+                 "colLabels": ["STR", "DEX"],
+                 "rows": [["13 (+1)", "15 (+2)"]]},
+            ],
+        })
+        text = _mon.extract_labeled_statblocks(doc)[0]["text"]
+        assert "STR  DEX" in text
+        assert "13 (+1)  15 (+2)" in text
+
+
+# ---------------------------------------------------------------------------
+# --extract-monsters: merging the three detectors without losing blocks
+# ---------------------------------------------------------------------------
+
+def _merge_detector_blocks(*groups):
+    """Mirror of the dedup in convert()'s --extract-monsters branch."""
+    merged, seen = [], set()
+    for block in [b for g in groups for b in g]:
+        key = (block["name"].strip().lower(), block["text"])
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(block)
+    return merged
+
+
+class TestMonsterBlockMerge:
+    def test_drops_an_exact_duplicate(self):
+        block = {"name": "Ghoul", "text": "=== Ghoul ===\nAC 13"}
+        assert len(_merge_detector_blocks([block], [dict(block)])) == 1
+
+    def test_keeps_every_unnamed_block(self):
+        # All three detectors fall back to "Unknown"; keying on the name
+        # alone would send one of these three and discard the other two.
+        blocks = [{"name": "Unknown", "text": f"=== Unknown ===\nAC 1{i}"}
+                  for i in range(3)]
+        assert len(_merge_detector_blocks(blocks)) == 3
+
+    def test_keeps_same_named_variants_with_different_text(self):
+        blocks = [
+            {"name": "Guard Drake", "text": "=== Guard Drake ===\nAC 14"},
+            {"name": "Guard Drake", "text": "=== Guard Drake ===\nAC 16"},
+        ]
+        assert len(_merge_detector_blocks(blocks)) == 2

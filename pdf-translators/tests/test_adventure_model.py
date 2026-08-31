@@ -807,3 +807,87 @@ class TestHomebrewOutput:
             print(f"\nadventure-toworlds.json errors ({len(ctx.result.errors)}):")
             for e in ctx.result.errors[:10]:
                 print(f"  {e}")
+
+
+# ---------------------------------------------------------------------------
+# ID assignment: map linkage and reachability
+# ---------------------------------------------------------------------------
+
+class TestAssignIdsMapSafety:
+    """The typed model keeps a map image's "mapParent" in ImageEntry._extra.
+
+    Renumbering the node that a mapParent names detaches the player-version
+    map from its DM original, and nothing rewrites the reference.
+    """
+
+    def _doc(self):
+        from lib.adventure_model import BuildContext, ValidationMode, parse_document
+        raw = {
+            "_meta": {"sources": [{"json": "T", "abbreviation": "T",
+                                   "full": "T", "version": "1.0.0",
+                                   "authors": []}]},
+            "adventure": [{"name": "T", "id": "t", "source": "T",
+                           "contents": [{"name": "Ch"}]}],
+            "adventureData": [{"source": "T", "data": [
+                {"type": "section", "name": "Ch", "entries": [
+                    {"type": "image", "id": "03c",
+                     "href": {"type": "internal", "path": "m.webp"}},
+                    {"type": "image", "id": "03d",
+                     "href": {"type": "internal", "path": "p.webp"},
+                     "mapParent": {"id": "03c"}},
+                    {"type": "entries", "name": "A1", "entries": ["x"]},
+                ]},
+            ]}],
+        }
+        ctx = BuildContext(mode=ValidationMode.WARN)
+        return parse_document(raw, ctx)
+
+    def test_referenced_id_survives_assign_ids(self):
+        doc = self._doc()
+        doc.assign_ids()
+        out = doc.to_dict()
+        entries = out["adventureData"][0]["data"][0]["entries"]
+        assert entries[0]["id"] == "03c"
+        assert entries[1]["mapParent"] == {"id": "03c"}
+
+    def test_ids_stay_unique_around_the_preserved_one(self):
+        doc = self._doc()
+        doc.assign_ids()
+        out = doc.to_dict()
+        ids = []
+
+        def walk(node):
+            if isinstance(node, dict):
+                if isinstance(node.get("id"), str):
+                    ids.append(node["id"])
+                for key, value in node.items():
+                    if key == "mapParent":
+                        continue
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+
+        walk(out["adventureData"][0]["data"])
+        assert len(ids) == len(set(ids)), ids
+
+
+class TestAssignIdsReachesTypedChildren:
+    def test_gallery_images_are_renumbered(self):
+        from lib.adventure_model import (
+            BuildContext, ValidationMode, assign_ids_to_sections, parse_entry,
+        )
+        ctx = BuildContext(mode=ValidationMode.WARN)
+        section = parse_entry({
+            "type": "section", "name": "Ch", "entries": [
+                {"type": "gallery", "images": [
+                    {"type": "image", "id": "032",
+                     "href": {"type": "internal", "path": "a.webp"}},
+                ]},
+            ],
+        }, ctx, "s")
+        assign_ids_to_sections([section])
+        out = section.to_dict()
+        # Previously unreachable (only entries[]/items[] were walked), so the
+        # stale "032" survived to collide with a freshly-assigned "032".
+        assert out["entries"][0]["images"][0]["id"] != "032"
