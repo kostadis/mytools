@@ -14,7 +14,8 @@ Prior-generation v1 heuristic converters (six scripts) are documented in `README
 pdf-translators/
 ├── lib/            shared library modules (adventure_model, claude_api, llm_backend,
 │                   claudecodelib, pdf_utils, cli_args, chunk_cache, batch_state,
-│                   validate_adventure, validate_tags, fix_adventure_json)
+│                   validate_adventure, validate_tags, fix_adventure_json,
+│                   check_5etools_load)
 ├── converters/     conversion entry points (pdf_to_5etools_v2, convert_1e_to_5e,
 │                   extract_monsters, extract_images, extract_markdown, mistral_ocr,
 │                   patch_5e_chapters, merge_patch)
@@ -93,13 +94,13 @@ python3 converters/pdf_to_5etools_v2.py input.pdf --provider claude-code   # you
 
 **Concurrency (`--concurrency N`):** on the streaming (non-batch) path, chunks are sent through a thread pool `N` at a time instead of one-by-one. Default is **1 for claude, 8 for dgx** — vLLM serves many requests concurrently (the Spark slot runs `--max-num-seqs 20`; ~20 tok/s single-stream vs ~130 tok/s at 20 concurrent), so concurrency is the main throughput lever there. Results are written back by index, so TOC/data ordering is preserved regardless of completion order; per-chunk retry and debug-file writes are unaffected (unique `chunk_id`s). Ignored under `--batch`. The ordered runner is `_map_chunks_ordered` in `converters/pdf_to_5etools_v2.py`.
 
-**Resuming / reusing a run:** every run auto-saves each chunk's raw provider output to `<out_stem>-responses/{cid}-response.txt` (the `chunk_id` is `{index:03d}-{slugified-title}`; respects `--debug-dir`). Chunking is deterministic, so three recovery flags can reuse that work without re-billing/re-inferring:
-- `--reuse-responses` — **mid-run resume on either path.** For each chunk, loads its saved `{cid}-response.txt` from the responses dir if present *and it parses to real entries*; only the missing or unusable chunks are re-sent to the provider. Tolerates a **partial** set, so this is the flag for finishing a run that died midway (e.g. DGX dropped). Works on the streaming path (`_run_chunk`) **and** under `--batch` (the batch branch in `convert()` loads cached chunks and submits only the rest to the Batch API, then merges by index). The cache key is `{index:03d}-{slug}` only — **not** model-aware — so a `claude --batch --reuse-responses` run will reuse chunks a prior `dgx` streaming run produced (cross-provider/model reuse is intentional here). Both paths share `_chunk_cid` / `_load_cached_response`. Re-run the original command verbatim with `--reuse-responses` added; keep the same output target so the responses dir resolves to the same place, and don't change anything that alters chunking (PDF, page selection, `--force-marker`) or the index↔file mapping breaks. (Note: the batch path's own per-chunk debug files are named `chunk-NNNN-*`, so an interrupted *batch* run is resumed with `--resume-batch`, not by re-reading those files.)
-- `--replay-responses DIR` — rebuild the output purely from a **complete** set of saved responses (no provider calls at all). Hard-requires `len(responses) == len(chunks)`; raises otherwise. Use to re-parse a fully-finished run after a parser fix, not to resume a crash.
+**Resuming / reusing a run:** every run auto-saves each chunk's provider output to `<out_stem>-responses/{cid}-response.txt` (the `chunk_id` is `{index:03d}-{slugified-title}`; respects `--debug-dir`). Chunking is deterministic, so three recovery flags can reuse that work without re-billing/re-inferring:
+- `--reuse-responses` — **mid-run resume on either path.** For each chunk, loads its saved `{cid}-response.txt` from the responses dir if present *and it parses to real entries*; only the missing or unusable chunks are re-sent to the provider. Tolerates a **partial** set, so this is the flag for finishing a run that died midway (e.g. DGX dropped). Works on the streaming path (`_run_chunk`) **and** under `--batch` (the batch branch in `convert()` loads cached chunks and submits only the rest to the Batch API, then merges by index). The cache key is `{index:03d}-{slug}` only — **not** model-aware — so a `claude --batch --reuse-responses` run will reuse chunks a prior `dgx` streaming run produced (cross-provider/model reuse is intentional here). Both paths share `_chunk_cid` / `_load_cached_response`. **The saved file holds the chunk's *final* entries, not its first raw response**: when `call_claude` repairs a chunk (tag-fix retry, `max_tokens` tail recovery, split retry) it rewrites `{cid}-response.txt` with the repaired result and keeps the raw text as `{cid}-response.orig.txt` (`_rewrite_cached_response` in `lib/claude_api.py`). Without that, a resume silently reverted every repair — reintroducing corrected tags, and *dropping content* where a truncated response had been partially recovered, because the short cached list still parses fine. Responses cached by a run predating this are flagged on reuse with `[STALE-CACHE]`; fix those with `lib/validate_tags.py --fix` after assembly. Re-run the original command verbatim with `--reuse-responses` added; keep the same output target so the responses dir resolves to the same place, and don't change anything that alters chunking (PDF, page selection, `--force-marker`) or the index↔file mapping breaks. (Note: the batch path's own per-chunk debug files are named `chunk-NNNN-*`, so an interrupted *batch* run is resumed with `--resume-batch`, not by re-reading those files.)
+- `--replay-responses DIR` — rebuild the output purely from a **complete** set of saved responses (no provider calls at all). Use to re-parse a fully-finished run after a parser fix, not to resume a crash. Files are resolved **by chunk id** (`_replay_response_files`): each chunk is addressed as `{cid}-response.txt`, so the retry siblings `call_claude` writes alongside — `{cid}-tail-`, `{cid}-partN-`, `{cid}-fix-response.txt` — are not mistaken for chunks. A plain `*-response.txt` glob counted them, which made replay fail on any run where a chunk had been retried (i.e. exactly the runs worth re-parsing), and could silently mis-map chunk→file when the inflated count happened to match. A directory using some other naming scheme (e.g. the batch path's `chunk-NNNN-response.txt`) still maps positionally by sort order. Still hard-requires one file per chunk; the error names the missing ids and points at `--reuse-responses` for a partial set.
 - `--resume-batch BATCH_ID` — Anthropic-only; fetch results from an already-completed Batch API run instead of submitting a new batch.
 
 **Bestiary extraction:**
-- `--extract-monsters`: after the adventure conversion, run a second Claude pass that pulls stat blocks out of the generated JSON. Writes `<stem>-bestiary.json` next to the adventure file with source ID `{SOURCE}b` (separate so both homebrews can be loaded together without conflicting). Detects both italic-string stat lines (the v2 prompt's default format: `{@i Name: AC X, MV Y, ...}`) and legacy table stat blocks. Inherits `--model` and `--batch` from the main pass.
+- `--extract-monsters`: after the adventure conversion, run a second Claude pass that pulls stat blocks out of the generated JSON. Writes `<stem>-bestiary.json` next to the adventure file with source ID `{SOURCE}b` (separate so both homebrews can be loaded together without conflicting). Runs **three** detectors over the generated JSON and merges them (deduplicated by name): italic-string stat lines (`{@i Name: AC X, MV Y, ...}` — the 1e/2e shape), **bold-label lines** (`**Armor Class** 13` / `{@b Armor Class} 13` — the modern-5e shape, `extract_labeled_statblocks`), and legacy table stat blocks. Inherits `--model` and `--batch` from the main pass. Zero blocks from all three is reported explicitly, since "this book has no monsters" and "no detector models this book's stat-block shape" are otherwise indistinguishable — that silence is what made a 180-monster bestiary convert to an empty file.
 - `--monsters-only`: bypass the adventure pipeline entirely. Always runs Marker on the full PDF, splits the markdown on `##` headings, keeps sections whose first ~8 body lines mention "Armor Class" / "AC N", and sends those to Claude. Produces only the bestiary file. Cheapest path if all you need is the stat blocks (~2–3× fewer tokens than a full conversion).
 
 **Marker setup (one-time):**
@@ -150,7 +151,8 @@ All converters delegate LLM calls to `lib/claude_api.py`, which talks to a `Back
 - `validate_entries(entries, chunk_id)` — validates parsed JSON entries through the `adventure_model` data model; returns list of error messages (empty = valid)
 - `_parse_claude_response` — strips markdown fences, parses JSON, returns `(list, bool)`
 - `_recover_partial_json` — salvages complete entries from truncated/malformed responses
-- `call_claude(backend, chunk_text, model, system_prompt, verbose, debug_dir, chunk_id)` — full retry logic: tail retry on `max_tokens` with partial output, split retry on `max_tokens` or a malformed-JSON natural stop. After parsing, runs `validate_entries` and retries with a correction prompt if structural errors are found (unknown tags, missing fields, etc.). Controlled by `MAX_VALIDATION_RETRIES`. Works with either provider via `backend.complete`.
+- `call_claude(backend, chunk_text, model, system_prompt, verbose, debug_dir, chunk_id)` — full retry logic: tail retry on `max_tokens` with partial output, split retry on `max_tokens` or a malformed-JSON natural stop. After parsing, runs `validate_entries` and retries with a correction prompt if structural errors are found (unknown tags, missing fields, etc.). Controlled by `MAX_VALIDATION_RETRIES`. Works with either provider via `backend.complete`. Whenever any of those recovery paths fires, it calls `_rewrite_cached_response` so the chunk's saved `{cid}-response.txt` holds the repaired result rather than the first raw response — see "Resuming / reusing a run" above for why that is load-bearing.
+- `_rewrite_cached_response(debug_dir, chunk_id, result, reason)` / `_warn_stale_cached_tags(entries, chunk_id)` — keep the `--reuse-responses` cache in sync with what `call_claude` actually returned, and flag caches written before that was true. The preserved raw text is named `{cid}-response.orig.txt` specifically so it does **not** match the `*-response.txt` glob `--replay-responses` counts chunks with.
 - `call_claude_batch(backend, chunks, model, system_prompt, verbose, debug_dir)` — **Anthropic-only** (vLLM has no Batch API; gated via `_require_anthropic`). Submits all chunks as a single Batch API request (50% cheaper, async); polls every 15 s; returns results in chunk order. Validates post-batch and reports errors (no auto-retry in batch mode). The CLI rejects `--batch --provider dgx` up front.
 - `dry_run(backend, chunk_texts, chunks, model, system_prompt, use_batch, verbose)` — for claude, calls `count_tokens` per chunk and prints a cost estimate (`_dry_run_dgx` handles the DGX branch: chunk/char counts + a `chars/4` token estimate, no cost). No inference either way.
 - `_model_tier(model)` / `_PRICE` — maps model name to haiku/sonnet/opus tier and pricing for the claude cost estimate.
@@ -261,7 +263,13 @@ Post-processes a converter-generated adventure JSON to fix chapter-index mismatc
 python3 lib/fix_adventure_json.py input.json [output.json]
 ```
 
-Exports: `normalize_chapters()`, `reset_ids()`, `assign_ids()`, `build_toc()`. Overwrites in place with `.bak` backup if no output path given.
+Exports: `normalize_chapters()`, `reset_ids()`, `assign_ids()`, `collect_map_parent_refs()`, `build_toc()`. Overwrites in place with `.bak` backup if no output path given.
+
+**`assign_ids()` has two non-obvious rules, both load-bearing:**
+- **Map anchors are preserved.** A `{"mapParent": {"id": "03c"}}` on a player-version map is a *reference* to another node's id — 5etools blocklists the key when walking for ids, and nothing here rewrites references. So an id named by a `mapParent` keeps its value, and the counter never reissues it. Renumbering it detaches the player map from its DM original: measured on 4 of the 98 official adventures.
+- **The walk is generic, not `entries[]`/`items[]` only.** `getEntryIdLookup` collects ids from every node, so uniqueness has to hold everywhere. Map images normally live in an `images[]` array — 315 of them across the official corpus carry a bare numeric id like `"032"` — which a two-key recursion never reaches; the survivor then collides with a freshly-assigned `"032"` and 5etools throws. Measured: renumbering with the narrow walk produced duplicate ids in **45 of the 79** official adventures that have maps; the generic map-safe walk produces none, and a resaved file passes the node probe in `lib/check_5etools_load.py`.
+
+`lib/adventure_model.py` applies the same two rules on the typed path via `assign_ids_to_sections()` — it walks every dataclass field (so typed children under `images`/`blocks`/`tables` are reached, not just `entries`/`items`) and reserves ids found in `_extra` passthrough so the counter can't reissue one.
 
 ### `converters/patch_5e_chapters.py` — re-convert specific chapters
 
@@ -307,6 +315,39 @@ python3 lib/validate_tags.py adventure.json --fix     # replace in-place with pl
 
 The known-tag list is derived from `render.js` case statements. Common bad tags produced by Claude: `{@scroll X}` → `{@item scroll of X}`, `{@npc X}` → plain text or `{@creature X}`.
 
+### `lib/check_5etools_load.py` — "stuck on loading" diagnostic & repair
+
+Diagnoses adventure/book JSON that shows its table of contents in 5etools but
+leaves the content pane stuck on "loading". That symptom is not a fetch failure —
+it is an exception thrown inside `BookUtil._showBookContent` before it reaches
+`_removeLoadingOverlay()`. The usual cause is a **duplicate `id`**:
+`Renderer.adventureBook.getEntryIdLookup()` ends with
+`if (out.__BAD) throw new Error("IDs were already in storage: ...")`, so one
+collision anywhere in the document kills the render. The sidebar TOC is built
+earlier, from `adventure[0].contents`, which is why it still appears.
+
+```bash
+python3 lib/check_5etools_load.py adventure.json                 # diagnose one file
+python3 lib/check_5etools_load.py ~/src/homebrew-private/        # sweep a directory
+python3 lib/check_5etools_load.py adventure.json --fix           # repair in place (.bak)
+python3 lib/check_5etools_load.py DIR --no-node                  # built-in checks only
+```
+
+Duplicate detection is scoped **per data block**, matching the code it models: the node probe calls `getEntryIdLookup(block.data)` once per block, so an id only has to be unique within its own block. A document-wide check would report a multi-block homebrew (two `adventureData` entries, or `adventureData` plus `bookData`, each numbering from `"000"`) as broken when 5etools loads it fine — and `--fix` would then renumber to repair a non-problem. No official adventure has more than one block, which is why the 98/61 clean verification never surfaced it.
+
+Exits non-zero if any file would fail to load. When a local 5etools checkout is
+found (`~/src/5etools-src`, `~/src/5etools-kostadis`, `$FIVETOOLS_DIR`, or
+`--fivetools DIR`) it also runs **the real 5etools code** via node —
+`getEntryIdLookup` plus a per-chapter `recursiveRender` — which is authoritative
+and catches render-time crashes the Python checks don't model. Verified clean
+against all 98 official adventures and 61 official books.
+
+`--fix` renames **only the colliding nodes** to fresh unused ids. It deliberately
+does not renumber the whole document: `mapParent: {"id": ...}` is a *reference*
+to another node's id (5etools blocklists that key when walking), so a blanket
+renumber would silently break map linkage. If a renamed id was referenced by a
+`mapParent`, the tool says so and the linkage needs a human decision.
+
 ### `converters/extract_monsters.py` — CLI monster extractor
 
 Scans a parsed adventure JSON for embedded stat block tables (entries containing "Armor Class" rows) and sends them to Claude for conversion into 5etools bestiary JSON format. Can be used standalone or as a library (exports `_has_ac_table`, `statblock_to_text`, `SYSTEM_PROMPT`).
@@ -317,7 +358,13 @@ python3 converters/extract_monsters.py adventure.json --dry-run          # list 
 python3 converters/extract_monsters.py adventure.json --model claude-sonnet-4-6 --out bestiary.json
 ```
 
-Detects two table formats: key-value rows (`["Armor Class", "14"]`) and multi-column (`colLabels: ["Armor Class", "Hit Points", "Speed"]`). Inherits names from parent entries for unnamed stat blocks.
+The CLI entry point detects two table formats: key-value rows (`["Armor Class", "14"]`) and multi-column (`colLabels: ["Armor Class", "Hit Points", "Speed"]`). Inherits names from parent entries for unnamed stat blocks.
+
+As a library it exports four detectors, one per stat-block shape:
+- `extract_statblock_entries` / `_has_ac_table` — a real `table` child with an "Armor Class" row or column.
+- `extract_italic_statblocks` — 1e/2e italic stat lines, `{@i Name: AC 7, MV 12", ...}`.
+- `extract_labeled_statblocks` — modern 5e stat blocks written as **bold label lines** in the entry strings (`**Armor Class** 13`, `{@b Hit Points} 45`, `**Speed 30 ft.**`, bare `Challenge 3`). Walks **both** `entries` and `data`, so it sees the top level of `bookData`/`adventureData` — walking only `entries` is why a naive scan of a *book* finds nothing. A node qualifies only on **three of the four** canonical labels (Armor Class / Hit Points / Speed / Challenge), each line-initial and each followed by a number; that threshold is what rejects player options that merely mention AC (Wild Shape forms, barding). Keeps the *innermost* owning node, and folds a monster split across generic sub-headings (`Defenses`, `Ability Scores`, `Actions`…) back into one block while still descending into a chapter whose children are named monsters. Measured: 178/178 on *Ultimate Bestiary: The Dreaded Accursed*, 3 hits across all 98 official adventures.
+- `extract_markdown_statblocks` — raw Marker markdown, used by `--monsters-only`.
 
 ### `editors/monster_editor.py` — monster extraction UI
 
@@ -419,6 +466,13 @@ v2 eliminates most of that by moving structure extraction out of Claude's prompt
 - `--debug-dir DIR` saves raw chunk I/O for debugging failed conversions.
 - **5etools TOC/data alignment**: `adventure[0].contents[n]` maps to `adventureData[0].data[n]` by direct array index. Every top-level `data[]` entry must be `type: "section"`. `HomebrewAdventure.build()` enforces this automatically via `assign_ids()` + `build_toc()`.
 - **Structure validation** — run `python3 lib/validate_adventure.py adventure.json` after conversion or editing to catch structural issues (TOC misalignment, unknown tags, missing fields). Validated against all 98 official adventure files.
+- **Duplicate `id`s are fatal, not cosmetic** — 5etools' `getEntryIdLookup()` throws on
+  the first collision, which leaves an adventure showing its TOC with the content pane
+  stuck on "loading". `lib/validate_adventure.py` reports duplicate ids as an **error**;
+  `lib/check_5etools_load.py` diagnoses and repairs them. Every id-carrying entry type
+  (`section`, `entries`, `inset`, `insetReadaloud`) must be covered by the ID-assignment
+  pass in `lib/fix_adventure_json.py` / `lib/adventure_model.py` — a type left out keeps
+  a stale id from an earlier pass, which is exactly how collisions arise.
 - **Validation retry** — `call_claude` automatically validates parsed output through `adventure_model` and retries with a correction prompt if structural errors are found (unknown tags, missing fields, etc.). Controlled by `MAX_VALIDATION_RETRIES` in `lib/claude_api.py`. Batch mode reports errors but does not auto-retry.
 - **Retry logic lives in `lib/claude_api.py`** — do not duplicate it in the converter.
 - **Shared prompt fragments live in `lib/claude_api.py`** (`COMMON_TAG_RULES`, `COMMON_NESTING_RULES`) — do not duplicate tag or nesting rules in the converter.

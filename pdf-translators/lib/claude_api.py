@@ -143,6 +143,80 @@ def _retry_preserves_shape(original: list[Any], retry: list[Any]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Saved-response cache
+# ---------------------------------------------------------------------------
+# `--reuse-responses` resumes a crashed run by re-reading each chunk's saved
+# `{chunk_id}-response.txt` instead of re-calling the provider. That file is
+# written by `_parse_claude_response` the moment the FIRST response lands —
+# before any of `call_claude`'s recovery runs. So without the rewrite below,
+# every repair `call_claude` performs is thrown away on resume:
+#
+#   * a tag-fix retry corrects an invalid {@tag}  -> resume reuses the invalid one
+#   * a max_tokens tail retry recovers the cut-off sections -> resume drops them
+#   * a split retry rebuilds a malformed chunk    -> resume keeps the partial
+#
+# The last two lose *content* silently, because partial recovery makes the
+# cached file parse to a plausible-looking (short) list of entries. Keeping the
+# cache in sync with what `call_claude` actually returned is what makes a resume
+# equivalent to an uninterrupted run.
+
+
+def _rewrite_cached_response(debug_dir: Path, chunk_id: str,
+                             result: list[Any], reason: str) -> None:
+    """Point the saved response for *chunk_id* at the post-recovery *result*.
+
+    The pre-recovery text is preserved alongside as
+    ``{chunk_id}-response.orig.txt`` so the raw provider output is still
+    available for debugging. That name deliberately does not end in
+    ``-response.txt``, so it stays invisible to the ``*-response.txt`` glob
+    that ``--replay-responses`` uses to count chunks.
+    """
+    try:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        cached = debug_dir / f"{chunk_id}-response.txt"
+        original = debug_dir / f"{chunk_id}-response.orig.txt"
+        if cached.exists() and not original.exists():
+            original.write_text(cached.read_text(encoding="utf-8"), encoding="utf-8")
+        payload = json.dumps(result, indent=2, ensure_ascii=False)
+        cached.write_text(payload, encoding="utf-8")
+        parsed = debug_dir / f"{chunk_id}-parsed.json"
+        if parsed.exists():
+            parsed.write_text(payload, encoding="utf-8")
+        print(f"    [CACHE] {chunk_id}: saved response updated to the post-retry "
+              f"result ({reason}); raw output kept as {original.name}.", flush=True)
+    except OSError as e:
+        print(f"    [WARN] {chunk_id}: could not update the saved response ({e}) — "
+              f"a --reuse-responses resume would fall back to the pre-retry "
+              f"output for this chunk.", flush=True)
+
+
+def _warn_stale_cached_tags(entries: list[Any], chunk_id: str) -> None:
+    """Flag a reused response that still carries unknown-tag errors.
+
+    Responses cached by a run that predates :func:`_rewrite_cached_response`
+    hold the pre-validation text, so reusing them silently reintroduces tags
+    the original run had already corrected. Nothing is re-sent to the provider
+    here — a resume that says "no LLM call" must mean it — but the human gets
+    told, with the deterministic fix.
+    """
+    try:
+        errors = validate_entries(entries, chunk_id)
+    except Exception:
+        return
+    tag_errs, _struct = _partition_errors(errors)
+    if not tag_errs:
+        return
+    print(f"    [STALE-CACHE] {chunk_id}: reused response has {len(tag_errs)} "
+          f"unknown-tag error(s) — it predates the post-retry cache rewrite, so "
+          f"a correction from the original run was lost. Fix after assembly "
+          f"with: python3 lib/validate_tags.py <out.json> --fix", flush=True)
+    for e in tag_errs[:3]:
+        print(f"      {e}", flush=True)
+    if len(tag_errs) > 3:
+        print(f"      ... and {len(tag_errs) - 3} more", flush=True)
+
+
+# ---------------------------------------------------------------------------
 # Response parsing helpers
 # ---------------------------------------------------------------------------
 
@@ -251,6 +325,8 @@ def _parse_claude_response(raw: str, verbose: bool,
             (debug_dir / f"{chunk_id}-parsed.json").write_text(
                 json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
             )
+        if from_cache:
+            _warn_stale_cached_tags(result, chunk_id)
         return result, True
     except json.JSONDecodeError as e:
         # A known model glitch is doubled braces ({{ }} delimiters and {@tag x}}
@@ -268,6 +344,8 @@ def _parse_claude_response(raw: str, verbose: bool,
                         json.dumps(result, indent=2, ensure_ascii=False),
                         encoding="utf-8",
                     )
+                if from_cache:
+                    _warn_stale_cached_tags(result, chunk_id)
                 return result, True
             except json.JSONDecodeError:
                 pass  # repair didn't help — fall through to partial recovery
@@ -335,10 +413,16 @@ def call_claude(backend: "Backend", chunk_text: str,
     if split_point == -1:
         split_point = half
 
+    # Every recovery path below replaces or extends `result`. Record which
+    # ones fired so the saved response can be re-pointed at the final answer;
+    # see `_rewrite_cached_response` for why that matters on resume.
+    recovered_by: list[str] = []
+
     def _split_retry(reason: str) -> None:
         nonlocal result
         print(f"    [RETRY] {chunk_id} {reason} — splitting and retrying both halves...",
               flush=True)
+        recovered_by.append("split retry")
         result = []
         for part_idx, part in enumerate([chunk_text[:split_point], chunk_text[split_point:]]):
             if not part.strip():
@@ -356,6 +440,7 @@ def call_claude(backend: "Backend", chunk_text: str,
                   f" — re-processing tail to recover missing content...", flush=True)
             tail = chunk_text[split_point:]
             if tail.strip():
+                recovered_by.append("max_tokens tail retry")
                 result.extend(call_claude(backend, tail, model, system_prompt, verbose,
                                           debug_dir=debug_dir, chunk_id=f"{chunk_id}-tail",
                                           validate=validate))
@@ -411,10 +496,19 @@ def call_claude(backend: "Backend", chunk_text: str,
                 # issue at assembly/save time rather than a silent rewrite.
 
             elif tag_errs:
-                result = _retry_tag_fixes(
+                fixed = _retry_tag_fixes(
                     backend, result, tag_errs, model, system_prompt,
                     verbose, debug_dir, chunk_id, _retry_count,
                 )
+                # `_retry_tag_fixes` hands back the *same* list when it
+                # rejects the retry, so identity is the accept/reject signal.
+                if fixed is not result:
+                    recovered_by.append("tag-fix retry")
+                    result = fixed
+
+    if recovered_by and result and debug_dir is not None:
+        _rewrite_cached_response(debug_dir, chunk_id, result,
+                                 ", ".join(recovered_by))
 
     return result
 

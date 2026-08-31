@@ -5,6 +5,7 @@ Run:
     pytest test_validate_adventure.py -v
 """
 
+import itertools
 import json
 from pathlib import Path
 
@@ -46,8 +47,13 @@ def _homebrew(sections, *, name="Test", source="TEST"):
     }
 
 
+_section_id = itertools.count()
+
+
 def _section(name, entries=None):
-    return {"type": "section", "name": name, "id": "000", "entries": entries or []}
+    # ids must be unique document-wide — 5etools throws on duplicates.
+    return {"type": "section", "name": name, "id": f"{next(_section_id):03d}",
+            "entries": entries or []}
 
 
 # ---------------------------------------------------------------------------
@@ -348,14 +354,40 @@ class TestIDValidation:
         r = validate(_official(sections))
         assert r.ok
 
-    def test_duplicate_ids_warns(self):
+    def test_duplicate_ids_error(self):
+        # 5etools throws on duplicate ids, leaving the adventure page stuck on
+        # its loading overlay, so this is a must-fix rather than a nitpick.
         sections = [
             {"type": "section", "name": "A", "id": "001", "entries": [
                 {"type": "entries", "name": "Sub", "id": "001", "entries": []},
             ]},
         ]
         r = validate(_official(sections))
-        assert any("duplicate id" in w for w in r.warnings)
+        assert any("duplicate id" in e for e in r.errors)
+
+    def test_list_items_not_reported_as_self_duplicate(self):
+        # Regression: `items` was walked twice (once by _validate_list, once by
+        # the generic child-array loop), so every id under a list reported
+        # itself as a duplicate of itself.
+        sections = [_section("A", entries=[
+            {"type": "list", "items": [
+                {"type": "item", "name": "I", "id": "900", "entries": [
+                    {"type": "entries", "name": "Sub", "id": "901", "entries": []},
+                ]},
+            ]},
+        ])]
+        r = validate(_official(sections))
+        assert not any("duplicate id" in e for e in r.errors), r.errors
+
+    def test_duplicate_id_under_list_item_still_caught(self):
+        sections = [_section("A", entries=[
+            {"type": "list", "items": [
+                {"type": "item", "name": "I", "id": "900", "entries": []},
+                {"type": "item", "name": "J", "id": "900", "entries": []},
+            ]},
+        ])]
+        r = validate(_official(sections))
+        assert any("duplicate id" in e for e in r.errors)
 
     def test_non_string_id_errors(self):
         sections = [{"type": "section", "name": "A", "id": 42, "entries": []}]
