@@ -263,6 +263,30 @@ def _walk_entries(r: ValidationResult, entries: list, path: str, prefix: str,
             r.warn(f"{prefix}{entry_path}: unexpected type {type(entry).__name__}")
 
 
+def _check_entry_id(r: ValidationResult, entry: dict, path: str, prefix: str,
+                    ids_seen: dict[str, str]) -> None:
+    """Check one node's id for type and document-wide uniqueness.
+
+    5etools walks *every* node (bar "mapParent") when building its id lookup, so
+    any node carrying an id must be checked, whatever its type.
+    """
+    eid = entry.get("id")
+    if eid is None:
+        return
+    if not isinstance(eid, str):
+        r.error(f"{prefix}{path}: id must be a string, got {type(eid).__name__}")
+        return
+    # mapParent duplicates are normal — 5etools blocklists that key when walking.
+    if "mapParent" in path:
+        return
+    if eid in ids_seen:
+        # Renderer.adventureBook.getEntryIdLookup() *throws* on a duplicate id,
+        # which aborts _showBookContent before it removes the loading overlay:
+        # the sidebar TOC renders but the content pane is stuck on "loading".
+        r.error(f"{prefix}{path}: duplicate id '{eid}' (first at {ids_seen[eid]})")
+    ids_seen[eid] = path
+
+
 def _validate_entry(r: ValidationResult, entry: dict, path: str, prefix: str,
                     ids_seen: dict[str, str]) -> None:
     """Validate a single entry object."""
@@ -274,15 +298,7 @@ def _validate_entry(r: ValidationResult, entry: dict, path: str, prefix: str,
     elif etype not in VALID_ENTRY_TYPES:
         r.warn(f"{prefix}{path}: unknown entry type '{etype}'")
 
-    # ID uniqueness (skip mapParent duplicates which are normal)
-    eid = entry.get("id")
-    if eid is not None:
-        if not isinstance(eid, str):
-            r.error(f"{prefix}{path}: id must be a string, got {type(eid).__name__}")
-        elif "mapParent" not in path:
-            if eid in ids_seen:
-                r.warn(f"{prefix}{path}: duplicate id '{eid}' (first at {ids_seen[eid]})")
-            ids_seen[eid] = path
+    _check_entry_id(r, entry, path, prefix, ids_seen)
 
     # Type-specific validation
     if etype == "table":
@@ -306,16 +322,22 @@ def _validate_entry(r: ValidationResult, entry: dict, path: str, prefix: str,
         if isinstance(val, str):
             _check_tags_in_string(r, val, f"{path}.{key}", prefix)
 
-    # Recurse into known child arrays (skip "rows" — handled by _validate_table)
+    # Recurse into known child arrays (skip "rows" — handled by _validate_table).
+    # Skip any array a type-specific validator above already walked, otherwise
+    # the same node is visited twice and reports itself as a duplicate id.
     for key in ("entries", "items", "images", "tables",
                 "headerEntries", "footerEntries"):
         val = entry.get(key)
-        if isinstance(val, list):
-            if key != "entries":  # entries already handled above for section/entries types
+        if not isinstance(val, list):
+            continue
+        if key == "items":
+            if etype != "list":  # list items already handled by _validate_list
                 _walk_entries(r, val, f"{path}.{key}", prefix, ids_seen)
-            elif etype not in ("section", "entries", "inset", "insetReadaloud",
-                               "quote", "variantInner"):
-                _walk_entries(r, val, f"{path}.{key}", prefix, ids_seen)
+        elif key != "entries":
+            _walk_entries(r, val, f"{path}.{key}", prefix, ids_seen)
+        elif etype not in ("section", "entries", "inset", "insetReadaloud",
+                           "quote", "variantInner"):
+            _walk_entries(r, val, f"{path}.{key}", prefix, ids_seen)
 
 
 def _validate_table(r: ValidationResult, entry: dict, path: str, prefix: str) -> None:
@@ -359,6 +381,7 @@ def _validate_list(r: ValidationResult, entry: dict, path: str, prefix: str,
         elif isinstance(item, dict):
             itype = item.get("type")
             if itype == "item":
+                _check_entry_id(r, item, item_path, prefix, ids_seen)
                 name = item.get("name")
                 if name and isinstance(name, str):
                     _check_tags_in_string(r, name, f"{item_path}.name", prefix)
