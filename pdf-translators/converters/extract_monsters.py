@@ -16,6 +16,7 @@ import sys
 import textwrap
 import time
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -246,6 +247,239 @@ def italic_statblock_to_text(block):
     """Match the shape of statblock_to_text() for consistency."""
     name = block["name"]
     return f"=== {name} ===\n{block['text']}"
+
+
+# ---------------------------------------------------------------------------
+# Label-line stat blocks (5e format inside a converted adventure/book JSON)
+# ---------------------------------------------------------------------------
+# The v2 adventure prompt renders a modern 5e stat block as plain entry
+# strings carrying markdown-bold labels:
+#
+#     "{@b Armor Class} 13 (natural armor)"
+#     "**Hit Points** 45 (6d10 + 12)"
+#     "**Speed** 30 ft."
+#     ...
+#     "**Challenge** 3 (700 XP)"
+#
+# None of the detectors above see these: `_has_ac_table` needs a real
+# `table` child, and `_ITALIC_STATBLOCK_RE` needs the 1e-style
+# `{@i Name: AC 7, MV 12", ...}` envelope. On a modern bestiary PDF that
+# made `--extract-monsters` report "0 stat blocks" and write nothing —
+# silently, because zero blocks is a legitimate result for an adventure
+# with no monsters.
+#
+# Detection is deliberately conservative. A node qualifies only if at
+# least `_MIN_STATBLOCK_LABELS` of the four canonical labels appear, each
+# at the start of a line and each followed by a number. Requiring three
+# of four is what separates a stat block from prose or a player option
+# that merely mentions AC (e.g. a druid Wild Shape "Bear Form" entry, or
+# a barding item with an AC bonus).
+
+_STATBLOCK_LABEL_RES = {
+    "ac":        re.compile(r"^armor\s+class\b\D{0,24}\d", re.I),
+    "hp":        re.compile(r"^hit\s+points\b\D{0,24}\d", re.I),
+    "speed":     re.compile(r"^speed\b\D{0,24}\d", re.I),
+    "challenge": re.compile(r"^challenge\b\D{0,24}\d", re.I),
+}
+
+# How many of the four labels a node must carry to count as a stat block.
+_MIN_STATBLOCK_LABELS = 3
+
+# Sub-headings a converter emits *inside* a stat block. A node whose
+# children are all named from this set is a single monster split across
+# sub-entries, not a chapter holding several monsters — so it is kept
+# whole rather than descended into.
+_GENERIC_STATBLOCK_HEADINGS = {
+    "description", "defenses", "ability scores", "abilities", "statistics",
+    "stats", "attributes", "traits", "trait", "special abilities",
+    "actions", "reactions", "bonus actions", "legendary actions",
+    "lair actions", "regional effects", "spellcasting",
+}
+
+# Keys under which an entry node holds its children. `entries` is the
+# usual one; `data` is the top level of adventureData/bookData. Walking
+# only `entries` is what makes a naive scan of a *book* find nothing.
+_ENTRY_CHILD_KEYS = ("entries", "data")
+
+_MARKUP_TAG_RE = re.compile(r"\{@[bi]\s+([^{}]*)\}")
+
+
+def _demark(text: str) -> str:
+    """Strip the bold/italic wrappers a label may arrive in.
+
+    Handles all four shapes seen in practice: ``**Armor Class** 13``,
+    ``{@b Armor Class} 13``, ``**Armor Class 13**`` and bare
+    ``Armor Class 13``.
+    """
+    return _MARKUP_TAG_RE.sub(r"\1", text).replace("*", "").strip()
+
+
+def _labels_in_string(text: str) -> set[str]:
+    """Return the canonical stat labels that start a line of *text*."""
+    found: set[str] = set()
+    for line in text.splitlines():
+        line = _demark(line)
+        if not line:
+            continue
+        for key, pat in _STATBLOCK_LABEL_RES.items():
+            if key not in found and pat.match(line):
+                found.add(key)
+    return found
+
+
+def _direct_labels(node: dict) -> set[str]:
+    """Stat labels on *node*'s own string children (one level deep).
+
+    Looks at bare strings under `entries`/`data` and at the items of a
+    directly-nested `list`, which is how some chunks render the stat
+    lines. Does not descend into child entry nodes — that is what keeps a
+    chapter from matching on the strength of the monsters inside it.
+    """
+    found: set[str] = set()
+    for key in _ENTRY_CHILD_KEYS:
+        for child in node.get(key, []) or []:
+            if isinstance(child, str):
+                found |= _labels_in_string(child)
+            elif isinstance(child, dict) and child.get("type") == "list":
+                for item in child.get("items", []) or []:
+                    if isinstance(item, str):
+                        found |= _labels_in_string(item)
+    return found
+
+
+def _subtree_labels(node: Any) -> set[str]:
+    """Stat labels anywhere beneath *node*, at any depth."""
+    found: set[str] = set()
+    if isinstance(node, str):
+        return _labels_in_string(node)
+    if isinstance(node, list):
+        for item in node:
+            found |= _subtree_labels(item)
+        return found
+    if isinstance(node, dict):
+        for key in ("entries", "data", "items", "rows"):
+            found |= _subtree_labels(node.get(key, []) or [])
+    return found
+
+
+def _entry_children(node: dict) -> list[dict]:
+    """Immediate child entry *dicts* of *node*, across both child keys."""
+    kids: list[dict] = []
+    for key in _ENTRY_CHILD_KEYS:
+        for child in node.get(key, []) or []:
+            if isinstance(child, dict) and child.get("type") != "list":
+                kids.append(child)
+    return kids
+
+
+def _is_generic_heading(node: dict) -> bool:
+    """True if *node* is an unnamed wrapper or a stat-block sub-heading."""
+    name = (node.get("name") or "").strip().lower().rstrip(".")
+    return not name or name in _GENERIC_STATBLOCK_HEADINGS
+
+
+def _flatten_node_text(node: Any, out: list[str], depth: int = 0) -> None:
+    """Append a readable flattening of *node* to *out*."""
+    if isinstance(node, str):
+        out.append(node)
+        return
+    if isinstance(node, list):
+        for item in node:
+            _flatten_node_text(item, out, depth)
+        return
+    if not isinstance(node, dict):
+        return
+    ntype = node.get("type", "")
+    if ntype == "table":
+        cols = node.get("colLabels") or []
+        if cols:
+            out.append("  ".join(str(c) for c in cols))
+        for row in node.get("rows", []) or []:
+            if isinstance(row, list):
+                out.append("  ".join(str(c) for c in row))
+        return
+    if ntype == "list":
+        for item in node.get("items", []) or []:
+            if isinstance(item, str):
+                out.append(f"- {item}")
+            else:
+                _flatten_node_text(item, out, depth)
+        return
+    name = node.get("name")
+    if name and depth:
+        out.append(f"\n{name}")
+    for key in _ENTRY_CHILD_KEYS:
+        _flatten_node_text(node.get(key, []) or [], out, depth + 1)
+
+
+def labeled_statblock_to_text(name: str, node: dict) -> str:
+    """Format one detected node as prompt content for the monster pass."""
+    lines: list[str] = []
+    _flatten_node_text(node, lines)
+    body = "\n".join(line for line in lines).strip()
+    return f"=== {name} ===\n{body}"
+
+
+def extract_labeled_statblocks(obj: Any) -> list[dict]:
+    """Find label-line 5e stat blocks in a parsed adventure/book tree.
+
+    Returns ``{"name": str, "text": str}`` dicts where ``text`` is already
+    prompt-ready (same contract as :func:`statblock_to_text`'s output),
+    deduplicated by name plus the head of the block.
+
+    The walk keeps the *innermost* node that owns the stat lines: a node
+    matches either because its own string children carry the labels, or
+    because it carries them across sub-entries that are all generic
+    stat-block headings (``Defenses``, ``Ability Scores``, ``Actions``…),
+    which is how a handful of blocks come back shaped per conversion run.
+    A node whose children are named something else is treated as a
+    container and descended into instead.
+    """
+    results: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    def keep(node: dict, name: str) -> None:
+        label = name or node.get("name") or "Unknown"
+        text = labeled_statblock_to_text(label, node)
+        key = (label.strip().lower(), text[:120])
+        if key in seen:
+            return
+        seen.add(key)
+        results.append({"name": label.strip(), "text": text})
+
+    def visit(node: Any, inherited: str) -> None:
+        if isinstance(node, list):
+            for item in node:
+                visit(item, inherited)
+            return
+        if not isinstance(node, dict):
+            return
+
+        own = (node.get("name") or "").strip()
+        # A generic sub-heading is never the monster's name — keep looking
+        # up the tree for the nearest real one.
+        effective = own if own and not _is_generic_heading(node) else inherited
+
+        if len(_direct_labels(node)) >= _MIN_STATBLOCK_LABELS:
+            keep(node, effective)
+            return
+
+        kids = _entry_children(node)
+        if (kids
+                and len(_subtree_labels(node)) >= _MIN_STATBLOCK_LABELS
+                and all(_is_generic_heading(k) for k in kids)):
+            keep(node, effective)
+            return
+
+        if kids:
+            for kid in kids:
+                visit(kid, effective)
+        else:
+            for value in node.values():
+                visit(value, effective)
+
+    visit(obj, "")
+    return results
 
 
 # ---------------------------------------------------------------------------

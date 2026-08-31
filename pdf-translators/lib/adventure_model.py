@@ -37,7 +37,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Union
+from typing import Any, Iterator, Union
 
 from lib.validate_adventure import VALID_ENTRY_TYPES, KNOWN_TAGS, TAG_RE
 
@@ -1040,10 +1040,8 @@ class HomebrewAdventure:
                 self._ctx.warn(f"contents[{i}].name '{toc.name}' != data[{i}].name '{section.name}'")
 
     def assign_ids(self) -> None:
-        """Assign sequential IDs to all section/entries/inset nodes."""
-        counter = [0]
-        for section in self.adventure_data.data:
-            _assign_ids_recursive(section, counter)
+        """Assign sequential IDs to all id-carrying nodes (unique document-wide)."""
+        assign_ids_to_sections(self.adventure_data.data)
 
     def build_toc(self) -> None:
         """Rebuild contents[] from data[] sections."""
@@ -1158,9 +1156,7 @@ class OfficialAdventureData:
         pass
 
     def assign_ids(self) -> None:
-        counter = [0]
-        for section in self.data:
-            _assign_ids_recursive(section, counter)
+        assign_ids_to_sections(self.data)
 
     def to_dict(self) -> dict:
         return {"data": [s.to_dict() for s in self.data]}
@@ -1220,23 +1216,103 @@ def parse_document(raw: dict, ctx: BuildContext | None = None) -> HomebrewAdvent
 # ID assignment helper
 # ---------------------------------------------------------------------------
 
-def _assign_ids_recursive(entry: EntryBase, counter: list[int]) -> None:
-    """Assign sequential IDs to section/entries/inset nodes."""
-    if entry.type in ("section", "entries", "inset"):
-        entry.id = f"{counter[0]:03d}"
+# Entry types that carry an "id" anchor in 5etools adventure data.
+# NOTE: any node that already has an id must also be renumbered, otherwise a
+# stale id left over from an earlier pass can collide with a freshly-assigned
+# one. 5etools' Renderer.adventureBook.getEntryIdLookup() *throws* on duplicate
+# ids, which leaves the adventure page stuck on its loading overlay forever.
+_ID_ENTRY_TYPES = ("section", "entries", "inset", "insetReadaloud")
+
+# See ID_REF_KEYS in lib/fix_adventure_json.py: a "mapParent" holds a
+# *reference* to another node's id, so 5etools blocklists the key when walking
+# for ids and renumbering the referenced node breaks the map linkage.
+_ID_REF_KEYS = frozenset({"mapParent"})
+
+
+def _iter_child_entries(entry: EntryBase) -> Iterator[EntryBase]:
+    """Yield every child ``EntryBase``, whatever field happens to hold it.
+
+    Enumerating field names ("entries", "items") missed the typed children
+    parked under `images`, `blocks` and `tables` — those keep their ids
+    untouched, which is how a stale id survives to collide with a fresh one.
+    Walking the instance's fields covers all of them, and any added later.
+    """
+    for value in vars(entry).values():
+        if isinstance(value, EntryBase):
+            yield value
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, EntryBase):
+                    yield item
+
+
+def _collect_id_context(node: Any, reserved: set[str], map_refs: set[str]) -> None:
+    """Collect ids the renumber pass must work around.
+
+    ``reserved`` gathers ids living in raw passthrough data (an ``_extra``
+    payload the typed model preserves verbatim but never rewrites) — the
+    counter has to step over those or it will reissue one. ``map_refs``
+    gathers ids named by a ``mapParent``, whose nodes must keep their value.
+    """
+    if isinstance(node, EntryBase):
+        extra = getattr(node, "_extra", None)
+        if isinstance(extra, dict):
+            _collect_id_context(extra, reserved, map_refs)
+        for child in _iter_child_entries(node):
+            _collect_id_context(child, reserved, map_refs)
+    elif isinstance(node, dict):
+        parent = node.get("mapParent")
+        if isinstance(parent, dict) and isinstance(parent.get("id"), str):
+            map_refs.add(parent["id"])
+        if isinstance(node.get("id"), str):
+            reserved.add(node["id"])
+        for key, value in node.items():
+            if key in _ID_REF_KEYS:
+                continue
+            _collect_id_context(value, reserved, map_refs)
+    elif isinstance(node, list):
+        for item in node:
+            _collect_id_context(item, reserved, map_refs)
+
+
+def _next_free_id(counter: list[int], taken: set[str]) -> str:
+    """Next sequential id, stepping over anything already spoken for."""
+    while True:
+        candidate = f"{counter[0]:03d}"
         counter[0] += 1
+        if candidate not in taken:
+            return candidate
 
-    # Recurse into entries[]
-    if hasattr(entry, "entries") and isinstance(entry.entries, list):
-        for child in entry.entries:
-            if isinstance(child, EntryBase):
-                _assign_ids_recursive(child, counter)
 
-    # Recurse into items[]
-    if hasattr(entry, "items") and isinstance(entry.items, list):
-        for child in entry.items:
-            if isinstance(child, EntryBase):
-                _assign_ids_recursive(child, counter)
+def assign_ids_to_sections(sections: list[EntryBase]) -> None:
+    """Renumber id-carrying nodes across *sections* so every id is unique.
+
+    Ids named by a ``mapParent`` keep their value and are never reissued;
+    see :func:`lib.fix_adventure_json.assign_ids` for why.
+    """
+    reserved: set[str] = set()
+    map_refs: set[str] = set()
+    for section in sections:
+        _collect_id_context(section, reserved, map_refs)
+    taken = reserved | map_refs
+    counter = [0]
+    for section in sections:
+        _assign_ids_recursive(section, counter, map_refs, taken)
+
+
+def _assign_ids_recursive(entry: EntryBase, counter: list[int],
+                          map_refs: set[str] | None = None,
+                          taken: set[str] | None = None) -> None:
+    """Assign sequential IDs to id-carrying nodes (must be unique document-wide)."""
+    map_refs = map_refs if map_refs is not None else set()
+    taken = taken if taken is not None else set()
+
+    if entry.type in _ID_ENTRY_TYPES or entry.id is not None:
+        if entry.id not in map_refs:
+            entry.id = _next_free_id(counter, taken)
+
+    for child in _iter_child_entries(entry):
+        _assign_ids_recursive(child, counter, map_refs, taken)
 
 
 # ---------------------------------------------------------------------------

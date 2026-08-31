@@ -74,18 +74,86 @@ def reset_ids() -> None:
     _id_counter = 0
 
 
-def assign_ids(entries: list[Any]) -> None:
+# Entry types that carry an "id" anchor in 5etools adventure data.
+# NOTE: any node that already has an id must also be renumbered, otherwise a
+# stale id left over from an earlier pass can collide with a freshly-assigned
+# one. 5etools' Renderer.adventureBook.getEntryIdLookup() *throws* on duplicate
+# ids, which leaves the adventure page stuck on its loading overlay forever.
+ID_ENTRY_TYPES = ("section", "entries", "inset", "insetReadaloud")
+
+# 5etools passes `keyBlocklist: new Set(["mapParent"])` when it walks for ids,
+# because a mapParent's "id" is a *reference* to another node rather than a name
+# for this one. A player-version map carries {"mapParent": {"id": "03c"}}
+# pointing at the DM map's id; renumbering that target without rewriting the
+# reference silently detaches the two. 8 nodes across 5 of the 98 official
+# adventures are in exactly that position.
+ID_REF_KEYS = frozenset({"mapParent"})
+
+
+def collect_map_parent_refs(node: Any) -> set[str]:
+    """Ids that a "mapParent" points at — these must keep their current value."""
+    refs: set[str] = set()
+
+    def walk(n: Any) -> None:
+        if isinstance(n, dict):
+            parent = n.get("mapParent")
+            if isinstance(parent, dict) and isinstance(parent.get("id"), str):
+                refs.add(parent["id"])
+            for value in n.values():
+                walk(value)
+        elif isinstance(n, list):
+            for value in n:
+                walk(value)
+
+    walk(node)
+    return refs
+
+
+def _next_id(preserve: set[str]) -> str:
+    """Next sequential id, stepping over anything held back by *preserve*."""
     global _id_counter
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        if entry.get("type") in ("section", "entries", "inset"):
-            entry["id"] = f"{_id_counter:03d}"
-            _id_counter += 1
-        if "entries" in entry:
-            assign_ids(entry["entries"])
-        if "items" in entry:
-            assign_ids(entry["items"])
+    while True:
+        candidate = f"{_id_counter:03d}"
+        _id_counter += 1
+        if candidate not in preserve:
+            return candidate
+
+
+def assign_ids(entries: list[Any], preserve: set[str] | None = None) -> None:
+    """Renumber id-carrying nodes so every id in the document is unique.
+
+    Two things make this more than a counter:
+
+    * **Map anchors are left alone.** Any id named by a `mapParent` keeps its
+      value, and the counter never hands that value out to something else.
+    * **The walk is generic.** 5etools' `getEntryIdLookup` collects ids from
+      every node in the tree, so uniqueness has to hold there too — not just
+      under `entries[]`/`items[]`. Map images normally sit in an `images[]`
+      array (315 of them across the official adventures carry a bare numeric
+      id like "032"), which the old two-key recursion never reached; an
+      untouched "032" then collides with a freshly-assigned "032" and 5etools
+      throws, leaving the page stuck on its loading overlay.
+
+    *preserve* is computed from *entries* when not supplied, so existing
+    callers get the map-safe behaviour without changing.
+    """
+    if preserve is None:
+        preserve = collect_map_parent_refs(entries)
+    _assign_ids(entries, preserve)
+
+
+def _assign_ids(node: Any, preserve: set[str]) -> None:
+    if isinstance(node, dict):
+        if node.get("type") in ID_ENTRY_TYPES or "id" in node:
+            if node.get("id") not in preserve:
+                node["id"] = _next_id(preserve)
+        for key, value in node.items():
+            if key in ID_REF_KEYS:
+                continue
+            _assign_ids(value, preserve)
+    elif isinstance(node, list):
+        for value in node:
+            _assign_ids(value, preserve)
 
 
 def build_toc(chapters: list[dict]) -> list[dict]:

@@ -640,6 +640,73 @@ def _load_cached_response(
     return entries or None
 
 
+# Sub-chunk ids `call_claude` invents when it retries: `{cid}-tail`,
+# `{cid}-part0`/`-part1`, `{cid}-fix`. Each writes its own
+# `{sub_cid}-response.txt` next to the parent's, so a plain
+# `*-response.txt` glob over-counts the moment any chunk needed a retry.
+_RETRY_SUFFIX_RE = re.compile(r"-(?:tail|part\d+|fix)$")
+
+
+def _is_retry_artifact(stem: str, expected: set[str]) -> bool:
+    """True if ``stem`` is a retry sibling of one of this run's chunk ids.
+
+    Peels retry suffixes off the tail (handling nesting, e.g.
+    ``003-crypt-part0-tail``) and reports a match only when what remains is
+    an id this run actually chunked to. Matching against the expected ids
+    rather than the suffix alone is what keeps a section legitimately named
+    "The Tail" or "Quick Fix" — whose own slug ends the same way — from
+    being mistaken for a retry artifact and dropped.
+    """
+    if stem in expected:
+        return False
+    while (m := _RETRY_SUFFIX_RE.search(stem)):
+        stem = stem[:m.start()]
+        if stem in expected:
+            return True
+    return False
+
+
+def _replay_response_files(resp_dir: Path, chunks: list) -> list[Path]:
+    """Resolve exactly one saved response file per chunk, in chunk order.
+
+    Two strategies, in order:
+
+    1. **By chunk id.** `_chunk_cid` is deterministic, so a replay of the run
+       that produced the directory can address each chunk's file by name.
+       This is exact: retry siblings and unrelated files are simply not
+       addressed, and a missing chunk is named in the error.
+    2. **Positional**, for a directory that doesn't use those ids — notably
+       the batch path's `chunk-NNNN-response.txt` files. Retry artifacts of
+       this run's ids are filtered out first; anything else is kept, so an
+       unrecognised naming scheme still maps by sort order the way it always
+       did.
+    """
+    expected = {_chunk_cid(i, c) for i, c in enumerate(chunks)}
+    by_cid = [resp_dir / f"{_chunk_cid(i, c)}-response.txt"
+              for i, c in enumerate(chunks)]
+    if all(p.exists() for p in by_cid):
+        return by_cid
+
+    files = sorted(
+        p for p in resp_dir.glob("*-response.txt")
+        if not _is_retry_artifact(p.name[:-len("-response.txt")], expected)
+    )
+    if len(files) != len(chunks):
+        missing = [p.name for p in by_cid if not p.exists()]
+        detail = ""
+        if missing:
+            shown = ", ".join(missing[:5])
+            more = f" (+{len(missing) - 5} more)" if len(missing) > 5 else ""
+            detail = (f"; no file for {len(missing)} chunk id(s): {shown}{more}")
+        raise RuntimeError(
+            f"[replay] {len(files)} usable saved response(s) in {resp_dir} != "
+            f"{len(chunks)} chunks{detail}. --replay-responses needs a COMPLETE "
+            f"set from a run with identical chunking; to finish a partial run "
+            f"use --reuse-responses instead."
+        )
+    return files
+
+
 def _map_chunks_ordered(chunks: list, run_fn, concurrency: int) -> list:
     """Run ``run_fn(i, chunk)`` over *chunks*, returning results in chunk order.
 
@@ -1298,16 +1365,10 @@ def encode_chunks(
     chunk_results: list[tuple[ChunkSpec, list | None]] = []
     if replay_responses:
         # Rebuild from previously saved {cid}-response.txt files instead of
-        # calling Claude. Chunking above is deterministic, so the sorted
-        # response files line up 1:1 with chunks in submission order. Use this
-        # to recover a run after a parser fix without re-billing the API.
-        resp_files = sorted(Path(replay_responses).glob("*-response.txt"))
-        if len(resp_files) != len(chunks):
-            raise RuntimeError(
-                f"[replay] {len(resp_files)} saved responses in "
-                f"{replay_responses} != {len(chunks)} chunks; chunking must "
-                f"match the original run for the mapping to be correct"
-            )
+        # calling Claude. Chunking above is deterministic, so each chunk's
+        # file can be addressed by its own id. Use this to recover a run
+        # after a parser fix without re-billing the API.
+        resp_files = _replay_response_files(Path(replay_responses), chunks)
         print(f"[replay] rebuilding from {len(resp_files)} saved responses in "
               f"{replay_responses} — no Claude calls")
         for spec, rf in zip(chunks, resp_files):
@@ -1440,19 +1501,43 @@ def encode_chunks(
     # ---- 7. Optional monster extraction pass ----
     if extract_monsters:
         adv_dict = doc.to_dict() if hasattr(doc, "to_dict") else json.loads(out.read_text())
+        # Three detectors, because the shape of a stat block depends on the
+        # source: 1e/2e modules come back as `{@i Name: AC 7, MV 12", ...}`
+        # italic lines, modern 5e books as bold label lines, and the legacy
+        # path as a real `table`. Run all three — a book that yields nothing
+        # from one is normal, nothing from all three is the interesting case.
         italic_blocks = _mon.extract_italic_statblocks(adv_dict)
-        # Also scan for the legacy table format in case a future prompt
-        # emits structured tables.
+        labeled_blocks = _mon.extract_labeled_statblocks(adv_dict)
         table_entries = _mon.extract_statblock_entries(adv_dict)
         table_blocks = [
             {"name": e.get("name", "Unknown"),
              "text": _mon.statblock_to_text(e)}
             for e in table_entries
         ]
-        all_blocks = italic_blocks + table_blocks
-        if verbose:
-            print(f"[monsters] found italic={len(italic_blocks)} "
-                  f"table={len(table_blocks)}")
+        # Drop only *identical* blocks, so a monster picked up by two
+        # detectors isn't paid for twice. Keying on the name alone would be
+        # cheaper and wrong: every detector falls back to "Unknown" for an
+        # unnamed block, so three unnamed stat blocks would collapse to one,
+        # and two genuinely different monsters that share a name (a "Guard
+        # Drake" in two chapters) would lose one. Silently sending fewer
+        # monsters than the book has is the failure this whole pass exists
+        # to stop.
+        all_blocks = []
+        _seen_blocks: set[tuple[str, str]] = set()
+        for block in italic_blocks + labeled_blocks + table_blocks:
+            key = (block["name"].strip().lower(), block["text"])
+            if key in _seen_blocks:
+                continue
+            _seen_blocks.add(key)
+            all_blocks.append(block)
+        print(f"[monsters] found italic={len(italic_blocks)} "
+              f"labeled={len(labeled_blocks)} table={len(table_blocks)} "
+              f"-> {len(all_blocks)} unique")
+        if not all_blocks:
+            print("[monsters] no stat blocks matched any detector. If this "
+                  "source does have stat blocks, their shape is one none of "
+                  "the detectors model — check a chunk in the responses dir "
+                  "before assuming the book is monster-free.")
         write_bestiary(
             backend, all_blocks,
             adventure_name=name, adventure_source=short_id, author=author,
