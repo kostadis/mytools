@@ -1,7 +1,8 @@
 ---
 name: vtt-spell-pass
-description: Clean up Otter/Zoom VTT transcripts for a D&D campaign — applies the known-misspellings glossary and prompts the user about unrecognised proper nouns. Invoke as /vtt-spell-pass [vtt-path].
-tools: Read, Glob, Grep, Bash, Edit, Write, AskUserQuestion, TaskCreate, TaskUpdate, ToolSearch, Artifact, WebFetch
+description: Clean up Otter/Zoom VTT transcripts for a D&D campaign by applying the known-misspellings glossary and asking the user to adjudicate unrecognised proper nouns. Use when the user asks for a VTT spell pass or invokes $vtt-spell-pass with a transcript path.
+metadata:
+  short-description: Review and correct campaign VTT names
 ---
 
 # VTT Spell Pass
@@ -21,35 +22,24 @@ The user's stated invariant: *"I know all the NPCs. If a proper name appears
 in a transcript that isn't in our notes, it's a misspelling."* The skill
 operationalises that: the unknown set IS the candidate-misspelling set.
 
-## What this skill delivers — read this before Phase 5
+## Codex compatibility
 
-**The deliverable is a set of entries in `transcript_corrections.yaml`, not a
-cleaned `.vtt`.**
+This is the Codex port of the Claude skill. Do not edit
+`~/src/mytools/dotfiles/claude/skills/vtt-spell-pass/` when changing or using
+this skill.
 
-A session's `<stem>.transcript.cleaned.vtt` is *generated* by
-CampaignGenerator's `sd_corrections apply` from that cue-indexed record
-(issue #250 R4); the raw `<stem>.transcript.vtt` is the archive and is never
-written. So this skill never writes either file. It writes a **candidate**
-transcript to scratch, and Phase 7 converts the candidate's diff into record
-entries the GM reviews.
-
-This is not bookkeeping pedantry. The arrangement that predated the record —
-a spell pass writing the cleaned tape directly — put 74 unenumerated
-substitutions into Phandalin ch46, three of which inserted a surname nobody
-spoke. Every verbatim guarantee downstream is measured against that file. If
-you write it here instead of recording the diff, `sd_corrections check`
-reports the cues as unexplained and the next `apply` throws the whole pass
-away.
-
-Two consequences to keep in mind from Phase 0 onward:
-
-- **Never write into the session directory.** Not the cleaned tape, and not a
-  stray `.vtt` either: `sd_corrections` finds the raw tape by globbing every
-  non-`.cleaned` `*.vtt` in the directory and demands exactly one, so a
-  candidate parked next to the original makes its commands fail. `$SCRATCH`
-  for everything.
-- **`apply_replacements.py --output` is required and has no default**, and it
-  refuses to write a file an existing record claims. There is no `--in-place`.
+- Resolve this skill's installed directory once as `SKILL_DIR`. The normal
+  location is `${CODEX_HOME:-$HOME/.codex}/skills/vtt-spell-pass`; use the
+  actual loaded skill directory if it differs.
+- Ask review questions in chat. Use `update_plan` for multi-step progress when
+  useful; do not refer to Claude task or question tools.
+- Codex does not have Claude's Artifact publication and callback flow. For
+  batch review, write the JSON queue and render the standalone review page
+  described below. Accept the resulting decisions as pasted JSON or a saved
+  decisions file.
+- Use `apply_patch` for manual, targeted transcript edits. The bundled scripts
+  remain the deterministic path for glossary and replacement operations.
+- Every new wrong-to-right mapping still requires explicit user approval.
 
 ## Required inputs
 
@@ -64,28 +54,20 @@ Detect or ask:
    glossary already exists in the documented format — see Out of the Abyss
    for the canonical example).
 4. **NPC dossier dir** — `<campaign>/docs/npcs/` if present.
-5. **Entity registry** — if `<campaign>/docs/entity_registry.yaml` exists,
-   pass it directly via `--registry` on **both** scripts (`find_unknowns.py`
-   and `cluster_unknowns.py` read it natively — no flattening, no
-   `registry.py project` regeneration first, always current with the last
-   registry edit). A registry name or alias is, by construction
-   (`registry-cleanup/SKILL.md`'s rule), an approved canonical alternate
-   name — **never** a mishearing — so it is always safe to treat as known.
-   If no registry exists yet but `docs/entity_inventory.md` (its older,
-   generated markdown projection) does, fall back to flattening that one
-   file per the bullet steps below and pass it via `--extra-known` instead.
-
-6. **Verified-noun dictionaries** — flat, one-name-per-line files of
+5. **Verified-noun dictionaries** — flat, one-name-per-line files of
    confirmed proper nouns (module NPCs, creatures, spells, locations,
    deities) that should be treated as known and therefore never surfaced
    as candidate misspellings. These are *not* the glossary — they are
    pre-verified vocabulary that suppresses false positives and improves
    clustering (dictionary entries also become canonical replacement
    targets). **Auto-detect the conventional flat path
-   `<campaign>/notes/proper_nouns_adventure.txt`. Surface what you found
-   and ask the user to confirm or add more before running Phase 1.** Pass
-   every confirmed flat file to both scripts via `--extra-known` (the flag
-   accepts multiple paths).
+   `<campaign>/notes/proper_nouns_adventure.txt`. Also check whether the
+   campaign keeps a generated entity inventory: `docs/entity_inventory.md`
+   (produced from `docs/entity_registry.yaml` by `registry.py project`) is
+   the current OOTA source. Surface what you found and ask the user to
+   confirm or add more before running Phase 1.** Pass every confirmed flat
+   file to both scripts via `--extra-known` (the flag accepts multiple
+   paths).
 
    Format matters: `--extra-known` treats every non-`#` line as a name, so
    only feed flat one-per-line dumps. Do **not** pass a markdown file raw
@@ -93,10 +75,10 @@ Detect or ask:
    and prose fragments into the known set and can silently suppress real
    unknowns.
 
-   **Flatten generated markdown sources first.** `notes/vtt_known_additions.md`
-   (and `docs/entity_inventory.md`, only when used per #5's fallback) are
-   valuable name sources but are markdown, not flat. Extract each into a
-   throwaway `.txt` in your scratchpad, then pass the `.txt`:
+   **Flatten generated markdown sources first.** `entity_inventory.md` and
+   `notes/vtt_known_additions.md` are valuable name sources but are
+   markdown, not flat. Extract each into a throwaway `.txt` in your
+   scratchpad, then pass the `.txt`:
    - pull every `**bold**` span from each `- ` bullet line;
    - split each span on ` / ` (multi-alias entries like
      `**Whistlerites / Miloites / Protanthians**` become three names);
@@ -110,15 +92,11 @@ Detect or ask:
    but the glossary maps it → `Kalan Strongbranch`; a stale "known" entry
    silently suppresses a real unknown. When you flatten it, flag any entry
    that also appears as a glossary wrong-form to the user — the glossary wins.
-   (`vtt_known_additions.md` is also not yet fed into the registry's own
-   `triage-candidates` queue — CampaignGenerator#141 — so a name confirmed
-   here today does not promote itself into the registry; that's still a
-   separate, manual step via `/entity-triage` or `registry add`.)
 
    If no dictionary exists, proceed without one — it is an enhancement, not
    a hard dependency.
 
-7. **Retranscription context (when available)** — if `<vtt>`'s filename
+6. **Retranscription context (when available)** — if `<vtt>`'s filename
    contains `.retranscribed` or `.retranscribed.cleaned` (i.e. it's an
    `audio-to-vtt` output, not a plain Otter/Zoom export), two extra
    sources exist and should be used:
@@ -138,10 +116,10 @@ Detect or ask:
    with no `.retranscribed` sibling has neither, and the skill runs
    exactly as it always has.
 
-8. **A second, independent transcription (when one exists)** — the same
+7. **A second, independent transcription (when one exists)** — the same
    session transcribed by a *different* tool, with no shared timestamps and
    different segmentation (e.g. a voice-detection markdown export alongside a
-   D&D-tuned WebVTT). This is NOT the `.retranscribed` pairing in #7, which is
+   D&D-tuned WebVTT). This is NOT the `.retranscribed` pairing in #6, which is
    filename- and cue-aligned; here nothing lines up, so matching is by text.
    Use `sibling_context.py` (Phase 3). Check the session directory for one
    before starting — if two transcripts of the same date exist, you have this.
@@ -162,14 +140,15 @@ Detect or ask:
 
 ### Phase -1 — choose the review mode
 
-Before anything else, one `AskUserQuestion`:
+Before anything else, ask in chat:
 
-> **Review the candidates in an artifact, or here in the shell?**
-> - **Artifact** — one page, every pair that needs a ruling, mark them at your own pace, save once.
-> - **Shell** — one cluster at a time, the way this skill has always worked.
+> **Review the candidates interactively here, or in a batch review page?**
+> - **Interactive** — one cluster at a time in chat.
+> - **Batch page** — one standalone web page containing every pair that needs
+>   a ruling, with Accept, Reject, and Discuss controls.
 
-Ask this every run; do not remember a default. If they choose the artifact,
-Phases 0–2.5 run exactly as written and **Artifact mode** below replaces
+Ask this every run; do not remember a default. If they choose the batch page,
+Phases 0–2.5 run exactly as written and **Batch review page** below replaces
 Phase 3. Phases 4–6 are shared.
 
 ### Scratch files — one namespace per run, never a fixed path
@@ -178,7 +157,8 @@ Every intermediate below goes in a per-run scratch directory. Set it once and
 use `$SCRATCH` everywhere:
 
 ```bash
-SCRATCH="${CLAUDE_SCRATCH:-/tmp}/spell_pass_$(basename <session_dir>)_$$"
+SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/vtt-spell-pass"
+SCRATCH="${CODEX_SCRATCH:-/tmp}/spell_pass_$(basename <session_dir>)_$$"
 mkdir -p "$SCRATCH"
 ```
 
@@ -200,7 +180,7 @@ between a wrong answer and a caught mistake.
 Do not assume the input is a plain Otter/Zoom WebVTT. Run:
 
 ```bash
-python ~/.claude/skills/vtt-spell-pass/prepare_input.py \
+python "$SKILL_DIR/prepare_input.py" \
   --input <transcript> --scan-copy "$SCRATCH/scan_src.txt"
 ```
 
@@ -229,17 +209,9 @@ It reports three things that change the rest of the run:
   prepare_input.py --input <t> --exclude-speaker natasha --filtered-output <t>.filtered.md
   ```
 
-  `--scan-copy` filtering is always safe. `--filtered-output` deletes content,
-  so it needs the GM to have said so explicitly.
-
-  **But do not feed a `--filtered-output` or `--dedup-output` file to Phase 5.**
-  Both drop cues, and `sd_corrections import` pairs the two transcripts by cue
-  index — it refuses a mismatched pair outright (*"the two transcripts do not
-  carry the same cue indices"*), so a filtered candidate cannot be recorded at
-  all. Filtered and deduped copies are for **scanning**; apply against the full
-  transcript. If the GM genuinely wants a speaker's lines gone from the tape,
-  that is a separate cue-level decision recorded in
-  `transcript_corrections.yaml`, not a side effect of the spell pass.
+  `--scan-copy` filtering is always safe. `--filtered-output` deletes content
+  from the deliverable, so it needs the GM to have said so explicitly — feed
+  its output to `apply_replacements.py` in Phase 5 in place of the original.
 - **`duplication`** — whether the body is recorded twice. This does not break
   replacement, but it **doubles every occurrence count**, so every "26x" you
   put in front of the GM is really 13. Detect it here, and pass
@@ -253,26 +225,21 @@ It reports three things that change the rest of the run:
 Run `find_unknowns.py`, piping into `cluster_unknowns.py`:
 
 ```bash
-python ~/.claude/skills/vtt-spell-pass/find_unknowns.py \
+python "$SKILL_DIR/find_unknowns.py" \
   --vtt <vtt> \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
   --npcs-dir <campaign>/docs/npcs \
   --extra-known <campaign>/notes/proper_nouns_adventure.txt \
-  --registry <campaign>/docs/entity_registry.yaml \
   --min-count 1 \
-| python ~/.claude/skills/vtt-spell-pass/cluster_unknowns.py \
+| python "$SKILL_DIR/cluster_unknowns.py" \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
   --npcs-dir <campaign>/docs/npcs \
   --extra-known <campaign>/notes/proper_nouns_adventure.txt \
-  --registry <campaign>/docs/entity_registry.yaml \
   > "$SCRATCH/clusters.json"
 ```
 
-Omit `--registry` if `<campaign>/docs/entity_registry.yaml` doesn't exist (required-input #5's fallback applies instead — flatten `entity_inventory.md` and pass it via `--extra-known`).
-
 `--extra-known` accepts multiple paths — pass every dictionary the user
-confirmed in required-input #6 (omit the flag if none exist). Pass
-`--registry` too if required-input #5 found a registry (or its fallback).
+confirmed in required-input #5 (omit the flag if none exist).
 
 `find_unknowns.py` emits the raw unknown-token list with counts and
 contexts. `cluster_unknowns.py` then:
@@ -297,7 +264,7 @@ used when Double Metaphone finds nothing or its module is unavailable.
 Also run the state filter:
 
 ```bash
-python ~/.claude/skills/vtt-spell-pass/state.py \
+python "$SKILL_DIR/state.py" \
   --state <campaign>/notes/.vtt_spell_pass_state.json show
 ```
 
@@ -308,9 +275,6 @@ already said "not a name, ignore" in a prior run.
 `known_names_count` should be in the hundreds for a mature campaign. If
 it's <50 the glossary or `docs/npcs/` isn't being read correctly —
 investigate before bothering the user with hundreds of false positives.
-If `--registry` was passed, also check `registry_names_count` is nonzero
-(0 with a real registry file usually means the wrong path was passed, or
-the YAML has no `entities:` key).
 
 **Collapse the set first: apply the current glossary, then re-scan.**
 Before surfacing anything, run `apply_replacements.py` with the *existing*
@@ -320,13 +284,13 @@ glossary already knows how to fix (e.g. `Bookworm`, `Alcrist`, `Gergam`)
 and leaves the **true residual** — the tokens that actually need a decision.
 
 ```bash
-python ~/.claude/skills/vtt-spell-pass/apply_replacements.py \
+python "$SKILL_DIR/apply_replacements.py" \
   --vtt <vtt> --glossary <glossary> --output "$SCRATCH/preview_current.vtt"
-python ~/.claude/skills/vtt-spell-pass/find_unknowns.py \
+python "$SKILL_DIR/find_unknowns.py" \
   --vtt "$SCRATCH/preview_current.vtt" --glossary <glossary> \
-  --npcs-dir <npcs> --extra-known <dicts> --registry <registry> --min-count 1 \
-| python ~/.claude/skills/vtt-spell-pass/cluster_unknowns.py \
-  --glossary <glossary> --npcs-dir <npcs> --extra-known <dicts> --registry <registry>
+  --npcs-dir <npcs> --extra-known <dicts> --min-count 1 \
+| python "$SKILL_DIR/cluster_unknowns.py" \
+  --glossary <glossary> --npcs-dir <npcs> --extra-known <dicts>
 ```
 
 Many survivors are **false residuals**: multi-word capitalised runs whose
@@ -367,11 +331,11 @@ For everything that survives, you have your **candidate list**.
 
 ### Phase 2.5 — adjudicate against the second transcription (MANDATORY when one exists)
 
-If Phase 0 / required-input #8 found a second transcription, check **every**
+If Phase 0 / required-input #7 found a second transcription, check **every**
 candidate against it BEFORE putting any of them to the GM:
 
 ```bash
-python ~/.claude/skills/vtt-spell-pass/sibling_context.py \
+python "$SKILL_DIR/sibling_context.py" \
   --sibling <other-transcript> --context "<excerpt from the candidate's contexts>"
 ```
 
@@ -517,17 +481,16 @@ are about to write are exactly what you cannot see from the transcript.
 
 ### Phase 3 — ask the user, one CLUSTER at a time, ALWAYS
 
-Per the user's stated preferences (memories: `feedback_question_style`,
-`feedback_scope_discipline`, `feedback_vtt_spell_pass_confirm`), use
-TaskCreate to enumerate clusters and AskUserQuestion to walk them one at
-a time as multiple choice.
+For interactive review, enumerate the clusters with `update_plan` when useful
+and walk them one at a time in chat as multiple choice. Wait for the user's
+answer before recording a ruling or moving to the next cluster.
 
 **Cross-referencing Zoom's original (when a `.retranscribed` sibling
-exists — see Required input #7).** Before asking about a cluster, look up
+exists — see Required input #6).** Before asking about a cluster, look up
 Zoom's original text for one representative context excerpt:
 
 ```bash
-python ~/.claude/skills/vtt-spell-pass/zoom_context.py \
+python "$SKILL_DIR/zoom_context.py" \
   --vtt <vtt> --context "<a ~40-80 char excerpt containing the candidate>"
 ```
 
@@ -578,7 +541,7 @@ highest-yield decisions first:
    ask "any of these N tokens look like real names you want to address?"
    with a multi-select)
 
-For each multi-member cluster, your AskUserQuestion shows the proposal:
+For each multi-member cluster, show the proposal in chat:
 
 ```
 Cluster #2  (3 members, 5 occurrences total)
@@ -627,7 +590,7 @@ the tie-breaker between "real garbled name" and "ASR noise on both sides."
 token doesn't resurface next session:
 
 ```bash
-python ~/.claude/skills/vtt-spell-pass/state.py \
+python "$SKILL_DIR/state.py" \
   --state <campaign>/notes/.vtt_spell_pass_state.json \
   ignore "Joe" "Gabe" "Christmas" ...
 ```
@@ -637,70 +600,12 @@ you don't know whether it's a player or an NPC, ask. Mistakes here cost
 real corrections. Clustering already cuts the question count — don't
 compound that with silent dismissals.
 
-#### At volume, use the interactive review artifact instead of serial `AskUserQuestion`
-
-Clustering cuts question count, but a mature campaign's residual can still run
-to dozens of clusters and singletons per session — enough that a serial
-one-at-a-time chat walk exhausts the user before Phase 3 finishes, and an
-exhausted user starts rubber-stamping (the same failure mode this skill's
-Phase 2.5 exists to prevent for evidence quality — don't reintroduce it at
-the delivery stage). Once the queue is longer than a handful of clusters,
-publish an interactive **Approve / Reject / Discuss** HTML artifact instead.
-
-This does not relax the hard rule above — every new wrong→right mapping still
-needs the user's explicit confirmation, one candidate at a time. It changes
-*how* that confirmation is collected, not whether it's required.
-
-Build it with the `Artifact` tool (`artifact-design` skill for treatment —
-this is a utilitarian tool, not editorial; `artifact-capabilities` skill for
-the `downloads` contract):
-
-- Declare `capabilities: {"downloads": true}`.
-- One card per cluster/singleton, in the same yield-ordered sequence as the
-  chat walk (high-confidence bound clusters first, low-count singletons
-  last). Each card carries exactly the fields the cluster/singleton templates
-  above already collect: proposed canonical, members with counts and context
-  excerpts, Zoom's-original cross-reference when `zoom_context.py` returned a
-  hit, and the sibling-transcription read from Phase 2.5 when one exists.
-- Each card gets the same option set as its chat template, rendered as
-  controls rather than lettered choices — confirm-canonical / different-
-  canonical / not-a-name(ignore) / split-ask-1x1 for clusters; the per-token
-  equivalent for singletons. Fold these into a segmented **Approve / Reject /
-  Discuss** control: Approve = confirm the proposed canonical, Reject = not a
-  name (ignore), Discuss = reveals a `<textarea>` for the user to type a
-  different canonical, a split instruction, or anything else the lettered
-  options don't cover.
-- A sticky tally dock (approved/rejected/discussed/remaining) — this is what
-  makes a 40-cluster residual reviewable in one sitting instead of forty
-  separate messages.
-- A "Download decisions" button: `claude.use("downloads")` →
-  `downloads.save({filename, data})`; if the namespace resolves `null`,
-  reveal a fallback `<textarea>` pre-filled with the same content for manual
-  copy-paste.
-- Export one Markdown decision record, one section per cluster/singleton,
-  structured so it parses back mechanically into the same shape Phase 4
-  expects (wrong-form(s) → canonical, or ignore, or new-canon).
-
-**The round trip:** the user downloads the record, then pastes it into chat
-or names the saved path (WSL2: a Windows-side save lands at
-`/mnt/c/Users/<user>/Downloads/...`, directly readable). Read it back and
-route each entry exactly as its chat-template letter would have: Approve →
-Phase 4's `add_to_glossary.py` call; Reject → no action, and persist via
-`state.py ignore` same as a chat "D"; Discuss → resolve using the user's own
-text in conversation (a typed canonical, a split request, a new-canon
-decision) before taking any Phase 4 action — never guess what a Discuss note
-means and apply it silently.
-
-Below the volume threshold — a short residual, or a rerun where only a few
-new tokens surfaced — the chat/`AskUserQuestion` walk above is simpler and
-there is no reason to reach for the artifact.
-
 ### Phase 4 — record decisions
 
 For each "misspelling" decision (A or B), call:
 
 ```bash
-python ~/.claude/skills/vtt-spell-pass/add_to_glossary.py \
+python "$SKILL_DIR/add_to_glossary.py" \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
   --section <pcs|npcs|items|factions|locations|table> \
   --wrong "<wrong-form>" \
@@ -727,7 +632,8 @@ glossary with non-misspellings.
 
 For "Ignore" decisions: take no action.
 
-Mark the corresponding TaskUpdate as completed after each decision.
+Mark the corresponding plan item completed after each decision when a plan is
+being used.
 
 **Glossary entry vs. targeted edit — the case-insensitivity gate.**
 `apply_replacements.py` matches `\bwrong\b` with `re.IGNORECASE`, so a
@@ -736,31 +642,11 @@ appears lowercase. Before writing a *new* wrong-form to the glossary, grep
 the VTT for lowercase occurrences of it. If any exist — or the wrong-form is
 a common word (`Embrace`, `Close`, `Home`), a generic phrase (`Call and`),
 or a non-name transcription fix (`Izzy` → `he's`) — **do not add it to the
-glossary.** This keeps the glossary safe to auto-apply to every future
-transcript. Examples this run: `Embrace → Fembris` (a blanket rule would
-corrupt "corrosive embrace"), `Call and → Kalan`, `Izzy → he's`.
-
-**Write these as record entries, not as edits.** A one-off fix used to be a
-targeted `Edit` on the cleaned output; it is now a `transcript_corrections.yaml`
-entry, which is a strictly better fit — the entry is *cue-scoped*, so it does
-not need to be globally safe the way a glossary row does, and unlike an edit it
-survives the next `sd_corrections apply`. Note the cue number and the exact
-before/after text now (`find_unknowns.py` contexts give you the span; grep the
-transcript for the cue index), and add them in Phase 7 alongside the imported
-glossary entries:
-
-```yaml
-- id: cue-0224-fembris
-  cue: 224
-  was: 'Gary Young: The corrosive embrace of Embrace is upon us.'
-  now: 'Gary Young: The corrosive embrace of Fembris is upon us.'
-  recorded: <today>
-  verified: true
-  note: one-off; not glossaried because a blanket Embrace rule corrupts "corrosive embrace".
-```
-
-`was` must match the cue exactly, speaker prefix included — that check is what
-makes a stale entry fail loudly instead of pasting an old repair over new words.
+glossary.** Apply that one correction as a targeted `Edit` on the *cleaned*
+output in Phase 5, touching only the specific line(s). This keeps the
+glossary safe to auto-apply to every future transcript. Examples this run:
+`Embrace → Fembris` (a blanket rule would corrupt "corrosive embrace"),
+`Call and → Kalan`, `Izzy → he's`.
 
 The glossary keeps its own running landmine list (a "Notes for future passes"
 section flagging risky case-insensitive rows like `Char→Shar`, `Cal→Kalan`).
@@ -772,7 +658,7 @@ Re-read it and grep the VTT for those lowercase forms before every apply.
 future transcript, so a bad row is not a one-off. Run:
 
 ```bash
-python ~/.claude/skills/vtt-spell-pass/lint_glossary.py \
+python "$SKILL_DIR/lint_glossary.py" \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
   --corpus <vtt>
 ```
@@ -801,31 +687,27 @@ offending row with a `<file>:<line>` location.
   and both are correct rules.
 
 Replacement is expected to be **idempotent** — running the pass twice must
-equal running it once. Re-applying the glossary to the candidate (to a second
-scratch path) should produce a byte-identical result; if it doesn't, a row is
-corrupting correct text and the lint will say which. This property is what makes
-Phase 7's import trustworthy — a non-idempotent row puts a corruption in the
-record's `now` text, where it reads as an approved correction.
+equal running it once. After Phase 6, re-applying the glossary to the cleaned
+file should produce a byte-identical result; if it doesn't, a row is corrupting
+correct text and the lint will say which.
 
-Then apply the now-updated glossary to the transcript, **to scratch**:
+Then apply the now-updated glossary to the transcript:
 
 ```bash
-python ~/.claude/skills/vtt-spell-pass/apply_replacements.py \
+python "$SKILL_DIR/apply_replacements.py" \
   --vtt <vtt> \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
-  --output "$SCRATCH/candidate.cleaned.vtt"
+  --output <vtt-stem>.cleaned.vtt
 ```
 
-`--output` is required, there is no `--in-place`, and the script refuses to
-write a `.cleaned.vtt` that an existing `transcript_corrections.yaml` claims
-(see "What this skill delivers"). The candidate is an input to Phase 7, not the
-deliverable — nothing downstream reads it.
+(Default output: `<vtt-stem>.cleaned.vtt` next to the original. Pass
+`--in-place` only if the user explicitly asks to overwrite.)
 
 Report the per-pair replacement count back to the user.
 
-### Phase 6 — re-scan to confirm
+### Phase 6 — re-scan to confirm + record processed VTT
 
-Re-run `find_unknowns.py` against the candidate. Any remaining
+Re-run `find_unknowns.py` against the cleaned VTT. Any remaining
 unknowns mean either (a) a candidate slipped through pre-classification
 or (b) a new word the user didn't get to. Show the user the diff and ask
 whether to do another pass.
@@ -834,145 +716,105 @@ Expect **false residuals** to remain (see Phase 1) — multi-word capitalised
 runs like `And Kalan`, `The Helmed Horror`, `Helmed Horror No` whose embedded
 name is already correct. These are *not* a reason for another pass; only a
 residual whose embedded proper noun is actually *wrong* is. Also grep the
-candidate for accidental doubling from full-name wrong-forms (e.g.
-`Strongbranch Strongbranch`). **Fix these in the glossary and re-run Phase 5**,
-not by editing the candidate — a doubling is a bad *row*, and an edit leaves it
-in place to fire again next session. `lint_glossary.py` names the fix.
+cleaned output for accidental doubling from full-name wrong-forms (e.g.
+`Strongbranch Strongbranch`) and fix any with a targeted edit.
 
-### Phase 7 — hand the diff to `sd_corrections`, then regenerate
-
-The candidate is a proposal. Turn it into record entries, get them reviewed,
-and let CampaignGenerator generate the tape:
+After confirming, record the VTT as processed so future runs against the
+same path are no-ops:
 
 ```bash
-cd <session-dir>
-
-# 1. one entry per differing cue, all verified: false
-sd_corrections import --dir . \
-  --raw <stem>.transcript.vtt \
-  --edited "$SCRATCH/candidate.cleaned.vtt" \
-  --record "$SCRATCH/proposed.yaml"
-
-# 2. review, then merge into ./transcript_corrections.yaml (hand-merge if one
-#    already exists — `import --force` discards its notes and verified flags)
-
-# 3. generate the tape and confirm
-sd_corrections apply --dir .
-sd_corrections check --dir .          # expect: no findings
-```
-
-Notes that matter:
-
-- **Pass `--raw` explicitly whenever the session has more than one non-cleaned
-  `.vtt`** (any `audio-to-vtt` run leaves `<stem>.transcript.retranscribed.vtt`
-  beside the original). Auto-detection demands exactly one and exits 2
-  otherwise. The raw you name is the one the record is written against, and it
-  determines which `.cleaned.vtt` `apply` produces.
-- **Every imported entry lands `verified: false`.** Here that is a formality,
-  not a backlog: Phase 3 already put each cluster to the GM. Flipping
-  `verified: true` is transcribing rulings that were already made — so do it
-  entry by entry against your Phase 3 answers, and **delete** rather than
-  approve any cue the GM did not rule on. An import captures *whatever* differs,
-  including a substitution a glossary row made in a context nobody looked at.
-- **`import` writes one entry per cue, not per substitution.** Two glossary
-  rows firing in one cue produce one entry whose `now` holds both fixes; that is
-  correct, and the record refuses two entries on a single cue.
-- Add the Phase 4 one-off entries here too, with `verified: true` — they never
-  went through the glossary, so `import` does not know about them.
-- **`apply` is all-or-nothing.** If any `was` no longer matches the tape,
-  nothing is written and every failure is named. A stale entry means the raw
-  tape changed under the record; fix `was` or drop the entry.
-- Deleting an entry is how you *revert* a substitution: drop it and the next
-  `apply` restores what was spoken.
-
-Finally, record the transcript as processed so future runs against the same path
-are no-ops:
-
-```bash
-python ~/.claude/skills/vtt-spell-pass/state.py \
+python "$SKILL_DIR/state.py" \
   --state <campaign>/notes/.vtt_spell_pass_state.json \
   processed <vtt-path>
 ```
 
-## Artifact mode (batch review)
+## Batch review page
 
-Replaces Phase 3 only. Phases 0–2.5 and 4–6 are unchanged, and the shell path
-stays exactly as documented. Full contract:
-`~/.claude/skills/_shared/review-artifact/CONTRACT.md`.
+This replaces Phase 3 only. Phases 0–2.5 and 4–6 are unchanged, and the
+interactive path stays exactly as documented. Read the shared contract at
+`~/.codex/skills/_shared/review-page/CONTRACT.md`, write
+`<session-dir>/vtt_spell_pass_review.json`, then render it:
+
+```bash
+python "$SKILL_DIR/render_review.py" \
+  --queue <session-dir>/vtt_spell_pass_review.json \
+  --output <session-dir>/vtt_spell_pass_review.html
+```
+
+`render_review.py` is a VTT-specific adapter over the shared Codex review-page
+renderer. The HTML is standalone, persists selections locally in the browser,
+and exports the shared decision schema through Copy output or Save output.
+Summarize the counts in chat, hand over the HTML path, then stop. Do not modify
+the glossary or transcript while the page is awaiting review.
 
 ### The consent unit is the PAIR, never the cluster
 
-**This is not negotiable and it is why this skill produces more cards than the
-others.** `merge_proposals.py` states it directly:
+Use one queue item per `(token → canonical)` pair. Group items by canonical in
+queue order so the GM reads a canonical's members together, but never merge
+them into a single item and never let approving one member imply another.
+Every member must retain its own count, context, and sibling verdict; collapsing
+a group into one yes/no can approve hallucinated members invisibly.
 
-> *"Consent granularity: the unit is the (wrong_form → canonical) PAIR.
-> Questions are grouped by canonical for batching, but every member carries
-> its own count and sibling verdict so the GM can accept some and reject
-> others. **Collapsing a group into one yes/no would approve hallucinated
-> members invisibly.**"*
+### What needs no review
 
-So one card per `(token → canonical)` pair. Group them by canonical in card
-order so the GM reads a canonical's members together, but never merge them
-into a single card, and never let approving one member imply another.
+- Glossary rows that already exist; Phase 0's known-misspellings pass applies
+  those deterministic rules.
+- Tokens Phase 2 drops as unambiguously non-campaign names. Summarize their
+  counts and reasons, but do not create queue items for them.
 
-### What is auto-applied, footer only
+Record the counts in a top-level `summary` object so the GM can see what ran
+without queue items.
 
-- `action ∈ {leave_alone, add_to_known_set}` — no ruling needed.
-- `auto_dismissed[]` under the `AGENT_BRIEF.md` gate: **`count == 1` AND
-  `kind == ordinary_words`**. Never on `inconclusive`, never on `count ≥ 2`.
-- Glossary rows that already exist — Phase 0's known-misspellings pass.
+### What becomes a queue item
 
-Name the counts in the `footer` so the GM can see what ran without them.
-
-### What becomes a card
-
-`action ∈ {propose, propose_low_confidence, escalate, escalate_blocking}`.
+Every surviving candidate becomes an item, including low-confidence and
+blocking cases. The queue must support correction, new-canon, ignore, and
+discuss rulings.
 
 ```json
-{ "id":  "vucherton__vukradin",
-  "t":   "<code>Vucherton</code> → <b>Vukradin</b> · 3 occurrences, 2 chapters",
-  "y":   "Add the row to <code>vtt_transcription_corrections.md</code>, lint, and rewrite 3 occurrences to <b>Vukradin</b>.",
-  "n":   "Not a garbling of Vukradin. Saved to <code>.vtt_spell_pass_state.json</code> as ignored, and never asked again.",
-  "ev":  "Verbatim: <em>…a no-skimming clause that Mr. Vucherton insisted…</em> · rule <code>edit_distance,metaphone</code> · confidence <code>medium</code> · sibling: <code>agent_corrected</code>" }
+{
+  "id": "vucherton__vukradin",
+  "token": "Vucherton",
+  "canonical": "Vukradin",
+  "section": "npcs",
+  "count": 3,
+  "chapters": 2,
+  "context": "...a no-skimming clause that Mr. Vucherton insisted...",
+  "reason": ["edit_distance", "metaphone"],
+  "confidence": "medium",
+  "sibling_verdict": "agent_corrected",
+  "recommended_decision": "approve_correction",
+  "decision": null,
+  "note": null
+}
 ```
 
-Card ids must round-trip to the pair. Use `<token>__<canonical>`, lowercased
+Item ids must round-trip to the pair. Use `<token>__<canonical>`, lowercased
 and non-alphanumerics collapsed to `_`, and keep a sidecar map in `$SCRATCH`
-from id → `{token, canonical, section, count}` — the page returns ids only.
+from id → `{token, canonical, section, count}`. The page exports generic
+`approve`, `reject`, and `discuss` verdicts; map them back to the VTT decisions
+below. Accept the exported JSON either pasted into chat or from the downloaded
+`vtt_spell_pass_decisions.json` file.
 
-**Always put the verbatim excerpt in `ev`.** A pair judged without its context
+**Always put the verbatim excerpt in `context`.** A pair judged without its context
 is the exact failure the pair-consent rule exists to prevent.
 
-### Publish, then stop
+### Hand off, then stop
 
-Hand over the link and **stop**.
+Give the user the rendered HTML path and stop. Resume only when the user pastes
+the exported decisions or points to the saved decisions file. Validate that
+every returned id exists in the queue and that each decision is one of
+`approve`, `reject`, or `discuss`. Never infer approval from the
+HTML or queue file's mere existence or modification time.
 
-**Two ways the save reaches you, and one that is forbidden.**
+### Decision mapping — feeds Phase 4 unchanged
 
-- **The notification.** Publishing arms a live subscription on this session. When
-  the GM saves, an `artifact-changed` task-notification naming this artifact
-  arrives on its own — **that is the save signal.** Act on it: `WebFetch` the URL
-  and read the decisions without waiting to be told. It can lag (the subscription
-  arms in the background), and it only lives as long as the session that
-  published.
-- **The GM's word.** If the session was restarted, or the notification never
-  comes, the GM simply says they are done. Same action.
-- **Never poll.** Not on a timer, not "just checking" — the two routes above
-  cover every case, and a poll loop burns a turn per check for nothing.
-
-A notification means *the page was republished*, nothing more. It is not the GM
-speaking and it is not approval of anything: the decisions come from the state
-block, and `read_decisions.py` still refuses a page whose `savedAt` is null.
-
-Then `WebFetch` the URL and run `read_decisions.py`.
-
-### Verdict mapping — feeds Phase 4 unchanged
-
-| verdict | action |
+| decision | action |
 |---|---|
-| **approve** | `add_to_glossary.py --wrong <token> --right <canonical> --section <matching the canonical's EXISTING row>` |
-| **reject** | `state.py ignore "<token>"`, unless the card's `n` says "real name" — then append to `notes/vtt_known_additions.md` instead |
-| **discuss** + note naming a canonical | treat as approve with the GM's canonical, not the proposed one |
+| **approve**, proposed canonical exists | `add_to_glossary.py --wrong <token> --right <canonical> --section <matching the canonical's EXISTING row>`; use a targeted edit instead when the queue says `edit_mode: targeted` |
+| **approve**, proposed canonical is null | Append the confirmed name and context to `notes/vtt_known_additions.md`; do not add a glossary row |
+| **reject** | `state.py ignore "<token>"` |
+| **discuss** + note naming a canonical | treat as `approve_correction` with the GM's canonical, not the proposed one |
 | **discuss**, no note | back to the shell, grouped with the other discussed pairs |
 | **unmarked** | undecided — leave the pair for the next run and say so |
 
@@ -998,7 +840,7 @@ blocks the run — a batch of approvals is exactly when a `doubling` or
   actually contain a surname token (`Callan Strongfeld → Kalan Strongbranch`).
   **`lint_glossary.py` does not catch this** — the row is fine in isolation and
   only doubles when the transcript already supplies the surname, so grep the
-  *candidate* for repeated surnames every run. It recurs: this pass found
+  *cleaned output* for repeated surnames every run. It recurs: this pass found
   `Toblin → Toblen Stonehill` turning "Toblin Stonehill" into
   "Toblen Stonehill **Stonehill**"; fixed by demoting it to `Toblin → Toblen`.
 - **Don't silently expand the user's variant lists.** If the user says
@@ -1011,13 +853,6 @@ blocks the run — a batch of approvals is exactly when a `doubling` or
 - **The glossary lives in `notes/`, which is excluded from the mempalace.**
   This is intentional — the glossary is a cleanup-pass reference, not
   campaign canon. Don't try to mine it.
-- **Glossary and record are different objects; keep them straight.** The
-  glossary (`notes/vtt_transcription_corrections.md`) is a *standing rule set*,
-  campaign-wide and reusable, so every row must be safe applied blind to any
-  future transcript. The record (`<session-dir>/transcript_corrections.yaml`) is
-  *what actually happened to this one tape*, cue-scoped and auditable. A fix too
-  dangerous to generalise belongs only in the record. Nothing belongs only in a
-  file you edited by hand.
 
 ## Why this design
 
@@ -1032,14 +867,3 @@ This matches the global rule: *LLMs are renderers, not architects. Good
 pattern: LLM extracts → human reviews and imposes structure → LLM renders
 inside that structure.* Phase 1 is deterministic extraction; Phase 3 is
 the human checkpoint; Phase 5 is deterministic rendering.
-
-Phase 7 exists because that checkpoint used to leave no trace. The pass applied
-what the GM approved, wrote the cleaned tape, and kept the *rules* in the
-glossary — but not what any individual cue became, and not the one-off edits
-that never earned a rule at all. So the tape everything downstream measures
-verbatim against was, in the end, unreviewable: on Phandalin ch46, 74
-substitutions nobody could enumerate, three of them inventing a surname. The
-record closes that gap without moving any decision away from the GM: the
-glossary still holds the approved rules, and the record now holds the approved
-*results*. That is also why the applier's `--output` has no default — the one
-path it used to default to is the one it must never write.

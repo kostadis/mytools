@@ -35,6 +35,25 @@ mv session_20250528_transcript.cleaned.vtt \
    session_20250528_transcript.cleaned.vtt.unused-no-speakers
 ```
 
+## Two input shapes
+
+| Markdown line | Cue timing |
+|---|---|
+| `**kostadis:** text` | **synthetic** — monotonic, proportional to utterance length |
+| `[01:30:40] **kostadis:** text` | **real** — the source's own stamps, one-second resolution |
+
+The timestamped shape (Zoom's newer export, and MacWhisper's) gives a start and
+no end, so ends are derived: each cue runs for its estimated spoken length,
+clipped at the next cue's start, and never stretched across a silence.
+Utterances that share a second — Zoom emits runs of them — split that second
+between them in proportion to their text, so cues stay ordered and never
+overlap. The NOTE header says which mode produced the file.
+
+Bare `[HH:MM:SS]` markers *inside* a line are the exporter's minute ticks, not
+speech. They are stripped. A line that is a timestamp with no `**speaker:**`
+(the exporter drops one occasionally) is appended to the previous cue and
+reported — same policy as a dangling continuation, for the same reason.
+
 ## Output shape
 
 ```
@@ -53,9 +72,10 @@ lines, so what actually reaches the model is `speaker: text` per line. That also
 matches the `--party` speaker pre-flight, which tests
 `line.startswith(f"{name}:")`.
 
-**Timestamps are synthetic.** The markdown carries no timing, so cue times are
-monotonic and proportional to utterance length. Nothing downstream reads them
-(`parse_vtt` discards them), and the file's NOTE header says so.
+`parse_vtt` discards timings entirely, so for the pipeline only the
+`speaker: text` payload matters. The timings matter to `campaignlib.vtt` (the
+lossless reader that keys corrections on cue index) and to anything that plays
+the tape against audio.
 
 ## Gotchas learned the hard way
 
@@ -69,6 +89,13 @@ monotonic and proportional to utterance length. Nothing downstream reads them
 - **Dangling continuation lines** (a bare `because-` on its own line) are
   appended to the preceding speaker's cue and reported, never dropped or
   assigned a guessed speaker.
+- **A display name the campaign does not know is silently unattributed.**
+  `scene_extract` rewrites labels via `config/players.yaml` `display_names`,
+  matching `line.startswith(f"{name}:")` — exact and case-sensitive. The
+  pre-flight only fails when *zero* lines match, so a transcript labelling one
+  person `Nikhil` (known) and the other `kostadis` (not — the config has
+  `Kostadis Roussos`) passes the check with the GM's every line unattributed.
+  Check the `Speaker map` line the run prints against the labels in the tape.
 - **Unattributed speakers** (`**Speaker 7:**`) are passed through verbatim.
   Attribution is a precision decision — rule on it yourself, upstream.
 
