@@ -1,0 +1,3 @@
+display_name: Campaign Chapter Review
+short_description: Canon-safe chapter editing
+default_prompt: "Review this campaign chapter. Campaign root: <path>. Chapter file: <path>. Write an edited copy next to the original."

@@ -67,25 +67,52 @@ NUMBER_WORDS = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
     "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
     "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
-    "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40,
+    "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+    "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
 }
-_NUM_WORD_ALT = "|".join(sorted(NUMBER_WORDS, key=len, reverse=True))
+# Multipliers, kept separate because they combine rather than add: "five
+# hundred" is 5*100, not 5+100. Added 2026-08-29 — the table previously
+# stopped at forty, so spelled-out distances ("five hundred feet", "a
+# thousand feet") were invisible to every numeric category and never
+# reached the GM's review. Still purely number-based: this adds no
+# vocabulary category, per the hard invariant in SKILL.md.
+NUMBER_SCALES = {"hundred": 100, "thousand": 1000}
+_ALL_NUM_WORDS = {**NUMBER_WORDS, **NUMBER_SCALES}
+_NUM_WORD_ALT = "|".join(sorted(_ALL_NUM_WORDS, key=len, reverse=True))
 # NB: _NUM_WORD_ALT must be wrapped in its own group before the optional
 # hyphen suffix — otherwise "|" binds the suffix only to the *last*
 # alternative in the chain (e.g. "ten"), so "twenty-two" would match only
 # "twenty" and silently drop "-two".
-_NUM_TOKEN = rf"(?:\d+|(?:{_NUM_WORD_ALT})(?:-(?:{_NUM_WORD_ALT}))?)"
+# The optional leading article catches "a hundred feet" / "an eighth"; the
+# repeated tail catches space- or hyphen-joined phrases ("five hundred",
+# "twenty-two", "a thousand").
+_NUM_TOKEN = (
+    rf"(?:\d[\d,]*|(?:an?\s+)?(?:{_NUM_WORD_ALT})"
+    rf"(?:[-\s](?:{_NUM_WORD_ALT}))*)"
+)
 
 
 def word_to_int(tok: str) -> int | None:
-    tok = tok.lower().strip()
+    tok = tok.lower().strip().replace(",", "")
     if tok.isdigit():
         return int(tok)
-    if "-" in tok:
-        a, b = tok.split("-", 1)
-        if a in NUMBER_WORDS and b in NUMBER_WORDS:
-            return NUMBER_WORDS[a] + NUMBER_WORDS[b]
-    return NUMBER_WORDS.get(tok)
+    parts = [p for p in re.split(r"[-\s]+", tok) if p]
+    if parts and parts[0] in ("a", "an"):
+        parts = parts[1:]
+    total = current = 0
+    seen = False
+    for p in parts:
+        if p in NUMBER_WORDS:
+            current += NUMBER_WORDS[p]
+            seen = True
+        elif p in NUMBER_SCALES:
+            current = (current or 1) * NUMBER_SCALES[p]
+            total += current
+            current = 0
+            seen = True
+        else:
+            return None
+    return total + current if seen else None
 
 
 # ---------------------------------------------------------------------------
