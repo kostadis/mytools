@@ -134,8 +134,57 @@ Apply only approved fixes before moving to stage 2.
 
 ### 6. Stage 2: Scene Extractions
 
-Run the `consistency-check` procedure for each
-`scene_extractions_new/0*.md` file in scene order.
+The call shape depends on the review mode chosen in step 0:
+
+- **Interactive review:** run the `consistency-check` procedure for each
+  `scene_extractions_new/0*.md` file in scene order. After each scene, ask
+  whether to continue or revisit before advancing.
+- **Batch review:** enumerate every selected `scene_extractions_new/0*.md`
+  path explicitly in scene order and pass the complete ordered path list to
+  one CampaignGenerator `check_consistency` invocation. This is a grouped
+  document audit: common context is transmitted once, and the CLI requires an
+  explicit result section for every scene plus a cross-scene section. Do not
+  emulate grouped mode by running one command per scene and concatenating the
+  reports locally.
+
+In both modes, exclude `.prev` and `.scaffold` files. Never represent an empty
+scene selection as "all".
+
+For grouped batch review, follow the ordinary `consistency-check` context and
+backend rules, but invoke the CLI once with every scene path before the flags:
+
+```bash
+python3 /home/kroussos/src/CampaignGenerator/session_doc/check_consistency.py \
+  <scene-01.md> <scene-02.md> ... \
+  --config <campaign>/config/config.yaml \
+  --backend codex-cli \
+  --context <file1> <file2> ... \
+  --output <session-dir>/consistency_report_stage2_scenes.md
+```
+
+The grouped command is fail-closed. If it reports a setup, login, model,
+timeout, empty-result, context, or grouped-protocol failure:
+
+- stop Stage 2;
+- do not build or update the Stage 2 review page or sources manifest;
+- do not silently retry per scene, split the selection, or switch providers;
+- preserve any older report as historical output, not evidence that this run
+  succeeded.
+
+The grouped engine requires every scene-level finding to include exact target
+text that occurs in the scene assigned to that section. It also derives compact
+per-scene review anchors from exact wrong-form matches in supplied correction
+glossaries. Those anchors prevent long-batch recall loss but remain advisory:
+apply glossary exceptions and `DO NOT CORRECT` rulings, and never turn a match
+into an automatic edit. A missing or cross-attributed excerpt is a protocol
+failure; do not reconstruct or relocate the model's finding by hand to make the
+run appear valid.
+
+After a successful grouped run, write the Stage 2 sources manifest with the
+complete ordered `documents_checked` list plus the CLI telemetry (`model_calls`,
+`shared_context_chars`, `target_chars`, and `repeated_context_chars_avoided`).
+Adjudicate the grouped report against transcript and campaign evidence before
+building review cards; the model report remains advisory.
 
 This is the load-bearing stage because scene extractions contain quote blocks
 that narration may reuse literally. A fix made only in `session-summary.md` can
@@ -147,8 +196,6 @@ When correcting quote-level transcription drift:
 - Add a brief editorial note when the quote differs from raw ASR but matches
   prep or transcript evidence.
 - Do not strip table jokes or table vocabulary that the group actually uses.
-
-After each scene, ask whether to continue or revisit before advancing.
 
 ### 7. Stage 3: Narration
 
@@ -213,6 +260,9 @@ the next stage run against the corrected input.
 For every stage:
 
 1. Run the consistency check and present the severity-ranked table in chat.
+   Stage 2 is the exception to the single-document call shape: use the grouped
+   invocation defined in step 6, then consolidate its per-scene and cross-scene
+   findings into this stage's one table.
 2. Apply only unambiguous mechanical corrections that need no ruling, and name
    their count and touched files in the review `footer`.
 3. Create `<session-dir>/staged_consistency_stage_<N>_review.json` using the
