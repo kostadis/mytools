@@ -178,6 +178,8 @@ For every quote block:
 
    Deleting loses something that was genuinely said; inventing a plausible replacement is worse, because a fluent fabrication is far harder to catch downstream than an obvious garble. The annotation is the honest third option.
 
+   **Your confident reading of an unrecovered line is worth less than you think it is.** Phandalin ch4 produced three such readings, each obvious enough to feel safe; when the GM later cleared them for repair and they were finally checked against the second transcript, **one of the three was wrong** — `"Why'd that cost us the gold?"` was not the question it looked like, it was the statement *"And that cost us a gold."* A third strike rate on lines that felt certain is the calibration to carry into every one of these.
+
    Related: **not every odd line is a garble.** Deliberate table jokes (`"Oral B. Vance"`, `"SystemD of Neverwinter"`), OOC riffs in modern register (`"charge thousands of dollars"`), and throwaway placeholder names in an illustrative example (`"married to Pengro, you know, whatever"`) are all correct as captured. Offer keep-verbatim and say why you think it is deliberate.
 
 ### 2.5. Rule the garbles with the GM
@@ -212,6 +214,11 @@ Build it with the `Artifact` tool (`artifact-design` skill for treatment — thi
 
 This does not relax the confirmation requirement — every garble ruling still needs an explicit GM verdict, per-item. It changes the delivery mechanism at volume, not the checkpoint itself. Below the batch threshold (a handful of candidates in one scene), a chat question is still simpler; reach for the artifact once the queue is long enough that serial chat would exhaust the reviewer.
 
+**Reading the record back is where a review artifact quietly turns into rubber-stamping.** Two verdict states are not decisions, and treating either as one destroys the checkpoint the artifact exists to provide:
+
+- **UNDECIDED is not a verdict.** A card that comes back with no mark was not ruled on — the GM scrolled past it, or ran out of attention, which is exactly the failure a long queue produces. **Re-ask those cards.** Do not apply your own recommendation because it was the recommendation, and do not silently drop them. Phandalin ch4 returned 3 undecided out of 38; re-asked as a single grouped question, they were ruled in one line. Say how many were undecided when you report.
+- **A DISCUSS note is an instruction to talk, not a pre-approval.** The note is usually three or four words written at speed — `"Back to phandalin"`, `"Table chatter drop"`, `"We will do the thing where we make it part of the workd"`. Some are unambiguous; some carry two readings that produce different files. State your interpretation and confirm it before applying, and when the note points at an edit that would **invent canon** — rewriting a real-world reference into an in-world one, naming a place, settling a quest title — bring the *specific proposed wording* back as its own question. The GM ruling "rewrite it in-world" has not told you what the in-world words are.
+
 For each candidate, bring:
 
 - **Every transcript's reading, named.** They disagree, and the disagreement is the evidence. Zoom heard `app and slash`; the re-transcription heard `act and slash`. Two passes garbling one phrase two different ways is the signature of a real utterance neither caught — and it is far stronger evidence than either pass alone. When both agree, say so; that is a reason to leave it.
@@ -220,9 +227,26 @@ For each candidate, bring:
 - **Options as full-sentence previews**, so the GM reads the line as it will land, not a diff of one token.
 - **A "keep it verbatim" option, every time.** Sometimes the garble is the joke ("Oral B. Vance"), and sometimes the GM remembers what was actually said.
 
-Know which transcript to trust for what — it differs per campaign and is worth recording in the manifest. Phandalin: the Zoom export is better on **proper nouns**, the re-transcription is better on **sentence completion** (it recovered "15 *minutes*" and "Who are you talking *to?*" where Zoom cut both).
+Know which transcript to trust for what — it differs per campaign **and per session**, and is worth recording in the manifest. Phandalin ch48: the Zoom export was better on **proper nouns**, the re-transcription better on **sentence completion** (it recovered "15 *minutes*" and "Who are you talking *to?*" where Zoom cut both). Phandalin ch4: Zoom was better at *both*, and settled most of the run. Record what you actually observed this session rather than carrying the previous session's split forward as fact.
 
 **When the transcripts disagree and nothing corroborates either, say so plainly and let the GM decide.** Do not pick the more fluent reading because it is more fluent.
+
+#### First prove the second transcript is a second *reading*
+
+Before any of the evidence work below, confirm the file you are about to treat as corroboration is not the same text under a different name. **A session directory routinely holds four or five transcripts that are byte-identical.** Phandalin ch4: `*.extract_input.vtt`, `*.final.vtt`, `*.rebuilt.retranscribed.vtt` and `*.rebuilt.retranscribed.cleaned.vtt` were all the same retranscription. Three "confirmations" came back before the pattern was obvious, and each one was the same pass agreeing with itself.
+
+This failure is silent and it inverts your confidence exactly backwards: identical readings look like the *strongest* possible corroboration when they are in fact no evidence at all.
+
+```bash
+# one distinctive phrase, every candidate transcript — group the identical ones
+for f in <session-dir>/*.vtt <session-dir>/*Recording*.md; do
+  echo "-- $f"; grep -i -m1 "<a distinctive phrase from the middle of the session>" "$f"
+done
+```
+
+Files that print the same string are one reading. What survives is your evidence base — often a single genuine second pass. In Phandalin that is **Zoom's own text export** (`GMT<date>_Recording.md` and its `.speakers.vtt` siblings), which is produced by a different engine than the vocabulary-biased retranscription and is the only true independent reading in the directory.
+
+Also look for a **pre-built diff** before grepping anything by hand: `*.retranscribed.cleaned.proper_nouns.md` is a ready-made Zoom-vs-retranscription comparison over every flagged proper-noun span. For a name candidate it answers the question instantly, and it caught a third reading of one ch4 line that neither raw file gave.
 
 #### Grep the anchor, not the garble
 
@@ -238,6 +262,8 @@ Every hard recovery in Phandalin ch48 came this way: anchoring on `"civic notice
 
 Before concluding a transcript lacks coverage, **prove it with an anchor**, not with a failed search for the garbled token.
 
+**Run the anchor grep on every fragment before calling any of them unrecoverable — one anchor per fragment, never one per group.** Phandalin ch4 bundled four scene-03 fragments onto a single "neither pass resolves these" card and kept all four. Two were recoverable from the first anchor tried: `"Friggin?"` was **"Free him?"** and `"let's try to freeze it"` was **"let's try to free him"**, both sitting two cues from the clean phrase `"free the slaves"`. A third, `"11 insight on Do."`, was not a garble at all — it was a missing sentence boundary (*"Got 11 insight on. Do I think he's a surface ogre?"*). Only the fourth survived scrutiny. A bundle card is where unrecoverable fragments go to avoid being checked; if you are grouping them, that is the signal you have not anchored them individually.
+
 #### A garbled number is still a number
 
 `numbers` and `mechanics` are on the never-change list, which makes it easy to skim past a dice value that ASR turned into a *word*. Phandalin ch48: Vukradin's persuasion roll reads `"Event persuasion. Does that help?"` in Zoom — the re-transcription has `"27 persuasion."` It reads as prose and is in fact the roll that decides whether an NPC hands over a plot-critical name.
@@ -249,6 +275,22 @@ When a line mentions a check, a roll, or a quantity and the value is absent or r
 A proper-noun garble ruled here is one the upstream pass will meet again next session. When the GM settles one, offer to add it to `notes/vtt_transcription_corrections.md` as part of the same ruling — Phandalin ch48 added `Utgartian`, `Rieber`, `Vubert`, `Rueberg`, `CORN`, `Corin`, `Don Juan`.
 
 Checking the glossary also audits it. That pass found the `Don-Jon Raskin` row pointing at an **unhyphenated** canonical form, contradicting `entity_registry.yaml` — a live bug that had been quietly producing inconsistent output. **The registry is the authority; the glossary is a lookup table that can drift from it.** When they disagree, say so and let the GM pick which one is wrong.
+
+**Writing the rows is not appending a table.** Two rules govern that file, and both are easy to break:
+
+- **One canonical, one row.** A dated section may only hold a row whose canonical appears nowhere else in the file; `add_to_glossary.py --section` searches within a single section, so a new dated row for an existing canonical silently creates a duplicate and makes every future append worse. Merge new variants into the **existing** row and put the provenance in the dated section as prose. Check first — many "new" variants are already there (7 of 28 in Phandalin ch4).
+- **Never put a pipe table in a prose section of that file.** `lint_glossary.parse_rows` treats *any* table as live rules. A two-column provenance table headed `| Canonical | Added this pass |` is parsed with the columns **backwards**: Phandalin ch4 briefly registered `Brewbarry → Brubit`, a rule `apply_replacements` would have used to rewrite a PC's name out of a transcript. Use a bulleted list instead.
+
+Then run the linter — the file's own standing rule, and the thing that caught the table bug when reading would not have:
+
+```bash
+python3 ~/src/mytools/dotfiles/claude/skills/vtt-spell-pass/lint_glossary.py \
+  --glossary notes/vtt_transcription_corrections.md
+```
+
+Expect `0 errors`. Compare the warning list against a run from *before* your edit and account for every new one; `split_section` means the one-canonical-one-row rule was broken, and a new `chained` warning naming something you just added is the table bug above.
+
+Finally, **flag the variants that are ordinary names.** Matching is word-boundary but case-insensitive, so `Rooker`, `Hubbard`, `Thelma`, `Norquist` will rewrite a real person of that name if one ever appears at the table. Say so in the section you write, rather than letting a future pass discover it.
 
 ### 3. Write the derived layer
 Write `<session-dir>/scene_extractions_smoothed/NN_slug.md`, mirroring the verbatim file's structure (frontmatter, `## Scene summary`, a moments section, and the same speaker labels) so it is a drop-in for `session_doc` — **with one deliberate exception, below.** Mark it as derived:
@@ -293,13 +335,31 @@ grep -c '[a-z0-9…"]\*\*\[\?\(GM\|<PCs>\)' 0*.md | grep -v ':0'   # splices you
 
 Also confirm the player-name policy actually landed the way the GM ruled it — scan the summary sections and the quote lines **separately**, since the ruling usually differs between them.
 
+#### Audit the deltas — every changed word must trace to an approved card
+
+The checks above catch structural defects. They do not catch the one this layer is most likely to commit: **while writing hundreds of lines of prose you will repair a garble nobody approved**, because it is sitting right there and the fix is obvious. That is precisely the unilateral edit the whole ruling process exists to prevent, and it is invisible in a finished file — it reads as clean prose.
+
+Diff the smoothed quotes against the source and read every word-level change:
+
+```bash
+for n in 01 02 03 04 05; do
+  diff <(grep '^> ' <scene-dir>/${n}*.md) \
+       <(grep '^> ' <session-dir>/scene_extractions_smoothed/${n}*.md)
+done
+```
+
+Punctuation, capitalisation, filler and false-start changes are covered by the calibration approval. **Every substantive word change must map to a card the GM approved.** Anything that does not, revert to verbatim and add it to `carry_forward` — it is a candidate for next time, not yours to fix now.
+
+Phandalin ch4 caught three this way (`"Why'd that cost us the gold?"`, `"those interested ones"`, `"transport you poorly"`), all in one scene, all made in good faith while writing. They were reverted and reported as unruled. **When the GM later said to fix them, going back to the tape showed one of the three confident guesses was wrong** — the line was a statement, not the question it had been "corrected" into. That is the whole argument for this check: a plausible repair is not a correct one, and the only thing separating them is evidence the GM has seen.
+
 ### 6. Write the manifest — REQUIRED
 
 Rulings made in conversation and applied as scattered annotations are unreconstructable a week later. Write `<session-dir>/voice_smooth.sources.yaml` recording:
 
 - scene count, quote-line count, and **the garble-ruling count broken down by scene**
 - the resolved voice specs, and any NPC characterization source used
-- **which transcripts were consulted and what each is good at** — this is per-campaign knowledge that makes the next run faster
+- **which transcripts were consulted and what each is good at** — this is per-campaign knowledge that makes the next run faster. Record which files turned out to be **the same text**, by name; that is the single most time-saving line in the manifest for whoever runs this next.
+- the **verdict counts** from the review round trip, including how many came back undecided and were re-asked — so a later reader can see the checkpoint held
 - the calibration decisions the GM approved (filler aggressiveness, grammar repair, stage-direction split, truncation handling)
 - every **scope** ruling — de-duplication boundaries, player-name policy, knowledge boundaries — with what moved where
 - garbles **kept deliberately**, and why, so a later reader doesn't re-flag them
@@ -324,6 +384,11 @@ Say explicitly that **re-running the extractor would discard this pass**, and na
 - **Common-word garble is ruled here.** `app`/`hack`, `confront-free`/`conflict-free`, `bloom`/`show` are in no glossary and trip no registry check, so they survive every upstream pass and surface only when a human reads the line. Rule them here with the GM (step 2.5) and record what was ruled.
 - **Scope belongs to the human.** What belongs in which scene, and who knows what, are precision decisions — never settle a de-duplication boundary or a player-vs-character knowledge question yourself (step 1.5).
 - **Knowledge boundaries need a home outside this layer.** An annotation in a derived file dies at the next `scene_extract`. Push it to a hand-authored `docs/` dossier with a `CLAUDE.md` pointer.
+- **No card, no change — in THIS layer.** A word you repair without an approved ruling is a unilateral edit no matter how obvious it looked, and obvious is not a track record (one in three of ch4's "certain" readings was wrong). If you notice it while writing, revert it and put it in `carry_forward`. Audit for these before you report done (step 5).
+
+  **The rule governs the smoothed layer, which is a record. It does not govern downstream narration, and it never governs *reporting*.** Phandalin ch4 got this backwards: asked to find logic breaks in the finished narration, the pass spotted `"let's try to freeze it"` sitting one line after `"All right, let's free the slaves!"`, declined to touch it by citing this rule, and wrote the refusal into the audit comment as considered judgment — dressing a wrong call up as a careful one. The GM had asked for exactly that class of defect. A rule that stops you editing a transcript must never stop you saying *"this sentence contradicts the one before it."* When in doubt, surface it; silence is the one option that is always wrong.
+- **An unmarked card is not a decision, and a three-word note is not a specification.** Re-ask what came back undecided; confirm what a terse DISCUSS note meant before applying it; bring exact wording back when the ruling would invent canon.
+- **Two files with different names are not two readings.** Prove independence before treating one transcript as corroboration for another — identical passes agreeing with themselves is the most convincing worthless evidence you will meet here.
 - **Human reviews before session_doc.** This is a first-draft render, not a final artifact.
 
 ## Why this design
