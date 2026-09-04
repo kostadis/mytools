@@ -1,0 +1,327 @@
+<title>Stonehill Scene Four Proof</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#EEF0F3;--panel:#FFFFFF;--ink:#1C2128;--ink2:#4A5260;--mute:#7A828F;--rule:#C9CED6;--rule2:#E3E6EB;
+  --accent:#3B5B8C;
+  --breach:#8E2A2A;--breach-bg:#F6E7E7;
+  --plaus:#9A6A12;--plaus-bg:#F8EFD9;
+  --ok:#2F6B45;--ok-bg:#E3F0E7;
+  --nc:#6B7280;--nc-bg:repeating-linear-gradient(135deg,#E9EBEF 0 4px,#F7F8FA 4px 8px);
+  --quote-bg:#F6F7F9;
+  --serif:"Newsreader",Georgia,"Times New Roman",serif;
+  --sans:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#171A1F;--panel:#1F232A;--ink:#E6E8EC;--ink2:#B4BAC5;--mute:#848C99;--rule:#3A404A;--rule2:#2B3038;
+  --accent:#8FB0E0;
+  --breach:#E48A8A;--breach-bg:#3A2222;
+  --plaus:#E0B45C;--plaus-bg:#3A2F17;
+  --ok:#7FC49A;--ok-bg:#1E3327;
+  --nc:#9AA2AE;--nc-bg:repeating-linear-gradient(135deg,#262B33 0 4px,#1F232A 4px 8px);
+  --quote-bg:#252A32;
+}}
+:root[data-theme="dark"]{
+  --bg:#171A1F;--panel:#1F232A;--ink:#E6E8EC;--ink2:#B4BAC5;--mute:#848C99;--rule:#3A404A;--rule2:#2B3038;
+  --accent:#8FB0E0;
+  --breach:#E48A8A;--breach-bg:#3A2222;
+  --plaus:#E0B45C;--plaus-bg:#3A2F17;
+  --ok:#7FC49A;--ok-bg:#1E3327;
+  --nc:#9AA2AE;--nc-bg:repeating-linear-gradient(135deg,#262B33 0 4px,#1F232A 4px 8px);
+  --quote-bg:#252A32;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
+a{color:var(--accent)}
+.wrap{max-width:960px;margin:0 auto;padding:32px 20px 80px}
+header{border-bottom:2px solid var(--ink);padding-bottom:16px;margin-bottom:28px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+h1{font-family:var(--serif);font-weight:500;font-size:34px;line-height:1.15;margin:6px 0 8px;text-wrap:balance}
+header p{margin:0;color:var(--ink2);max-width:70ch}
+h2{font-family:var(--sans);font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);margin:36px 0 12px;padding-top:12px;border-top:1px solid var(--rule)}
+h2 small{font-weight:400;letter-spacing:0;text-transform:none;color:var(--mute);margin-left:10px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--rule2)}
+th{font-weight:600;color:var(--ink2);font-size:12px;letter-spacing:.04em;text-transform:uppercase}
+.tbl{overflow-x:auto;background:var(--panel);border:1px solid var(--rule)}
+.mono{font-family:var(--mono);font-size:13px}
+.num{font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:13px}
+.chip{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:2px;white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)}
+.chip.breach{background:var(--breach-bg);color:var(--breach);font-weight:500}
+.chip.plaus{background:var(--plaus-bg);color:var(--plaus)}
+.chip.nc{background:var(--nc-bg);color:var(--nc);border:1px dashed var(--nc)}
+.chip.res{background:var(--ok-bg);color:var(--ok)}
+.chip.note{background:var(--rule2);color:var(--ink2)}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);margin-bottom:8px}
+.summary div{background:var(--panel);padding:12px 14px}
+.summary b{display:block;font-family:var(--serif);font-size:26px;font-weight:500;line-height:1.1}
+.summary span{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
+.summary .b b{color:var(--breach)}.summary .p b{color:var(--plaus)}
+.card{background:var(--panel);border:1px solid var(--rule);border-left:5px solid var(--rule);margin:14px 0;padding:14px 18px 16px}
+.card.breach{border-left-color:var(--breach)}
+.card.plaus{border-left-color:var(--plaus)}
+.card.note{border-left-color:var(--mute)}
+.card.done{opacity:.6}
+.card-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:8px}
+.card-head h3{margin:0;font-size:16px;font-weight:600;flex:1 1 auto}
+.loc{font-family:var(--mono);font-size:12px;color:var(--mute)}
+blockquote{margin:10px 0;padding:10px 16px;background:var(--quote-bg);border-left:2px solid var(--rule);font-family:var(--serif);font-size:17px;line-height:1.45;color:var(--ink)}
+blockquote em{font-style:italic}
+.why{color:var(--ink2);margin:8px 0}
+.why code,.rw code{font-family:var(--mono);font-size:12.5px;background:var(--rule2);padding:1px 4px;border-radius:2px}
+.rw{margin:10px 0 0;padding:10px 14px;border:1px dashed var(--rule);font-size:14px}
+.rw .lab{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);display:block;margin-bottom:4px}
+.rw .q{font-family:var(--serif);font-size:16px}
+.triage{display:flex;gap:6px;margin-top:12px;align-items:center;flex-wrap:wrap}
+.triage button{font-family:var(--sans);font-size:12.5px;padding:5px 12px;border:1px solid var(--rule);background:var(--panel);color:var(--ink);cursor:pointer;border-radius:2px}
+.triage button:hover{border-color:var(--ink2)}
+.triage button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.triage button.on[data-v="act"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.triage button.on[data-v="keep"]{background:var(--ok-bg);color:var(--ok);border-color:var(--ok)}
+.triage button.on[data-v="defer"]{background:var(--plaus-bg);color:var(--plaus);border-color:var(--plaus)}
+.triage .st{font-family:var(--mono);font-size:11px;color:var(--mute);margin-left:auto}
+.bar{position:sticky;top:0;z-index:5;background:var(--panel);border:1px solid var(--rule);padding:8px 12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px;margin:12px 0}
+.bar .tally{font-family:var(--mono);font-size:12px}
+.bar button,.bar label{font-family:var(--sans);font-size:12.5px;padding:5px 10px;border:1px solid var(--rule);background:var(--panel);color:var(--ink);cursor:pointer;border-radius:2px}
+.bar button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.bar button:focus-visible{outline:2px solid var(--accent)}
+textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:12px;background:var(--panel);color:var(--ink);border:1px solid var(--rule);padding:8px;margin-top:8px}
+.grid{display:grid;grid-template-columns:auto 1fr auto auto;gap:6px 14px;align-items:center;font-size:13.5px;background:var(--panel);border:1px solid var(--rule);padding:12px 14px}
+.grid .g-name{font-family:var(--mono);font-size:12px}
+.grid .g-bar{height:10px;background:var(--rule2);position:relative}
+.grid .g-bar i{position:absolute;left:0;top:0;bottom:0;background:var(--ink2)}
+.grid .g-bar.this i{background:var(--accent)}
+.grid .g-head{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--mute)}
+.rank{width:100%;font-size:13.5px}
+.rank td:first-child{font-family:var(--mono);color:var(--mute);width:2em}
+.rank blockquote{margin:0;padding:6px 10px;font-size:15px}
+.keep td{background:var(--ok-bg)}
+.foot{margin-top:40px;color:var(--mute);font-size:12.5px;border-top:1px solid var(--rule);padding-top:12px}
+.hidden-by-filter{display:none}
+@media (prefers-reduced-motion:no-preference){.card{transition:opacity .2s}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Voice critique · Phandalin · session 20250514 chapter 02 · per-scene</div>
+  <h1>Valphine at the Stonehill Inn, scene four</h1>
+  <p>Review surface for <span class="mono">narration/session_doc_scene_04_ale_and_rumors_at_stonehill.md</span>, the re-render of 2 Sep 2026. Nothing here has been applied to the narration. Triage each finding, then copy the decisions back into the conversation.</p>
+</header>
+
+<div class="summary">
+  <div class="b"><b>2</b><span>confirmed hard-ban breaches</span></div>
+  <div class="b"><b>1</b><span>doc-cap breach (closers ×6)</span></div>
+  <div class="p"><b>1</b><span>plausible taxonomy shell</span></div>
+  <div><b>3</b><span>craft flags (attribution, tell, simile/tense)</span></div>
+  <div><b>653</b><span>prose words · 41% of section</span></div>
+</div>
+
+<h2>What was actually checked <small>the rulebook the model received, and whether each check ran</small></h2>
+<div class="tbl"><table>
+<tr><th>Input</th><th>Resolved to</th><th>State</th><th>How</th></tr>
+<tr><td>Genre rulebook</td><td class="mono">voice/_genre.md @ 0a3d011c5f27</td><td><span class="chip ok">resolved</span></td><td>from the scene's run record; 105 lines, 11,681 chars</td></tr>
+<tr><td>Rulebook vs run record</td><td>digest on disk matches this scene's render</td><td><span class="chip ok">match</span></td><td>but siblings differ: 01, 05 @ <span class="mono">6e67c59f</span> (61-line rulebook, no filing ban, no lint block); 02, 07 @ <span class="mono">5f211a96</span>; 03, 04, 06, 08 @ <span class="mono">0a3d011c</span>. Three rulebook versions across one session.</td></tr>
+<tr><td>HARD BANS</td><td class="mono">narrate/base.md</td><td><span class="chip ok">resolved</span></td><td>4,221 chars, read at run time</td></tr>
+<tr><td>Voice spec</td><td class="mono">voice/valphine_new_pipeline.md</td><td><span class="chip ok">resolved</span></td><td>declared in <span class="mono">config/party.yaml</span>, exact-name match</td></tr>
+<tr><td>Per-character examples</td><td class="mono">examples/valphine.md</td><td><span class="chip ok">resolved</span></td><td>roster declaration</td></tr>
+<tr><td>Global examples</td><td>none</td><td><span class="chip ok">none</span></td><td>no <span class="mono">shared_examples:</span> in roster, so no bleed</td></tr>
+<tr><td>Orphan files</td><td class="mono">voice/v1/ (6 files, 3 dirs)</td><td><span class="chip note">unused</span></td><td>undeclared archive; reaches no prompt</td></tr>
+<tr><td>Party doc</td><td class="mono">docs/party.md</td><td><span class="chip ok">4 / 4 PCs</span></td><td>roster not partial</td></tr>
+<tr><td>Source layer</td><td class="mono">scene_extractions_smoothed/04_…</td><td><span class="chip ok">81 / 81 verbatim</span></td><td>21 apparent misses are comma-for-period at tag boundaries, not drift</td></tr>
+<tr><td>voice_lint</td><td>ran, exit 1</td><td><span class="chip breach">1 error</span></td><td>0 warnings, <b>0 skipped checks</b>. The bookkeeping check ran because the rulebook now carries its <span class="mono">yaml voice_lint</span> block.</td></tr>
+<tr><td>Scan A2 (trailing-dash provenance)</td><td>raw 1 → smoothed 0, narration 0</td><td><span class="chip ok">clean</span></td><td>the one raw dash is a GM roll instruction that never reaches narration</td></tr>
+<tr><td>Sibling drafts</td><td class="mono">04-v2.md · 04-v3-high.md</td><td><span class="chip nc">not critiqued</span></td><td>older than the canonical file, no run record; assembly does not read them</td></tr>
+</table></div>
+
+<h2>Budget ledger <small>scope: single scene · budgets from _genre.md @ 0a3d011c5f27</small></h2>
+<div class="tbl"><table>
+<tr><th>Budget</th><th>Observed</th><th>Budget</th><th>Verdict</th></tr>
+<tr><td>Verbatim fidelity vs smoothed layer</td><td class="num">81 / 81</td><td>no drift</td><td><span class="chip ok">ok</span></td></tr>
+<tr><td>“the shape of”</td><td class="num">0</td><td>0</td><td><span class="chip ok">ok</span></td></tr>
+<tr><td>“with the X of a man who”</td><td class="num">0</td><td>0</td><td><span class="chip ok">ok</span></td></tr>
+<tr><td>“X of a man” with no “who” (lint)</td><td class="num">1 · line 53</td><td>0</td><td><span class="chip breach">breach</span></td></tr>
+<tr><td>Behavioral taxonomy, any shell (reading)</td><td class="num">1 confirmed · 1 plausible</td><td>0 (HARD BAN)</td><td><span class="chip breach">breach</span></td></tr>
+<tr><td>“like a man who” · “that particular … she gets” · “the kind of person who”</td><td class="num">0</td><td>0</td><td><span class="chip ok">ok</span></td></tr>
+<tr><td>“I file / I filed”</td><td class="num">0</td><td>0, all narrators</td><td><span class="chip ok">ok · check ran</span></td></tr>
+<tr><td>Connective em-dashes in prose</td><td class="num">0 (10 in locked quotes)</td><td>never</td><td><span class="chip ok">ok</span></td></tr>
+<tr><td>Thesis-like closers, this narrator, this session</td><td class="num">6 in scene 04 · +1 in scene 07</td><td>≤ 1 per narrator</td><td><span class="chip breach">breach</span></td></tr>
+<tr><td>First-person present tense</td><td class="num">1 slip · line 135</td><td>always</td><td><span class="chip breach">breach</span></td></tr>
+<tr><td>Italic direct thought</td><td class="num">0</td><td>don't overuse</td><td><span class="chip ok">ok</span></td></tr>
+<tr><td>Symmetry · mock-archaic · adverb combat · recap framing</td><td class="num">0</td><td>never</td><td><span class="chip ok">ok</span></td></tr>
+<tr><td>Cross-narrator convergence</td><td>no shared distinctive phrase with the other seven scenes</td><td>—</td><td><span class="chip ok">ok</span></td></tr>
+<tr><td>Attribution density (r1 structural finding, not a rulebook cap)</td><td class="num">9 tags / 81 quotes (r1: 3 / 81)</td><td>—</td><td><span class="chip note">improved</span></td></tr>
+</table></div>
+
+<h2>Findings <small>strongest first · verbatim quotes · each with a rewrite in her register</small></h2>
+
+<div class="bar">
+  <span class="tally" id="tally">0 of 8 decided</span>
+  <label><input type="checkbox" id="undecided"> show undecided only</label>
+  <button class="primary" id="copy">Copy decisions</button>
+  <button id="showtext">Show as text</button>
+  <button id="reset">Reset</button>
+</div>
+<textarea id="out" hidden readonly aria-label="Decisions as plain text"></textarea>
+
+<div class="card breach" data-id="F1">
+  <div class="card-head"><span class="chip breach">breach · doc cap</span><h3>Six thesis closers where the ration is one</h3><span class="loc">lines 33 · 35 · 45 · 67 · 77 · 87 · 95</span></div>
+  <p class="why">Rulebook line 23: at most one abstract, balanced, thesis-like closer per POV narrator per session; render the surplus as observation, bodily reaction or action. The 1 Sep fix pass (F2) had trimmed this scene to zero and scene 07 to one. The re-render put six back. Ranked, with the one to keep highlighted.</p>
+  <table class="rank">
+    <tr class="keep"><td>a</td><td><blockquote>The surface calls this hope. My mother would call it inventory.</blockquote></td><td><b>Keep as the one.</b> Only closer here that no other narrator could have written. Lands the spec's “they mistake restraint for kindness” axis.</td></tr>
+    <tr><td>b</td><td><blockquote>Pain is honest. Song is negotiation wearing perfume.</blockquote></td><td>Cut both aphorisms; the paragraph's last sentence already is the concrete version.</td></tr>
+    <tr><td>c</td><td><blockquote>Ah. He is a composer. Every jailer has a cell of his own.</blockquote></td><td>Cut the last sentence. <em>Ah. He is a composer.</em> is the deadpan.</td></tr>
+    <tr><td>d</td><td><blockquote>Correct doctrine. Power abhors a vacuum; the orcs are simply less hypocritical about filling one.</blockquote></td><td>Cut; also generic reach. Try <em>Correct doctrine. He says it as if the orcs had invented it.</em></td></tr>
+    <tr><td>e</td><td><blockquote>A claim costs nothing and opens doors.</blockquote></td><td>Recast as action: <em>“Yeah, that's right,” I say, and watch the door open.</em></td></tr>
+    <tr><td>f</td><td><blockquote>Prudent. Weakness in furniture, as in houses, reveals itself under load.</blockquote></td><td>Cut the second sentence. <em>Prudent.</em> alone.</td></tr>
+    <tr><td>g</td><td><blockquote>Orcs are barely worthy of slaughter, but slaughter that pays is slaughter improved.</blockquote></td><td>Borderline: first clause is her verbatim examples line. Trim to <em>Orcs. Barely worthy of slaughter, but the pay improves them.</em></td></tr>
+  </table>
+  <div class="rw"><span class="lab">Target</span>One thesis closer in scene 04 (a), one in scene 07. Seven small edits; not a re-render signal, because everything else is in register.</div>
+  <div class="triage"><button data-v="act">Act</button><button data-v="keep">Keep as is</button><button data-v="defer">Defer</button><span class="st"></span></div>
+</div>
+
+<div class="card breach" data-id="F2">
+  <div class="card-head"><span class="chip breach">breach · hard ban</span><h3>Behavioral taxonomy: “the way merchants are glad”</h3><span class="loc">line 21 · confirmed by reading · lint missed it (no “when”)</span></div>
+  <blockquote>The Stonehill Inn is a modest two-story roadhouse, and its proprietor, Toblen Stonehill, a short human, is glad to see us in the way merchants are glad to see coin still attached to legs.</blockquote>
+  <p class="why"><code>base.md</code> HARD BANS: the “the way X do …” shell and every appeal to a profession as the explanation for what one person did. Valphine's lens is motive-systems; render <em>his</em> motive, not the class.</p>
+  <div class="rw"><span class="lab">Suggested rewrite · grounded in spec</span><span class="q">…a short human, is glad to see us. He is glad the way I would be: three purses have walked in and none of them has left yet.</span></div>
+  <div class="triage"><button data-v="act">Act</button><button data-v="keep">Keep as is</button><button data-v="defer">Defer</button><span class="st"></span></div>
+</div>
+
+<div class="card breach" data-id="F3">
+  <div class="card-head"><span class="chip breach">breach · hard ban</span><h3>“the smile of a man behind a counter”</h3><span class="loc">line 53 · voice_lint ERROR, exit 1</span></div>
+  <blockquote>Toblen smiles the smile of a man behind a counter. The bard stares into it and finds nothing; whatever instrument he uses to read hearts is out of tune tonight.</blockquote>
+  <p class="why">Rulebook line 48: the portrait with the relative clause filed off. Dropping “who” does not make it an observation. The second sentence is good and stays.</p>
+  <div class="rw"><span class="lab">Suggested rewrite · grounded in the scene's ten-copper beat</span><span class="q">Toblen smiles. It is the smile he gave the boiled water: warm, priced, and already counted.</span></div>
+  <div class="triage"><button data-v="act">Act</button><button data-v="keep">Keep as is</button><button data-v="defer">Defer</button><span class="st"></span></div>
+</div>
+
+<div class="card plaus" data-id="F4">
+  <div class="card-head"><span class="chip plaus">plausible</span><h3>Portrait shell: “with the gravity of a high priest”</h3><span class="loc">line 103 · lint pattern needs man/woman/someone</span></div>
+  <blockquote>Toblen pauses, then delivers absolution with the gravity of a high priest:</blockquote>
+  <p class="why">“With the X of a Y” with a class-of-person vehicle. Mitigation: high priest is in her own lexicon, and the paragraph names a concrete act. GM's call.</p>
+  <div class="rw"><span class="lab">Suggested rewrite</span><span class="q">Toblen pauses, then absolves us. My sisters would have charged for it.</span></div>
+  <div class="triage"><button data-v="act">Act</button><button data-v="keep">Keep as is</button><button data-v="defer">Defer</button><span class="st"></span></div>
+</div>
+
+<div class="card note" data-id="F5">
+  <div class="card-head"><span class="chip note">craft · attribution</span><h3>Two runs where three speakers break alternation</h3><span class="loc">lines 113–115 · 131–133</span></div>
+  <blockquote>“Yes, not all barbarians. Well said.”<br><br>“But I do recommend you go talk to you if you're looking for work. Well, if you're looking to spend some money or need a place to stay, I do have a room.”</blockquote>
+  <p class="why">Per the smoothed extraction 113 is Vukradin and 115 Toblen, but after Soma's tagged line a reader gives 113 to Toblen. Same shape at 131 (Toblen) → 133 <em>“People just don't understand.”</em> (Vukradin). All four ≥3 orphan runs from Scan C cleared as tagged two-handers; these two are the residue. No UNKNOWN lines involved.</p>
+  <div class="rw"><span class="lab">Suggested tags · quotes untouched</span><span class="q">“Yes, not all barbarians. Well said,” Vukradin agrees, pleased with the coinage.<br>“People just don't understand,” the bard says, to nobody who is listening.</span></div>
+  <div class="triage"><button data-v="act">Act</button><button data-v="keep">Keep as is</button><button data-v="defer">Defer</button><span class="st"></span></div>
+</div>
+
+<div class="card note" data-id="F6">
+  <div class="card-head"><span class="chip note">craft · tell-not-show</span><h3>Naming the boredom</h3><span class="loc">line 35 · same finding as r1 flag 4</span></div>
+  <blockquote>Then the music begins, which is to say my boredom begins. I am not a music lover; the whole display holds nothing for me.</blockquote>
+  <p class="why">Spec: she does not confess emotion, she analyzes. Source is the GM's hatched table line rendered as declaration. The plan's focus requires the boredom, not the announcement.</p>
+  <div class="rw"><span class="lab">Suggested rewrite · also resolves closer (b)</span><span class="q">Then the music begins. I sip my extortionate tea and watch the real performance, which is the innkeeper.</span></div>
+  <div class="triage"><button data-v="act">Act</button><button data-v="keep">Keep as is</button><button data-v="defer">Defer</button><span class="st"></span></div>
+</div>
+
+<div class="card note" data-id="F7">
+  <div class="card-head"><span class="chip note">craft · simile</span><h3>“like a blanket”</h3><span class="loc">line 57</span></div>
+  <blockquote>“Yeah, actually, no, that's true,” I concede, watching the conviction settle over him like a blanket.</blockquote>
+  <p class="why">Stock image; rulebook line 39 asks for the sensory specific before the metaphor.</p>
+  <div class="rw"><span class="lab">Suggested rewrite</span><span class="q">…I concede, and watch him decide to be adored.</span></div>
+  <div class="triage"><button data-v="act">Act</button><button data-v="keep">Keep as is</button><button data-v="defer">Defer</button><span class="st"></span></div>
+</div>
+
+<div class="card note" data-id="F8">
+  <div class="card-head"><span class="chip note">rulebook · tense</span><h3>Past tense in the last line</h3><span class="loc">line 135</span></div>
+  <blockquote>The evening was not wasted after all.</blockquote>
+  <p class="why">Rulebook line 12: first-person present, always. One word.</p>
+  <div class="rw"><span class="lab">Suggested rewrite</span><span class="q">The evening is not wasted after all.</span></div>
+  <div class="triage"><button data-v="act">Act</button><button data-v="keep">Keep as is</button><button data-v="defer">Defer</button><span class="st"></span></div>
+</div>
+
+<h2>Per-scene grid <small>prose words and share of section · scene 04 highlighted</small></h2>
+<div class="grid">
+  <span class="g-head">scene</span><span class="g-head">prose share of section</span><span class="g-head">prose</span><span class="g-head">rulebook</span>
+  <span class="g-name">01 Brewbarry</span><div class="g-bar"><i style="width:75%"></i></div><span class="num">624 · 75%</span><span class="mono">6e67c59f</span>
+  <span class="g-name">02 Vukradin</span><div class="g-bar"><i style="width:49%"></i></div><span class="num">683 · 49%</span><span class="mono">5f211a96</span>
+  <span class="g-name">03 Soma</span><div class="g-bar"><i style="width:93%"></i></div><span class="num">693 · 93%</span><span class="mono">0a3d011c</span>
+  <span class="g-name">04 Valphine</span><div class="g-bar this"><i style="width:41%"></i></div><span class="num">653 · 41%</span><span class="mono">0a3d011c</span>
+  <span class="g-name">05 Vukradin</span><div class="g-bar"><i style="width:71%"></i></div><span class="num">629 · 71%</span><span class="mono">6e67c59f</span>
+  <span class="g-name">06 Brewbarry</span><div class="g-bar"><i style="width:69%"></i></div><span class="num">412 · 69%</span><span class="mono">0a3d011c</span>
+  <span class="g-name">07 Valphine</span><div class="g-bar"><i style="width:46%"></i></div><span class="num">787 · 46%</span><span class="mono">5f211a96</span>
+  <span class="g-name">08 Soma</span><div class="g-bar"><i style="width:54%"></i></div><span class="num">529 · 54%</span><span class="mono">0a3d011c</span>
+</div>
+<p class="why">Scene 04 is dialogue-heavy by nature (81 quotes, the inn conversation) so a low share is expected; the r1 render sat at 35%. The rulebook column shows the session was rendered under three different rulebook versions.</p>
+
+<h2>Locked-dialogue scope calls <small>the GM's decision, not defects · keep / replace in-world / annotate</small></h2>
+<div class="tbl"><table>
+<tr><th>Line</th><th>Quote</th><th>Speaker</th><th>Notes</th></tr>
+<tr><td class="num">45</td><td class="q" style="font-family:var(--serif)">“One of those bangers. Play Freebird.” / “Yeah, totally. Freebird.”</td><td>Soma / Vukradin</td><td>Narration launders it (<em>The innkeeper's face falls. Ah. He is a composer.</em>). Keep is well supported.</td></tr>
+<tr><td class="num">31</td><td style="font-family:var(--serif)">“Oh, we're getting to the fat shaming now.”</td><td>Soma</td><td>Meta about the GM sizing up the tortle; half-absorbed by <em>Soma reads him instantly</em>.</td></tr>
+<tr><td class="num">111</td><td style="font-family:var(--serif)">“He's following a hashtag not all barbarians.”</td><td>Soma</td><td>Smoothed layer marks it <em>table commentary</em>; render keeps it in-fiction with a tag. r1 had dropped it. Wants a disposition.</td></tr>
+<tr><td class="num">57</td><td style="font-family:var(--serif)">“With a four, you probably believe him.” / “Yeah, actually, no, that's true.”</td><td>Valphine</td><td>Not an anachronism: a die-roll reference inside an in-fiction quote, with narration built on it (<em>I tell him. He does.</em>). Hand to /scrub. r1 had dropped both.</td></tr>
+</table></div>
+
+<h2>Reclassified table speech <small>the hatch the model wrote · assembly strips it, so this is the last look</small></h2>
+<div class="tbl"><table>
+<tr><th>#</th><th>Span</th><th>Call</th></tr>
+<tr><td class="num">1</td><td style="font-family:var(--serif)">“And I think Valphine was bored with all this display of music. We'll say she's not a music lover.”</td><td><span class="chip ok">correct</span> GM out-of-fiction</td></tr>
+<tr><td class="num">2</td><td style="font-family:var(--serif)">“He says, well, that will be 10 copper pieces for the boiled water.”</td><td><span class="chip ok">correct</span> GM price report</td></tr>
+</table></div>
+<p class="why">Under-logged: r1 listed seven; this render lists two while silently dropping at least twenty more table lines (destination confirmation, boxed text, the 17 / 15 / four roll reports, “Roll your perception”, “you got the impression that he adored your music”, both UNKNOWN lines, Vukradin's “Business is hard for him. Does he know it?”). Dropping them is right; the audit trail is short by that many.</p>
+
+<h2>Verdict</h2>
+<p>The scene is in Valphine's register throughout and its verbatim layer is clean, but it breaches the one-closer ration six times over and carries two confirmed taxonomy moves, one of which fails lint. All of it is spot-editable: the seven-line closer trim plus two rewrites take the scene to lint-clean and cap-compliant without a re-render. The 1 Sep fix pass already did this trim once and the re-render undid it; if scene 04 renders again, the ration has to reach the prompt, not the post-edit.</p>
+
+<p class="foot">Written record: <span class="mono">narration/voice_critique_scene_04_valphine-sotorra.md</span>. Previous render's critique preserved as <span class="mono">voice_critique_scene_04_valphine-sotorra.r1-6e67c59f.md</span>. Triage state lives only in this browser; use Copy decisions to send it back.</p>
+</div>
+
+<script>
+(function(){
+  var KEY='vc-ch02-s04-r2';
+  var titles={F1:'Six thesis closers (keep a, trim b–g)',F2:'Taxonomy: the way merchants are glad (l.21)',F3:'Smile of a man behind a counter (l.53)',F4:'Gravity of a high priest (l.103)',F5:'Attribution runs 113–115, 131–133',F6:'Naming the boredom (l.35)',F7:'Like a blanket (l.57)',F8:'Past tense last line (l.135)'};
+  var state={};
+  try{state=JSON.parse(localStorage.getItem(KEY)||'{}')||{};}catch(e){state={};}
+  var cards=document.querySelectorAll('.card[data-id]');
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  function render(){
+    var n=0;
+    cards.forEach(function(c){
+      var id=c.dataset.id,v=state[id];
+      c.querySelectorAll('.triage button').forEach(function(b){b.classList.toggle('on',b.dataset.v===v);});
+      c.querySelector('.st').textContent=v?('decided: '+v):'undecided';
+      c.classList.toggle('done',!!v);
+      if(v)n++;
+      c.classList.toggle('hidden-by-filter',document.getElementById('undecided').checked&&!!v);
+    });
+    document.getElementById('tally').textContent=n+' of '+cards.length+' decided';
+  }
+  cards.forEach(function(c){
+    c.querySelectorAll('.triage button').forEach(function(b){
+      b.addEventListener('click',function(){
+        var id=c.dataset.id;
+        state[id]=(state[id]===b.dataset.v)?undefined:b.dataset.v;
+        if(!state[id])delete state[id];
+        save();render();
+      });
+    });
+  });
+  function text(){
+    var g={act:[],keep:[],defer:[],undecided:[]};
+    Object.keys(titles).forEach(function(id){(g[state[id]||'undecided']).push(id+' '+titles[id]);});
+    var s='Voice critique decisions, ch02 scene 04 (Valphine), render 2026-09-02\n';
+    ['act','keep','defer','undecided'].forEach(function(k){s+='\n'+k.toUpperCase()+':\n'+(g[k].length?g[k].map(function(x){return '- '+x;}).join('\n'):'- (none)')+'\n';});
+    return s;
+  }
+  var out=document.getElementById('out');
+  document.getElementById('copy').addEventListener('click',function(){
+    var s=text();
+    var done=function(){this_.textContent='Copied';setTimeout(function(){this_.textContent='Copy decisions';},1500);};
+    var this_=this;
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(s).then(done,function(){out.hidden=false;out.value=s;out.select();});}
+    else{out.hidden=false;out.value=s;out.select();}
+  });
+  document.getElementById('showtext').addEventListener('click',function(){out.hidden=!out.hidden;out.value=text();});
+  document.getElementById('reset').addEventListener('click',function(){state={};save();render();});
+  document.getElementById('undecided').addEventListener('change',render);
+  render();
+})();
+</script>
