@@ -58,7 +58,7 @@ That pass is where **proper nouns** get settled, because it rules against the gl
 
 - **session-dir** — `summaries/YYYYMMDD/`. Default: CWD (if CWD is the campaign root, ask which session).
 - **scene dir** — `<session-dir>/scene_extractions_new/` **or** `<session-dir>/scene_extractions/` (suffix varies). Detect it; call it `<scene-dir>`.
-- **voice files** — from `<campaign-root>/voice/`. Filenames are **not** limited to `<char>_voice.md`; resolve them with the three-rule lookup in step 1, which mirrors what the pipeline does. Plus `voice/_genre.md` (overall tone). **Authoritative** for how each character speaks.
+- **voice files** — declared per character by a `voice:` entry in `<campaign-root>/config/party.yaml`, not discovered by filename. Resolve them the way the pipeline does (step 1). Plus `voice/_genre.md` (overall tone), if the campaign has one. **Authoritative** for how each character speaks.
 - **player→character map** — from the glossary `## Player names → characters` section (only needed if any labels still carry real names — they shouldn't after /session-summary-consistency).
 
 ## Workflow
@@ -66,23 +66,43 @@ That pass is where **proper nouns** get settled, because it rules against the gl
 ### 1. Locate + load the guardrails
 - Detect `<scene-dir>`; if missing, stop.
 - Read `voice/_genre.md` for overall tone.
-- **Resolve voice files the way the pipeline resolves them.** The rule lives in CampaignGenerator `session_doc/voice.py` (`load_voice_files` + `_resolve_voice_key`, CampaignGenerator#247). Do not use a narrower one: `voice/*_voice.md` matches **zero** files in Phandalin, whose specs are `brewbarry_new_pipeline.md`, `soma_new_pipeline.md`, `valphine_new_pipeline.md` and `vukradin_new_pipeline.md` — so all four PCs of the campaign smoothing is standard on would get no spec, and this skill's own "voice files are authoritative" rule could not be honoured.
+- **Resolve voice files the way the pipeline resolves them: from the roster's declarations, not from filenames.** The rule lives in CampaignGenerator `session_doc/voice.py` — `load_declared_voices(cfg)`, keyed on `config/party.yaml`. A character gets a spec when it declares a `voice:` path **and** that file exists. Nothing is inferred from what the `voice/` directory happens to contain.
 
-  **Build the key set.** Glob `voice/*.md`. **Skip every file whose name begins with `_`** — `_genre.md` and friends are shared campaign material, not a per-character spec. For each remaining file the key is the lowercased stem with a trailing `_voice` removed: `Brewbarry_voice.md` → `brewbarry`, `vukradin_new_pipeline.md` → `vukradin_new_pipeline`.
+  ```yaml
+  # config/party.yaml
+  characters:
+    - name: Sister Maela Dawnforge
+      voice: voice/maela_voice.md
+  ```
 
-  **Resolve each speaker against that key set, stopping at the first hit:**
+  **Matching is exact, and deliberately so.** `get_voice_note` compares the full character name, case- and whitespace-insensitive, and nothing else: *"Nothing here computes a distance or a prefix in order to assert that two names are the same character."* There is no first-name fallback and no prefix rule, so there is no ambiguity to adjudicate.
 
-  | | Rule | Example |
-  |---|---|---|
-  | a | exact full lowercased name | `Unla Key` → `unla key` |
-  | b | first name only | `Unla Key` → `unla` |
-  | c | the **unique** key beginning with the first name followed by `_` or `-` | `Vukradin` → `vukradin_new_pipeline` |
+  This replaced an earlier fuzzy lookup (`_resolve_voice_key`, CampaignGenerator#247) that tried the full name, then the first name, then a unique prefix. **Do not reintroduce it, and do not hand-resolve by globbing `voice/*.md`.** Two reasons it was removed, both of which bite this skill directly:
 
-  **Refuse on ambiguity.** If rule (c) matches two or more keys, that speaker has no resolvable spec: do not guess which file the pipeline would use. Report it as ambiguous, list the candidates, and treat the spec as missing.
+  - Approximate matching fails *silently*. `Gyrgum` resolved to nothing, quietly, and the render proceeded without a spec.
+  - First-name matching is wrong for any character whose name starts with a title. **`Sister Maela Dawnforge` has the first name `Sister`** — under the old rules she matches no key at all and gets no spec, while the declaration resolves her correctly. Obelisk hits exactly this case.
 
-  Campaigns whose files happen to be named `daz.md`, `grygum.md` (out-of-the-abyss) hit rules (a)/(b), which is how the narrower rule went unnoticed.
+  **Run the pre-flight instead of resolving by hand.** `voice_declaration_problems(cfg, narrators)` and `unknown_narrators(cfg, narrators)` answer the question for every speaker *before* the first API call, and they distinguish the two failures that matter — a character declaring no `voice:` entry (a statement, not an accident) from one declaring a file that is absent (a refusal):
 
-- **Read a character's voice file before smoothing a single one of their lines** (voice files are authoritative — global campaign rule). If a speaker's spec does not resolve, say so before smoothing their lines rather than rendering them from nothing.
+  ```bash
+  python3 -c "
+  import sys; sys.path.insert(0,'<repo>')
+  from session_doc.voice import load_declared_voices, voice_declaration_problems, unknown_narrators
+  from campaignlib.party_config import load_party_config, resolve_party_config
+  from pathlib import Path
+  cfg = resolve_party_config(load_party_config(Path('config/party.yaml')), Path('.'))
+  speakers = [<every speaker label in the scene files>]
+  print('resolved:', sorted(load_declared_voices(cfg)))
+  for line in unknown_narrators(cfg, speakers) + voice_declaration_problems(cfg, speakers): print(' ', line)"
+  ```
+
+  **`resolve_party_config` is not optional.** All three functions take a `ResolvedPartyConfig`; a bare `load_party_config` leaves `voice:` as a `str` and `load_declared_voices` dies on `'str' object has no attribute 'exists'`. The `base` path is the caller's to supply — deliberately, so moving `party.yaml` does not change what its contents mean.
+
+  **Expect every NPC and `GM` to come back from `unknown_narrators` as "not a character in party.yaml".** That is correct, not a failure: they have no roster entry and are handled by the no-spec branch below. Only a *PC* appearing in that list is a finding.
+
+  `load_voice_files(voice_dir)` still exists but is **not** the resolver — it is the directory census the orphan report is computed against, i.e. which files in `voice/` no character's `voice:` entry names. Useful after a rename; useless for finding a speaker's spec. Do not compute orphans by first-name-splitting a declared key, either: `"sister maela dawnforge".split()[0]` is `sister`, which reports `maela_voice.md` as an orphan when it is correctly declared.
+
+- **Read a character's voice file before smoothing a single one of their lines** (voice files are authoritative — global campaign rule). If a speaker's spec does not resolve, say so *before* smoothing their lines rather than rendering them from nothing — and say it from the pre-flight above, not from a failed filename guess. The pre-flight distinguishes "declares no voice file" from "declares one that is missing"; those are different problems with different fixes.
 - Speakers with no voice file:
   - **GM** (narration / OOC / rules) → render as clean, plain GM prose; do not invent a voice.
   - **GM as <NPC>** → draw the NPC's characterization from its dossier (`docs/npcs/`) **or the session prep docs** (`notes/session_prep/`, `notes/sessions/`) if either gives you one, else a neutral, readable rendering. Never flatten a distinctive NPC into GM-neutral when a source gives you a voice — this run rendered Kalan (precise, professorial), Bookwyrm (compliment-as-warning, maternal-turned-glacial), Grygum (warm-as-method reassurance), and Daral (effusive) from prep/dossier characterization, not from PC voice files.
@@ -378,6 +398,7 @@ Say explicitly that **re-running the extractor would discard this pass**, and na
 - **Verbatim is immutable.** Never write to the VTT or `scene_extractions/`. This skill's only output is `scene_extractions_smoothed/`.
 - **Never carry a claim you cannot keep.** The output heads its moments section `## Voiced moments`, never `## Verbatim moments` — see step 3.
 - **Voice files are authoritative** — read them first, preserve the voice, never homogenize. When a player corrects a characterization, the voice file wins; update it there, not here.
+- **A voice spec is declared, never discovered.** It resolves from a character's `voice:` entry in `party.yaml` by exact name match. Do not glob `voice/`, do not fall back to a first name, do not match a prefix — a character named `Sister Maela Dawnforge` has the first name `Sister`, and approximate matching fails silently, which is why the pipeline removed it.
 - **Preserve, don't rewrite.** Readability + voice only. Names, numbers, mechanics, attribution, and *meaning* are off-limits.
 - **Don't over-smooth.** Deliberate style is voice; only transcription noise and genuine unreadability get cleaned. A character who rambles on purpose should still ramble.
 - **Deciding a name is upstream; spelling a settled one is here.** Establishing *who someone is* is an identity decision belonging to `/session-summary-consistency` and the registry — never make one in this layer. But applying a form the registry has **already** settled is spelling, not identity: `Utgartian` → `Uthgardtian`, `Colin` → `Cullen`, `a house like Astra` → `House Margaster`. Check the registry first, say which authority you are applying, and offer the glossary write-back.

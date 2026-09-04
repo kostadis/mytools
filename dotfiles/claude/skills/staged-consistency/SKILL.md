@@ -31,6 +31,7 @@ Read `/consistency-check`'s SKILL.md before the first stage and keep its guidanc
 - `/consistency-check <file>` — one-shot check on a single file. Use when you already know which document needs checking.
 - `/gmassist-precheck [session-dir]` — covers stage 0 → stage 1 only (gm-assist enrichment + check). Use when you only want the cheap pre-extraction pass.
 - `/staged-consistency [session-dir]` — **this skill**. The full pipeline with checks at every boundary. Use when you're preparing a session-doc you'll share with players, or when a prior narration run produced output that doesn't match prep.
+- `/session-doc-run [session-dir]` — the *runner*, not a checker. Use it when the inventory in step 1 finds the artifacts don't exist yet; it produces them stage by stage, then hand back here.
 
 ## Workflow
 
@@ -50,6 +51,16 @@ If the user passed a path argument, use it. Otherwise:
 Run that step's **full** sweep, not a two-directory `ls`. It is date-bounded (an old session may predate the entire prep corpus), it covers three different real-world prep layouts including flat location-named files (`notes/redbrand_hideout.md` *is* prep), and it ends in a tiered HIGH/MEDIUM/LOW choice presented via `AskUserQuestion`.
 
 **Ask explicitly and do not proceed without an explicit answer.** If the user says `none` — or prep genuinely does not exist for this session — run anyway and record `session_prep_used: false` with the reason in every stage's manifest.
+
+**On a backfilled chapter with no prep, look for the campaign's own bible split before concluding there is no source.** `/consistency-check` step 2.5 date-bounds the prep hunt and will correctly tell you a 2025 session predates a prep corpus that starts in 2026. That is a true answer about `notes/`, and it is not the whole answer: a campaign with `docs/chapters/` has a per-chapter narrative rendering of that very session, and for a played chapter it is often the only session-specific document that exists. On Phandalin ch08 it settled the run's single biggest finding — two independent POV sections both contradicting the recap on who landed a killing blow.
+
+**Match it by CONTENT, never by number.** Chapter numbering drifts: a campaign renumber can leave the session directory, the recap header, `campaign_state.md` and the bible all disagreeing. On ch08 the session dir was `20250812-chapter-08` and `gm-assist.md` said `# Chapter 8`, but the bible's chapter 8 was a different session entirely and this one was **chapter 10**. Grep the bible for the session's distinctive beats and confirm the hit before using it:
+
+```bash
+grep -ric "<npc>|<location>|<distinctive item>" docs/chapters/*.md | grep -v ':0$'
+```
+
+Two cautions. It is downstream prose, so it is corroboration, not the tape — a fact it agrees with the recap on is still a VTT question if it matters. And when a fix makes the recap diverge from the bible (a registry-canonical spelling the bible doesn't use), that divergence is a `carry_forward` item for the GM, not licence to edit `docs/chapters/`.
 
 Hold the resolved prep list in the conversation. **Discover once, reuse at every stage** — that is the one thing this skill legitimately does differently from N independent `/consistency-check` runs.
 
@@ -89,6 +100,12 @@ Prefer `*.retranscribed.cleaned.vtt` for wording questions and a speaker-labelle
 **Check for prior `*.sources.yaml` manifests in the session dir and read them.** They record what was already fixed, what the GM ruled, and what is still `OPEN` in `carry_forward`. Treat their claims as hypotheses, not settled facts — re-verify any your findings touch.
 
 Tell the user which stages were found and what will be checked. Some sessions may be partial. Run the check on whatever exists; don't try to generate missing artifacts (that's the pipeline's job, not this skill's).
+
+**Do this inventory FIRST, before config, before prep discovery, and tell the user the shape of the run before spending anything on it.** A session that has only `gm-assist.md` — no `session-summary.md`, no scene extractions, no narration — is not a staged run at all; it is one `/consistency-check` with extra ceremony, and the user should get to decide whether that is what they want. Phandalin ch08 (2026-09-03) was exactly this: the pipeline had never been run, so Stage 2 — the load-bearing stage, the entire reason to prefer this skill over a one-shot — had nothing to check.
+
+**A stage that did not run did not pass, and the final summary must say so in those words.** The failure mode is a closing summary reading "Stages 0-3 complete, 13 issues, all resolved," which is true of every stage that ran and dangerously false about the three that didn't. Write `Stages 1-3: NOT RUN — no artifacts exist` and put it in the manifest as its own `carry_forward` item with `status: OPEN`, naming Stage 2 specifically. Then recommend the pipeline run and a re-invocation, rather than implying the session has been cleared.
+
+When only Stage 0 exists, offer the choice explicitly rather than defaulting: run Stage 0 alone; run Stage 0 plus a hand VTT sweep of whatever attribution is most at risk; or stop and run the pipeline first.
 
 ## Report format (mandatory at every stage)
 
@@ -158,6 +175,24 @@ Run the full `/consistency-check` workflow against `$SESSION/gm-assist.md`, pass
 
 Same flow. **Also pass `gm-assist.md` as context**: `session-summary.md` is an `enhance_summary` output built from it plus the VTT, so every difference between them is *something the enhancement pass added* — exactly the material under test. `/consistency-check` step 3 calls this the single highest-value context file for this document class.
 
+**That context file is also this stage's dominant false-positive source, so grep the target before believing any finding.** The two documents are near-paraphrases, and the check routinely quotes gm-assist prose while naming a `session-summary.md` section as the **Location**. `/consistency-check` step 5 carries the test — run `grep -nF` for a fragment of every finding's quoted text against the target, first, before any other adjudication. A miss means the finding does not apply to this document; applying it would re-introduce into the recap an error the enhancement pass had already removed. Expect a cluster of these and read them as evidence the enhancement pass worked, not as noise.
+
+
+**Run `sd_verify_quotes` FIRST, before the check and before any hand adjudication.** It is deterministic, calls no model, needs no backend, costs nothing, and the pipeline diagram puts it at exactly this gate. Skipping it means hand-checking a sample of quotes when an exhaustive pass was free:
+
+```bash
+python -m session_doc.sd_verify_quotes \
+  --vtt <the VTT the artifact was generated from> \
+  --summary "$SESSION"/session-summary.md \
+  --out "$SESSION"/quote_report_stage1.md --report-only
+```
+
+Use `--report-only` until the GM has ruled — without it the tool writes `<!-- cg:unverified -->` markers into the artifact. The `--vtt` must be the *same* transcript the artifact was generated from; a different one reports edits nobody made.
+
+**Read a 100% result narrowly — the tool names its own two blind spots, and they are where the interesting defects live.** It checks only `> "…"` blockquotes, not inline `"…"` in prose; and it answers *were these words said*, **not** *did this person say them*. On Phandalin ch08 it returned 27/27 verified while the same document carried an invented "Santorini" (inline prose) and the upstream recap carried a quote attributed to the wrong player. It is a complement to VTT adjudication, never a substitute — and `near`, not just `unverified`, is the verdict to skim, because `near` means traceable but *edited*.
+
+What it does buy that hand-checking never does is exhaustiveness. It is also the cleanest evidence available that an enhancement pass is quote-faithful: on ch08 the pass added 26 blockquotes to gm-assist's 1, and every one was verbatim — which localises the remaining error surface to prose, attribution and numbers.
+
 The **enhancement-pass failure modes** in `/consistency-check` step 4.7 apply in full here, and none are catchable from grounding docs — verify each against the tape:
 
 - Invented precise dice values (grep the VTT for the literal number; timestamp-only hits mean invented)
@@ -210,6 +245,8 @@ It fails closed on: a missing, duplicated, out-of-order, nested, empty or unknow
 **Read and count the grouped report yourself.** It is `# Grouped Consistency Report`, then one `## D01 — <path>` section per scene in the order you passed them, then `## Cross-document findings`; a clean scene is the literal word `CLEAN`. The single-document habit of `grep -c "^### "` returns 0 here — count `**Location**` within each `## D` section instead, and reconcile the per-scene totals against the banner before building the severity table. Grouped mode is at least stricter about the `**Location:**` variant that makes single-document runs report a false zero: there, format drift is a protocol failure that stops the run rather than a scene quietly reported clean.
 
 **The cross-scene section is new information, not a summary.** It carries contradictions *between* scenes — an NPC in two places, an item changing hands twice, a chronology that only breaks when the scenes are read together — which N independent per-scene runs structurally cannot produce. Adjudicate it like any other finding, and hold onto the rule the grouped prompt is given: peer targets are not evidence for each other. Two scenes agreeing on a name does not make the name right, and neither the model nor you should pick a winner by frequency.
+
+**Run `sd_verify_quotes --scene-extractions <dir>` before the grouped check here as well** — same flags, same `--report-only` discipline. At Stage 2 it also applies the extraction contract's refusal rules (R1/R3), which the Stage 1 shape cannot produce: R1 fires when a span's `## Scene summary` and `## Verbatim moments` copies disagree and *neither* is verbatim, R3 when a span marked verbatim carries an editorial insertion. A refusal is a stronger signal than an unverified quote — it is the pipeline declining to decide — so read the `## Refused` section before the findings table.
 
 This stage exists because **the scene extractions contain the verbatim quotes the narrator reads literally**. Fixes applied only at the session-summary layer get silently undone the next time the narrator runs.
 

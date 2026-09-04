@@ -1,6 +1,6 @@
 ---
 name: scene-extract
-description: Run scene_extract over a session VTT when the party's PCs are voiced by one or more people — build the voicing map, fix the party.md format gate, pick an attribution strategy at a human checkpoint, run with a sane output ceiling, then verify the output and hand back a speaker-attribution review queue. Invoke as /scene-extract [session-dir].
+description: Run scene_extract over a session VTT when the party's PCs are voiced by one or more people — survey the transcript's real speaker labels, build the voicing map, check every label resolves through players.yaml, pick an attribution strategy at a human checkpoint, run with a sane output ceiling, then verify the output and hand back a speaker-attribution review queue. Invoke as /scene-extract [session-dir].
 tools: Bash, Read, Edit, AskUserQuestion
 ---
 
@@ -27,11 +27,22 @@ Sanity-check the scene count yourself — `parse_gmassist_scenes` (`campaignlib/
 
 ### 2. Read the VTT's actual speaker labels — do not assume
 
+**Match the label permissively — everything up to the colon — or you will miss one.**
+
 ```bash
-grep -oP '^[A-Za-z0-9 ._'"'"'-]+(?=:)' <vtt> | sort | uniq -c | sort -rn | head -20
+grep -oP '^[^:]{1,40}(?=: )' <vtt> | sort | uniq -c | sort -rn | head -20
 ```
 
-This is the authoritative list of display names. Zoom emits whatever the person's account name was — often `First Last`, sometimes a bare first name, and it can differ between people in the same recording.
+Zoom emits whatever the person's account name was, and people put *anything* in that field: a fantasy handle, a nickname in parentheses, an emoji, a company suffix. A character-class pattern like `[A-Za-z0-9 ._'-]+` silently drops every label containing a character it forgot. One run used exactly that class against a VTT holding `Kostadis Roussos` (611 cues) and `Filavandrel (Fil)` (363) — the parentheses failed the class, the second speaker vanished from the survey, and the session was misdiagnosed as the single-mic no-attribution case. A diarization run followed from that.
+
+Two cheap guards, both worth the seconds:
+
+```bash
+grep -c ':' <vtt>                      # labelled cues; compare to your survey's total
+sed -n '1,12p' <vtt>                   # LOOK at it
+```
+
+If the survey's counts do not sum to the labelled-cue count, a label is missing from your list. And read the first few cues with your own eyes before concluding anything about attribution — a survey is evidence, not proof.
 
 ### 3. Build the voicing map (the core step)
 
@@ -49,52 +60,42 @@ State the map back to the user before proceeding. A typical answer is lopsided:
 
 That shape — two speakers, five voiced characters — is the case this skill exists for.
 
-### 4. Gate: does party.md actually parse?
+### 4. Gate: is every display name in `players.yaml`?
 
-`extract_player_character_map` (`campaignlib/npc.py:161`) accepts exactly two shapes:
+**The speaker map no longer comes from `party.md`.** It is built by
+`campaignlib.players_config.speaker_map(players, party)` from two config files:
 
-```markdown
-**Halfling Rogue, Level 2, Player: Nikhil Reddy**          <- anchored ^\*\*...\*\*$, NO list bullet
-- **Class/Level:** Rogue 2 | **Player:** Nikhil Reddy      <- searched, bullet is fine
-```
+- `config/players.yaml` — one entry per *person*, with `display_names` (every label a recording might carry), `plays` (their characters) and `gm: true` for whoever runs the game.
+- `config/party.yaml` — the character roster the `plays` entries resolve against.
 
-Anything else yields an empty map. The common failure is a hand-written draft line like
-`- **Halfling Rogue, Level 2 — Player Nikhil Reddy **` — bullet-prefixed *and* missing the colon after `Player`. It misses both patterns.
+`party.md` is still passed as `--party`, but only as prose context; the map does not come from it. The old `extract_player_character_map` / `--gm-player` path is gone.
 
-Verify before running, never after:
+Two rules fall out of `speaker_map`'s two-pass build, and both matter:
 
-```bash
-python -c "
-from campaignlib.npc import extract_player_character_map
-from pathlib import Path
-print(extract_player_character_map(Path('docs/party.md').read_text()))"
-```
+1. A player's display names map to the first of their `plays` **that the roster actually has**. A binding to a character `party.yaml` lacks contributes *nothing* rather than inventing a label.
+2. Game masters are applied **last and overwrite**, so a person who both runs the game and voices sidekicks gets `GM` on every line and their characters' names on none (FR-021a). This is deliberate — a transcript label records *who spoke*, not in what capacity — and it is the source of the sidekick review queue in step 9. It is not a bug to work around.
 
-An empty `{}` prints only a **warning**, not an error — the run continues and fails later at the pre-flight. Fix `party.md` to the pipe form (it is the more forgiving pattern) and re-check.
+**The failure mode is a display name nobody recorded.** `display_names` is a literal list with no aliasing beyond what you write in it, so a player whose Zoom handle is a fantasy name (`Filavandrel (Fil)`) rather than their own goes entirely unrewritten while everything looks fine. Fix it in `players.yaml`; never hand-rewrite the VTT.
 
-Note the parser auto-adds first-name aliases: `Nikhil Reddy` also registers `Nikhil`, so a VTT label of `Nikhil:` still maps. Sidekicks with no single owner should have **no** `**Player:**` line — that is correct, not an omission.
-
-### 5. Gate: `--gm-player` must match the VTT prefix exactly
-
-`normalize_vtt_speakers` (`campaignlib/npc.py:251`) matches with `line.startswith(f"{key}:")`. There is **no** first-name aliasing on this flag, unlike the party map.
-
-If the VTT says `Kostadis Roussos:`, then `--gm-player Kostadis` rewrites **zero** lines. Always pass the full display name from step 2, quoted.
-
-Dry-run both gates together before spending anything:
+### 5. Gate: dry-run the map before spending anything
 
 ```bash
 python -c "
-from campaignlib.npc import extract_player_character_map, normalize_vtt_speakers
+from campaignlib.players_config import load_players_config, speaker_map
+from campaignlib.party_config import load_party_config
+from campaignlib.npc import normalize_vtt_speakers
 from pathlib import Path
-m = extract_player_character_map(Path('docs/party.md').read_text())
-vtt = Path('<vtt>').read_text()
-out = normalize_vtt_speakers(vtt, m, '<GM display name>').splitlines()
-print('map:', m)
+sm = speaker_map(load_players_config(Path('config/players.yaml')),
+                 load_party_config(Path('config/party.yaml')))
+out = normalize_vtt_speakers(Path('<vtt>').read_text(), sm).splitlines()
+print('speaker_map:', sm)
 print('GM lines:', sum(1 for l in out if l.startswith('GM:')))
-print('unrewritten:', sum(1 for l in out if l.startswith(('<GM display name>','<player display name>'))))"
+print('UNREWRITTEN:', sum(1 for l in out if l.startswith(tuple(<every display name from step 2>))))"
 ```
 
-`unrewritten` must be 0. If it isn't, a display name is wrong — fix it rather than reaching for `--allow-speaker-mismatch`.
+`normalize_vtt_speakers` now takes `(vtt_text, speaker_map)` — the three-argument form with a separate `gm_player` is gone, and so is the flag that fed it.
+
+`UNREWRITTEN` must be 0. If it isn't, a label from step 2 is missing from `players.yaml` — add it there and re-check, rather than reaching for `--allow-speaker-mismatch`.
 
 ### 6. Human checkpoint: choose the attribution strategy
 
@@ -103,7 +104,7 @@ print('unrewritten:', sum(1 for l in out if l.startswith(('<GM display name>','<
 Present the two real options with their failure modes, via AskUserQuestion:
 
 - **Rewrite, review after** — labels resolve to `GM` and the primary PCs. Correct for GM narration, NPC voices, and each player's own PC, which is the bulk of any transcript. Voiced-sidekick lines land on the wrong speaker and *must* be caught downstream.
-- **No rewrite, assign by hand** — drop `--party`/`--gm-player`, pass `--allow-speaker-mismatch`. Nothing is silently wrong; every quote needs a human ruling, and GM narration loses its `GM` label too.
+- **No rewrite, assign by hand** — drop `--party`/`--party-config`/`--players-config`, pass `--allow-speaker-mismatch`. Nothing is silently wrong; every quote needs a human ruling, and GM narration loses its `GM` label too.
 
 Recommend the first for tables where the GM narrates sidekick actions in third person most of the time (the usual case), but say plainly that it creates reviewable debt. Record the choice.
 
@@ -115,7 +116,8 @@ Recommend the first for tables where the GM narrates sidekick actions in third p
   --output-dir <session-dir>/scene_extractions \
   --backend claude-code \
   --party docs/party.md \
-  --gm-player "<full display name>" \
+  --party-config config/party.yaml \
+  --players-config config/players.yaml \
   --max-tokens 32000 \
   --force
 ```
@@ -200,6 +202,6 @@ Present the queue with `file:line` for each entry. Then stop:
 ## Notes
 
 - Working directory drifts after any `cd` in a Bash call. Use absolute paths in the verification scripts — a glob that silently matches nothing reports `TOTAL: 0`, which reads exactly like "no problems found."
-- If the pre-flight aborts with `speaker-mismatch`, the message blames a wrong/stale VTT. That is one cause; a name-format mismatch in `--gm-player` or `party.md` is at least as likely. Check steps 4 and 5 before concluding the recording is wrong.
+- If the pre-flight aborts with `speaker-mismatch`, the message blames a wrong/stale VTT. That is one cause; a display name missing from `players.yaml` is at least as likely, and a label your step-2 survey never saw is likelier still. Check steps 2, 4 and 5 before concluding the recording is wrong.
 - Scale `--max-tokens` up, never down. The cost is on the subscription and a re-run is cheap; silent content loss is not recoverable without noticing it first.
 - Related: `/gmassist-precheck` runs before this (validates the scene structure), `/session-summary-consistency` and `/voice-smooth` run after.
