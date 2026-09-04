@@ -1,6 +1,6 @@
 ---
 name: speaker-attribution
-description: Put speaker names on a session recording when the transcripts carry no usable attribution — the single-room case, where everyone shared one microphone so Zoom labelled all 866 cues with the host's name, and the editor's diarization produced six anonymous clusters for three people. Verifies first that each transcript actually belongs to the recording it sits next to (filenames lie), diarizes on the DGX Spark, cross-validates two independent clusterings against each other, and mines the transcript for direct address to name the clusters. Invoke as /speaker-attribution [session-dir].
+description: Put trustworthy speaker names on a session recording — either when the transcripts carry no usable attribution (the single-room case, where everyone shared one microphone so Zoom labelled all 866 cues with the host's name and the editor produced six anonymous clusters for three people), or when they carry real names that are a voice-profile GUESS and are known to be wrong, where the job is auditing an existing name→voice mapping instead of naming anonymous ones. Verifies first that each transcript actually belongs to the recording it sits next to (filenames lie) and that a second 'transcript' is not just a derivative of the first, diarizes on the DGX Spark, cross-validates two independent clusterings against each other, mines the transcript for direct address, and hands back a ranked disagreement queue rather than a silent relabel. Invoke as /speaker-attribution [session-dir].
 ---
 
 # speaker-attribution
@@ -24,9 +24,14 @@ everyone was in one room on one mic, so there are no names anywhere.
 audio + transcripts
   → [THIS SKILL] provenance → diarize → cross-validate → name clusters
       → /vtt-spell-pass      name garbles
+      → /session-doc-run     relabels to display names + the players.yaml override
       → /scene-extract       inherits real speakers instead of a review queue
       → /session-summary-consistency → /voice-smooth → narration
 ```
+
+The labels this skill writes are **short player names**; the session_doc
+pipeline's pre-flight wants `config/players.yaml` display names. `/session-doc-run`
+does that mapping — do not rename the file this skill produces.
 
 Run it **before** `/scene-extract`. After means re-extracting.
 
@@ -71,7 +76,49 @@ a third directory** — a whole-day file under Aug 10.
 Endpoint check to confirm a match by hand: the two files should open and close
 on the same words within a second or two.
 
-## Phase 1 — choose the text layer
+**If it flags EVERY transcript in a directory, that is the vouching rule, not a
+finding.** Vouching is per group and it is done by *filename stem*: some member
+of the group has to be named after the `.m4a`. A session whose transcripts are
+all named something else — `Chapter 08.md`, `descript_transcript.md`,
+`session_<date>_transcript.vtt` beside `GMT<date>_Recording.m4a` — has nothing
+to vouch it, so all four get the warning at once. One stray transcript among
+matched pairs is the real signal; a clean sweep of the whole directory is the
+absence of a stem match. Settle it by endpoints and move on:
+
+| | ends |
+|---|---|
+| `GMT20250813-040058_Recording.m4a` (mvhd) | 01:38:02.8 |
+| `session_20250812_transcript.vtt` last cue | 01:38:01.1 |
+| `descript_transcript.md` last word | 01:38:02 |
+
+No `ffprobe` on the box is not a blocker — parse the MP4 `mvhd` atom directly
+(`timescale` and `duration` are two big-endian u32 at a fixed offset).
+
+### A high-scoring "transcript" may be a DERIVATIVE, not a second reading
+
+4-gram grouping tells you two files describe the same audio. It does **not**
+tell you whether one was *derived from* the other, and a derivative is worth
+nothing as a second opinion — it carries the parent's every attribution error,
+by construction. On Phandalin ch08 a directory held what looked like three
+transcripts; `Chapter 08.cleaned.md` and `Chapter 08.md` were
+`descript_transcript.md` with the inline per-word timestamps stripped and a
+spell-pass applied. Two real text layers, not four.
+
+The tell is not the overlap score — the timestamp stream depresses it
+misleadingly (69% against its own parent, *lower* than the 98% between the two
+siblings). The tell is the **speaker tallies being byte-identical**:
+
+```bash
+for f in *.md; do echo "== $f"; grep -oP '^\**\K[a-z]+(?=:)' "$f" | sort | uniq -c | sort -rn; done
+```
+
+```
+kostadis 466   dave 466   wade 323   gary 202      <- all three files, exactly
+```
+
+Independent ASR passes never agree on turn counts. If they match to the digit,
+one is a copy. Say so before Phase 3, because "cross-validated against a second
+clustering" is a false claim when the second clustering is the first one.
 
 Three transcripts of one recording are normal, and the best text is rarely the
 one named after the session:
@@ -93,6 +140,18 @@ speaker count — so it is the only tool here that can tell you a voice exists
 that you did not budget for. But its `.txt` export matches no input format in
 this skill: labels are not bolded, and a per-word timestamp stream runs through
 the body. Convert once, up front:
+
+**Normalise bolded labels first, or the parse is silently wrong.** `HEAD` is
+`^\[(\d\d:\d\d:\d\d)\]\s*([^:\n]{1,40}):\s*(.*)$`, so a Markdown-styled export
+(`[00:04:01] **dave:** Hello`) parses the label as `**dave` and leaves `**` on
+the front of the text. It does not error. Strip the bold into the plain form the
+script documents:
+
+```bash
+sed -E 's/^\[([0-9:]{8})\] \*\*([^:]+):\*\*/[\1] \2:/' descript_transcript.md > descript_plain.txt
+```
+
+Then check the label inventory it reports matches what you expect before going on.
 
 ```bash
 python ~/.claude/skills/speaker-attribution/descript_turns.py \
@@ -248,6 +307,50 @@ about, and let Descript find the ones you do not.
 
 ## Phase 4 — name the clusters. Human checkpoint, not automation.
 
+### When the second clustering ALREADY has names
+
+Descript names clusters once someone builds voice profiles, and the export then
+reads `**kostadis:**`, `**dave:**` — real people, not `Speaker 3`. **This does
+not mean the work is done, and it does not mean the names are right.** Voice
+profiles are a recognition guess, and the GM will usually tell you so. The job
+changes shape: you are no longer *naming anonymous clusters*, you are
+**auditing an existing name→voice mapping** against an independent one.
+
+Everything upstream is unchanged — still diarize, still cross-validate. What
+changes is how you read the confusion matrix. A clean bijection at the usual
+agreement band means the *mapping* is right and the residual is boundary noise:
+
+```
+SPEAKER_00 ↔ kostadis  84%      33.5% speech  vs  35.8% words
+SPEAKER_03 ↔ dave      82%      27.7%             27.8%
+SPEAKER_01 ↔ wade      91%      27.7%             24.5%
+SPEAKER_02 ↔ gary      81%      11.1%             11.9%
+```
+
+Two things make this trustworthy rather than circular: the shares agree as well
+as the labels do, and each row has exactly one dominant column. A row that
+splits across two columns is a merged or swapped profile — a different and much
+worse problem than a few misplaced turns.
+
+Then produce the thing the GM actually needs, which is **not** a relabelled VTT:
+a **disagreement queue**, ranked by words at stake. Take each named utterance,
+compute the diarization's dominant speaker over its span, and list the ones that
+disagree above a coverage floor:
+
+```
+202 turns disagree at >=75% coverage (of 1457 turns, 586 words = 4.7%)
+   dave     -> wade      99      kostadis -> wade      79
+   gary     -> wade      70      dave     -> kostadis  61
+```
+
+Report the **directional bias** — 248 of those words leaked *into* one speaker —
+because a lopsided table means a profile is over-claiming, which is actionable,
+whereas a symmetric one is just turn boundaries. Then ask the GM whether to walk
+it or accept a stated error rate. "4.7%, largest single disagreement 16 words"
+is a decision they can make in one breath; 202 raw findings is not.
+
+### When nobody is named
+
 Diarization gives you three voices, never three names. The names are in the
 text, because people address each other:
 
@@ -327,6 +430,29 @@ is **evidence from silence**, so it works precisely when vocative scoring cannot
 Check `git log` or the directory for the sidecar during Phase 0 — it is small,
 easy to miss, and it is often the only real name in the whole session.
 
+### Probe with the names people actually say
+
+`name_clusters.py` scores who *answers*, so it can only score names that get
+spoken. At a table that is usually **PC names, not real ones** — on Phandalin
+ch08 only one of four real first names was ever used vocatively, while every PC
+name was. Run both passes and weight the evidence by how much there is:
+
+```bash
+python .../name_clusters.py <stem>.speakers.vtt --name Dave --name Wade --name Gary --name Kostadis
+python .../name_clusters.py <stem>.speakers.vtt --name Vukradin --name Soma --name Valphine --name Brewbarry
+```
+
+Expect the real-name pass to be nearly empty and the PC pass to carry the run.
+Expect, too, that a player's **own** PC comes back `SPLIT` — nobody addresses
+him by it, so every hit is third-person narration. That is the tool working.
+
+**Two PC names resolving to the same cluster is a finding, not a collision.** It
+means one person ran both, and it is *stronger* evidence than the campaign's own
+notes: `Brewbarry` (47%) and `Valphine` (38%) both landing on SPEAKER_02 proved
+Gary covered an absent player, from the audio, with no reference to `CLAUDE.md`
+— which elsewhere records a session where the **GM** did the covering instead.
+Derive it per session; never carry it forward.
+
 **Label with players, not characters,** and say so in the header. Characters
 move between players; the voice does not. Where a player's real name collides
 with their PC's, label with the nickname and note why.
@@ -367,6 +493,13 @@ Every one of these was hit for real.
   `pipeline.to("cuda")` *after* it has decoded the audio, so the log looks like
   it got further than it did. Descript via `descript_turns.py --turns` is the
   no-GPU fallback.
+  **But try CUDA anyway before falling back.** On 2026-09-03 spark2 had ~11-12 GB
+  free beside a 100,809 MiB vLLM and `community-1` ran fine — 98 min of audio in
+  4 min wall clock, no OOM. The failure is fast and cheap (it happens at model
+  load, right after the decode), so the cost of trying is a couple of minutes
+  against 30-60+ min for CPU or losing the second clustering entirely. Launch it
+  detached, redirect to a file, and grep the log for `running on cuda`; only fall
+  back once it actually throws.
 - **Do not infer PC ownership from a speaker label.** Verify per scene when the
   party splits; `party.md` listing every PC under one D&D Beyond account is a
   strong tell that characters float.

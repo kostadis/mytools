@@ -159,7 +159,13 @@ Execute and wait. Confirm the `Context : N document(s)` count and the absence of
 
 **Two script quirks that look like results but aren't:**
 
-- **The `No issues found.` banner is an unreliable false negative.** `check_consistency.py` counts occurrences of the literal string `**Location**`, but models routinely emit `**Location:**` (colon *inside* the bold), so `issue_count` comes back 0 while the body lists a dozen issues. **Always trust the report body over the banner**, and derive your own count by grepping the saved report for its actual heading pattern (`^### ` works well).
+- **The `No issues found.` banner is an unreliable false negative.** `check_consistency.py` counts occurrences of the literal string `**Location**`, but models routinely emit `**Location:**` (colon *inside* the bold), so `issue_count` comes back 0 while the body lists a dozen issues. **Always trust the report body over the banner**, and derive your own count by grepping the saved report for its actual heading pattern. **`^### ` is a guess, not the pattern** — the model also numbers findings as bold runs under `##` section headers (`**1. Moesko is a half-orc, not an orc**`), where `grep -c "^### "` returns a confident **0** on a report carrying twelve findings. That is the same false zero as the banner, arrived at a second way. Look at the file before counting it:
+
+```bash
+grep -n "^## \|^### \|^\*\*[0-9]" <report>    # find the shape, THEN count it
+```
+
+Count whichever form is actually present, and say in the manifest which one you counted.
 - **`--backend claude-code` can hit its output ceiling and auto-continue**, printing a loud `WARNING: claude -p hit its output ceiling mid-generation and AUTO-CONTINUED across N assistant turns` with a possible seam at the boundary. When you see it, **inspect the saved report before trusting it**: `grep -n "^### "` for contiguous, correctly-numbered sections and check the tail is a complete entry, not a mid-sentence cut. Report what you found. If the report *is* damaged, re-run with a raised `CLAUDE_CODE_MAX_OUTPUT_TOKENS`.
 
 ### 4.5. Record the sources used — REQUIRED (YAML manifest)
@@ -240,11 +246,24 @@ For each instance ask *which PC's abilities are being described* — class featu
 
 The same logic applies to a *class or race epithet* attached to the garble. `"Sema, the tortle barbarian"` names no one in the party — it welds the tortle **druid** to the goliath **barbarian**. When a recap gives you a race+class pair, check the pair against `party.md`; a mismatched pair is the loudest possible signal that two characters have been merged.
 
+**The same discriminator rescues a garbled WEAPON or object, not just a garbled name — and this is where a well-intentioned deletion does real damage.** A recap detail can look invented because the noun that would confirm it was misheard, differently, by every transcript you have. On Phandalin ch08 the recap said *"Brewbarry delivers a final, lethal blow with his halberd to one of the harpies."* The tape's only `halberd` was the GM joking that Brewbarry threw hand axes *"like you were using halberds"* — so the first ruling was that the kill was fabricated, and the fix was to delete the bullet. Widening the grep overturned it. At the kill, the two transcripts disagree on the noun and agree on nothing else:
+
+```
+whisper : "So can I hit from here with my helmet?"
+descript: "so can I hit from here with my- ... club?"
+next line: "Without raging?"          <- rage is the barbarian
+then    : "That is a kill."
+```
+
+**Two independent ASR passes garbling the same word into two different nouns is positive evidence that a real word was spoken there** — and the actor is settled by the class feature in the surrounding lines, exactly as for a garbled name. Never rule an event fabricated on the absence of a *noun*; rule on the absence of the *action*. Deleting a true event is the most expensive edit in this skill, because nothing downstream will ever restore it.
+
+The corollary bit here too: the real defect ran the *opposite* way from the report's framing. The Scenes section was right and the **Summary** was wrong — it omitted the kill and called the character "missing everything in sight." When an internal contradiction involves an event one section has and another lacks, check whether the fix is an addition before assuming it is a deletion.
+
 **Pronouns travel with this class of error and `party.md` is authoritative for them.** Fix them in the same edit as the name, not as a follow-up pass — a corrected name with the wrong pronouns reads as a *new* error to the next reviewer. In the run above the recap had "Brewbarry swung **her** halberd" and used he/him for Soma throughout.
 
 #### The absent-player failure mode — why attribution collapses in the first place
 
-When a player is missing, someone else runs their PC — commonly the GM, sometimes another player (campaign `CLAUDE.md` files often record who covers whom). **That PC's actions then come out of the wrong mouth for the entire session, and the summarizer has no clean speaker signal for them.** Every attribution error in one run traced back to exactly this: Stéphane was absent, the GM ran Brewbarry, and Brewbarry's rage, his kill and his near-death all got parked on a character the summarizer invented.
+When a player is missing, someone else runs their PC — commonly the GM, sometimes another player (campaign `CLAUDE.md` files often record who covers whom). **Both have now been observed in the same campaign**: on one Phandalin tape the GM ran Brewbarry despite `CLAUDE.md` naming Gary, and on ch08 it really was Gary — established acoustically, where `Brewbarry` and `Valphine` vocatives resolved to a single diarization cluster. The doc is a hypothesis every session; the tape is the answer. If the session has been through `/speaker-attribution`, its manifest already carries a tape-derived `speaker_map` — read it instead of re-deriving. **That PC's actions then come out of the wrong mouth for the entire session, and the summarizer has no clean speaker signal for them.** Every attribution error in one run traced back to exactly this: Stéphane was absent, the GM ran Brewbarry, and Brewbarry's rage, his kill and his near-death all got parked on a character the summarizer invented.
 
 Detect it early — the speaker roster from step 1 is the cheapest possible check:
 
@@ -286,6 +305,18 @@ Report the issue count (yours, from the body), then show the report. **Triage th
 - **Minor/optional** — mechanical nitpicks, phrasing, normalization.
 
 Failure modes to check *the report itself* for before recommending anything:
+
+**Grep the target for the quoted text before you believe any finding — the check attributes context text to the document under audit.** Everything in `--context` is in the model's window, and it does not reliably keep straight which file a sentence came from. The signature is a finding whose **Location** names a section of the target but whose quoted "current text" is not in the target at all; it is in a context file. This costs nothing to test and it is the cheapest filter in this step, so run it first, on every finding, before any other adjudication:
+
+```bash
+grep -nF "<distinctive fragment of the quoted text>" <target-document>
+```
+
+No hit in the target ⇒ the finding is a false positive *against this document*, whatever its merits elsewhere. Do not edit the target to satisfy it. Then grep the context files for the same fragment to find where the text actually lives, and decide separately whether that document needs anything — often it does not, because the pass under audit already fixed it.
+
+This bites hardest at **Stage 1 of `/staged-consistency`**, where passing `gm-assist.md` as context is mandatory and the two documents are near-paraphrases of each other, so a fragment "looks like" the target. One Stage 1 run had **three of seven** actionable findings in this class, all quoting gm-assist prose: a fearlessness line and an overstated promise that the enhancement pass had already dropped or hedged correctly, plus the framing half of a fourth. Every one would have been an edit re-introducing an error into a document that had it right.
+
+Note the direction this runs. A finding in this class is weak evidence that **the enhancement pass did its job** — it fixed something and the checker is quoting the unfixed upstream. Read a cluster of them as a good sign about the target, and say so when presenting, so the rejections don't read as the check being broken.
 
 **A table ruling is not a rules error — and this is the single largest false-positive class.** The check reads the campaign's stated character levels and flags anything the rules don't permit at that level: Action Surge at Level 1, a third 1st-level slot, `Cure Wounds` rolled as `2d8+2`. But the recap records *what the GM did*, and the GM outranks the PHB at their own table. In one run **7 of 12 findings** were this class, and every one was wrong — the GM had ruled the sidekicks to 2nd level (making two of the findings moot outright) and had knowingly misread `Cure Wounds` at the table and wanted it recorded as played.
 

@@ -112,7 +112,22 @@ Detect or ask:
    missing, proceed without player-name detection and say so.
 4. **State file** — `<campaign>/notes/.scrub_state.json`. Created on first
    run via `state.py`.
-5. **Protect files (optional)** — flat one-per-line files of terms that
+5. **Register policy** — `<campaign>/notes/scrub_register_policy.md`. The
+   campaign's accumulated rulings on what is **not** residue. **Read it before
+   walking candidates in Phase 2**, and append to it in Phase 6. If it does not
+   exist, say so, and create it at the end of the run from whatever the GM ruled.
+
+   This file is load-bearing, and it is the only durable home these rulings
+   have. None of its content is scannable — `find_residue.py` matches numbers,
+   fixed table-speak phrases and player names, and cannot match vocabulary at
+   all by design — so nothing else stops the next run re-proposing every ruling
+   in it, one instance at a time. It is campaign-scoped (resolved relative to
+   the campaign dir, not the CWD) and version-controlled, which is exactly what
+   project memory is not: see Phase 6.
+
+   It is a cleanup-pass reference, not campaign canon. Like the rest of
+   `notes/`, do not mine it into the mempalace.
+6. **Protect files (optional)** — flat one-per-line files of terms that
    should never be flagged even if a pattern would otherwise match (e.g. a
    mundane phrase that happens to contain a number-and-feet pattern, like "a
    two-foot box"). Pass every confirmed path via `--protect` (repeatable).
@@ -133,6 +148,32 @@ worth of candidates in one breath.
 
 Check `state.py show` first — skip any file already listed under
 `processed` unless the GM explicitly asks to redo it.
+
+**Read `<campaign>/notes/scrub_register_policy.md` before anything else.** It
+carries the campaign's standing rulings on what is not residue, and every one of
+them is invisible to the scanner. Reading it first is what stops you re-asking a
+question the GM has already answered — and re-asking is not a harmless cost: the
+GM has to re-adjudicate a settled call, and a tired yes on a ruling they
+previously said no to silently reverses campaign policy.
+
+**When the target is a directory, read every scene and take a cross-scene
+census BEFORE entering the per-file loop.** Running gags and imported
+vocabulary span scenes, and a per-file loop meets them one fragment at a time
+— you cannot rule on a span in scene 01 without knowing it recurs eleven more
+times in scenes 03 and 06. After the Phase 1b reading pass, grep each
+distinctive token across the whole directory:
+
+```bash
+for t in <distinctive tokens from the reading pass>; do
+  printf '\n### %s\n' "$t"; grep -nHi -- "$t" <dir>/session_doc_scene_*.md
+done
+```
+
+Resolve every cross-file cluster as its own decision first. In ch50 this
+surfaced `Bimbo` at 12 spans across 3 scenes, `fair trade` at 7 across 3, and
+`cosplay` at 3 across 2 — and scene 01 could not have been settled without the
+`Bimbo` ruling. The per-file loop then handles only what is genuinely local to
+one scene.
 
 ### Phase 1 — collapse known rules, then scan (deterministic, no LLM)
 
@@ -181,13 +222,19 @@ phrase so it never resurfaces).
 
 **A zero-candidate scan is not a clean scene.** The patterns cover the shapes
 someone thought to write down, and real transcripts keep producing shapes
-they don't cover. Read every target scene yourself before reporting a result,
+they don't cover. Measured on Phandalin ch02: the scanner returned **6**
+candidates across 8 scenes — one genuine, two `foot_count` false positives on
+mundane description, three the same passive-perception cluster — while the
+reading pass found **11 more** accepted changes. Two whole classes were
+invisible to it (anachronism, and character-level / sheet talk), as was a
+literal `[inaudible]` transcript artifact sitting in finished narration. Read every target scene yourself before reporting a result,
 and surface what you find as manual candidates that go through Phase 2 like
 any other. Say plainly which findings came from the scanner and which from
 reading — "0 candidates" and "no residue" are different statements.
 
-Confirmed blind spots, all observed live in Phandalin ch48 scene 06 while the
-scanner reported zero:
+Confirmed blind spots, all observed live while the scanner reported zero — the
+first five in Phandalin ch48 scene 06, the last four across ch50, where eight
+scenes yielded exactly one scanner candidate and it was a false positive:
 
 | Shape | Example that slipped | Why |
 |---|---|---|
@@ -196,6 +243,10 @@ scanner reported zero:
 | bare *number + skill* | `"13 investigations"`, `"20 insights"`, `"27 persuasion"` | no pattern pairs a number with a skill name |
 | character level | `"we're level 7?"` | no level pattern exists |
 | skill-as-noun roll | `"the Insight roll"`, `"double rolls"` | `dice_verb` needs a pronoun immediately before the verb |
+| numberless roll instruction | `"Roll for initiative."` | every `initiative` pattern requires a digit; the bare imperative matches nothing |
+| bare skill-as-noun | `"That's not an intimidation."` | no pattern treats a skill name as a countable noun |
+| metagame tooling | `"Let's add it to the quest tracker!"` | a game-log tool is neither a number nor a fixed table-speak phrase |
+| clock-notation drift | `"at 3 AM"` in a doc that says `the third hour after midnight` four other times | not residue at all — an internal-consistency defect that only reading catches |
 
 Do **not** silently widen `find_residue.py` to cover these mid-run. Adding
 patterns creates new false positives and is a scope decision — propose it to
@@ -233,6 +284,40 @@ Phase 2 with its tape line; never strip one on your own judgement. Note also
 that these sit inside verbatim dialogue almost by definition, so removing one
 is an **authorial rewrite of what a player said**, not a correction — say so
 when you propose it, and record it that way.
+
+**Settle the campaign's register policy ONCE, before you walk the candidates.**
+The anachronism class is where a campaign's genre licence actually lives, and
+it is usually a *single policy* rather than N independent rulings. Make it your
+first anachronism question, cite the specific spans you found as evidence, and
+let the answer collapse the rest of the queue.
+
+Phandalin ch50 is the cautionary case. Eight scenes carried ~20 modern-idiom
+spans; several rounds went by proposing `fair trade`, `supply chain`,
+`marketing`, `revenue share` and `image and likeness` as residue before the GM
+explained that **Vukradin importing real-world economics into Faerûn is the
+campaign's central conceit** — KP's planar-efficiency project being the same
+premise from the other side. Every one of those was canon by design. The
+questions were not wrong to ask; asking them one at a time was.
+
+The line that emerged there is a good default to *propose* — never to assume:
+
+| Class | Example | Usual ruling |
+|---|---|---|
+| **named real-world entity** | `Bud Light`, `Hollywood`, `Kickstarter`, `Blue Oyster Cult`, `Houston` | scrub — a brand, place, platform, band or person has no in-world referent |
+| **imported concept** | `fair trade`, `supply chain`, `revenue share`, `perpetuity` | ask — this may be the campaign's premise rather than its residue |
+| **self-covering reference** | `Yoko`, answered two lines later by `I do not know who Yoko is.` | usually keep — the narration has already absorbed it in-voice |
+
+A campaign may also rule a specific word in-canon outright (ch50: *"cosplaying
+is an in canon word"*), or rule an entire class in — Phandalin ch02 settled that
+metagame *adventuring* vocabulary (quest, quest marker, alignment, action
+economy, a caster naming prepared spells) is canon, and that the class to police
+is **modern technology**: "MMO" was scrubbed while "the quest marker" in the very
+same line was kept.
+
+**Write those down in `<campaign>/notes/scrub_register_policy.md`**, as well as
+in the run manifest. They are invisible to every future scan, because the scanner
+cannot match vocabulary at all, so nothing but that file stops the next run
+re-proposing them.
 
 **When the GM does say yes, replace rather than delete — the replacement is a
 lore opportunity.** A neutralised line is a dead line; an in-world equivalent
@@ -298,6 +383,13 @@ Rules for the device:
 - **It is a spice, not a default.** Propose it per instance alongside keep
   and replace; one note per session doc is apparatus, a note per joke is
   clutter.
+- **Place notes at the end of the beat, not inside it.** A scholarly note
+  dropped mid-exchange kills comic pacing. ch50 put two notes in one scene and
+  it read fine, because both glossed the same rapid naming sequence and both
+  landed *after* it closed — capping the sequence rather than interrupting it,
+  with the scene's own transition line (`Names are finished. Work starts.`)
+  following them. Two notes explaining two different beats, scattered, would
+  not have worked.
 
 ### Phase 2 — the GM reviews, one candidate at a time, ALWAYS
 
@@ -307,6 +399,15 @@ thing so I'll batch-approve them" — each candidate is either genuinely
 identical repeated text (handle via a durable `rule`, Phase 2b) or gets its
 own question.
 
+**First, drop every candidate the campaign has already ruled in canon.**
+`<campaign>/notes/scrub_register_policy.md` is the list. Filtering against it is
+not an optimisation — a settled ruling re-asked is a settled ruling put back at
+risk, and a distracted yes on the fifth re-ask quietly reverses campaign policy
+without anyone deciding to. Nothing in that file reaches the GM as a proposal
+again unless the GM reopens it.
+
+The rulings still standing after that filter are the ones that get questions.
+
 **Coupled candidates get one decision, labelled as such.** Two spans whose
 rewrites must agree — a question and its answer (`"You got a 9 perception?"` /
 `"Looks like I had a 9 perception."`) — are one decision presenting both
@@ -314,6 +415,14 @@ halves, because approving them separately invites an exchange that no longer
 echoes. State in the question that it covers both lines. This is the only
 exception to one-candidate-one-question, and it does not extend to spans that
 merely *resemble* each other.
+
+**A cluster that spans scenes is still one decision.** The coupling rule is
+about meaning, not proximity: a running gag repeated across a directory
+(ch50's `Bimbo`, 12 spans in 3 scenes) has to be ruled once and applied
+consistently, or the assembled doc contradicts itself scene to scene. Give the
+span count and the scenes it touches, and say plainly which single ruling you
+are asking for. This still does not license batching *unlike* spans that
+merely share a category.
 
 **Check whether a candidate is another's setup or payoff before proposing.**
 Scene 04 of ch48 had `"we're level 7?"` and, two lines later, the joke
@@ -519,6 +628,52 @@ uniform. `collect_scene_files` in `assemble.py` prefers `.scrubbed.md` per
 scene and falls back to the raw `.md`, so a mixed directory assembles
 correctly; a scene is "processed" because it was reviewed, not because it
 produced a file.
+
+### Phase 6 — write the run manifest
+
+The anachronism section tells you to record divergences "in the run's
+manifest". This is that file. Write it once per run, next to the scenes, at
+`<narration-dir>/scrub_manifest_<session>.md`. It exists because two kinds of
+damage happen silently months later:
+
+1. **A fidelity check flags your approved rewrites as transcription errors**
+   and someone dutifully "fixes" them back to the tape.
+2. **A consistency pass reads your invented nouns as fabrications** — or
+   worse, a registry pass records a *mishearing* as an alias of the real
+   entity, fusing an insult into an NPC's identity.
+
+Four required sections:
+
+- **GM-authored divergences** — a table of scene / line / tape text /
+  scrubbed text / class, one row per accepted change. This is the whole point
+  of the file; make it greppable.
+- **New canon (`provenance: on_the_fly`)** — every proper noun, item, proverb
+  or institution the run invented, marked as authored in narration rather than
+  played or prepped. State explicitly where a coinage is **not** an alias
+  (ch50: `"Bimbo"` is dockside slang, the entity is still **Bimble Nackle**).
+- **GM rulings on what is NOT residue** — the register policy, any word ruled
+  in-canon, and the kept references. Without this the next run re-proposes all
+  of them, because none of it is scannable.
+- **Notes** — scenes reviewed with no `.scrubbed.md` and why, any scanner
+  false positive deliberately not persisted to `ignore`, and any tooling gap
+  hit during the run (e.g. a roster line `--party-md` could not parse).
+
+**Then append the durable, campaign-level rulings to
+`<campaign>/notes/scrub_register_policy.md`.** Every class the GM ruled in
+canon, every word ruled in-canon outright, every kept reference, and every
+coinage authored during the run. The manifest serves the next consistency pass;
+the policy file serves the next `/scrub`.
+
+**Do NOT rely on project memory for this.** Claude Code's project memory is keyed
+to the **working directory**, not to the campaign: a run started in
+`<campaign>/summaries/20250514-chapter-02-new/` and a run started in
+`<campaign>/` or in `<campaign>/summaries/20260901/` get three different memory
+directories, and none of them can see the others. A ruling written to memory
+during one chapter's scrub is therefore already unreachable from the next
+chapter's scrub — not merely at risk of being lost. Earlier versions of this
+skill claimed "memory serves the next `/scrub`"; that was wrong, and it is why
+the policy file exists. Writing a *cross-campaign* lesson to memory as well is
+fine; the campaign's rulings must land in the policy file regardless.
 
 ## Important conventions
 
