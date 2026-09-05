@@ -67,7 +67,7 @@ touched, and `apply_cut.py` refuses to write to any path not inside a
 
 The VTT is likewise untouched, always.
 
-## The classifier — three categories, not two
+## The classifier — four categories, and only three have a default
 
 The mistake is asking "is this quote mechanical?" That framing produces
 endless per-line argument. Ask instead **who is being spoken to**:
@@ -77,11 +77,20 @@ endless per-line argument. Ask instead **who is being spoken to**:
 | **In-character speech** | Hamun: *"if I wanted my secrets to be safe, I would kill you"* | **KEEP** |
 | **GM read-aloud / scene description** | *"the faint smell of smoke hangs in the air as you ascend a rugged ridge"* | **KEEP** — this is boxed text, and the narrator uses it |
 | **GM-to-player-as-player** | *"roll a Perception"*, *"I'll move you back here"*, *"we'll continue next week"* | **CUT** |
+| **Player-to-table reaction** | *"HOLY DICE!"*, *"WHAT THE F!"*, *"Average of bloody two, bro!"* | **ASK** |
 
 The third category is the target, and it is wider than dice. It includes
 virtual-tabletop operation (pointers, tokens, map highlighting), quest-log
 mechanics, rules Q&A, session scheduling and wall-clock time, and out-of-character
 exposition delivered as a lecture to the player rather than to the character.
+
+**The fourth row has no default, and do not invent one.** A player swearing at
+their own dice is table speech by the classifier — they are talking to the room,
+not in character. It is also, sometimes, the best texture in the session. On toee
+ch34 Sequoia's twenty-line meltdown over rolling 36 on twelve dice runs straight
+into *"Sequoia curses at Frostbrand. You had one job."* — his intelligent sword.
+The GM ruled KEEP. Bring these as their own question with the run quoted in full;
+never fold them into a larger cut, and never keep them silently either.
 
 **Cutting category-2 exposition is sometimes right too.** On ch10 scene 06 the
 GM's world-building about Neverwinter's frontier was cut along with everything
@@ -98,7 +107,9 @@ instead of quoting a lecture. That is a GM decision, not a default.
 3. **`plan.md`** — needed for Phase 4's re-narration.
 4. **`notes/scrub_register_policy.md`** — shared with `/scrub`. Read it first;
    it carries the campaign's standing rulings, and re-asking a settled question
-   puts a settled ruling back at risk.
+   puts a settled ruling back at risk. It is also where a **dead triage signal**
+   is recorded (see Phase 1) — that is per-campaign structure, discoverable only
+   by having been bitten once, and nothing else on disk states it.
 
 ## Phase 1 — scan (deterministic, no LLM)
 
@@ -109,7 +120,8 @@ python ~/.claude/skills/no-mech/scan_quotes.py \
 ```
 
 Per scene it reports the quote count, the speaker-label distribution, how many
-quotes trip a mechanical pattern, and a triage line.
+quotes trip a mechanical pattern, how many are in-character by stage direction,
+who is voiced in those directions, a triage line, and any warnings.
 
 **`--party-config` is close to mandatory.** The triage asks whether any speaker
 label names someone *outside the party*. A PC label is worthless as evidence —
@@ -121,6 +133,38 @@ every scene triages as roleplay and the signal is dead.
 evidence of roleplay. Its absence is *not* evidence of the reverse: ch10 scene 03
 is a full two-hander in which all 55 of Daran Edermath's lines are labelled `GM`,
 because the extractor never broke the NPC out.
+
+**And the label signal can be dead for an entire campaign, by convention.** ch10
+scene 03 was one scene; some extractors do it *always*, keeping `GM` on every NPC
+line and naming who is being voiced in the italic stage direction instead:
+
+```
+**GM** — *as Varek Solain, asking why they came*
+> "What's the problem?"
+```
+
+On toee ch34 that convention made **all six scenes** — three of them substantially
+roleplay — triage as `REVIEW CLOSELY — no NPC speaker labels`. The signal was not
+weak, it was structurally absent, and it will be absent on every future run of that
+campaign.
+
+So `scan_quotes.py` reports a **second signal**: `voiced:` counts the `*as <name>,*`
+directions and triages on them when the labels give nothing. Read both lines. When
+the second signal is the one carrying the campaign, **record that in
+`notes/scrub_register_policy.md`** so the next run does not rediscover it.
+
+**A party character in the `voiced:` line is a red alert, not a curiosity.** It means
+the GM is also a player, and the script says so:
+
+```
+WARNING: Calmer is a PARTY character voiced under a non-PC label (5 quotes)
+         — the GM is also a player. NEVER cut on the 'GM' label alone.
+```
+
+toee's GM plays Calmer. Since `config/players.yaml` gained `gm: true`, every one of
+his lines carries a `**GM**` label — so a cut keyed on that label would have deleted
+a PC's entire performance from the session. Exclude every `*as <PC>,*` block from
+the cut by construction.
 
 **The pattern flags are a floor, and a low one.** On ch10 scene 06 they matched
 **3 of 47** quotes in a scene where all 47 were mechanical — 6% recall. Never
@@ -138,6 +182,32 @@ per scene, which of three shapes it has:
   are the scene's whole point.)
 - **Roleplay** — leave it, or cut the handful of stray `roll a check` lines.
   (ch10 scenes 03, 04, 05, 07.)
+
+**For the middle shape, build the cut by exclusion, not by keyword.** This is the
+difference between a cut that works and one that leaves a mess. The instinct is to
+list the mechanical lines and cut those; on toee ch34 scene 03 that produced a
+129-line span list that was still wrong in both directions at once — it left
+behind every table line carrying no keyword:
+
+> `"Me?"` · `"Yes, you are up."` · `"Pistol?"` · `"Did you?"` · `"How much?"` ·
+> `"14."` · `"17."` · `"Called—"`
+
+while *keeping* a full Stunning Strike rules lecture, because the words "focus
+point" and "stunned condition" read as in-world vocabulary to a pattern.
+
+What worked was the inverse. **Find the block's boundaries, read it once, and list
+what SURVIVES**; cut everything else in the range:
+
+```
+combat block = lines 227-966   (initiative call -> last creature retreats)
+KEEP inside it = 37 hand-read beats
+cut = every quote in 227-966 not in KEEP
+```
+
+232 of 317 quotes went, and what came back reads as a scene rather than a
+transcript. The keep-list is also the thing you show the GM in Phase 2 — it is far
+easier to rule on "here are the 37 beats I propose saving" than on a wall of line
+numbers.
 
 Two shapes that look mechanical and are not:
 
@@ -190,9 +260,44 @@ lines initially hid it.
 **An orphan is a NEW proposal, not a free fix.** Take it back to the GM as its
 own decision rather than folding it in silently.
 
+**Pass the path with its `*_smoothed/` segment intact.** The guard reads the path
+string, so `cd`-ing into the directory and passing a bare filename gets you
+`REFUSED: ... is not inside a *_smoothed/ directory` on a file that plainly is.
+Run from the session dir and pass `scene_extractions_smoothed/NN_*.md`.
+
 Always `--dry-run` first.
 
+### Two residue classes the applier cannot see
+
+`apply_cut.py` catches the orphaned *acknowledgement* — a bare `"Yes."` whose
+question you cut. It cannot catch either of these, and only reading finds them:
+
+**Orphan rubble.** Table lines that carry no keyword and were never in your cut
+list, now sitting with nothing around them. This is the failure mode that argues
+for the exclusion-built cut above; if you built the cut by keyword, sweep the
+survivors for it before you write.
+
+**Residue inside a KEPT line.** toee ch34 scene 03 survives with
+`"24? You immediately recognize this as the equipment of the Greater Temple."` —
+read-aloud text that still opens with a roll result. **This is not yours to fix
+here.** Trimming it edits a quote you are keeping, which is a word change, and
+word changes belong to `/voice-smooth`'s ruled-card process, not to a cut skill.
+Report it and carry it forward.
+
+Both are **new proposals**, exactly like orphaned acknowledgements: take them back
+to the GM rather than folding them in. A line that is obviously in a class the GM
+already ruled on is still a line they did not see — and generalising a ruling past
+its stated scope is itself a judgment call.
+
 ## Phase 4 — re-narrate, then check the seams
+
+**If you ran this at the recommended point, this whole phase is a no-op — and that
+is the success case, not a gap.** No `plan.md` and no `narration/` means nothing has
+been narrated yet, so there is nothing to regenerate and no seams to walk. Say so
+plainly in the manifest rather than leaving a reader to wonder whether the phase was
+skipped. toee ch34 ran this way: six scenes cut, zero re-narration, zero seam risk.
+
+Everything below applies only when narration already exists.
 
 ```bash
 sd_narrate <recap>.md --plan <session>/plan.md \
@@ -255,6 +360,15 @@ Two files, both shared with `/scrub`:
   mark obvious hits, not to find them all. Read.
 - **PC speaker labels prove nothing.** Always pass `--party-config`.
 - **A missing NPC label does not mean a scene is mechanical** (ch10 scene 03).
+- **In some campaigns the label signal is dead by convention, permanently.** Read
+  the `voiced:` line, and write the finding into `scrub_register_policy.md`.
+- **The GM may also be a player.** Then their PC's every line wears a `**GM**`
+  label, and a label-keyed cut deletes a character. Heed the script's WARNING.
+- **A keyword-built cut list leaves orphan rubble** the applier's orphan check
+  cannot see. Build the middle shape by exclusion and read the survivors.
+- **A roll result can survive inside a line you are keeping.** That is a word
+  change and belongs to `/voice-smooth`, not here.
+- **Pass the path with `*_smoothed/` in it**, or the guard refuses a valid file.
 - **Cutting a question orphans its answer**, and a speaker label in between hides
   the adjacency.
 - **`--scene` is plan indices, not file numbers.**
