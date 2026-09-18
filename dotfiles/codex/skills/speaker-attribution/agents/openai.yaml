@@ -1,0 +1,4 @@
+interface:
+  display_name: "Speaker Attribution"
+  short_description: "Review and restore session speaker attribution"
+  default_prompt: "Use $speaker-attribution to review this session’s speaker evidence and apply the player labels I approve."
