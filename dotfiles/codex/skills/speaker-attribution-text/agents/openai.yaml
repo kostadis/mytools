@@ -1,0 +1,4 @@
+interface:
+  display_name: "Text Speaker Attribution"
+  short_description: "Infer transcript speakers from context and references"
+  default_prompt: "Use $speaker-attribution-text to infer who spoke from the transcript, summary, and labeled reference sessions."
