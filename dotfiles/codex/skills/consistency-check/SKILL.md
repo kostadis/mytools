@@ -97,14 +97,31 @@ locations include:
 - location or arc files directly under `notes/`
 
 Categorize candidates:
-- `HIGH`: exact dated/session/location prep, handouts used in this session, NPC
-  trackers, VTT glossary files.
+- `HIGH`: exact dated/session/location prep, handouts used in this session, and
+  NPC trackers.
 - `MEDIUM`: arc background, evidence maps, planning, prior session recap.
 - `LOW`: adjacent but off-session.
 
-Ask the user to choose the prep set. Recommend a focused set:
-the exact prep doc, relevant handouts, VTT glossary files, and `docs/party.md`.
-If they answer `none`, continue but record that the run was prep-less.
+Measure every candidate with Python character counts so the unit matches
+CampaignGenerator's `len(text)` telemetry:
+
+```bash
+python3 -c 'from pathlib import Path; import sys; [(lambda p: print("{:>9}  {}".format(len(p.read_text(encoding="utf-8")), p)))(Path(x)) for x in sys.argv[1:]]' <candidate files...>
+```
+
+Before asking, show `Tier`, `File`, `Characters`, and `Why relevant`, plus a
+subtotal for each HIGH/MEDIUM/LOW category. Count optional prep sources only;
+keep the campaign-standard sources from step 4 outside tier subtotals and
+`prep_selection`. For every proposed minimal, focused, broad, or custom choice,
+list the exact de-duplicated prep files and prep-only total. For a custom choice,
+calculate and show the exact selection's total before accepting it. Cost informs
+the human decision; never select or discard a file automatically because of its
+size.
+
+Ask the user to choose the prep set. Recommend a focused set: the exact prep
+doc, relevant handouts, and NPC tracker, in addition to the standard sources.
+Show that set's exact prep file list and prep-only total before asking. If they
+answer `none`, continue but record that the run was prep-less.
 
 ### 4. Build Context
 
@@ -160,6 +177,12 @@ consistency_check:
   backend: "<backend>"
   issues_found: <count from report body>
   session_prep_used: true
+  prep_selection:
+    tier: focused                    # focused | minimal | broad | custom | none
+    total_chars: 145429              # prep/handout files only; no standard context
+    files:
+      - { path: notes/<prep>.md, chars: 65916 }
+      - { path: notes/sessions/handouts/<...>.md, chars: 79513 }
   entity_registry_used: true
   session_date: "<session date>"
   sources:

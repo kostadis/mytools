@@ -117,15 +117,31 @@ ls notes/ notes/session_prep/ notes/prep/ notes/sessions/ notes/sessions/handout
 ```
 
 Then **categorize** candidates by relevance to *this* session (use the entities/beats you got from reading the document in step 1):
-- **HIGH** — the dated/named/location prep doc for this exact session; in-world handouts (letters, petitions, papers) tied to its beats; the player NPC/name tracker; **the VTT glossary files** (see step 3).
+- **HIGH** — the dated/named/location prep doc for this exact session; in-world handouts (letters, petitions, papers) tied to its beats; the player NPC/name tracker.
 - **MEDIUM** — arc background: locations, evidence maps, runsheets, day-by-day prep, superseded cuts; `docs/planning.md`, `docs/recent_events.md`, the previous session's recap.
 - **LOW** — adjacent but off-session (other locations, party/companion handouts).
 
+Measure every candidate before presenting tiers. Use Python character counts so
+the unit matches CampaignGenerator's `len(text)` telemetry; do not substitute
+bytes or token estimates:
+
+```bash
+python3 -c 'from pathlib import Path; import sys; [(lambda p: print("{:>9}  {}".format(len(p.read_text(encoding="utf-8")), p)))(Path(x)) for x in sys.argv[1:]]' <candidate files...>
+```
+
+Show a table with `Tier`, `File`, `Characters`, and `Why relevant`, followed by
+a subtotal for each HIGH/MEDIUM/LOW category. These are the optional prep
+sources only; keep the campaign-standard sources from step 3 outside the tier
+subtotals and `prep_selection`. Then show the exact de-duplicated prep file list
+and prep-only total for every proposed choice. Character cost is decision
+context, not a relevance score: never drop a file automatically due to size,
+and never promote an off-session file merely because it is small.
+
 The campaign-standard sources (step 3) are **always** included, so this choice is only about the *session prep*. Present a **tiered choice** and let the user pick (recommend the focused set — too many context files dilute/overload the check with off-page material):
-- **Focused prep set (recommended):** the session's prep doc + the VTT glossaries + the relevant in-world handouts + the NPC tracker, on top of the standard sources (~5–6 files).
-- **Minimal:** the session prep doc + `docs/party.md`.
-- **Broad:** focused + runsheets/evidence-maps/planning/previous-session recap.
-- **Let me pick:** enumerate the full tagged list.
+- **Focused prep set (recommended):** the session's prep doc + the relevant in-world handouts + the NPC tracker, on top of the standard sources. Show its prep files and exact prep-only total.
+- **Minimal:** the session prep doc only. Show its file and exact prep-only total.
+- **Broad:** focused + runsheets/evidence-maps/planning/previous-session recap. Show its files and exact total.
+- **Let me pick:** enumerate the full tagged list with per-file counts. Calculate and show the exact selection's de-duplicated total before accepting it.
 
 Ask explicitly — e.g. via AskUserQuestion — and **do not proceed without an explicit answer.** The "I'll just check against `docs/party.md`" default once produced a report that flagged imaginary rules issues while missing real transcription errors — that failure mode is exactly what this step prevents. If the user says `none`, proceed but **note in the final report** that the check ran without prep and may miss transcription errors.
 
@@ -185,6 +201,12 @@ consistency_check:
   backend: "claude-code"
   issues_found: <int — counted from the report body, NOT the banner>
   session_prep_used: true            # false if the user said `none` OR none exists
+  prep_selection:
+    tier: focused                    # focused | minimal | broad | custom | none
+    total_chars: 145429              # prep/handout files only; no standard context
+    files:
+      - { path: notes/<prep>.md, chars: 65916 }
+      - { path: notes/sessions/handouts/<...>.md, chars: 79513 }
   entity_registry_used: true         # false if the campaign has no registry
   session_date: "<the session's own date, not today's>"
   temporal_gap: |                    # OMIT unless this is a backfilled chapter

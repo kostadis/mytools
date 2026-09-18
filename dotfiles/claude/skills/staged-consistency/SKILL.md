@@ -50,6 +50,11 @@ If the user passed a path argument, use it. Otherwise:
 
 Run that step's **full** sweep, not a two-directory `ls`. It is date-bounded (an old session may predate the entire prep corpus), it covers three different real-world prep layouts including flat location-named files (`notes/redbrand_hideout.md` *is* prep), and it ends in a tiered HIGH/MEDIUM/LOW choice presented via `AskUserQuestion`.
 
+Let `/consistency-check` own the per-file character counts, tier subtotals, and
+choice totals. Do not recreate or shorten that calculation here. Hold the
+approved `prep_selection`—tier, exact files, per-file counts, and prep-only
+`total_chars`—and reuse it unchanged at every stage.
+
 **Ask explicitly and do not proceed without an explicit answer.** If the user says `none` — or prep genuinely does not exist for this session — run anyway and record `session_prep_used: false` with the reason in every stage's manifest.
 
 **On a backfilled chapter with no prep, look for the campaign's own bible split before concluding there is no source.** `/consistency-check` step 2.5 date-bounds the prep hunt and will correctly tell you a 2025 session predates a prep corpus that starts in 2026. That is a true answer about `notes/`, and it is not the whole answer: a campaign with `docs/chapters/` has a per-chapter narrative rendering of that very session, and for a played chapter it is often the only session-specific document that exists. On Phandalin ch08 it settled the run's single biggest finding — two independent POV sections both contradicting the recap on who landed a killing blow.
@@ -290,6 +295,7 @@ Run this for every applied fix. If grep finds the bad pattern in a file that was
 Per `/consistency-check` steps 4.5 and 6, every check gets a provenance record. Staging changes only the granularity:
 
 - **One manifest per stage**, in the session dir, named for the stage: `consistency_stage0_gmassist.sources.yaml`, `consistency_stage1_summary.sources.yaml`, `consistency_stage2_scenes.sources.yaml`, `consistency_stage3_narration.sources.yaml`.
+- Copy the approved `prep_selection` block into every stage manifest unchanged. Stage-specific inputs such as the Stage 0 source recap remain ordinary context and do not alter the prep-only total.
 - Stage 2 gets **one manifest for the whole stage**, not one per scene — with a `scenes:` list recording per-scene issue counts and rulings. N per-scene manifests are unreadable and nobody will consult them.
 - **A grouped Stage 2 run manifests the batch, not N checks.** Record `grouped: true`, a `documents_checked:` list in the exact order passed to the script, and the telemetry line the script printed (`model_calls`, `shared_context_chars`, `target_chars`, `repeated_context_chars_avoided`). That is what lets a later reader tell one grouped call from N concatenated single ones — a distinction no report body carries. Keep the per-scene `scenes:` counts too, derived from the `## D` sections, and give cross-scene findings their own `cross_scene:` list since they belong to no single scene.
 - Use the schema from `/consistency-check` 4.5 (sources half) + 6 (ruling half), including `document_class`, `speaker_map`, `vtt_adjudicated`, and `carry_forward` with a `status:` on every entry.
