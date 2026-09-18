@@ -34,6 +34,10 @@ login. Preserve any setup, login, model, timeout, or empty-result failure from
 that command and stop the current stage; do not switch providers or advance on
 partial output.
 
+CampaignGenerator auto-loads `docs/entity_registry.yaml` as authoritative canon,
+including aliases, `distinct`, and `rejected_aliases`. Reuse that automatic
+context at every stage; do not pass the raw registry through `--context`.
+
 ## When to Use
 
 Use this skill when preparing a session document for players, when narration does

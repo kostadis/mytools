@@ -88,7 +88,7 @@ documents:
 
 **Locate the script; don't assume the path.** It has moved — it now lives at `<repo>/session_doc/check_consistency.py`, not the repo root, and the repo may be `~/CampaignGenerator` **or** `~/src/CampaignGenerator`. `ls` before you build the command.
 
-Sanity check after the run: the header should read `Context  : N document(s)` with N = 2 (auto-loaded) + your `--context` count, and there should be **no** `Warning: context file not found` lines.
+Sanity check after the run: the header should read `Context  : N document(s)` with N = 3 (campaign state, world state, and canonical registry) + your `--context` count when a registry exists, or 2 + your count when it does not. There should be **no** `Warning: context file not found` lines.
 
 ### 2.5. Discover + choose session prep — REQUIRED, do not skip
 
@@ -143,9 +143,8 @@ python <repo>/session_doc/check_consistency.py <document> \
 
 - `--backend claude-code` routes generation through the `claude` CLI in headless mode, billing the Pro/Max subscription instead of the metered API — use it by default. The script's own default (`--backend anthropic`) hits the API key, which can fail outright if that key's credit balance is low (seen in practice) even though the subscription is otherwise available and preferred.
 - `--context` takes **multiple files after a single flag** (`nargs="+"`). Do **not** repeat the flag — a later `--context` overwrites the earlier one and silently drops files.
-- **Always include the campaign-standard sources** (none are in the config auto-load):
+- **Always include the campaign-standard sources** that are not auto-loaded:
   - `docs/party.md` — the PCs.
-  - **`docs/entity_registry.yaml`** — the canonical registry of every entity, with its **aliases** and notes. This is the highest-yield source for the most common finding class (misspelled / mis-titled / mis-attributed entity names): the alias lists let the check separate a legitimate alternate name from a transcription error — e.g. `Asha` / `Asha Vandry` are canonical aliases of **Asha Vandree**, whereas `Bookworm` is *not* an alias of **Bookwyrm**, so it's a real error. Feed the **`.yaml`** for alias-level checking. Its generated human-readable companion `docs/entity_inventory.md` (canonical names + notes, no aliases) is a lighter alternative only when the context budget is tight. If the campaign has no registry yet, skip it (it's an enhancement, not a hard dependency).
   - **`notes/vtt_transcription_corrections.md`** — the campaign's wrong→right proper-noun glossary, the single source of truth for ASR garbles. It is *literally a table of the errors you are hunting*; include it whenever it exists.
   - **`notes/vtt_known_additions.md`** — names confirmed real during a `/vtt-spell-pass` but not yet promoted to the registry. Catches the newest names, which are exactly the ones the registry cannot vouch for yet.
   - **The SOURCE recap, when the target is an enhanced recap** (step 1). If you are checking an `enhance_summary` output, pass the `gm-assist.md` / `session_<date>_<slug>.md` it was built from. This is the single highest-value context file for that document class: it is already human-reviewed, so every difference between it and the enhanced version is *something the enhancement pass added*, which is exactly the material under test. Without it the check has no way to distinguish "detail recovered from the VTT" from "detail invented." Offer it as its own tier option ("Focused + source recap") rather than burying it.
@@ -196,12 +195,12 @@ consistency_check:
     <speaker> = <character>, derived from tape (not assumed from campaign docs).
     Absent players and who actually ran their PC.
   sources:
-    auto_loaded:                     # from config _DEFAULT_CONFIG_DOCS
+    auto_loaded:
       - { label: campaign_state, path: docs/campaign_state.md }
       - { label: world_state,    path: docs/world_state.md }
+      - { label: entity_registry, path: docs/entity_registry.yaml, role: "canonical entities, aliases, distinct pairs, and rejected aliases" }
     context:                         # every --context file, with why it was chosen
       - { path: docs/party.md,             role: "PCs (campaign-standard)" }
-      - { path: docs/entity_registry.yaml, role: "canonical entity registry + aliases (campaign-standard)" }
       - { path: notes/vtt_transcription_corrections.md, role: "ASR garble glossary (campaign-standard)" }
       - { path: notes/<prep>.md,           role: "session prep (authoritative)" }
       - { path: notes/sessions/handouts/<...>.md,  role: "in-world handout / NPC tracker" }
@@ -420,8 +419,8 @@ Close with: what was applied / partially applied / rejected, **what the VTT caug
 
 ## Notes
 
-- `check_consistency.py` auto-loads `campaign_state` + `world_state` from config; everything else — `party.md`, `entity_registry.yaml`, the VTT glossaries, prep — must be passed via `--context` (step 3 makes them standard).
-- **`docs/entity_registry.yaml` is the canonical entity tracker** — every entity with its aliases and notes, generated alongside `docs/entity_inventory.md`. Because it encodes aliases, it is the best source for the highest-frequency finding class (name/title/attribution errors); include it on every run when it exists. It is also the **arbiter for rejecting findings**: if a name the check flags has no registry entry, the "correct" form it proposes may be nothing more than inherited module phrasing. Same registry the `entity-triage` and `vtt-spell-pass` skills build on. Its authority is real but bounded — see the next three bullets on what must never be written into it, and on `registry check`'s known false positives.
+- `check_consistency.py` auto-loads `campaign_state` + `world_state` from config and renders `docs/entity_registry.yaml` as authoritative canon. Pass `party.md`, the VTT glossaries, prep, and any source recap via `--context`; do **not** pass the registry again.
+- **`docs/entity_registry.yaml` is the canonical entity tracker** — every entity with its aliases and notes, plus `distinct` and `rejected_aliases` identity guards, generated alongside `docs/entity_inventory.md`. `check_consistency.py` renders it automatically when it exists. Because it encodes aliases, it is the best source for the highest-frequency finding class (name/title/attribution errors). It is also the **arbiter for rejecting findings**: if a name the check flags has no registry entry, the "correct" form it proposes may be nothing more than inherited module phrasing. Same registry the `entity-triage` and `vtt-spell-pass` skills build on. Its authority is real but bounded — see the next three bullets on what must never be written into it, and on `registry check`'s known false positives.
 - **"The registry has the wrong name" is usually "the registry has no name."** When a bad name reaches the grounding docs, check for *absence* before assuming a wrong entry — `grep -ciE "<name>|<variants>" docs/entity_registry.yaml`, and beware substring false hits (searching `wick` matches *Tumblewick Rollins* and *Pip Thistlewick*). In one run neither of the session's two new NPCs was registered at all across 374 entities; both were still staged in `notes/vtt_known_additions.md` as unpromoted. **That silence is the root cause** — with no entry to contradict it, a summarizer-invented spelling propagated into three grounding docs unchallenged. The fix is promotion (`/entity-triage`), not correction, and it belongs in `carry_forward`.
 - **Garbles are not aliases. The registry holds *identity*; the glossary holds *transcription repair*.** Aliases are legitimate alternate ways to refer to the entity — titles, short forms, in-world epithets (`Professor Orryn Voss`, `Sildar`, `the Spider`). ASR mishearings (`Oren Voss`, `Clarg`, `Glastaff`, `Dessa`) are **errors**, and they belong in `notes/vtt_transcription_corrections.md`, never in `entity_registry.yaml`. Writing a garble into the registry as an alias tells every downstream consumer — `check_consistency.py` above all — that the garble is a *correct* form, which suppresses true findings. If a GM asks you to "fix the registry" for a misspelling, apply this test to each variant before writing anything.
 - **`registry check`'s grouping drift is a known false-positive source — do not action it blindly** (CampaignGenerator#216). It compares the registry against `docs/ensemble/aliases.json`, which is *generated from the garble glossary* and therefore contains mishearings by design. Every garble whose canonical entity is registered appears as `aliases.json groups ['Klarg', 'Clarg'] but registry resolves them to ['Klarg', 'MISSING']`. The only way to silence it is `registry alias` — which writes the garble into the registry and does exactly the damage described above. Treat that section as informational; the genuinely useful signal is the `MISSING`-on-*both*-sides case, which means the entity isn't registered at all.
