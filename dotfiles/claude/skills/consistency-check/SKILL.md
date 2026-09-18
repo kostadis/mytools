@@ -199,15 +199,21 @@ consistency_check:
       - { label: campaign_state, path: docs/campaign_state.md }
       - { label: world_state,    path: docs/world_state.md }
       - { label: entity_registry, path: docs/entity_registry.yaml, role: "canonical entities, aliases, distinct pairs, and rejected aliases" }
-    context:                         # every --context file, with why it was chosen
-      - { path: docs/party.md,             role: "PCs (campaign-standard)" }
-      - { path: notes/vtt_transcription_corrections.md, role: "ASR garble glossary (campaign-standard)" }
-      - { path: notes/<prep>.md,           role: "session prep (authoritative)" }
-      - { path: notes/sessions/handouts/<...>.md,  role: "in-world handout / NPC tracker" }
+    context:                         # every file actually passed via --context
+      - { path: docs/party.md, resolved_path: /absolute/campaign/docs/party.md, role: "PCs (campaign-standard)" }
+      - { path: notes/vtt_transcription_corrections.md, resolved_path: /absolute/campaign/notes/vtt_transcription_corrections.md, role: "ASR garble glossary (campaign-standard)" }
+      - { path: notes/<prep>.md, resolved_path: /absolute/campaign/notes/<prep>.md, role: "session prep (authoritative)" }
+      - { path: notes/sessions/handouts/<...>.md, resolved_path: /absolute/campaign/notes/sessions/handouts/<...>.md, role: "in-world handout / NPC tracker" }
   notes: |
     Caveats worth recording — config workaround used, prep was `none`,
     auto-continuation seam checked, session diverged from prep (step 5).
 ```
+
+Resolve every explicit context path with `realpath` after the final CLI list is
+settled. Record that absolute value as `resolved_path`; retain `path` as the
+operator-facing spelling. The manifest's `sources.context` list must match the
+files actually passed to `--context`, in the same order. Do not include a
+missing file or the registry skipped as auto-loaded canon.
 
 ### 4.7. Adjudicate what the docs can't settle — against the VTT
 

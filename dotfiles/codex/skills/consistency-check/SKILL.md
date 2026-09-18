@@ -168,13 +168,19 @@ consistency_check:
       - { label: world_state, path: docs/world_state.md }
       - { label: entity_registry, path: docs/entity_registry.yaml, role: "canonical entities, aliases, distinct pairs, and rejected aliases" }
     context:
-      - { path: docs/party.md, role: "PCs" }
-      - { path: notes/vtt_transcription_corrections.md, role: "ASR glossary" }
-      - { path: notes/<prep>.md, role: "session prep" }
+      - { path: docs/party.md, resolved_path: /absolute/campaign/docs/party.md, role: "PCs" }
+      - { path: notes/vtt_transcription_corrections.md, resolved_path: /absolute/campaign/notes/vtt_transcription_corrections.md, role: "ASR glossary" }
+      - { path: notes/<prep>.md, resolved_path: /absolute/campaign/notes/<prep>.md, role: "session prep" }
   notes: |
     Caveats, config workaround, missing prep, transcript choice, or
     auto-continuation inspection.
 ```
+
+After finalizing the CLI list, resolve every explicit context path with
+`realpath`. Keep the operator-facing spelling in `path` and record the absolute
+value in `resolved_path`. The manifest list must contain exactly the files
+actually passed through `--context`, in the same order. Do not include missing
+files or the registry skipped as auto-loaded canon.
 
 ### 7. Adjudicate Findings
 
