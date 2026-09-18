@@ -110,15 +110,16 @@ If they answer `none`, continue but record that the run was prep-less.
 
 Always include these context files when present:
 - `docs/party.md`
-- `docs/entity_registry.yaml`
 - `notes/vtt_transcription_corrections.md`
 - `notes/vtt_known_additions.md`
 - the selected prep and handout files
 - the source recap when checking an enhanced recap
 
-`check_consistency.py` auto-loads only the configured documents, usually
-`campaign_state` and `world_state`. Everything else must go through one
-`--context` flag followed by all context paths.
+`check_consistency.py` auto-loads the configured `campaign_state` and
+`world_state` documents. It also renders `docs/entity_registry.yaml` as
+authoritative canon, including aliases, `distinct`, and `rejected_aliases`.
+Do not pass the registry again through `--context`. Everything else must go
+through one `--context` flag followed by all context paths.
 
 ### 5. Run the Check
 
@@ -165,9 +166,9 @@ consistency_check:
     auto_loaded:
       - { label: campaign_state, path: docs/campaign_state.md }
       - { label: world_state, path: docs/world_state.md }
+      - { label: entity_registry, path: docs/entity_registry.yaml, role: "canonical entities, aliases, distinct pairs, and rejected aliases" }
     context:
       - { path: docs/party.md, role: "PCs" }
-      - { path: docs/entity_registry.yaml, role: "entity registry and aliases" }
       - { path: notes/vtt_transcription_corrections.md, role: "ASR glossary" }
       - { path: notes/<prep>.md, role: "session prep" }
   notes: |

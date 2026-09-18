@@ -64,12 +64,12 @@ Two cautions. It is downstream prose, so it is corroboration, not the tape — a
 
 Hold the resolved prep list in the conversation. **Discover once, reuse at every stage** — that is the one thing this skill legitimately does differently from N independent `/consistency-check` runs.
 
-#### The campaign-standard context set — passed at EVERY stage
+#### The campaign-standard context set — present at EVERY stage
 
-Per `/consistency-check` step 3, none of these are auto-loaded, and all of them go in a single `--context` flag (`nargs="+"` — a second flag silently overwrites the first):
+Per `/consistency-check` step 3, the registry is auto-loaded as authoritative canon. The remaining sources go in a single `--context` flag (`nargs="+"` — a second flag silently overwrites the first):
 
+- `docs/entity_registry.yaml` — auto-loaded canonical entities, aliases, `distinct`, and `rejected_aliases`; do **not** pass the raw YAML through `--context`.
 - `docs/party.md` — the PCs.
-- `docs/entity_registry.yaml` — canonical entities **with aliases**. Highest-yield source for the most common finding class; it is what separates a legitimate alternate name from a transcription error. Skip only if the campaign has no registry.
 - `notes/vtt_transcription_corrections.md` — the wrong→right ASR glossary. Literally a table of the errors this skill hunts.
 - `notes/vtt_known_additions.md` — names confirmed real but not yet promoted to the registry.
 
@@ -222,7 +222,7 @@ python <repo>/session_doc/check_consistency.py \
   "$SESSION"/scene_extractions_new/<scene-02>.md ... \
   [--config <campaign-config.yaml>] \
   --backend claude-code \
-  --context docs/party.md docs/entity_registry.yaml notes/vtt_transcription_corrections.md notes/vtt_known_additions.md <prep files...> \
+  --context docs/party.md notes/vtt_transcription_corrections.md notes/vtt_known_additions.md <prep files...> \
   --output "$SESSION"/consistency_report_stage2_scenes.md
 ```
 
@@ -321,7 +321,7 @@ Don't commit unless asked.
 - This skill is intentionally heavy. It exists for sessions that matter — chapter releases, sessions you're sharing externally, sessions where you've already produced a bad narration and need to root out why. For a quick sanity check on a single document, use `/consistency-check` directly.
 - **Method lives in `/consistency-check`; sequencing lives here.** When adding a lesson learned about *how to check*, put it there — it will reach this skill through the delegation. Only staging, gating and propagation rules belong in this file. Duplicating method here is how the two drifted apart before.
 - Skipping the prep step (step 0) collapses the value of this skill the same way it collapses `/consistency-check`. The whole reason this pattern beats a one-shot check is that prep is wired into every stage's check. Do not skip.
-- **The standard context set is not optional and not `party.md` alone.** An earlier version of this skill passed only `docs/party.md`, silently dropping `entity_registry.yaml` and the VTT glossaries from every stage — the three sources that carry the name/alias/garble finding class this skill exists to catch.
+- **The standard context set is not optional and not `party.md` alone.** The auto-loaded registry and explicitly passed VTT glossaries carry the name/alias/garble finding class this skill exists to catch. Do not reintroduce the raw registry into `--context`.
 - Different pipeline stages fail differently, and the staging should reflect it: **gm-assist** fails on names (prep + glossaries catch it), **session-summary** is an enhanced recap and fails on numbers, attribution and ordering (only the VTT catches those), **scene extractions** fail on verbatim quote fidelity (only the VTT), **narration** fails on voice drift. Expect a poor report hit-rate on the enhanced and verbatim stages and say so, so it doesn't read as the documents being clean.
 - **Grouped Stage 2 (#362) is a call-shape change, not a review-gate change.** It batches the Stage 2 audit into one model call so shared context is sent once and cross-scene contradictions become visible at all; it removes no human checkpoint. Findings remain advisory, still need VTT adjudication, and still need an explicit ruling before an edit. If a grouped report ever starts auto-applying anything — glossary anchors included — that is the bug, not a shortcut.
 - The Phandalin Ch 41 run (2026-05-17) was the discovery case — 11 prep-canonical issues survived a late-stage one-shot check that returned "no major issues." The same issues were trivially catchable at stage 0 with prep wired in. That's the failure mode this skill exists to prevent.

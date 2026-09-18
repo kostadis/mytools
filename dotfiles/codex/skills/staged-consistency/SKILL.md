@@ -44,6 +44,10 @@ When the two skills differ on method, `consistency-check` wins; this skill
 overrides only the sequencing and stage-level manifest granularity described
 below.
 
+CampaignGenerator auto-loads `docs/entity_registry.yaml` as authoritative canon,
+including aliases, `distinct`, and `rejected_aliases`. Reuse that automatic
+context at every stage; do not pass the raw registry through `--context`.
+
 ## When to Use
 
 Use this skill when preparing a session document for players, when narration does
@@ -142,9 +146,10 @@ Do not edit the chapter to match downstream output; record remaining divergence
 as carry-forward.
 
 Use one `--context` flag containing the complete selected prep set plus every
-standard context file that exists: `docs/party.md`,
-`docs/entity_registry.yaml`, `notes/vtt_transcription_corrections.md`, and
-`notes/vtt_known_additions.md`. Reuse the identical resolved list at each stage.
+standard context file that is not auto-loaded: `docs/party.md`,
+`notes/vtt_transcription_corrections.md`, and `notes/vtt_known_additions.md`.
+Reuse the identical resolved list at each stage; the registry remains present
+through CampaignGenerator's automatic canonical rendering.
 
 ### 3. Stage 0: gm-assist
 
