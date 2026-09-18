@@ -126,7 +126,10 @@ procedure if its relative document paths resolve incorrectly. Locate the
 CampaignGenerator script or installed command instead of assuming a home path.
 
 Before running any stage, locate prep candidates and ask the user to choose the
-prep set. Use the same prep set for every stage.
+prep set. Delegate the character-count table, HIGH/MEDIUM/LOW subtotals, and
+choice totals to the full `consistency-check` procedure. Do not recreate a
+second sizing method here. Use the same approved `prep_selection`—tier, exact
+files, per-file counts, and prep-only `total_chars`—for every stage.
 
 Search the whole `notes/` tree, including:
 - `notes/session_prep/`
@@ -358,6 +361,9 @@ Staging changes its granularity:
   `consistency_stage1_summary.sources.yaml`,
   `consistency_stage2_scenes.sources.yaml`, and
   `consistency_stage3_narration.sources.yaml`.
+- Copy the approved `prep_selection` block into every stage manifest unchanged.
+  Stage-specific inputs such as the Stage 0 source recap are ordinary context
+  and do not change the prep-only total.
 - Stage 2 uses one manifest for the stage. Record a `scenes` list with per-scene
   counts and rulings. For grouped mode also record `grouped: true`, the ordered
   `documents_checked`, CLI telemetry, and a separate `cross_scene` list.
