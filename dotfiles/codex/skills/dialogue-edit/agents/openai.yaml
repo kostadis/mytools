@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dialogue Edit"
+  short_description: "Review dialogue edits without losing player voice"
+  default_prompt: "Use $dialogue-edit to review this narration against its source and voices, then apply only my approved edits."

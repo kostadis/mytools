@@ -1,7 +1,8 @@
 ---
 name: no-mech
-description: Strip table mechanics — die rolls, DCs, virtual-tabletop and quest-log operation, rules Q&A, session scheduling — out of a session's voice-smoothed scene extractions, then re-narrate the affected scenes. Propose→review→apply with a GM checkpoint on every scene, because which quotes are roleplay is a scope decision. Edits ONLY scene_extractions_smoothed/; the verbatim scene_extractions/ and the VTT are never touched. Run before sd_narrate. Sibling of /scrub, which fixes residue that already reached the narration. Invoke as /no-mech [session-dir].
-tools: Read, Bash, Write, Edit, Glob, AskUserQuestion
+description: Strip die rolls, DCs, virtual-tabletop operation, rules Q&A, scheduling, and other table mechanics from a session's voice-smoothed scene extractions before narration. Use when the user asks for /no-mech [session-dir] or wants a GM-reviewed mechanics-removal pass that never edits the verbatim scene extractions or VTT.
+metadata:
+  short-description: Remove table mechanics before narration
 ---
 
 # no-mech — strip table mechanics out of scene extractions
@@ -13,6 +14,23 @@ roll into prose — and then re-narrate the affected scenes.
 Sibling of `/scrub`. Same three honest phases (deterministic scan, human
 checkpoint, deterministic apply) and the same core lesson: **the pattern scan
 is a floor, the reading pass is the load-bearing one.**
+
+This is the Codex port of the Claude skill. Do not edit
+`~/src/mytools/dotfiles/claude/skills/no-mech/` when changing this skill.
+
+## Codex Compatibility
+
+- Ask the GM questions in chat; do not refer to Claude `AskUserQuestion`.
+- For the required per-scene checkpoint, present one scene at a time and wait
+  for the GM's ruling before applying that scene's cut.
+- Use `apply_patch` for manual changes to tracked Markdown. Prefer the bundled
+  deterministic applier for approved quote cuts because it enforces the
+  smoothed-layer invariant and detects stale line numbers.
+- An approved cut authorizes only the stated derived-layer edit. It never
+  authorizes changes to the VTT or `scene_extractions/`.
+- If narration already exists, re-narration is a separate, potentially costly
+  follow-up. Explain the affected scene indices and obtain confirmation before
+  invoking a paid or remote backend.
 
 ## Where this sits
 
@@ -114,7 +132,7 @@ instead of quoting a lecture. That is a GM decision, not a default.
 ## Phase 1 — scan (deterministic, no LLM)
 
 ```bash
-python ~/.claude/skills/no-mech/scan_quotes.py \
+python ~/.codex/skills/no-mech/scan_quotes.py \
   <session>/scene_extractions_smoothed \
   --party-config config/party.yaml
 ```
@@ -239,14 +257,14 @@ the case in a way a percentage cannot.
 
 ```bash
 # all-mechanical scene
-python ~/.claude/skills/no-mech/apply_cut.py \
+python ~/.codex/skills/no-mech/apply_cut.py \
   --file <session>/scene_extractions_smoothed/06_*.md --mode all \
   --note "*Cut in full by GM ruling (DATE): none of this scene's N quotes is
 roleplay — all GM map operation and out-of-character exposition. Narrate from
 the summary bullets. Verbatim record untouched in ../scene_extractions/.*"
 
 # selective
-python ~/.claude/skills/no-mech/apply_cut.py \
+python ~/.codex/skills/no-mech/apply_cut.py \
   --file <session>/scene_extractions_smoothed/08_*.md --mode spans \
   --cut 31 34 37 40 43 --note "*...*" --dry-run
 ```

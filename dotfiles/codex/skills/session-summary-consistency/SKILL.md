@@ -29,10 +29,10 @@ changing this skill.
 - Ask user questions in chat. Do not refer to Claude `AskUserQuestion`.
 - Use `update_plan` for multi-step progress when useful.
 - Use `apply_patch` for manual edits to tracked documents.
-- Codex does not have the Claude Artifact review callback flow. If the user asks
-  for batch review, write a normal Markdown or JSON review queue file in the
-  session directory or present the queue in chat, then ask the user to provide
-  decisions in chat.
+- Batch reviews must produce `<session-dir>/quote_consistency_review.html`, a
+  standalone interactive page built with the shared review-page builder. Markdown
+  and JSON are supporting artifacts, not substitutes for the HTML page.
+- Preserve an already-selected batch mode across turns; do not ask again.
 - Do not apply edits merely because the workflow found likely fixes. User
   approval is the gate.
 
@@ -165,10 +165,10 @@ Include a summary table:
 | Grammar/pronoun | N |
 | Duplicate across scenes | N |
 
-Present the report in chat unless it is too large. For a large report, write it
-to `<session-dir>/quote_consistency_review.md`, summarize counts in chat, and
-ask the user whether to approve all, approve selected item ids, reject all, or
-discuss specific items.
+For batch mode or a report too large for chat, follow Batch Review Queue below
+and link `<session-dir>/quote_consistency_review.html` as the primary deliverable.
+Summarize per-scene counts and category totals in chat. A Markdown report may
+supplement the page. Small interactive reviews may remain in chat.
 
 ### 5. Wait for User Approval
 
@@ -237,10 +237,28 @@ it to the glossary's DO-NOT-CORRECT area instead of the garble table.
 Use this when the report is too large for comfortable chat adjudication or the
 user asks for a batch review artifact.
 
-Create a review queue file such as
-`<session-dir>/quote_consistency_review.json` or
-`<session-dir>/quote_consistency_review.md`. Keep the shell/chat summary
-visible with per-scene counts and category totals.
+Read `../_shared/review-page/CONTRACT.md` relative to this skill directory.
+Create the required standalone `<session-dir>/quote_consistency_review.html`
+with Approve, Reject, Discuss, notes, Copy output, and Save output controls.
+Use the shared builder rather than inventing a separate review UI:
+
+```bash
+REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-page"
+python "$REVIEW_PAGE/build_review.py" \
+  --in <session-dir>/quote_consistency_review_page.json \
+  --out <session-dir>/quote_consistency_review.html
+```
+
+Keep exact edit data in `quote_consistency_review.json`; map the same stable IDs
+into the shared-schema `quote_consistency_review_page.json` fields `id`, `t`,
+`y`, `n`, and `ev`. Show file, line, category, speaker, original, proposed text,
+and evidence on every card, including any associated label edit. Escape all
+transcript text before placing it into trusted HTML fields.
+Use a run-specific `reviewId` and `outputName: quote_consistency_decisions.json`.
+Verify the generated page contains every queued ID and preserves the exact
+proposals. Link the HTML page in the final response; JSON/Markdown alone does
+not complete a batch review. Keep per-scene counts and category totals visible
+in the page or accompanying chat summary.
 
 Use stable ids like `s03-04`: scene number, then the finding number within that
 scene. Include:
@@ -259,7 +277,10 @@ scene. Include:
 }
 ```
 
-Then stop and ask the user to provide decisions in chat. Map decisions this way:
+Then ask the user to paste Copy output or supply the saved decision JSON.
+Validate its reviewId and item IDs against this run before applying decisions.
+Explicit chat approvals supported in Step 5 also remain valid; merely generating
+or opening the page is never approval. Map decisions this way:
 
 | Decision | Action |
 |---|---|

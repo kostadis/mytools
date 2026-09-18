@@ -1,0 +1,4 @@
+interface:
+  display_name: "Voice Critic (Astra)"
+  short_description: "Review narration voices with a batch GM checkpoint"
+  default_prompt: "Use $voice-critic to review the active session's selected narration and prepare a standalone page of grounded voice findings."
