@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Phase 3 — apply confirmed, per-instance scrub decisions.
+"""Phase 4 — apply GM-approved scrub decisions.
 
-Every decision here was individually confirmed by the GM in Phase 2 (see
-SKILL.md). This script performs no judgment of its own: it takes an exact
+Every decision here was explicitly included in the GM-approved batch review
+in Phase 2 (see SKILL.md). This script performs no judgment of its own: it takes an exact
 line number and an exact old->new span, verifies the old text is still
 present on that line (abort on drift rather than guess), and replaces it.
 The original file is never modified; output goes to <file>.scrubbed.md.
