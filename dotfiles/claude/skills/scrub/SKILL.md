@@ -5,9 +5,10 @@ description: >
   prose. A deterministic regex pass surfaces candidate residue (raw numbers
   on DC/AC/HP/damage/healing/feet/rounds/initiative, out-of-fiction
   table-speak, real player names as speakers) — never spell names or magic
-  vocabulary, which are not a candidate category at all. The GM confirms
-  every candidate one at a time before anything is rewritten; a deterministic
-  apply step then writes `.scrubbed.md`. Replaces the autonomous
+  vocabulary, which are not a candidate category at all. The GM reviews one
+  complete candidate sheet and explicitly approves the batch (or lists
+  per-candidate exceptions) before anything is rewritten; deterministic build
+  and apply steps then write `.scrubbed.md`. Replaces the autonomous
   `scrub_mechanics.py` LLM pass per CampaignGenerator issue #151 (the
   spell-stripping incident). Invoke as /scrub [narration-dir-or-file].
 tools: Read, Glob, Bash, Write, Edit, AskUserQuestion, TaskCreate, TaskUpdate, ToolSearch
@@ -142,9 +143,10 @@ If `AskUserQuestion` is not loaded, run `ToolSearch` with
 
 ### Phase 0 — pre-flight
 
-Use `TaskCreate` to enumerate the target files. For each, run Phase 1–4
-below. Process one file at a time so the GM isn't asked about 8 scenes'
-worth of candidates in one breath.
+Use `TaskCreate` to enumerate the target files. Run Phase 1 and Phase 1b over
+the complete effective scene set before asking for review. The normal review
+unit is one batch for the narration target, because cross-scene clusters and
+register decisions cannot be assessed reliably one file at a time.
 
 Check `state.py show` first — skip any file already listed under
 `processed` unless the GM explicitly asks to redo it.
@@ -391,13 +393,15 @@ Rules for the device:
   following them. Two notes explaining two different beats, scattered, would
   not have worked.
 
-### Phase 2 — the GM reviews, one candidate at a time, ALWAYS
+### Phase 2 — batch review and explicit GM approval, ALWAYS
 
-**Hard rule: nothing is rewritten without an explicit per-candidate
-decision.** No cluster-wide auto-apply, no "these all look like the same
-thing so I'll batch-approve them" — each candidate is either genuinely
-identical repeated text (handle via a durable `rule`, Phase 2b) or gets its
-own question.
+**Hard rule: nothing is rewritten before the GM approves the batch review.**
+Batching changes the presentation, not the decision boundary: the review sheet
+must enumerate every candidate or genuinely coupled cluster with its exact
+location, context, class, and proposed rewrite. A reply such as `approve
+recommended batch` explicitly approves every enumerated recommendation. The GM
+may instead list per-candidate replacements, keeps, protects, or skips. Never
+turn approval of one example into an unlisted category-wide auto-apply.
 
 **First, drop every candidate the campaign has already ruled in canon.**
 `<campaign>/notes/scrub_register_policy.md` is the list. Filtering against it is
@@ -406,33 +410,33 @@ risk, and a distracted yes on the fifth re-ask quietly reverses campaign policy
 without anyone deciding to. Nothing in that file reaches the GM as a proposal
 again unless the GM reopens it.
 
-The rulings still standing after that filter are the ones that get questions.
+The rulings still standing after that filter are the ones that get review rows.
 
-**Coupled candidates get one decision, labelled as such.** Two spans whose
+**Coupled candidates get one row, labelled as such.** Two spans whose
 rewrites must agree — a question and its answer (`"You got a 9 perception?"` /
 `"Looks like I had a 9 perception."`) — are one decision presenting both
 halves, because approving them separately invites an exchange that no longer
-echoes. State in the question that it covers both lines. This is the only
-exception to one-candidate-one-question, and it does not extend to spans that
-merely *resemble* each other.
+echoes. State in the row that it covers both lines. This is the only exception
+to one-row-per-local-candidate, and it does not extend to spans that merely
+*resemble* each other.
 
-**A cluster that spans scenes is still one decision.** The coupling rule is
+**A cluster that spans scenes is still one row.** The coupling rule is
 about meaning, not proximity: a running gag repeated across a directory
 (ch50's `Bimbo`, 12 spans in 3 scenes) has to be ruled once and applied
 consistently, or the assembled doc contradicts itself scene to scene. Give the
 span count and the scenes it touches, and say plainly which single ruling you
-are asking for. This still does not license batching *unlike* spans that
-merely share a category.
+are asking for. Do not collapse unlike spans merely because they share a
+category; they remain separate rows within the batch.
 
 **Check whether a candidate is another's setup or payoff before proposing.**
 Scene 04 of ch48 had `"we're level 7?"` and, two lines later, the joke
 `"We're about to be level dead"`. Rewriting the first strands the second.
-Surface the dependency in the question so the GM is choosing with it in
+Surface the dependency in the row so the GM is choosing with it in
 view, and offer the dependent line its own decision rather than silently
 adjusting it.
 
-Use `TaskCreate` per candidate (or per small batch) and `AskUserQuestion` to
-walk them in this order — highest-yield / highest-risk first:
+Build one compact review sheet in this order — highest-yield / highest-risk
+first:
 
 1. `roll_result_dialogue` and `roll_callout` — these are almost always real
    residue and usually need a genuine prose rewrite (a die roll spoken as a
@@ -445,21 +449,18 @@ walk them in this order — highest-yield / highest-risk first:
    speaking character; player names in particular should almost never
    survive into narration prose.
 
-For each candidate, draft a **specific proposed rewrite** for that exact
-line (do this yourself, in the moment — you have the scene's voice in
-context) and present it for confirmation:
+For each row, draft a **specific proposed rewrite** for that exact line (do
+this yourself, in the moment — you have the scene's voice in context). Give
+each row a stable numeric ID so the GM can approve the recommendations in one
+reply and name only the exceptions:
 
 ```
-Candidate (roll_result_dialogue), line 21, session_doc_scene_01...md
-Context: So I stepped up. "I have twenty-two."
-Matched: "I have twenty-two"
+| # | Scene:line | Class | Context | Recommended disposition |
+|---|---|---|---|---|
+| 1 | 01:21 | roll_result_dialogue | `So I stepped up. "I have twenty-two."` | Rewrite `"I have twenty-two."` → `"Let me look."` |
 
-Proposed: "I have twenty-two." → "Let me look."
-
-A) Accept proposed rewrite
-B) I'll type the replacement
-C) Not residue — protect this exact phrase (never ask again)
-D) Skip for now (ask again next run)
+Reply `approve recommended batch`, or list exceptions such as
+`1 replace with "Let me see."; 4 protect; 7 skip`.
 ```
 
 For numeric categories with a `hint`, lead the proposal with the tier
@@ -495,8 +496,8 @@ together as one decision** and say so. A GM who approves "drop the number"
 has not thereby approved "and also rewrite the following sentence" — that is
 a separate change to prose, and it gets its own explicit yes.
 
-**(C) "Not residue"** is persisted immediately — *when the matched text is
-specific enough to be safe*:
+**A `protect` disposition** is persisted immediately — *when the matched text
+is specific enough to be safe*:
 
 ```bash
 python ~/.claude/skills/scrub/state.py --state <campaign>/notes/.scrub_state.json \
@@ -531,11 +532,42 @@ or phrase will over-replace on a future scene; before adding one, sanity
 check it isn't a common substring. When in doubt, keep it a per-instance
 decision instead of a durable rule.
 
-Mark the corresponding `TaskUpdate` completed after each decision.
+After the response, resolve every row to `accept`, `protect`, `keep`, or
+`skip`. Persist safe exact protects immediately. A skipped row keeps its scene
+out of the processed list.
 
-### Phase 3 — build the decisions file
+### Phase 3 — build the decisions file deterministically
 
-Collect every (A)/(B) decision from Phase 2 into a JSON array:
+Record the resolved batch review as JSON. Accepted rows use `decision:
+"accept"`; protected, kept, and skipped rows remain in the review record for
+the manifest but do not become apply decisions:
+
+```json
+[
+  {"id": 1, "line": 21, "old": "I have twenty-two.",
+   "new": "Let me look.", "decision": "accept"},
+  {"id": 2, "line": 44, "old": "passive charm",
+   "new": "", "decision": "protect"}
+]
+```
+
+For each scene, convert its resolved review to an `apply_scrub.py` decisions
+file with the maintained exact-byte builder:
+
+```bash
+python ~/.claude/skills/scrub/build_decisions.py \
+  --file /tmp/scrub_preview.md \
+  --review /tmp/scrub_review.json \
+  --output /tmp/scrub_decisions.json
+```
+
+The builder reads the original source line, verifies each accepted `old` span
+occurs exactly once, groups multiple accepted spans on the same line, and emits
+full-line old/new pairs copied from the actual bytes. This prevents curly
+apostrophes, ellipses, and multiple edits on one line from creating silent
+apply skips.
+
+The emitted file has the `apply_scrub.py` shape:
 
 ```json
 [
@@ -545,9 +577,10 @@ Collect every (A)/(B) decision from Phase 2 into a JSON array:
 ]
 ```
 
-`old` must appear **exactly once** on that line — copy it verbatim from the
-candidate's `context`, don't retype it from memory. Write this to a
-scratchpad file, e.g. `/tmp/scrub_decisions.json`.
+Each review `old` span must appear **exactly once** on that line — copy it
+verbatim from the candidate's context, don't retype it from memory. If the
+builder rejects a row, repair the review record from the preview bytes and run
+it again; do not bypass the check.
 
 **Build the file by slicing the source lines, not by transcribing them.**
 Narration prose is full of characters that do not survive retyping — U+2026
@@ -562,9 +595,10 @@ old  = line[line.index('"You know,'):]             # slice, never retype
 decisions.append({"line": 25, "old": old, "new": "…"})
 ```
 
-Then print each `old → new` pair for the GM to eyeball before applying. If
-Phase 4 reports any skip, the cause is almost always a character that differs
-from what was typed by hand.
+Print each emitted `old → new` pair for an audit before applying. The GM's
+batch approval is the authorization to apply; do not require a redundant
+second approval unless the emitted rewrite differs from the approved sheet or
+the blast-radius check reveals another needed prose change.
 
 ### Phase 4 — apply (deterministic)
 
@@ -588,7 +622,9 @@ The original `session_doc_scene_*.md` is never modified. Frontmatter
 Re-run `find_residue.py` against the freshly written `.scrubbed.md`. Any
 remaining candidates mean either a Phase 2 decision was skipped in Phase 4,
 or a new false-positive category needs a `state.py ignore`. Show the GM the
-diff (`diff <scene>.md <scene>.scrubbed.md`) and confirm before moving on.
+diff (`diff <scene>.md <scene>.scrubbed.md`) as the batch audit. Ask for a
+follow-up ruling only if it differs from the approved sheet or exposes a new
+problem.
 
 **Then read each changed line WITH ITS NEIGHBOURS — a clean re-scan is not a
 clean paragraph.** Both tools are span-local: the applier checks the span it
@@ -615,7 +651,7 @@ python ~/.claude/skills/scrub/state.py --state <campaign>/notes/.scrub_state.jso
   processed <scene.md-path>
 ```
 
-**Never mark a file processed while a (D) skip is outstanding on it.**
+**Never mark a file processed while a `skip` is outstanding on it.**
 `processed` makes Phase 0 skip the file entirely on the next run, so
 recording it converts "ask again next run" into "never asked again" — it
 quietly destroys the decision the GM actually made. A scene with one pending
@@ -768,7 +804,8 @@ Here:
   The bad pattern would be an LLM reading the scene and rewriting what it
   found — that is the step this skill does not have.
 - Phase 2 is the human checkpoint — every rewrite, even a well-drafted one,
-  is a proposal until the GM picks (A)/(B)/(C)/(D). Nothing reaches (D) in
+  is an enumerated proposal until the GM approves the batch or gives a
+  per-row exception. Nothing reaches Phase 4 in
   the CampaignGenerator prompt's failure mode: silently deciding scope and
   shipping it.
 - Phase 4 (`apply_scrub.py`) is deterministic rendering of exactly what was
