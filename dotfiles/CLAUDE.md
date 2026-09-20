@@ -58,13 +58,14 @@ How that repo works:
 
 ## Skills catalogue (`claude/skills/`)
 
-29 skills. Most support the D&D campaign pipeline in the user's `CampaignGenerator` and `campaigns` projects; a few are infrastructure. They are independent of each other except where noted — there is no shared runner or layered pipeline.
+40 skills. Most support the D&D campaign pipeline in the user's `CampaignGenerator` and `campaigns` projects; a few are infrastructure. They are independent of each other except where noted — there is no shared runner or layered pipeline. (The lists below do not yet name every one; several predate this file's last catalogue sweep.)
 
 **Session pipeline, in rough order of use** (gm-assist → session summary → scene extractions → narration, with a human gate between stages):
 
 - `campaign-prep` — loads the four grounding docs (campaign_state, world_state, planning, party) before session prep.
 - `gmassist-precheck` — pre-extraction pass over gm-assist + VTT, before any per-scene extraction.
 - `scene-extract` — runs `scene_extract` over a session VTT when one person voices several PCs: builds the voicing map, picks an attribution strategy at a human checkpoint, then hands back a speaker-attribution review queue.
+- `enhance-summary` — generates the Stage 1 enhanced `session-summary.md` through CampaignGenerator's installed `enhance_summary` CLI (never a hand-written substitute), then verifies its quoted dialogue against the generation VTT with `sd_verify_quotes`. Guards the destination against silently overwriting a reviewed summary. `session-doc-run` is the whole-pipeline version; this is the single stage.
 - `chapter-summarise` — the no-recording branch: builds `session-summary.md` straight from chapter *prose* (one Haiku subagent per chapter, Opus orchestrating), then gates every output on a deterministic verifier the GM reviews — never the model's self-report.
 - `consistency-check` — checks one session document against the campaign's context files.
 - `staged-consistency` — runs the check at *every* pipeline boundary with a human-review gate between stages.
@@ -72,6 +73,7 @@ How that repo works:
 - `voice-smooth` — renders verbatim quotes into readable in-voice prose (`scene_extractions_smoothed/`), guard-railed by each character's voice file.
 - `voice-critic` — flags generic prose and voice drift in generated narration.
 - `scrub` — propose→review→apply removal of mechanical residue (DC/AC/HP, table-speak) from finished narration. Deliberately human-gated: it replaced an autonomous LLM pass after that pass stripped spell names (CampaignGenerator issue #151).
+- `dialogue-edit` — reviews dialogue in *finished* narration against its reviewed extraction and declared voices, so players recognise their own speech. Every wording change needs a per-scene GM ruling; a deterministic helper freezes the exact spans and applies only what was approved, to a separate revision. Runs after `scrub`, before the final `voice-critic` gate. Contrast `voice-smooth`, which smooths the extraction *upstream* of narration.
 
 **Narration inputs:**
 
@@ -94,6 +96,7 @@ How that repo works:
 
 - `audio-to-vtt` — re-transcribes a session's Zoom `.m4a` into a more accurate VTT via faster-whisper on the DGX Spark, anchored on the campaign's proper-noun vocabulary.
 - `vtt-spell-pass` — applies the known-misspellings glossary to Otter/Zoom VTTs and prompts on unrecognised proper nouns.
+- `speaker-attribution-text` — last-resort attribution when audio and the speaker-labelled export are both gone: infers labels by reading the conversation in context and comparing labelled transcripts of the same people from other sessions. Output is explicitly *inference*, carries per-cue confidence and provenance, and is written losslessly to a new file. Use `speaker-attribution` instead whenever audio or acoustic turns exist.
 
 **Infrastructure:**
 
@@ -118,5 +121,6 @@ Agent files use Claude Code's subagent frontmatter format (name, description, to
 - Skills are discovered by filename: `claude/skills/<skill-name>/SKILL.md`. The frontmatter `description` is what Claude Code shows to the model when deciding whether the skill is relevant — keep it specific and trigger-word-rich.
 - `allowed-tools` / `tools` in frontmatter is an allowlist. Skills that gate on the user need `AskUserQuestion`; skills that shell out to their helper scripts need `Bash`.
 - `argument-hint` is user-facing; `$ARGUMENTS` at the bottom of the skill body is where the user's invocation text gets substituted.
-- Seven skills ship **helper Python scripts** next to `SKILL.md` — `vtt-spell-pass` (10), `scrub` (4), `dossier-merge`, `ensemble-type-merge`, `module-inventory`, `registry-cleanup` (2 each), and `chapter-summarise` (1). These are the deterministic halves of the propose/apply split; the SKILL.md invokes them by path. Keep script and prose in sync when changing either.
+- Sixteen skills ship **helper Python scripts** next to `SKILL.md` — `vtt-spell-pass` (10), `scrub` (5), `speaker-attribution` (4), `dossier-merge`, `ensemble-type-merge`, `module-inventory`, `registry-cleanup`, `no-mech`, `remove-recap`, `transcript-rebuild` (2 each), and `campaign-chapter-review`, `chapter-enhance`, `chapter-summarise`, `dialogue-edit`, `speaker-attribution-text`, `staged-consistency` (1 each). These are the deterministic halves of the propose/apply split; the SKILL.md invokes them by path. Keep script and prose in sync when changing either.
+- One skill also ships **tests**: `dialogue-edit/tests/`. Run them with `python3 -m pytest tests/ -q` from the skill directory. It is the only local check in this repo — everything else is verified by starting a fresh session and invoking the skill.
 - There is nothing to "run" or "test" locally. Because `~/.claude/skills` is a directory symlink, an edit here is live in the next session — start a fresh Claude Code session and invoke the skill.
