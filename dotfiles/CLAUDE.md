@@ -58,22 +58,27 @@ How that repo works:
 
 ## Skills catalogue (`claude/skills/`)
 
-40 skills. Most support the D&D campaign pipeline in the user's `CampaignGenerator` and `campaigns` projects; a few are infrastructure. They are independent of each other except where noted — there is no shared runner or layered pipeline. (The lists below do not yet name every one; several predate this file's last catalogue sweep.)
+40 skills, all named below. Most support the D&D campaign pipeline in the user's `CampaignGenerator` and `campaigns` projects; a few are infrastructure. They are independent of each other except where noted — there is no shared runner or layered pipeline.
 
 **Session pipeline, in rough order of use** (gm-assist → session summary → scene extractions → narration, with a human gate between stages):
 
 - `campaign-prep` — loads the four grounding docs (campaign_state, world_state, planning, party) before session prep.
 - `gmassist-precheck` — pre-extraction pass over gm-assist + VTT, before any per-scene extraction.
+- `session-doc-run` — drives the whole `session_doc` pipeline (enhance_summary → scene_extract → sd_narrate → assemble) with a human gate between stages, and builds the two inputs nothing else produces: a display-name-labelled VTT, and a session-local `players.yaml` when one player covered an absent player's PC. The individual stages below can also be run alone.
+- `remove-recap` — removes the previous-chapter recap that opens a recording, so it is not narrated twice. Scoped to the first scene, where the recap always lives; rescues GM asides and this chapter's bookkeeping before anything is cut. Cheapest before `scene-extract`.
 - `scene-extract` — runs `scene_extract` over a session VTT when one person voices several PCs: builds the voicing map, picks an attribution strategy at a human checkpoint, then hands back a speaker-attribution review queue.
 - `enhance-summary` — generates the Stage 1 enhanced `session-summary.md` through CampaignGenerator's installed `enhance_summary` CLI (never a hand-written substitute), then verifies its quoted dialogue against the generation VTT with `sd_verify_quotes`. Guards the destination against silently overwriting a reviewed summary. `session-doc-run` is the whole-pipeline version; this is the single stage.
 - `chapter-summarise` — the no-recording branch: builds `session-summary.md` straight from chapter *prose* (one Haiku subagent per chapter, Opus orchestrating), then gates every output on a deterministic verifier the GM reviews — never the model's self-report.
+- `chapter-enhance` — the other no-recording branch, and the mirror of `chapter-summarise`: *expands* a chapter into the full session-summary schema instead of compressing it, with every claim machine-traced to the source (quoted fragments must appear verbatim, proper nouns must exist in the chapter, later-session facts count as leaks). Source typos become a fix-at-source queue, never a silent correction.
 - `consistency-check` — checks one session document against the campaign's context files.
 - `staged-consistency` — runs the check at *every* pipeline boundary with a human-review gate between stages.
 - `session-summary-consistency` — quote-level check on `scene_extractions_new/`; flags VTT transcription errors in verbatim quotes.
 - `voice-smooth` — renders verbatim quotes into readable in-voice prose (`scene_extractions_smoothed/`), guard-railed by each character's voice file.
+- `no-mech` — strips table mechanics (die rolls, DCs, VTT and quest-log operation, rules Q&A, scheduling) out of the *smoothed extractions*, then re-narrates the affected scenes. A GM checkpoint on every scene, because which quotes count as roleplay is a scope decision. Run before `sd_narrate`; the sibling `scrub` fixes residue that already reached the narration.
 - `voice-critic` — flags generic prose and voice drift in generated narration.
 - `scrub` — propose→review→apply removal of mechanical residue (DC/AC/HP, table-speak) from finished narration. Deliberately human-gated: it replaced an autonomous LLM pass after that pass stripped spell names (CampaignGenerator issue #151).
 - `dialogue-edit` — reviews dialogue in *finished* narration against its reviewed extraction and declared voices, so players recognise their own speech. Every wording change needs a per-scene GM ruling; a deterministic helper freezes the exact spans and applies only what was approved, to a separate revision. Runs after `scrub`, before the final `voice-critic` gate. Contrast `voice-smooth`, which smooths the extraction *upstream* of narration.
+- `campaign-chapter-review` — reviews a finished narrative chapter as canon-bearing fiction rather than generic prose, loading per-campaign canon, party state, planning pressure and voice files first. Edits to a new sibling file unless told otherwise.
 
 **Narration inputs:**
 
@@ -91,11 +96,14 @@ How that repo works:
 - `dossier-merge` — dedupes NPC dossiers in `docs/npcs/`.
 - `module-inventory` — extracts a proper-noun inventory from a module's source (prose bible or 5etools JSON).
 - `mempalace-campaign` — sets up MemPalace semantic search over a campaign workspace.
+- `campaign-recall` — answers a question from the session summaries via zvec-grep, returning verbatim source with provenance instead of paraphrase. Supplies the two things vector search structurally cannot: chronological order (from the `NNN[a]-` filename prefix, which is not in the embeddings) and the ability to report that something is *not recorded* — the absence check is verified against a positive control, because a broken one fails toward a confident false negative.
 
 **Transcripts:**
 
 - `audio-to-vtt` — re-transcribes a session's Zoom `.m4a` into a more accurate VTT via faster-whisper on the DGX Spark, anchored on the campaign's proper-noun vocabulary.
 - `vtt-spell-pass` — applies the known-misspellings glossary to Otter/Zoom VTTs and prompts on unrecognised proper nouns.
+- `transcript-rebuild` — repairs the split-brain case: one file has correct timings, another has correct speakers, neither has both (`*.speakers.vtt` carrying fabricated timestamps; Zoom's live export flipping speaker mid-sentence and shredding one person across three labels). Decides which file is the timing authority and which the speaker authority, transfers labels onto real cue boundaries by token alignment, and strips Whisper's silence hallucinations before anything downstream sees them.
+- `speaker-attribution` — puts trustworthy names on a recording, in two cases: transcripts with no usable attribution (the single-room case — one microphone, so Zoom labels every cue with the host and the editor emits anonymous clusters), and transcripts whose real names are a voice-profile *guess* known to be wrong, where the job is auditing an existing name→voice mapping. Verifies first that each transcript belongs to the recording beside it, because filenames lie.
 - `speaker-attribution-text` — last-resort attribution when audio and the speaker-labelled export are both gone: infers labels by reading the conversation in context and comparing labelled transcripts of the same people from other sessions. Output is explicitly *inference*, carries per-cue confidence and provenance, and is written losslessly to a new file. Use `speaker-attribution` instead whenever audio or acoustic turns exist.
 
 **Infrastructure:**
