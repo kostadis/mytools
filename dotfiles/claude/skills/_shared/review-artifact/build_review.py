@@ -21,6 +21,7 @@ Each item requires id, t, y, n; ev is optional but strongly encouraged.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import sys
@@ -411,7 +412,7 @@ def build(spec: dict) -> str:
 
     state = spec.get("state") or {"decisions": {}, "notes": {}, "savedAt": None}
     return (PAGE
-            .replace("__TITLE_TEXT__", spec["title"])
+            .replace("__TITLE_TEXT__", html.escape(spec["title"]))
             .replace("__FONTS_TEXT__", FONTS)
             .replace("__CSS__", CSS)
             .replace("__STATE__", json.dumps(state, ensure_ascii=False).replace("<", "\\u003c"))
