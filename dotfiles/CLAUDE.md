@@ -6,31 +6,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Personal dotfiles for Claude Code. The `claude/` directory is the source of truth — individual paths under `~/.claude/` are symlinks pointing into `claude/` here, so every edit is automatically git-tracked. There is no build, test, or lint step; changes take effect the next time Claude Code loads the config or the skill is invoked.
 
-**The symlinks are per-machine and are not created by anything in this repo.** A fresh checkout does nothing on its own — someone has to link the paths by hand. Verify with `ls -l ~/.claude` before assuming an edit here is live; a machine where `~/.claude/skills` is a real directory is silently running a different config from the one in git.
+**A fresh checkout does nothing on its own — the links are made per machine by `claude-links.sh`.** Run `./claude-links.sh` to check (read-only, exit 1 on drift) and `./claude-links.sh --apply` to create or repair the links; it never overwrites a real file or directory. Run it once on every machine, and again after any `git pull` that changes the link set below. A machine where `~/.claude/skills` is a real directory is silently running a different config from the one in git, and the failure is quiet: a skill that isn't linked is simply invisible.
 
-The current link set:
+The link set — this is what "symmetric across machines" means, and it is what `claude-links.sh` checks:
 
 | Path under `~/.claude/` | Kind | Target |
 |---|---|---|
 | `CLAUDE.md` | symlink | `claude/CLAUDE.md` |
-| `settings.json` | symlink | `claude/settings.json` |
 | `skills/` | symlink (whole dir) | `claude/skills/` |
 | `agents/` | symlink (whole dir) | `claude/agents/` |
 | `plugins/blocklist.json` | symlink | `claude/plugins/blocklist.json` |
-| `plugins/known_marketplaces.json` | symlink | `claude/plugins/known_marketplaces.json` |
+| `settings.json` | **real file, per-machine on purpose** | — |
+| `plugins/known_marketplaces.json` | **real file, per-machine on purpose** | — |
 | `plugins/marketplaces/` | **real dir, not linked** | — |
 | `hooks/` | **real dir, not linked** | — |
 | `memory/`, `projects/*/memory/` | **real dirs, not linked** | owned by `~/src/claude-memory` |
 
-`skills/` and `agents/` are linked as whole directories, so a new skill written to `~/.claude/skills/<name>/` lands in this repo automatically.
+`settings.json` is per-machine because it names machine-local tools (`rtk`, the MemPalace hook scripts, `~/.claude/hooks/cbm-*`) and Claude Code rewrites it. `plugins/known_marketplaces.json` is per-machine because it embeds per-user absolute paths (`/home/kostadis/…` vs `/home/kroussos/…`) and refreshed timestamps. The copies of both under `claude/` are reference baselines only and can drift from any live machine.
+
+`skills/` and `agents/` are linked as whole directories, so a new skill written to `~/.claude/skills/<name>/` lands in this repo automatically. **Link `skills/` whole, never per skill**: per-skill links go stale on every pull that adds a skill, and miss `skills/_shared/`, which five skills read as `~/.claude/skills/_shared/…`. Claude Code also writes its own `skills/synced/` (claude.ai account skills) into the linked directory; `claude/.gitignore` hides it.
 
 ## The authored content
 
 - `claude/CLAUDE.md` — the user's **global** Claude Code instructions, loaded into every session's context. This is distinct from the repo-root `CLAUDE.md` you are reading right now, which describes the dotfiles repo itself. Its last line is `@RTK.md`, an import of a file that **does not exist** in this repo or in `~/.claude/` — a dangling import inherited from an older machine. Either add `claude/RTK.md` or drop the line.
-- `claude/settings.json` — user-level settings: `model: sonnet`, `advisorModel: opus`, `effortLevel: xhigh`, `theme: dark`, `tui: fullscreen`, `permissions.defaultMode: auto`, the `frontend-design` plugin, and two independent hook families (below).
+- `claude/settings.json` — a **reference baseline, not linked** (settings are per-machine on purpose; see the link set above) of the user-level settings: `model: sonnet`, `advisorModel: opus`, `effortLevel: xhigh`, `theme: dark`, `tui: fullscreen`, `permissions.defaultMode: auto`, the `frontend-design` plugin, and two independent hook families (below).
 - `claude/skills/<name>/SKILL.md` — 24 user-invocable skills. See the catalogue below.
 - `claude/agents/<name>.md` — custom subagent definitions (`kostadis-architect`, `ux-reviewer`).
-- `claude/plugins/blocklist.json`, `claude/plugins/known_marketplaces.json` — plugin marketplace config. **Caveat**: Claude Code refreshes these files periodically. Because they are symlinked, those refreshes land in the repo and produce a dirty working tree. Either `git checkout --` them or fold the refresh into the next commit.
+- `claude/plugins/blocklist.json` — plugin blocklist, linked. `claude/plugins/known_marketplaces.json` is a reference copy only and is **not linked**: it embeds per-user absolute paths and Claude Code refreshes its timestamps, so linking it would flip `installLocation` between home directories and dirty the working tree on every refresh.
 
 **Not authored, not touched:**
 - `claude/plugins/marketplaces/claude-plugins-official/` is a **vendored mirror** of the upstream Anthropic plugin marketplace. Do not hand-edit. The live copy at `~/.claude/plugins/marketplaces/` is a separate real directory that Claude Code auto-updates — it is deliberately *not* symlinked to the repo, because auto-refresh churn would overwhelm git. The repo's snapshot will drift behind; refresh it as a separate chore if needed.

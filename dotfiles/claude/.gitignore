@@ -6,6 +6,10 @@
 # authority that drifted; do not re-add.
 memory/
 
+# Claude Code's own sync of claude.ai account skills. It writes here whenever
+# ~/.claude/skills is linked to claude/skills/, so it lands in this tree — not ours.
+skills/synced/
+
 # Runtime / ephemeral data
 backups/
 cache/
