@@ -335,6 +335,50 @@ embedded name is *already correct* — `And Kalan`, `The Helmed Horror`,
 split the run. Don't ask about these; the name is right. Only surface a
 residual when the embedded proper noun is actually wrong.
 
+### Phase 1.5 — resolve every candidate against the canon chain (deterministic, no LLM)
+
+Requires a CampaignGenerator checkout with `entity_registry/resolve.py`
+(CampaignGenerator#477). Skip this phase if the campaign has no registry —
+Phase 1's output stands on its own.
+
+```bash
+python ~/.claude/skills/vtt-spell-pass/resolve_candidates.py \
+  --vtt <vtt> \
+  --campaign-dir <campaign> \
+  --campaign-generator ~/src/CampaignGenerator \
+  --json > "$SCRATCH/rulings.json"
+```
+
+Phase 1 answers *is this token in the known set?* — one flat set built from five
+sources of very different authority. This phase asks the chain instead, and
+keeps the tier and the citing line attached to every answer:
+
+| bucket | meaning | what you do |
+|---|---|---|
+| `confirmed` | resolved, `is_change: false` | nothing — it is canon |
+| `ruling` | resolved, `is_change: true` | a name **change**; carry the tier + citing line into the card's `ev` |
+| `ambiguous` | tiers disagree, **no canonical returned** | the GM rules; never adjudicate |
+| `not_canon` | in none of the five tiers | new-name candidate; near misses are questions, not answers |
+
+Three things this buys that the flat known-set cannot express:
+
+- **A glossary row that disagrees with a higher tier stops being invisible.**
+  A wrong-form already in the glossary is auto-applied footer-only by design
+  (see *What is auto-applied*), and that is fine — until the glossary's own
+  canonical conflicts with `config/party.yaml`. Then the footer records a
+  correction *to the wrong spelling* and nothing ever shows it. `ambiguous`
+  is what makes that visible.
+- **`ambiguous` at all.** Two tiers holding two spellings of one name is not
+  representable as a set membership question.
+- **A filename stops being evidence.** `parse_npc_dossiers` humanises the file
+  stem, so `docs/npcs/sequioa.md` puts `Sequioa` into the known set and the
+  misspelling is accepted forever after. `resolve_name` reads a dossier's
+  *stated* frontmatter name and ignores the path.
+
+Feed `ruling` and `not_canon` into Phase 2 as normal candidates. **Every
+`ambiguous` becomes a card with no recommendation** — show each source and its
+spelling, say which the chain favours and why, and stop. Do not pick one.
+
 ### Phase 2 — pre-classify candidates (LLM judgment, MINIMAL filtering)
 
 Read the unknown list. Before asking the user, **only filter what is
