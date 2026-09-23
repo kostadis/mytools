@@ -335,50 +335,6 @@ embedded name is *already correct* — `And Kalan`, `The Helmed Horror`,
 split the run. Don't ask about these; the name is right. Only surface a
 residual when the embedded proper noun is actually wrong.
 
-### Phase 1.5 — resolve every candidate against the canon chain (deterministic, no LLM)
-
-Requires a CampaignGenerator checkout with `entity_registry/resolve.py`
-(CampaignGenerator#477). Skip this phase if the campaign has no registry —
-Phase 1's output stands on its own.
-
-```bash
-python ~/.claude/skills/vtt-spell-pass/resolve_candidates.py \
-  --vtt <vtt> \
-  --campaign-dir <campaign> \
-  --campaign-generator ~/src/CampaignGenerator \
-  --json > "$SCRATCH/rulings.json"
-```
-
-Phase 1 answers *is this token in the known set?* — one flat set built from five
-sources of very different authority. This phase asks the chain instead, and
-keeps the tier and the citing line attached to every answer:
-
-| bucket | meaning | what you do |
-|---|---|---|
-| `confirmed` | resolved, `is_change: false` | nothing — it is canon |
-| `ruling` | resolved, `is_change: true` | a name **change**; carry the tier + citing line into the card's `ev` |
-| `ambiguous` | tiers disagree, **no canonical returned** | the GM rules; never adjudicate |
-| `not_canon` | in none of the five tiers | new-name candidate; near misses are questions, not answers |
-
-Three things this buys that the flat known-set cannot express:
-
-- **A glossary row that disagrees with a higher tier stops being invisible.**
-  A wrong-form already in the glossary is auto-applied footer-only by design
-  (see *What is auto-applied*), and that is fine — until the glossary's own
-  canonical conflicts with `config/party.yaml`. Then the footer records a
-  correction *to the wrong spelling* and nothing ever shows it. `ambiguous`
-  is what makes that visible.
-- **`ambiguous` at all.** Two tiers holding two spellings of one name is not
-  representable as a set membership question.
-- **A filename stops being evidence.** `parse_npc_dossiers` humanises the file
-  stem, so `docs/npcs/sequioa.md` puts `Sequioa` into the known set and the
-  misspelling is accepted forever after. `resolve_name` reads a dossier's
-  *stated* frontmatter name and ignores the path.
-
-Feed `ruling` and `not_canon` into Phase 2 as normal candidates. **Every
-`ambiguous` becomes a card with no recommendation** — show each source and its
-spelling, say which the chain favours and why, and stop. Do not pick one.
-
 ### Phase 2 — pre-classify candidates (LLM judgment, MINIMAL filtering)
 
 Read the unknown list. Before asking the user, **only filter what is
@@ -866,6 +822,45 @@ write a `.cleaned.vtt` that an existing `transcript_corrections.yaml` claims
 deliverable — nothing downstream reads it.
 
 Report the per-pair replacement count back to the user.
+
+### Phase 5.5 — assert the output against canon (deterministic, no LLM)
+
+Requires a CampaignGenerator checkout with `entity_registry/resolve.py`
+(CampaignGenerator#477). Skip if the campaign has no registry.
+
+```bash
+python ~/.claude/skills/vtt-spell-pass/lint_glossary.py \
+  --glossary <campaign>/notes/vtt_transcription_corrections.md \
+  --campaign-dir <campaign> \
+  --campaign-generator ~/src/CampaignGenerator \
+  --verify-output <the .cleaned.vtt this run produced> \
+  --quiet
+```
+
+Two checks, both ERROR, both assertions rather than review queues — there is no
+card, no cluster, and nothing to decide per candidate. Either the output is
+canon or it is not.
+
+- **`canon_conflict`** reads the glossary rows. A row whose own **canonical**
+  disagrees with `config/party.yaml` / the registry, or which is itself another
+  row's wrong-form, is a standing rewrite rule that manufactures the error in
+  every future transcript.
+- **`output_not_canon`** reads what this run *produced*. Every proper noun in it
+  must already resolve to itself; anything coming back `is_change: true` is a
+  name written in a form the campaign's own canon chain rejects. `not_canon` is
+  ignored — unknown names are this skill's normal input.
+
+**Why the second one exists.** Out-of-the-Abyss accumulated 1,737 occurrences of
+`Grygum` across 39 files, in every session with a cleaned transcript, while
+`**Gyrgum**` was the canonical the whole time and `Grygum` sat in the *wrong*
+column of its own row. No row-level check could see it: the glossary was
+correct. It entered through a card decision and landed in the output. The
+origin is still in `summaries/20260907/vtt_spell_pass_decisions.json` — the card
+`gurrigam__grygum`, marked **discuss** with the note *"This is player Grygum
+confirm spelling"*. The conversation that note asked for never happened.
+
+A discuss note is an instruction to talk, not a pre-approval — and this phase is
+the backstop for when that rule is broken anyway.
 
 ### Phase 6 — re-scan to confirm
 
