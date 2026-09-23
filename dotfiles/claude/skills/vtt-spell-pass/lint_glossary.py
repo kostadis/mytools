@@ -213,6 +213,64 @@ def lint(rows, corpus_text: str | None):
     return findings
 
 
+def strip_speaker_labels(text: str) -> str:
+    """Drop speaker attribution before scanning a transcript for names.
+
+    A label is attribution, not dialogue. Scanning it found `Levin` x187 in
+    the 20260907 transcript -- the tail of Gabe's Zoom display name
+    `Gabriel Tarasuk-Levin` -- and reported it against glossary row 91, whose
+    wrong column lists `Levin` as a garbling of the NPC Leuwin. Reuses
+    find_unknowns.SPEAKER_RE (the pattern the spell pass already strips with)
+    plus WebVTT `<v Name>` voice tags.
+    """
+    from find_unknowns import SPEAKER_RE
+    text = re.sub(r"<v [^>]*>", "", text)
+    return SPEAKER_RE.sub("", text)
+
+
+GLOSSARY_NAME = "notes/vtt_transcription_corrections.md"
+
+
+def load_player_names(campaign_dir) -> set:
+    """Every real player's name, display names and first name, lowercased,
+    from <campaign>/config/players.yaml.
+
+    The glossary's "Player names -> characters" rows (`Ben Pfaff` -> `Gyrgum`,
+    `Kostadis Roussos` -> `GM`) are speaker-relabelling rules for extraction,
+    not spelling corrections. Body text legitimately contains player names --
+    people address each other by name at the table -- so treating those rows as
+    canon made verify_output report `Kostadis Roussos x339` as an error and made
+    canon_conflict flag `Kostadis` for being both a canonical and a wrong-form.
+
+    Keyed on players.yaml, which DECLARES who the players are, rather than on
+    the glossary's section heading, which is prose and can be renamed.
+    """
+    path = Path(campaign_dir) / "config" / "players.yaml"
+    if not path.exists():
+        return set()
+    import yaml
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    names = set()
+    for pl in data.get("players", []) or []:
+        for n in [pl.get("name"), *(pl.get("display_names") or [])]:
+            if n:
+                names.add(str(n).lower())
+                names.add(str(n).split()[0].lower())
+    return names
+
+
+def _is_player_form(form: str, players: set) -> bool:
+    f = re.sub(r"['\u2019]s$", "", form.lower().strip())
+    return f in players or f.split(" (")[0] in players
+
+
+def player_rows(rows, players: set) -> set:
+    """Line numbers of relabelling rows: any row one of whose wrong-forms is a
+    declared player name. Its OTHER wrong-forms ("Ben Fath", a garbling of
+    "Ben Pfaff") are then relabelling rules too."""
+    return {line_no for line_no, _, w, _ in rows if _is_player_form(w, players)}
+
+
 def lint_against_canon(rows, campaign_dir, campaign_generator=None):
     """ERROR for any row whose CANONICAL disagrees with the canon chain.
 
@@ -242,7 +300,11 @@ def lint_against_canon(rows, campaign_dir, campaign_generator=None):
                  "--campaign-generator <path-to-CampaignGenerator>. Skipped.")]
 
     findings = []
-    wrong_forms = {w.lower(): line_no for line_no, _, w, _ in rows}
+    players = load_player_names(campaign_dir)
+    # A player-name wrong-form is a relabelling rule, not a claim that the
+    # name is misspelled -- it must not make its canonical look promoted.
+    wrong_forms = {w.lower(): line_no for line_no, _, w, _ in rows
+                   if not _is_player_form(w, players)}
     checked = set()
     for line_no, _section, _wrong, canonical in rows:
         if canonical.lower() in checked:
@@ -277,7 +339,7 @@ def lint_against_canon(rows, campaign_dir, campaign_generator=None):
     return findings
 
 
-def verify_output(paths, campaign_dir, campaign_generator=None):
+def verify_output(paths, campaign_dir, campaign_generator=None, rows=()):
     """ERROR for any proper noun in PRODUCED text that is not already canon.
 
     The complement to canon_conflict, and the check that actually catches the
@@ -307,6 +369,8 @@ def verify_output(paths, campaign_dir, campaign_generator=None):
                  "--campaign-generator <path-to-CampaignGenerator>. Skipped.")]
 
     proper = re.compile(r"\b([A-Z][a-z'\-]{2,}(?:[ \-][A-Z][a-z'\-]+){0,2})\b")
+    players = load_player_names(campaign_dir)
+    relabel_lines = {f"{GLOSSARY_NAME}:{n}" for n in player_rows(rows, players)}
     findings = []
     seen: dict = {}
     for path in paths:
@@ -314,11 +378,15 @@ def verify_output(paths, campaign_dir, campaign_generator=None):
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
+        text = strip_speaker_labels(text)
         for token, n in Counter(m.group(1) for m in proper.finditer(text)).items():
+            if _is_player_form(token, players):
+                continue      # table talk, not a spelling -- see load_player_names
             if token not in seen:
                 r = resolve.resolve_name(campaign_dir, token)
                 seen[token] = ((r["canonical"], r["tier"], r["authority"])
                                if r["status"] == "resolved" and r["is_change"]
+                               and r["authority"] not in relabel_lines
                                else None)
             if seen[token]:
                 canonical, tier, authority = seen[token]
@@ -363,7 +431,7 @@ def main():
             print("--verify-output requires --campaign-dir", file=sys.stderr)
             return 2
         findings += verify_output(args.verify_output, args.campaign_dir,
-                                  args.campaign_generator)
+                                  args.campaign_generator, rows)
     if args.quiet:
         findings = [f for f in findings if f[0] == SEV_ERROR]
 
