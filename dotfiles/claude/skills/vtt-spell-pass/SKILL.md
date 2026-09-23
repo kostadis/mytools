@@ -823,6 +823,45 @@ deliverable — nothing downstream reads it.
 
 Report the per-pair replacement count back to the user.
 
+### Phase 5.5 — assert the output against canon (deterministic, no LLM)
+
+Requires a CampaignGenerator checkout with `entity_registry/resolve.py`
+(CampaignGenerator#477). Skip if the campaign has no registry.
+
+```bash
+python ~/.claude/skills/vtt-spell-pass/lint_glossary.py \
+  --glossary <campaign>/notes/vtt_transcription_corrections.md \
+  --campaign-dir <campaign> \
+  --campaign-generator ~/src/CampaignGenerator \
+  --verify-output <the .cleaned.vtt this run produced> \
+  --quiet
+```
+
+Two checks, both ERROR, both assertions rather than review queues — there is no
+card, no cluster, and nothing to decide per candidate. Either the output is
+canon or it is not.
+
+- **`canon_conflict`** reads the glossary rows. A row whose own **canonical**
+  disagrees with `config/party.yaml` / the registry, or which is itself another
+  row's wrong-form, is a standing rewrite rule that manufactures the error in
+  every future transcript.
+- **`output_not_canon`** reads what this run *produced*. Every proper noun in it
+  must already resolve to itself; anything coming back `is_change: true` is a
+  name written in a form the campaign's own canon chain rejects. `not_canon` is
+  ignored — unknown names are this skill's normal input.
+
+**Why the second one exists.** Out-of-the-Abyss accumulated 1,737 occurrences of
+`Grygum` across 39 files, in every session with a cleaned transcript, while
+`**Gyrgum**` was the canonical the whole time and `Grygum` sat in the *wrong*
+column of its own row. No row-level check could see it: the glossary was
+correct. It entered through a card decision and landed in the output. The
+origin is still in `summaries/20260907/vtt_spell_pass_decisions.json` — the card
+`gurrigam__grygum`, marked **discuss** with the note *"This is player Grygum
+confirm spelling"*. The conversation that note asked for never happened.
+
+A discuss note is an instruction to talk, not a pre-approval — and this phase is
+the backstop for when that rule is broken anyway.
+
 ### Phase 6 — re-scan to confirm
 
 Re-run `find_unknowns.py` against the candidate. Any remaining
