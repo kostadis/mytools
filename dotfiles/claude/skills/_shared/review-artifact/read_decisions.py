@@ -8,12 +8,18 @@ URLs, and for large pages also saves it to a local file whose path it
 reports — then point this at that file.
 
 Usage:
-    read_decisions.py --html saved-artifact.html [--out decisions.json]
+    read_decisions.py --html saved-artifact.html [--items review_items.json] [--out decisions.json]
+
+Every decision and note must be keyed to an item the page actually asked
+about (its embedded ITEMS). With --items, the page's item ids must also equal
+the ids in the items file you built, which catches reading back a stale page
+from an earlier run. Items with no decision are listed as "unmarked".
 
 Exit codes:
     0  decisions read
     1  no state block, or the page was never saved (savedAt is null)
-    2  malformed input
+    2  malformed input, a decision for an id the page never asked about, or
+       a page whose items do not match --items
 
 Failing loudly on an unsaved page is the point: a silent empty result would
 read as "the GM approved nothing" when it actually means "the GM has not
@@ -40,6 +46,8 @@ STATE_RE_ALT = re.compile(
 
 VALID = {"approve", "reject", "discuss"}
 
+ITEMS_RE = re.compile(r"var ITEMS = (\[.*?\]);\s*$", re.M | re.S)
+
 
 def extract(html: str) -> dict:
     m = STATE_RE.search(html) or STATE_RE_ALT.search(html)
@@ -56,15 +64,32 @@ def extract(html: str) -> dict:
         raise SystemExit(2)
 
 
+def page_item_ids(html: str) -> list[str]:
+    m = ITEMS_RE.search(html)
+    if not m:
+        print("error: no ITEMS list found in the page source; cannot check decision ids.", file=sys.stderr)
+        raise SystemExit(2)
+    try:
+        items = json.loads(m.group(1).replace("\\u003c", "<"))
+    except json.JSONDecodeError as e:
+        print(f"error: the page's ITEMS list is not valid JSON: {e}", file=sys.stderr)
+        raise SystemExit(2)
+    return [it["id"] for it in items]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--html", required=True, type=Path, help="saved artifact HTML")
+    ap.add_argument("--items", type=Path,
+                    help="the review_items JSON this page was built from; its ids must match the page's")
     ap.add_argument("--out", type=Path, help="write decisions JSON here (default: stdout)")
     ap.add_argument("--allow-unsaved", action="store_true",
                     help="do not fail when savedAt is null (inspecting a fresh page)")
     args = ap.parse_args()
 
-    state = extract(args.html.read_text(encoding="utf-8", errors="replace"))
+    html = args.html.read_text(encoding="utf-8", errors="replace")
+    state = extract(html)
+    ids = page_item_ids(html)
 
     decisions = state.get("decisions") or {}
     notes = state.get("notes") or {}
@@ -80,6 +105,20 @@ def main() -> int:
         print(f"error: unrecognised verdicts: {bad}", file=sys.stderr)
         raise SystemExit(2)
 
+    known = set(ids)
+    unknown = sorted((set(decisions) | set(notes)) - known)
+    if unknown:
+        print(f"error: decisions or notes for ids this page never asked about: {unknown}", file=sys.stderr)
+        raise SystemExit(2)
+    if args.items:
+        spec = json.loads(args.items.read_text(encoding="utf-8"))
+        expected = {it["id"] for it in spec.get("items", [])}
+        if expected != known:
+            print("error: this page was not built from --items "
+                  f"(only on page: {sorted(known - expected)}, only in items: {sorted(expected - known)}). "
+                  "Is it a stale page from an earlier run?", file=sys.stderr)
+            raise SystemExit(2)
+
     tally = {v: sum(1 for x in decisions.values() if x == v) for v in sorted(VALID)}
     out = {
         "savedAt": saved_at,
@@ -88,13 +127,15 @@ def main() -> int:
         "decisions": decisions,
         "notes": notes,
         "discuss": sorted(k for k, v in decisions.items() if v == "discuss"),
+        "unmarked": [i for i in ids if i not in decisions],
     }
 
     blob = json.dumps(out, indent=2, ensure_ascii=False)
     if args.out:
         args.out.write_text(blob + "\n", encoding="utf-8")
         print(f"{len(decisions)} decided  "
-              f"({tally['approve']} approve, {tally['reject']} reject, {tally['discuss']} discuss)  "
+              f"({tally['approve']} approve, {tally['reject']} reject, {tally['discuss']} discuss, "
+              f"{len(out['unmarked'])} unmarked)  "
               f"saved {saved_at}  ->  {args.out}")
     else:
         print(blob)
