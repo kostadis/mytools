@@ -64,31 +64,43 @@ So: read the prior manifest for context and for its `carry_forward` work items, 
 
 ### 2. Locate the campaign workspace + verify config resolves
 
-Run `pwd`. **`check_consistency.py`'s config auto-detection is narrower than it looks** — `find_default_config()` checks exactly two places:
+**There is exactly one valid config location: `<campaign>/config/config.yaml`.** Every `documents[].path` inside it is relative to `config/`, so it reads `../docs/campaign_state.md`. Anything else is a broken campaign, not a variant to work around. **Fail loudly: stop, report which check failed and the exact path, and do not run the model.** Do not build a throwaway config, symlink `docs/`, rewrite paths, copy the config, or run from a different directory to make it resolve. Workarounds like these are how the registry drop below went unnoticed.
 
-1. `Path.cwd() / "config.yaml"` — CWD only, **no upward search**
-2. otherwise `<CampaignGenerator repo root>/config/config.yaml` — **the toolkit's own config, not the campaign's**
+Always pass `--config <abs campaign>/config/config.yaml` explicitly. Without it the script uses `<cwd>/config/config.yaml`, so the result depends on where you ran it from; an explicit path does not. (Before CampaignGenerator#484 it fell back to CampaignGenerator's *own* config and checked the recap against the wrong campaign.)
 
-So running from a session subdirectory (`summaries/007/`) does **not** find the campaign config one or two levels up. It silently falls through to CampaignGenerator's config and checks the recap against the wrong campaign — or dies on missing paths. Two safe options:
+**Preflight: run all of these before launching. Any failure is a STOP.**
 
-- **Run from the campaign workspace root** (the dir holding `config.yaml` + `docs/`). Preferred: `base_dir` then resolves `docs/*` correctly and the document is just a relative path. Or
-- **Pass `--config <abs-path-to-campaign-config.yaml>` explicitly.**
-
-**Config-move gotcha.** `load_config` sets `base_dir = config_path.parent`, so `documents[].path` resolves against the **config file's own directory**. A workspace that moved `config.yaml` into `config/` makes `docs/campaign_state.md` resolve to `config/docs/...` → `file not found`. Fixes: rewrite the config's paths relative to its own dir (`../docs/...`), or point `--config` at one using absolute paths (a throwaway in the scratchpad works — only `campaign_state` + `world_state` are auto-loaded).
-
-Watch for a workspace holding **both** `config.yaml` and `config/config.yaml` with identical relative paths (obelisk does). Only the root one resolves correctly, and only when CWD is the workspace root.
-
-**Phandalin is the harder variant: it has NO root `config.yaml` at all.** Its only config is `config/config.yaml`, whose `documents[].path` entries are relative (`docs/campaign_state.md`) and therefore resolve to `config/docs/…` and fail. Auto-detection cannot save you — with no root config it falls through to CampaignGenerator's own. Every Phandalin run needs an explicit `--config` pointing at a throwaway absolute-path config in the scratchpad; only `campaign_state` + `world_state` need to be correct in it:
-
-```yaml
-documents:
-  - { label: campaign_state, path: /home/kroussos/Phandalin/Phandalin/docs/campaign_state.md }
-  - { label: world_state,    path: /home/kroussos/Phandalin/Phandalin/docs/world_state.md }
+```bash
+CAMP=<abs campaign root>            # the dir holding docs/ and config/
+test -f "$CAMP/config/config.yaml"  || echo "STOP: no $CAMP/config/config.yaml"
+test ! -e "$CAMP/config.yaml"       || echo "STOP: misplaced root config $CAMP/config.yaml; the only valid config is config/config.yaml"
+test -f "$CAMP/docs/entity_registry.yaml" || echo "STOP: no registry at $CAMP/docs/entity_registry.yaml"
+test -f "$CAMP/config/config.yaml" && python3 - "$CAMP/config/config.yaml" <<'EOF'
+import sys, yaml, pathlib
+cfg = pathlib.Path(sys.argv[1]).resolve()
+bad = [d["path"] for d in yaml.safe_load(cfg.read_text()).get("documents", [])
+       if d.get("path") and not (cfg.parent / d["path"]).expanduser().is_file()]
+print("\n".join(f"STOP: documents[].path does not resolve from config/: {b}" for b in bad) or "config paths OK")
+EOF
 ```
+
+A root `config.yaml` is a STOP **even when `config/config.yaml` also exists and is correct**. Two configs means two authorities, and which one a tool picks depends on its CWD.
+
+Report the STOP to the GM with the failing check and path, and leave the fix to them. The fix is to move or repair the campaign's config, not to patch it for this run.
+
+**The script enforces the same rules itself (CampaignGenerator#484).** `check_consistency.py` refuses before any model call and names each problem: a config outside `config/`, or a stray root `config.yaml`, exits 2 with `misplaced config …`. A missing `docs/entity_registry.yaml` under the campaign root, a `campaign_state`/`world_state` absent from the config or with an empty path, a configured document that does not resolve, or a missing `--context` file exits 1 with `Error: …`. There is **no `--registry` flag**: the registry always comes from `<campaign>/docs/`, and a registry passed through `--context` does not stand in for it. Treat any of these exits as the same STOP as the preflight. The preflight still earns its place: it reports every problem at once, before you build the command. (Before the fix, a correctly placed config loaded no canon at all and printed only a note; on `out-of-the-abyss`, one Stage 1 check went out without canon, and the canon-backed rerun produced six findings the first run could not have made.)
 
 **Locate the script; don't assume the path.** It has moved — it now lives at `<repo>/session_doc/check_consistency.py`, not the repo root, and the repo may be `~/CampaignGenerator` **or** `~/src/CampaignGenerator`. `ls` before you build the command.
 
-Sanity check after the run: the header should read `Context  : N document(s)` with N = 3 (campaign state, world state, and canonical registry) + your `--context` count when a registry exists, or 2 + your count when it does not. There should be **no** `Warning: context file not found` lines.
+Sanity check **in the first seconds of the run, not after it** — the header prints immediately, long before the model call returns, so a wrong count is cheap to catch and expensive to discover later:
+
+```bash
+head -4 <log>                                  # Context : N document(s)
+```
+
+`N` should be **3** (campaign state, world state, canonical registry) + your `--context` count. Any missing input makes the script exit before this line prints, so a run that reaches it has all of them.
+
+**Compute the expected N before you launch and state it**, then compare. "Seven documents" reads as plausibly fine on its own; "seven, and I expected nine" does not. Getting this wrong costs a full run — and worse, a run whose report looks complete.
 
 ### 2.5. Discover + choose session prep — REQUIRED, do not skip
 
@@ -151,7 +163,7 @@ Ask explicitly — e.g. via AskUserQuestion — and **do not proceed without an 
 
 ```
 python <repo>/session_doc/check_consistency.py <document> \
-  [--config <campaign-config.yaml>] \
+  --config <abs campaign>/config/config.yaml \   # required; see step 2
   --backend claude-code \                  # default to the subscription, not the metered Anthropic API key
   --context <file1> <file2> ...            # NOTE: --context is nargs="+" — ONE flag, many files
   --output summaries/<session>/consistency_report_<tag>.md
@@ -170,17 +182,31 @@ python <repo>/session_doc/check_consistency.py <document> \
 
 ### 4. Run the check
 
-Execute and wait. Confirm the `Context : N document(s)` count and the absence of `context file not found` warnings (see step 2).
+Execute and wait. Confirm the `Context : N document(s)` count, and treat any non-zero exit before it as a STOP (see step 2).
 
 **Two script quirks that look like results but aren't:**
 
 - **The `No issues found.` banner is an unreliable false negative.** `check_consistency.py` counts occurrences of the literal string `**Location**`, but models routinely emit `**Location:**` (colon *inside* the bold), so `issue_count` comes back 0 while the body lists a dozen issues. **Always trust the report body over the banner**, and derive your own count by grepping the saved report for its actual heading pattern. **`^### ` is a guess, not the pattern** — the model also numbers findings as bold runs under `##` section headers (`**1. Moesko is a half-orc, not an orc**`), where `grep -c "^### "` returns a confident **0** on a report carrying twelve findings. That is the same false zero as the banner, arrived at a second way. Look at the file before counting it:
 
 ```bash
-grep -n "^## \|^### \|^\*\*[0-9]" <report>    # find the shape, THEN count it
+grep -n "^## \|^### \|^\*\*[0-9]\|^- \*\*\|^[0-9]\+\. \*\*" <report>   # find the shape, THEN count it
 ```
 
 Count whichever form is actually present, and say in the manifest which one you counted.
+
+**The format varies run to run, not campaign to campaign.** Four consecutive runs on `out-of-the-abyss` in two days — *same tool, same model (`gpt-5.6-sol`), same campaign, adjacent sessions* — produced four different delimiters:
+
+| Run | Delimiter | `grep -cE '^\s*[0-9]+\. \*\*'` | `grep -cE '^- \*\*'` | `grep -c '^### '` | Real |
+|---|---|---|---|---|---|
+| Ch 47 Stage 1 | `N. **Location:**` | 16 | 0 | 0 | 16 |
+| Ch 47 Stage 0 | `- **Location:**` | **0** | 12 | 0 | 12 |
+| Ch 48 Stage 0 | `### N. <title>` + `- **Location:**` sub-bullets | **0** | **48** | 12 | 12 |
+| Ch 48 Stage 1 | `- **Location**:` (no colon in the bold) | **0** | 6 | 0 | 6 |
+
+So you cannot carry a pattern forward from the previous run **of the same stage on the same campaign**. Two lessons beyond the false zero already described:
+
+- **The bullet pattern can OVERCOUNT as badly as the numbered one undercounts.** On Ch 48 Stage 0, `^- \*\*` returned **48** against 12 real findings, because each finding carries four `- **Location:** / **Issue:** / **Evidence:** / **Suggested fix:**` sub-bullets. A count four times too high is not obviously wrong the way a zero is, so it is likelier to be believed.
+- **Run every pattern, take the one that matches the body.** A single grep is never sufficient. Print all the candidate counts, read enough of the file to see which is right, and record the delimiter you counted in the manifest so the next run knows it proves nothing about the next format.
 - **`--backend claude-code` can hit its output ceiling and auto-continue**, printing a loud `WARNING: claude -p hit its output ceiling mid-generation and AUTO-CONTINUED across N assistant turns` with a possible seam at the boundary. When you see it, **inspect the saved report before trusting it**: `grep -n "^### "` for contiguous, correctly-numbered sections and check the tail is a complete entry, not a mid-sentence cut. Report what you found. If the report *is* damaged, re-run with a raised `CLAUDE_CODE_MAX_OUTPUT_TOKENS`.
 
 ### 4.5. Record the sources used — REQUIRED (YAML manifest)
@@ -227,7 +253,7 @@ consistency_check:
       - { path: notes/<prep>.md, resolved_path: /absolute/campaign/notes/<prep>.md, role: "session prep (authoritative)" }
       - { path: notes/sessions/handouts/<...>.md, resolved_path: /absolute/campaign/notes/sessions/handouts/<...>.md, role: "in-world handout / NPC tracker" }
   notes: |
-    Caveats worth recording — config workaround used, prep was `none`,
+    Caveats worth recording — prep was `none`,
     auto-continuation seam checked, session diverged from prep (step 5).
 ```
 
@@ -344,6 +370,23 @@ No hit in the target ⇒ the finding is a false positive *against this document*
 This bites hardest at **Stage 1 of `/staged-consistency`**, where passing `gm-assist.md` as context is mandatory and the two documents are near-paraphrases of each other, so a fragment "looks like" the target. One Stage 1 run had **three of seven** actionable findings in this class, all quoting gm-assist prose: a fearlessness line and an overstated promise that the enhancement pass had already dropped or hedged correctly, plus the framing half of a fourth. Every one would have been an edit re-introducing an error into a document that had it right.
 
 Note the direction this runs. A finding in this class is weak evidence that **the enhancement pass did its job** — it fixed something and the checker is quoting the unfixed upstream. Read a cluster of them as a good sign about the target, and say so when presenting, so the rejections don't read as the check being broken.
+
+**A finding that cites the grounding docs or AUTHORITATIVE CANON can still be wrong — the check cannot outrank the tape.** The registry and grounding docs are the check's *highest-trust* input, so when one of them is wrong the check reports the error with maximum confidence and recommends editing a correct recap to match it. There is no signal inside the report that distinguishes this from a real finding: the evidence line looks impeccable either way.
+
+Two instances, two sessions apart, both caught only by reading the transcript:
+
+- **A finding asserted "AUTHORITATIVE CANON, `campaign_state`, `world_state` and `party.md` identify Jorlan Duskryn as Daz's brother"** and proposed rewriting the recap accordingly. All four were wrong — he is Nym's brother. The trail: a *hedged* note in an earlier session summary (*"Jorlan **may** be Daz's brother — ongoing thread"*) lost its hedge when the grounding docs were regenerated, and the assertion then re-seeded every later check. Two extractions had already flagged it as incorrect and were ignored.
+- **A finding said a PC's Sharpshooter was for thrown *darts*, not javelins**, citing the grounding docs — in the very session where the player picked the feat, and where the transcript says "javelins" six times including *"my javelins are a plus 7 to hit"*.
+
+So: **when a finding would rewrite the target to match a grounding doc, verify the claim on the tape first.** If the tape disagrees, the finding inverts — the fix belongs in the grounding doc, and the recap was right. Ask before editing `docs/`, and expect the GM to scope it (on the Jorlan fix the GM took the three working docs and deliberately left the generated `state_staging/` and `distill_extractions/` to be overwritten).
+
+Two supporting habits: **grep `docs/distill/planning_extractions/` and `docs/ensemble/` before trusting a grounding-doc claim** — they sometimes already carry the correction — and **check the report's own citations**, which are not reliable. One finding attributed a claim to `campaign_state` that appears only in `world_state.md`.
+
+**A finding about a QUOTED line may be a tape problem, not a recap problem.** When the finding is that a quotation reads wrongly, grep the transcript for it before touching the recap. If the recap is quoting faithfully, editing it makes it *diverge* from the tape and the quote verifier will flag all of it. The fix belongs in `transcript_corrections.yaml` as per-cue entries; regenerate the tape, then update the quotes to follow.
+
+This is also the one error class **no other pass can reach**. Three findings in one run were ordinary-word ASR garbles inside quotes — `"an associated feed"` (feat), `"plus 2 to decks"` (Dex), `"an infinite diamond jack"` (damage hack). The spell pass cannot see them: `find_unknowns.py` surfaces unknown *capitalised* tokens, and these are correctly-spelled common words. `sd_verify_quotes` cannot either — it scored all three **verified**, correctly, because the recap quoted the tape exactly. Only a pass that reads for *sense* finds them. Fix them per-cue, never as glossary rows, since a case-insensitive rule on `feed`, `decks` or `jack` would corrupt every future transcript.
+
+**A real-name scrub is not a mechanical fix — it is an attribution change.** A finding that a real name (`Gabe`, `Mike`) should become a character name looks like pure find-and-replace, and the glossary's real-name rule makes it feel pre-approved. It is not: applying it asserts *who said the line*, and attribution is a precision decision. In one run the recap attributed a quote to "Gabe"; the scrub to "Zalthir" was applied as routine, and the transcript showed the speaker was **Daz** — turning a wrong real-name attribution into a wrong *character* attribution, which is worse because it now reads as canonical and no longer looks like something to check. **Verify the speaker on the tape before applying any real-name scrub**, and re-run `sd_verify_quotes` afterwards; that is what caught it, scoring the quote 0.40.
 
 **A table ruling is not a rules error — and this is the single largest false-positive class.** The check reads the campaign's stated character levels and flags anything the rules don't permit at that level: Action Surge at Level 1, a third 1st-level slot, `Cure Wounds` rolled as `2d8+2`. But the recap records *what the GM did*, and the GM outranks the PHB at their own table. In one run **7 of 12 findings** were this class, and every one was wrong — the GM had ruled the sidekicks to 2nd level (making two of the findings moot outright) and had knowingly misread `Cure Wounds` at the table and wanted it recorded as played.
 
@@ -465,5 +508,5 @@ Close with: what was applied / partially applied / rejected, **what the VTT caug
 - **Different document classes fail differently, and the run should be shaped accordingly.** A **first-pass recap** fails on *names* — transcription garbles, misspellings, mis-titles — and prep plus the glossaries catch most of it. An **enhanced recap** inherits those fixes clean and fails instead on *numbers, attribution and ordering*, none of which any grounding doc records. A **backfilled old chapter** (a first-pass recap of a session from long ago, typically part of a sweep to fix historical data) fails on names *and* attribution, usually has **no prep at all**, and generates a large class of false positives where the check compares a young party against grounding docs describing the present one — in one run 3 of 13 findings were purely that gap, and the two worst real defects (a garble that fused two PCs, and every heal credited to the wrong character) were invisible to the check and came only from a speaker-labelled transcript. On the enhanced class expect the report's hit rate to be poor — in one run **8 of 12 findings could not be applied as written** (7 rejected outright as table-accurate, 1 correct about the contradiction but pointing the wrong way) — and expect the VTT to supply most of the real errors (that same run: six the check could not see, including a heal credited to the wrong PC in four sections). Say which class you are checking in the manifest, and don't let a low report hit-rate read as "the document was clean."
 - The check is **advisory** — review every suggested fix before applying; never bulk-apply. The report is another LLM's unreviewed output: it can be confidently wrong about which side of a discrepancy is correct, and it can be confidently wrong that a table ruling is a rules violation.
 - **The reviewer is fallible too, and mid-run self-correction is normal.** Both of the reviewer's own errors in one run came from ruling before reading far enough — one from a grep window eight lines too narrow, one from stopping at the first matching combat hit. When you overturn your own earlier reading, say so plainly to the GM *before* they act on it (it changes which edits get made), and record it in `vtt_adjudicated`. A finding you stated and then corrected is more useful documented than quietly dropped.
-- Config resolution (step 2) is a known `check_consistency.py` limitation — CWD-only lookup with a fallback to the toolkit's own config. Run from the workspace root or pass `--config`; verify before blaming the check.
+- Config resolution (step 2): the only valid config is `<campaign>/config/config.yaml`, always passed with `--config`. A misplaced or unresolvable config, or a missing registry, is a STOP to report, never something to work around.
 - The YAML manifest (steps 4.5 + 6) is not optional — it is how the campaign records what each recap was judged against **and how each finding was ruled**.

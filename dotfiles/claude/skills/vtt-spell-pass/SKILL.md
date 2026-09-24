@@ -215,6 +215,21 @@ It reports three things that change the rest of the run:
   speakers cannot support quote attribution at all; if the GM needs speakers
   (they usually do), that file cannot be the deliverable no matter how clean
   its text is. Say so before doing the work, not after.
+
+  **Verify a `none detected` before acting on it — the detector has a bug.**
+  `prepare_input.py` reported `speakers: none detected` on a plain WebVTT whose
+  1,008 cue lines *all* carry `Name:` prefixes; a one-line grep found four
+  speakers and their counts. Acting on the false negative would have meant
+  telling the GM their transcript could not be used. Always cross-check:
+
+  ```bash
+  grep -oE '^[A-Za-z][A-Za-z ._-]{1,30}:' <vtt> | sort | uniq -c | sort -rn
+  ```
+
+  A speaker count is also a party roster check. Four labels where the campaign
+  has five players means **someone was absent**, which changes how you read
+  third-person references to their character — see the absent-player failure
+  mode in `/consistency-check`.
 - **people in the room who are not at the table.** A partner, a child, or a
   housemate wandering through gets transcribed like anyone else, and every
   proper noun in their speech becomes a candidate the GM must dismiss by hand
@@ -273,6 +288,18 @@ Omit `--registry` if `<campaign>/docs/entity_registry.yaml` doesn't exist (requi
 `--extra-known` accepts multiple paths — pass every dictionary the user
 confirmed in required-input #6 (omit the flag if none exist). Pass
 `--registry` too if required-input #5 found a registry (or its fallback).
+
+**`--npcs-dir` is REQUIRED by the script even though required-input #4 treats
+it as optional.** A campaign need not have `docs/npcs/` — `out-of-the-abyss`
+does not — and `find_unknowns.py` exits 2 with an argparse error rather than
+defaulting. Point it at an empty scratch directory:
+
+```bash
+mkdir -p "$SCRATCH/empty_npcs"      # then --npcs-dir "$SCRATCH/empty_npcs"
+```
+
+This costs nothing when dossiers do exist, so do it unconditionally rather than
+discovering the mismatch mid-run.
 
 `find_unknowns.py` emits the raw unknown-token list with counts and
 contexts. `cluster_unknowns.py` then:
@@ -739,6 +766,47 @@ or a non-name transcription fix (`Izzy` → `he's`) — **do not add it to the
 glossary.** This keeps the glossary safe to auto-apply to every future
 transcript. Examples this run: `Embrace → Fembris` (a blanket rule would
 corrupt "corrosive embrace"), `Call and → Kalan`, `Izzy → he's`.
+
+**The gate has a blind spot: REAL-WORLD PROPER NOUNS.** The lowercase grep and
+`lint_glossary.py --corpus`'s `corpus_lower` check both fire only on wrong-forms
+that appear *lowercase* — and a real-world proper noun never does. `Cisco`,
+`Greg`, `Dave`, `Glenn`, `Zuck`, `Chris` are all legitimate capitalised words
+that collide with campaign names, and **no automated check in this skill can
+catch them.** Only grepping the corpus for the bare form will.
+
+`Cisco → A'lai` sat in a blanket row and rewrote a real company across ~8
+sessions: *"6 of the top 10 customers at Cisco are federal government"*, *"I went
+to Cisco, Juniper, VMware, back to Cisco"*. `Ally → A'lai` rewrote the ordinary
+D&D word inside a rules question — *"keep the daggers from hitting my ally"*.
+The linter did warn on `Ally`; it could not warn on `Cisco`, and it never will.
+
+Out-of-character pre-roll is where this bites, because that is where real-world
+speech lives — jobs, tooling, sport. Expect it, and grep there first.
+
+**NEVER promote a cue-scoped GM ruling into a glossary row.** This is how the
+`Cisco` damage happened, and the glossary's own notes had recorded the decision
+correctly:
+
+> *targeted edits, all GM-confirmed: … "Cisco" → **A'lai** (GM ruling — "I don't
+> trust Cisco anymore" is Gyrgum on the prisoner)*
+
+The ruling was right **for that one line**. Someone later moved it into the
+standing row, where it began firing on every genuine mention of the company. A
+ruling about *a cue* and a rule about *every future transcript* are different
+objects, and the record exists precisely so the first does not have to become
+the second. When you find a wrong-form in a row that reads like it was meant for
+one line, check the notes section for its origin before trusting it.
+
+**This skill cannot see ordinary-word garbles at all — and that is fine, as long
+as you know it.** `find_unknowns.py` surfaces unknown *capitalised* tokens, so an
+ASR error that produces a correctly-spelled common word is structurally
+invisible here: `"an associated feed"` (feat), `"plus 2 to decks"` (Dex), `"an
+infinite diamond jack"` (damage hack). `sd_verify_quotes` cannot catch them
+either — it scores them **verified**, correctly, because the recap quotes the
+tape faithfully. They surface only in `/consistency-check`, which reads the
+recap for *sense*. So a clean spell pass is not evidence the tape is clean, and
+when a consistency check later reports a garbled quotation, the fix belongs back
+here as per-cue record entries — never as glossary rows, for the reason above.
 
 **Write these as record entries, not as edits.** A one-off fix used to be a
 targeted `Edit` on the cleaned output; it is now a `transcript_corrections.yaml`
