@@ -2,8 +2,10 @@
 """Mechanically verify every quoted span in a pipeline artifact against the VTT.
 
 Catches the class of error an LLM reviewer reads straight past: quotes spliced
-from two moments, quotes completed with words nobody said, and quotes attributed
-to the wrong speaker.
+from two moments, and quotes completed with words nobody said. It checks whether
+the WORDS are contiguous in the transcript, not WHO said them — cue text is
+matched with speaker labels stripped, so a quote credited to the wrong speaker
+passes. Attribution is a speaker-label question (consistency-check step 4.7).
 
     python3 verify_quotes.py --doc session_summary.md --vtt <session>.transcript.cleaned.vtt
 

@@ -1,7 +1,7 @@
 ---
 name: voice-smooth
 description: Render the verbatim scene-extraction quotes into readable, in-voice prose — a derived scene_extractions_smoothed/ layer that sits between /session-summary-consistency and session_doc. Uses each character's voice file as the guardrail. Fixes garble, run-ons, and disfluencies for readability WITHOUT changing what was said; never touches the verbatim (the VTT stays the raw record). Invoke as /voice-smooth [session-dir].
-tools: Read, Bash, Write, Edit, Glob, AskUserQuestion
+tools: Read, Bash, Write, Edit, Glob, AskUserQuestion, Artifact, WebFetch
 ---
 
 # Voice-Smooth — voice-aware readability rendering of quotes
@@ -219,20 +219,32 @@ A third tier appears once the run is long: candidates that are *mechanical appli
 
 #### Reporting at volume — the interactive review artifact
 
-Batch-vs-1x1 is about how many decisions to bundle into one *question*; it doesn't solve the problem of 74 rulings across 8 scenes exhausting the GM's attention regardless of bundling. For a full-session run, publish an interactive **Approve / Reject / Discuss** HTML artifact instead of (or as well as) walking the queue in chat. Demonstrated end-to-end on Phandalin ch3 (2025-05-28): a full 10-scene pass reviewed in two rounds, each round-tripped by download.
+Batch-vs-1x1 is about how many decisions to bundle into one *question*; it doesn't solve the problem of 74 rulings across 8 scenes exhausting the GM's attention regardless of bundling. For a full-session run, publish an **Approve / Reject / Discuss** review page instead of (or as well as) walking the queue in chat. Demonstrated on Phandalin ch3 (2025-05-28): a full 10-scene pass reviewed in two rounds.
 
-Build it with the `Artifact` tool (`artifact-design` skill for treatment — this is a utilitarian tool, not editorial; `artifact-capabilities` skill for the `downloads` contract):
+Build it with the shared review builder — full contract: `~/.claude/skills/_shared/review-artifact/CONTRACT.md`:
 
-- Declare `capabilities: {"downloads": true}`.
-- One card per candidate, grouped by scene (or by decision class for calibration pairs — step 4). Each card carries exactly what a 1x1 chat question would: every transcript's reading named, corroboration found, the voice-file/framing rationale, the full-sentence before→after preview, and a keep-verbatim option.
-- Each card gets a segmented **Approve / Reject / Discuss** control. **Discuss** reveals a `<textarea>` for the GM's own words — never force a bare reject when they want to explain or counter-propose.
-- A sticky tally dock (counts per verdict + how many remain undecided) so a long queue stays legible instead of becoming a wall to skim.
-- A "Download decisions" button: `claude.use("downloads")`, then `downloads.save({filename, data})`; if the namespace resolves `null`, reveal a fallback `<textarea>` pre-filled with the same content so the GM can copy-paste manually instead.
-- Export a single Markdown decision record, one section per candidate, verdict + any discuss-text — structured so you can parse it back mechanically.
+```bash
+python ~/.claude/skills/_shared/review-artifact/build_review.py \
+    --in  $SCRATCH/review_items_<round>.json --out $SCRATCH/review.html
+```
 
-**The round trip:** the GM downloads the record, then either pastes it into chat or names the saved path (on WSL2, a Windows-side save lands at `/mnt/c/Users/<user>/Downloads/...`, directly readable). Read it back and apply per verdict: **Approve** → apply the garble fix or calibration ruling exactly as a chat "yes" would; **Reject** → skip, don't re-litigate; **Discuss** → resolve using the GM's own text in conversation before acting — never auto-apply a Discuss item on your own reading of their note.
+- **One card per garble candidate**, id `s<NN>-g<NN>` (scene, candidate index) so the apply step can find the line, grouped by scene in scene order. Calibration pairs (step 4) use `cal-<NN>`, grouped by decision class.
+- **Each card carries exactly what a 1x1 chat question would**, in `ev`: every transcript's reading named, the corroboration found, the voice-file rationale (name the voice file), and the full-sentence verbatim → smoothed preview, **verbatim first**. The GM is judging a rewrite; a card that shows only the result is unreviewable. `y` applies the repair; `n` keeps the verbatim text.
+- Name each round's items file (`review_items_<round>.json`) and keep `--out` on one path for the whole run, so the page keeps one URL while each round's card text survives.
 
-This does not relax the confirmation requirement — every garble ruling still needs an explicit GM verdict, per-item. It changes the delivery mechanism at volume, not the checkpoint itself. Below the batch threshold (a handful of candidates in one scene), a chat question is still simpler; reach for the artifact once the queue is long enough that serial chat would exhaust the reviewer.
+**Publish, hand over the link, and stop.** Two ways the save reaches you, and one that is forbidden:
+
+- **The notification.** Publishing arms a live subscription on this session. When the GM saves, an `artifact-changed` task-notification naming this artifact arrives on its own — **that is the save signal.** Act on it: `WebFetch` the URL and run `read_decisions.py` without waiting to be told. It can lag, and it only lives as long as the session that published.
+- **The GM's word.** If the session was restarted, or the notification never comes, the GM says they are done. Same action.
+- **Never poll.** Not on a timer, not "just checking".
+
+A notification means *the page was republished*, nothing more — the decisions come from the state block, and `read_decisions.py` refuses a page whose `savedAt` is null. Before treating a later notification as a new round, check its `savedAt` is newer than the one you already processed.
+
+**Apply per verdict:** **approve** → apply the garble fix or calibration ruling exactly as a chat "yes" would; **reject** → keep the verbatim text, don't re-litigate; **discuss** → resolve in conversation first, per the rules below; **unmarked** → re-ask, per the rules below.
+
+This does not relax the confirmation requirement — every garble ruling still needs an explicit GM verdict, per item. It changes the delivery mechanism at volume, not the checkpoint itself. Below the batch threshold (a handful of candidates in one scene), a chat question is still simpler; reach for the page once the queue is long enough that serial chat would exhaust the reviewer.
+
+**Never touch `<scene-dir>/` or the VTT from the apply step.** Applying a ruling rewrites the derived `scene_extractions_smoothed/` file, never the record. And **transcription errors still escalate**: if a note says a quote is wrong in the *source*, that is a `/session-summary-consistency` item — flag it, do not smooth it away.
 
 **Reading the record back is where a review artifact quietly turns into rubber-stamping.** Two verdict states are not decisions, and treating either as one destroys the checkpoint the artifact exists to provide:
 
@@ -336,7 +348,7 @@ Ask: *"Approve these, edit specific ones, or want a different smoothing pass on 
 
 **Once calibration is locked, do not dump pairs for the remaining scenes.** A full session is many hundreds of quote lines and a wall of pairs gets skimmed, which is worse than no review. The real review of the rest happens through the garble rulings in step 2.5 — those are the changes that can actually go wrong. For each remaining scene, report what you rendered, the count of stage-direction splits and truncations handled, and then go to its rulings.
 
-If the calibration pairs themselves run long (many representative pairs, several decision classes), the same **interactive review artifact** described under step 2.5 applies here too — one card per pair, grouped by decision class, Approve/Reject/Discuss, download-and-read-back. Use plain chat for a single calibration scene's handful of pairs; reach for the artifact only if that set grows past what a reviewer can hold in view at once.
+If the calibration pairs themselves run long (many representative pairs, several decision classes), the same **review page** described under step 2.5 applies here too — one `cal-<NN>` card per pair, grouped by decision class, Approve/Reject/Discuss, read back with `read_decisions.py`. Use plain chat for a single calibration scene's handful of pairs; reach for the artifact only if that set grows past what a reviewer can hold in view at once.
 
 Apply all edits to the `scene_extractions_smoothed/` files only.
 
