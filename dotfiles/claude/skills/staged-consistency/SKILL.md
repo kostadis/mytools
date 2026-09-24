@@ -172,6 +172,12 @@ Run the full `/consistency-check` workflow against `$SESSION/gm-assist.md`, pass
 - Ask: "Apply any of these fixes to `gm-assist.md` before moving to stage 1?"
 - If yes, edit `gm-assist.md` directly. If no, log what was deferred so it can be revisited.
 
+**Stage 0 pays for itself, and the evidence is worth citing when the user asks whether to skip it.** On Ch 48 of `out-of-the-abyss` the order was spell pass → Stage 0 → `/enhance-summary` → Stage 1, and the effect was measurable: **Stage 0 found 12 issues; Stage 1 then found 6**, on a document three times longer. Every one of Stage 0's fixes survived the regeneration, because `gm-assist.md` is the structural spec the enhancement renders from — so a class of error fixed at Stage 0 *cannot* recur at Stage 1.
+
+One fix did more than survive, it **generalised**: an out-of-character label applied to a table-chatter quote at Stage 0 was re-applied by the enhancement to a second, previously unseen quote in the same anecdote, with the correct speaker. Fixing the spec changes what the renderer *produces*, not just what it copies.
+
+The corollary is an ordering rule: **fix gm-assist before enhancing, never after.** Stage 0 on a gm-assist that has already been enhanced from is still worth running, but it is no longer a virgin pass — Stage 1's rulings will have been propagated back into it, the check cannot re-find them, and the manifest has to say so or the finding count reads as a clean bill of health.
+
 **Important caveat about gm-assist.md**: this file may be the user's preserved-original artifact (paired with a `gm-assist-update.md` next to it). If a `gm-assist-update.md` exists, ask the user whether to check that file instead and treat it as the canonical first-pass artifact. The convention is "original preserved, corrected version alongside" — apply fixes to the `-update.md` if present, otherwise the original.
 
 ### 3. Stage 1 — session-summary check

@@ -86,9 +86,45 @@ documents:
   - { label: world_state,    path: /home/kroussos/Phandalin/Phandalin/docs/world_state.md }
 ```
 
+**That recipe alone silently drops the entity registry — the registry resolves by a DIFFERENT mechanism than `documents[]`.** `find_registry(base_dir)` (`session_doc/check_consistency.py:130`) ignores `documents[]` entirely and looks for **`<the config file's own folder>/docs/entity_registry.yaml`**. So a throwaway config full of absolute document paths resolves `campaign_state` and `world_state` correctly and still loads **no canon at all**, because nothing named `docs/entity_registry.yaml` sits beside the throwaway. There is **no `--registry` flag** to compensate.
+
+The failure is near-silent. You get one stderr line —
+
+```
+Note: no entity_registry.yaml found under .../config, skipping canon section.
+```
+
+— and a report that looks entirely normal, minus the **AUTHORITATIVE CANON** section that resolves NPC names, aliases and `distinct` pairs. Findings that the registry would have settled instead arrive as canon-judgment questions for the user, or don't arrive at all.
+
+So the throwaway config needs a `docs/` **beside it**, not just correct paths inside it:
+
+```bash
+CFG="$SCRATCH/cfg"; mkdir -p "$CFG"
+sed 's#\.\./docs/#docs/#' <campaign>/config/config.yaml > "$CFG/config.yaml"
+ln -s <campaign>/docs "$CFG/docs"          # this is what makes the registry resolve
+```
+
+Validate it offline, before spending anything on a model call:
+
+```python
+from session_doc.check_consistency import find_registry
+find_registry("<CFG>")     # must return an existing path, not None
+```
+
+This applies to **every** campaign whose only config lives in `config/` — Phandalin and `out-of-the-abyss` both. On `out-of-the-abyss` the first run of a Stage 1 check went out without canon and had to be aborted a minute in; the relaunch with the symlink produced six findings citing **AUTHORITATIVE CANON** that the first run could not have made.
+
 **Locate the script; don't assume the path.** It has moved — it now lives at `<repo>/session_doc/check_consistency.py`, not the repo root, and the repo may be `~/CampaignGenerator` **or** `~/src/CampaignGenerator`. `ls` before you build the command.
 
-Sanity check after the run: the header should read `Context  : N document(s)` with N = 3 (campaign state, world state, and canonical registry) + your `--context` count when a registry exists, or 2 + your count when it does not. There should be **no** `Warning: context file not found` lines.
+Sanity check **in the first seconds of the run, not after it** — the header prints immediately, long before the model call returns, so a wrong count is cheap to catch and expensive to discover later:
+
+```bash
+head -4 <log>                                  # Context : N document(s)
+grep -c "skipping canon section" <log>         # must be 0
+```
+
+`N` should be **3** (campaign state, world state, canonical registry) + your `--context` count where a registry exists, or 2 + your count where none does. There should be **no** `Warning: context file not found` lines.
+
+**Compute the expected N before you launch and state it**, then compare. "Seven documents" reads as plausibly fine on its own; "seven, and I expected nine" does not. Getting this wrong costs a full run — and worse, a run whose report looks complete.
 
 ### 2.5. Discover + choose session prep — REQUIRED, do not skip
 
@@ -177,10 +213,24 @@ Execute and wait. Confirm the `Context : N document(s)` count and the absence of
 - **The `No issues found.` banner is an unreliable false negative.** `check_consistency.py` counts occurrences of the literal string `**Location**`, but models routinely emit `**Location:**` (colon *inside* the bold), so `issue_count` comes back 0 while the body lists a dozen issues. **Always trust the report body over the banner**, and derive your own count by grepping the saved report for its actual heading pattern. **`^### ` is a guess, not the pattern** — the model also numbers findings as bold runs under `##` section headers (`**1. Moesko is a half-orc, not an orc**`), where `grep -c "^### "` returns a confident **0** on a report carrying twelve findings. That is the same false zero as the banner, arrived at a second way. Look at the file before counting it:
 
 ```bash
-grep -n "^## \|^### \|^\*\*[0-9]" <report>    # find the shape, THEN count it
+grep -n "^## \|^### \|^\*\*[0-9]\|^- \*\*\|^[0-9]\+\. \*\*" <report>   # find the shape, THEN count it
 ```
 
 Count whichever form is actually present, and say in the manifest which one you counted.
+
+**The format varies run to run, not campaign to campaign.** Four consecutive runs on `out-of-the-abyss` in two days — *same tool, same model (`gpt-5.6-sol`), same campaign, adjacent sessions* — produced four different delimiters:
+
+| Run | Delimiter | `grep -cE '^\s*[0-9]+\. \*\*'` | `grep -cE '^- \*\*'` | `grep -c '^### '` | Real |
+|---|---|---|---|---|---|
+| Ch 47 Stage 1 | `N. **Location:**` | 16 | 0 | 0 | 16 |
+| Ch 47 Stage 0 | `- **Location:**` | **0** | 12 | 0 | 12 |
+| Ch 48 Stage 0 | `### N. <title>` + `- **Location:**` sub-bullets | **0** | **48** | 12 | 12 |
+| Ch 48 Stage 1 | `- **Location**:` (no colon in the bold) | **0** | 6 | 0 | 6 |
+
+So you cannot carry a pattern forward from the previous run **of the same stage on the same campaign**. Two lessons beyond the false zero already described:
+
+- **The bullet pattern can OVERCOUNT as badly as the numbered one undercounts.** On Ch 48 Stage 0, `^- \*\*` returned **48** against 12 real findings, because each finding carries four `- **Location:** / **Issue:** / **Evidence:** / **Suggested fix:**` sub-bullets. A count four times too high is not obviously wrong the way a zero is, so it is likelier to be believed.
+- **Run every pattern, take the one that matches the body.** A single grep is never sufficient. Print all the candidate counts, read enough of the file to see which is right, and record the delimiter you counted in the manifest so the next run knows it proves nothing about the next format.
 - **`--backend claude-code` can hit its output ceiling and auto-continue**, printing a loud `WARNING: claude -p hit its output ceiling mid-generation and AUTO-CONTINUED across N assistant turns` with a possible seam at the boundary. When you see it, **inspect the saved report before trusting it**: `grep -n "^### "` for contiguous, correctly-numbered sections and check the tail is a complete entry, not a mid-sentence cut. Report what you found. If the report *is* damaged, re-run with a raised `CLAUDE_CODE_MAX_OUTPUT_TOKENS`.
 
 ### 4.5. Record the sources used — REQUIRED (YAML manifest)
@@ -344,6 +394,23 @@ No hit in the target ⇒ the finding is a false positive *against this document*
 This bites hardest at **Stage 1 of `/staged-consistency`**, where passing `gm-assist.md` as context is mandatory and the two documents are near-paraphrases of each other, so a fragment "looks like" the target. One Stage 1 run had **three of seven** actionable findings in this class, all quoting gm-assist prose: a fearlessness line and an overstated promise that the enhancement pass had already dropped or hedged correctly, plus the framing half of a fourth. Every one would have been an edit re-introducing an error into a document that had it right.
 
 Note the direction this runs. A finding in this class is weak evidence that **the enhancement pass did its job** — it fixed something and the checker is quoting the unfixed upstream. Read a cluster of them as a good sign about the target, and say so when presenting, so the rejections don't read as the check being broken.
+
+**A finding that cites the grounding docs or AUTHORITATIVE CANON can still be wrong — the check cannot outrank the tape.** The registry and grounding docs are the check's *highest-trust* input, so when one of them is wrong the check reports the error with maximum confidence and recommends editing a correct recap to match it. There is no signal inside the report that distinguishes this from a real finding: the evidence line looks impeccable either way.
+
+Two instances, two sessions apart, both caught only by reading the transcript:
+
+- **A finding asserted "AUTHORITATIVE CANON, `campaign_state`, `world_state` and `party.md` identify Jorlan Duskryn as Daz's brother"** and proposed rewriting the recap accordingly. All four were wrong — he is Nym's brother. The trail: a *hedged* note in an earlier session summary (*"Jorlan **may** be Daz's brother — ongoing thread"*) lost its hedge when the grounding docs were regenerated, and the assertion then re-seeded every later check. Two extractions had already flagged it as incorrect and were ignored.
+- **A finding said a PC's Sharpshooter was for thrown *darts*, not javelins**, citing the grounding docs — in the very session where the player picked the feat, and where the transcript says "javelins" six times including *"my javelins are a plus 7 to hit"*.
+
+So: **when a finding would rewrite the target to match a grounding doc, verify the claim on the tape first.** If the tape disagrees, the finding inverts — the fix belongs in the grounding doc, and the recap was right. Ask before editing `docs/`, and expect the GM to scope it (on the Jorlan fix the GM took the three working docs and deliberately left the generated `state_staging/` and `distill_extractions/` to be overwritten).
+
+Two supporting habits: **grep `docs/distill/planning_extractions/` and `docs/ensemble/` before trusting a grounding-doc claim** — they sometimes already carry the correction — and **check the report's own citations**, which are not reliable. One finding attributed a claim to `campaign_state` that appears only in `world_state.md`.
+
+**A finding about a QUOTED line may be a tape problem, not a recap problem.** When the finding is that a quotation reads wrongly, grep the transcript for it before touching the recap. If the recap is quoting faithfully, editing it makes it *diverge* from the tape and the quote verifier will flag all of it. The fix belongs in `transcript_corrections.yaml` as per-cue entries; regenerate the tape, then update the quotes to follow.
+
+This is also the one error class **no other pass can reach**. Three findings in one run were ordinary-word ASR garbles inside quotes — `"an associated feed"` (feat), `"plus 2 to decks"` (Dex), `"an infinite diamond jack"` (damage hack). The spell pass cannot see them: `find_unknowns.py` surfaces unknown *capitalised* tokens, and these are correctly-spelled common words. `sd_verify_quotes` cannot either — it scored all three **verified**, correctly, because the recap quoted the tape exactly. Only a pass that reads for *sense* finds them. Fix them per-cue, never as glossary rows, since a case-insensitive rule on `feed`, `decks` or `jack` would corrupt every future transcript.
+
+**A real-name scrub is not a mechanical fix — it is an attribution change.** A finding that a real name (`Gabe`, `Mike`) should become a character name looks like pure find-and-replace, and the glossary's real-name rule makes it feel pre-approved. It is not: applying it asserts *who said the line*, and attribution is a precision decision. In one run the recap attributed a quote to "Gabe"; the scrub to "Zalthir" was applied as routine, and the transcript showed the speaker was **Daz** — turning a wrong real-name attribution into a wrong *character* attribution, which is worse because it now reads as canonical and no longer looks like something to check. **Verify the speaker on the tape before applying any real-name scrub**, and re-run `sd_verify_quotes` afterwards; that is what caught it, scoring the quote 0.40.
 
 **A table ruling is not a rules error — and this is the single largest false-positive class.** The check reads the campaign's stated character levels and flags anything the rules don't permit at that level: Action Surge at Level 1, a third 1st-level slot, `Cure Wounds` rolled as `2d8+2`. But the recap records *what the GM did*, and the GM outranks the PHB at their own table. In one run **7 of 12 findings** were this class, and every one was wrong — the GM had ruled the sidekicks to 2nd level (making two of the findings moot outright) and had knowingly misread `Cure Wounds` at the table and wanted it recorded as played.
 
