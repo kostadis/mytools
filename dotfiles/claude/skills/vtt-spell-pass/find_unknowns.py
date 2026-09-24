@@ -5,7 +5,7 @@ campaign's known-names set.
 Inputs:
   --vtt <path>         VTT transcript file
   --glossary <path>    notes/vtt_transcription_corrections.md
-  --npcs-dir <path>    docs/npcs/
+  --npcs-dir <path>    Optional docs/npcs/ (omit if none; a missing path errors)
   --extra-known <path> Optional plain-text file, one canonical name per line
                        (PCs, players, common module proper nouns, etc.)
   --registry <path>    Optional docs/entity_registry.yaml — every entity name
@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -122,10 +123,19 @@ def parse_glossary(path: Path) -> tuple[list[tuple[str, str]], set[str]]:
     return replacements, canonicals
 
 
-def parse_npc_dossiers(npcs_dir: Path) -> set[str]:
+def _require_exists(path: Path, flag: str) -> None:
+    """A path the caller named must exist. Omitting an optional input is
+    fine; naming one that isn't there is a typo that would otherwise drop a
+    whole known-name source without a word."""
+    if not path.exists():
+        sys.exit(f"Error: {flag} path does not exist: {path}")
+
+
+def parse_npc_dossiers(npcs_dir: Path | None) -> set[str]:
     names: set[str] = set()
-    if not npcs_dir.exists():
+    if npcs_dir is None:
         return names
+    _require_exists(npcs_dir, "--npcs-dir")
 
     alias_re = re.compile(r"^\s*[-*]?\s*(?:aka|also known as|aliases?)\s*[:\-]\s*(.+)$", re.I)
     h1_re = re.compile(r"^#\s+(.+?)\s*$")
@@ -165,8 +175,9 @@ def load_registry_names(registry_path: Path | None) -> set[str]:
     an approved canonical alternate name — never a misspelling — so every
     name returned here is safe to treat as known-correct.
     """
-    if not registry_path or not registry_path.exists():
+    if not registry_path:
         return set()
+    _require_exists(registry_path, "--registry")
     import yaml
     data = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
     names: set[str] = set()
@@ -190,8 +201,7 @@ def load_extra(paths: Path | list[Path] | None) -> set[str]:
         paths = [paths]
     names: set[str] = set()
     for path in paths:
-        if not path or not path.exists():
-            continue
+        _require_exists(path, "--extra-known")
         names |= {
             line.strip()
             for line in path.read_text(encoding="utf-8").splitlines()
@@ -429,7 +439,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--vtt", required=True, type=Path)
     ap.add_argument("--glossary", required=True, type=Path)
-    ap.add_argument("--npcs-dir", required=True, type=Path)
+    ap.add_argument("--npcs-dir", type=Path, default=None,
+                    help="docs/npcs/ dossier dir; omit if the campaign has none "
+                         "(a path that does not exist is an error)")
     ap.add_argument("--extra-known", type=Path, nargs="*", default=[],
                     help="One or more flat one-name-per-line dictionaries of "
                          "verified nouns (e.g. notes/proper_nouns_adventure.txt)")
