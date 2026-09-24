@@ -64,54 +64,31 @@ So: read the prior manifest for context and for its `carry_forward` work items, 
 
 ### 2. Locate the campaign workspace + verify config resolves
 
-Run `pwd`. **`check_consistency.py`'s config auto-detection is narrower than it looks** — `find_default_config()` checks exactly two places:
+**There is exactly one valid config location: `<campaign>/config/config.yaml`.** Every `documents[].path` inside it is relative to `config/`, so it reads `../docs/campaign_state.md`. Anything else is a broken campaign, not a variant to work around. **Fail loudly: stop, report which check failed and the exact path, and do not run the model.** Do not build a throwaway config, symlink `docs/`, rewrite paths, copy the config, or run from a different directory to make it resolve. Workarounds like these are how the registry drop below went unnoticed.
 
-1. `Path.cwd() / "config.yaml"` — CWD only, **no upward search**
-2. otherwise `<CampaignGenerator repo root>/config/config.yaml` — **the toolkit's own config, not the campaign's**
+Always pass `--config <abs campaign>/config/config.yaml` explicitly. Without it the script uses `<cwd>/config/config.yaml`, so the result depends on where you ran it from; an explicit path does not. (Before CampaignGenerator#484 it fell back to CampaignGenerator's *own* config and checked the recap against the wrong campaign.)
 
-So running from a session subdirectory (`summaries/007/`) does **not** find the campaign config one or two levels up. It silently falls through to CampaignGenerator's config and checks the recap against the wrong campaign — or dies on missing paths. Two safe options:
-
-- **Run from the campaign workspace root** (the dir holding `config.yaml` + `docs/`). Preferred: `base_dir` then resolves `docs/*` correctly and the document is just a relative path. Or
-- **Pass `--config <abs-path-to-campaign-config.yaml>` explicitly.**
-
-**Config-move gotcha.** `load_config` sets `base_dir = config_path.parent`, so `documents[].path` resolves against the **config file's own directory**. A workspace that moved `config.yaml` into `config/` makes `docs/campaign_state.md` resolve to `config/docs/...` → `file not found`. Fixes: rewrite the config's paths relative to its own dir (`../docs/...`), or point `--config` at one using absolute paths (a throwaway in the scratchpad works — only `campaign_state` + `world_state` are auto-loaded).
-
-Watch for a workspace holding **both** `config.yaml` and `config/config.yaml` with identical relative paths (obelisk does). Only the root one resolves correctly, and only when CWD is the workspace root.
-
-**Phandalin is the harder variant: it has NO root `config.yaml` at all.** Its only config is `config/config.yaml`, whose `documents[].path` entries are relative (`docs/campaign_state.md`) and therefore resolve to `config/docs/…` and fail. Auto-detection cannot save you — with no root config it falls through to CampaignGenerator's own. Every Phandalin run needs an explicit `--config` pointing at a throwaway absolute-path config in the scratchpad; only `campaign_state` + `world_state` need to be correct in it:
-
-```yaml
-documents:
-  - { label: campaign_state, path: /home/kroussos/Phandalin/Phandalin/docs/campaign_state.md }
-  - { label: world_state,    path: /home/kroussos/Phandalin/Phandalin/docs/world_state.md }
-```
-
-**That recipe alone silently drops the entity registry — the registry resolves by a DIFFERENT mechanism than `documents[]`.** `find_registry(base_dir)` (`session_doc/check_consistency.py:130`) ignores `documents[]` entirely and looks for **`<the config file's own folder>/docs/entity_registry.yaml`**. So a throwaway config full of absolute document paths resolves `campaign_state` and `world_state` correctly and still loads **no canon at all**, because nothing named `docs/entity_registry.yaml` sits beside the throwaway. There is **no `--registry` flag** to compensate.
-
-The failure is near-silent. You get one stderr line —
-
-```
-Note: no entity_registry.yaml found under .../config, skipping canon section.
-```
-
-— and a report that looks entirely normal, minus the **AUTHORITATIVE CANON** section that resolves NPC names, aliases and `distinct` pairs. Findings that the registry would have settled instead arrive as canon-judgment questions for the user, or don't arrive at all.
-
-So the throwaway config needs a `docs/` **beside it**, not just correct paths inside it:
+**Preflight: run all of these before launching. Any failure is a STOP.**
 
 ```bash
-CFG="$SCRATCH/cfg"; mkdir -p "$CFG"
-sed 's#\.\./docs/#docs/#' <campaign>/config/config.yaml > "$CFG/config.yaml"
-ln -s <campaign>/docs "$CFG/docs"          # this is what makes the registry resolve
+CAMP=<abs campaign root>            # the dir holding docs/ and config/
+test -f "$CAMP/config/config.yaml"  || echo "STOP: no $CAMP/config/config.yaml"
+test ! -e "$CAMP/config.yaml"       || echo "STOP: misplaced root config $CAMP/config.yaml; the only valid config is config/config.yaml"
+test -f "$CAMP/docs/entity_registry.yaml" || echo "STOP: no registry at $CAMP/docs/entity_registry.yaml"
+test -f "$CAMP/config/config.yaml" && python3 - "$CAMP/config/config.yaml" <<'EOF'
+import sys, yaml, pathlib
+cfg = pathlib.Path(sys.argv[1]).resolve()
+bad = [d["path"] for d in yaml.safe_load(cfg.read_text()).get("documents", [])
+       if d.get("path") and not (cfg.parent / d["path"]).expanduser().is_file()]
+print("\n".join(f"STOP: documents[].path does not resolve from config/: {b}" for b in bad) or "config paths OK")
+EOF
 ```
 
-Validate it offline, before spending anything on a model call:
+A root `config.yaml` is a STOP **even when `config/config.yaml` also exists and is correct**. Two configs means two authorities, and which one a tool picks depends on its CWD.
 
-```python
-from session_doc.check_consistency import find_registry
-find_registry("<CFG>")     # must return an existing path, not None
-```
+Report the STOP to the GM with the failing check and path, and leave the fix to them. The fix is to move or repair the campaign's config, not to patch it for this run.
 
-This applies to **every** campaign whose only config lives in `config/` — Phandalin and `out-of-the-abyss` both. On `out-of-the-abyss` the first run of a Stage 1 check went out without canon and had to be aborted a minute in; the relaunch with the symlink produced six findings citing **AUTHORITATIVE CANON** that the first run could not have made.
+**The script enforces the same rules itself (CampaignGenerator#484).** `check_consistency.py` refuses before any model call and names each problem: a config outside `config/`, or a stray root `config.yaml`, exits 2 with `misplaced config …`. A missing `docs/entity_registry.yaml` under the campaign root, a `campaign_state`/`world_state` absent from the config or with an empty path, a configured document that does not resolve, or a missing `--context` file exits 1 with `Error: …`. There is **no `--registry` flag**: the registry always comes from `<campaign>/docs/`, and a registry passed through `--context` does not stand in for it. Treat any of these exits as the same STOP as the preflight. The preflight still earns its place: it reports every problem at once, before you build the command. (Before the fix, a correctly placed config loaded no canon at all and printed only a note; on `out-of-the-abyss`, one Stage 1 check went out without canon, and the canon-backed rerun produced six findings the first run could not have made.)
 
 **Locate the script; don't assume the path.** It has moved — it now lives at `<repo>/session_doc/check_consistency.py`, not the repo root, and the repo may be `~/CampaignGenerator` **or** `~/src/CampaignGenerator`. `ls` before you build the command.
 
@@ -119,10 +96,9 @@ Sanity check **in the first seconds of the run, not after it** — the header pr
 
 ```bash
 head -4 <log>                                  # Context : N document(s)
-grep -c "skipping canon section" <log>         # must be 0
 ```
 
-`N` should be **3** (campaign state, world state, canonical registry) + your `--context` count where a registry exists, or 2 + your count where none does. There should be **no** `Warning: context file not found` lines.
+`N` should be **3** (campaign state, world state, canonical registry) + your `--context` count. Any missing input makes the script exit before this line prints, so a run that reaches it has all of them.
 
 **Compute the expected N before you launch and state it**, then compare. "Seven documents" reads as plausibly fine on its own; "seven, and I expected nine" does not. Getting this wrong costs a full run — and worse, a run whose report looks complete.
 
@@ -187,7 +163,7 @@ Ask explicitly — e.g. via AskUserQuestion — and **do not proceed without an 
 
 ```
 python <repo>/session_doc/check_consistency.py <document> \
-  [--config <campaign-config.yaml>] \
+  --config <abs campaign>/config/config.yaml \   # required; see step 2
   --backend claude-code \                  # default to the subscription, not the metered Anthropic API key
   --context <file1> <file2> ...            # NOTE: --context is nargs="+" — ONE flag, many files
   --output summaries/<session>/consistency_report_<tag>.md
@@ -206,7 +182,7 @@ python <repo>/session_doc/check_consistency.py <document> \
 
 ### 4. Run the check
 
-Execute and wait. Confirm the `Context : N document(s)` count and the absence of `context file not found` warnings (see step 2).
+Execute and wait. Confirm the `Context : N document(s)` count, and treat any non-zero exit before it as a STOP (see step 2).
 
 **Two script quirks that look like results but aren't:**
 
@@ -277,7 +253,7 @@ consistency_check:
       - { path: notes/<prep>.md, resolved_path: /absolute/campaign/notes/<prep>.md, role: "session prep (authoritative)" }
       - { path: notes/sessions/handouts/<...>.md, resolved_path: /absolute/campaign/notes/sessions/handouts/<...>.md, role: "in-world handout / NPC tracker" }
   notes: |
-    Caveats worth recording — config workaround used, prep was `none`,
+    Caveats worth recording — prep was `none`,
     auto-continuation seam checked, session diverged from prep (step 5).
 ```
 
@@ -532,5 +508,5 @@ Close with: what was applied / partially applied / rejected, **what the VTT caug
 - **Different document classes fail differently, and the run should be shaped accordingly.** A **first-pass recap** fails on *names* — transcription garbles, misspellings, mis-titles — and prep plus the glossaries catch most of it. An **enhanced recap** inherits those fixes clean and fails instead on *numbers, attribution and ordering*, none of which any grounding doc records. A **backfilled old chapter** (a first-pass recap of a session from long ago, typically part of a sweep to fix historical data) fails on names *and* attribution, usually has **no prep at all**, and generates a large class of false positives where the check compares a young party against grounding docs describing the present one — in one run 3 of 13 findings were purely that gap, and the two worst real defects (a garble that fused two PCs, and every heal credited to the wrong character) were invisible to the check and came only from a speaker-labelled transcript. On the enhanced class expect the report's hit rate to be poor — in one run **8 of 12 findings could not be applied as written** (7 rejected outright as table-accurate, 1 correct about the contradiction but pointing the wrong way) — and expect the VTT to supply most of the real errors (that same run: six the check could not see, including a heal credited to the wrong PC in four sections). Say which class you are checking in the manifest, and don't let a low report hit-rate read as "the document was clean."
 - The check is **advisory** — review every suggested fix before applying; never bulk-apply. The report is another LLM's unreviewed output: it can be confidently wrong about which side of a discrepancy is correct, and it can be confidently wrong that a table ruling is a rules violation.
 - **The reviewer is fallible too, and mid-run self-correction is normal.** Both of the reviewer's own errors in one run came from ruling before reading far enough — one from a grep window eight lines too narrow, one from stopping at the first matching combat hit. When you overturn your own earlier reading, say so plainly to the GM *before* they act on it (it changes which edits get made), and record it in `vtt_adjudicated`. A finding you stated and then corrected is more useful documented than quietly dropped.
-- Config resolution (step 2) is a known `check_consistency.py` limitation — CWD-only lookup with a fallback to the toolkit's own config. Run from the workspace root or pass `--config`; verify before blaming the check.
+- Config resolution (step 2): the only valid config is `<campaign>/config/config.yaml`, always passed with `--config`. A misplaced or unresolvable config, or a missing registry, is a STOP to report, never something to work around.
 - The YAML manifest (steps 4.5 + 6) is not optional — it is how the campaign records what each recap was judged against **and how each finding was ruled**.
