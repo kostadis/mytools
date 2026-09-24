@@ -1,7 +1,7 @@
 ---
 name: staged-consistency
 description: Run consistency checks at every LLM-pipeline boundary (gm-assist → session-summary → scene extractions → narration) with a human-review gate between stages. Use when the user invokes /staged-consistency [session-dir] and wants the multi-stage check rather than a one-shot. Prevents fix-propagation drift where stale per-scene quotes silently re-inject errors into the next narration run.
-tools: Bash, Read, Write, Edit, Glob, AskUserQuestion
+tools: Bash, Read, Write, Edit, Glob, AskUserQuestion, Artifact, WebFetch
 ---
 
 # Staged Consistency
@@ -18,7 +18,7 @@ Every stage below runs the **full `/consistency-check` workflow**. That skill ow
 
 | Step | What it is | Why staging makes it more important, not less |
 |---|---|---|
-| 2 | Config resolution | `find_default_config()` is CWD-only with a fallback to CampaignGenerator's *own* config. Get it wrong once and every stage checks against the wrong campaign. |
+| 2 | Config resolution | The only valid config is `<campaign>/config/config.yaml`, always passed with `--config`; anything else is a STOP. Get it wrong once and every stage fails, or checks the wrong campaign. |
 | 2.5 | Prep discovery + tiered choice | Prep is what catches transcription errors — the entire reason this skill exists. |
 | 3 | Campaign-standard context set | See below. Staged runs it N+3 times; a dropped source is dropped N+3 times. |
 | 4.7 | VTT adjudication | Stage 2 is *made of* verbatim quotes. The grounding docs are structurally blind to them; only the tape settles a quote. |
@@ -35,16 +35,30 @@ Read `/consistency-check`'s SKILL.md before the first stage and keep its guidanc
 
 ## Workflow
 
+### 0a. Choose the review mode
+
+Before locating anything, one `AskUserQuestion`:
+
+> **Review each stage's findings in an artifact, or here in the shell?**
+> - **Artifact** — one page per stage at a single URL, mark the rulings at your own pace, save once per stage.
+> - **Shell** — the severity table and "Going 1x1?", the way this skill has always worked.
+
+Ask this every run; do not remember a default. In artifact mode the severity
+table is still presented in the shell — it is the at-a-glance summary — but
+the *rulings* move to the page. See **Artifact mode** below. At Stage 2 this is
+also the grouped-vs-per-scene choice (step 4), which is why it is settled before
+anything runs.
+
 ### 0. Locate the session directory, the script, and the context set
 
 If the user passed a path argument, use it. Otherwise:
-- Run `pwd` to confirm CWD is a campaign workspace (contains `docs/`, `summaries/`, `config.yaml`).
+- Run `pwd` to confirm CWD is a campaign workspace (contains `docs/`, `summaries/`, `config/config.yaml`).
 - List recent session directories: `ls -t summaries/ | head -10`
 - Ask: "Which session — pass the path under `summaries/` (e.g. `summaries/20260512`)?"
 
 **Locate the script; don't assume the path.** It lives at `<repo>/session_doc/check_consistency.py` (it moved out of the repo root), and the repo may be `~/CampaignGenerator` **or** `~/src/CampaignGenerator`. There is also an installed console script, `check_consistency`. `ls` before building any command.
 
-**Resolve config once, here.** Per `/consistency-check` step 2: run from the workspace root, or pass `--config <abs-path>`. Some workspaces (Phandalin) have no root `config.yaml` at all and need a throwaway absolute-path config. Settle this before stage 0 — a config mistake repeated across every stage is the most expensive error this skill can make.
+**Resolve config once, here.** Run `/consistency-check` step 2's preflight and pass `--config <abs campaign>/config/config.yaml` at every stage. A misplaced config, unresolvable document paths or a missing registry is a STOP to report, never something to work around. Settle this before stage 0 — a config mistake repeated across every stage is the most expensive error this skill can make.
 
 #### Prep discovery — delegate to `/consistency-check` step 2.5, do not use a shortened version
 
@@ -88,10 +102,31 @@ Determine which stages exist:
 SESSION=<session-dir>
 ls "$SESSION"/gm-assist.md 2>/dev/null
 ls "$SESSION"/session-summary.md 2>/dev/null
-ls "$SESSION"/scene_extractions_new/0*.md 2>/dev/null | grep -v ".prev\|.scaffold"
+ls "$SESSION"/scene_extractions{,_new}/0*.md 2>/dev/null | grep -v ".prev\|.scaffold"
 ls "$SESSION"/narration/enhanced_sections.md 2>/dev/null
 ls "$SESSION"/narration/*.md 2>/dev/null   # final narration if generated
+
+# and the three things that tell you what already ran, and from what:
+cat  "$SESSION"/.cg/activity.jsonl 2>/dev/null      # stage, rc, and the OUTPUT paths
+ls   "$SESSION"/consistency_report_stage*.md 2>/dev/null
+cat  "$SESSION"/consistency_*stage*.sources.yaml 2>/dev/null        # <- the RULINGS live here (step-7 and report-stem names)
+ls   "$SESSION"/logs/*_enhance_summary.md 2>/dev/null
 ```
+
+⭐ **Filenames vary.** The stage-0 artifact is often not called `gm-assist.md` — a
+GMAssistant export lands as `session_<date>_session_<date>.md`, and the enhance
+output as `session_summary.md` rather than `session-summary.md`. The scene
+extractions land in `scene_extractions/` or `scene_extractions_new/`. Do not
+conclude a stage is missing from a failed `ls` — check the directory listing
+itself.
+
+⭐ **Check the input mtimes before checking anything else.** `ls -t` on the stage
+files tells you whether stage N was generated from *corrected* stage N-1 input or
+from the pre-review version. If the extract ran before the stage-1 fixes landed,
+every ruling you already applied is absent downstream and the run is a re-do, not
+a new stage. Say which it is in the opening message. **`.cg/activity.jsonl` names
+the real paths** and is the fastest way to learn which file feeds which; confirm
+the mapping with the user before checking anything.
 
 **Also inventory the transcripts, and check which carry speaker labels** — step 4.7 needs one at every stage, and Stage 2 cannot be done properly without one:
 
@@ -100,9 +135,33 @@ ls -la "$SESSION"/*.vtt "$SESSION"/*.md
 grep -oE '^\*\*[a-zA-Z][a-zA-Z ._-]{1,30}:\*\*' <candidate>.md | sort | uniq -c | sort -rn
 ```
 
-Prefer `*.retranscribed.cleaned.vtt` for wording questions and a speaker-labelled Zoom `.md` for attribution questions. Count distinct speakers against the party: **a missing player means someone else ran their PC all session**, which is the usual root cause of attribution collapse — see `/consistency-check` step 4.7.
+Prefer `*.retranscribed.cleaned.vtt` for wording questions and a speaker-labelled source — a Zoom `.md`, or the raw `*.transcript.vtt` real-name labels — for attribution questions; `/consistency-check` step 4.7 has the rule that attribution is never settled from a summary. Load `zoom-summary.md` too if the session has one, and use it the way step 4.7 says: a dropped-beat cross-check, zero evidence on "who". Count distinct speakers against the party: **a missing player means someone else ran their PC all session**, which is the usual root cause of attribution collapse — see `/consistency-check` step 4.7.
 
 **Check for prior `*.sources.yaml` manifests in the session dir and read them.** They record what was already fixed, what the GM ruled, and what is still `OPEN` in `carry_forward`. Treat their claims as hypotheses, not settled facts — re-verify any your findings touch.
+
+**If a `consistency_report_stage*.md` already exists**, a prior run checked that
+stage. Read it, then ask the user whether to re-check it or take it as settled. If
+settled, its findings become the **propagation checklist** for step 6 — verify each
+prior ruling actually landed rather than re-deriving it.
+
+⛔ **Read the `.sources.yaml` companion BEFORE you build a single card or table
+row.** The `.md` holds the *findings*; the stage's `.sources.yaml` (named `consistency_stage<N>_*` per step 7, or `consistency_report_stage<N>_*` by older runs) holds
+`resolution.gm_rulings_this_run`, `resolution.applied` and
+`resolution.open_items` — the GM's actual words, and any item a prior stage left
+open. A finding whose subject already carries a GM ruling is **not** a fresh
+question, and asking it as one invites the GM to reverse themselves without
+knowing they are doing it.
+
+> **Before presenting any finding, grep the rulings logs for its subject.** If a
+> prior ruling exists, the card or row must quote it and say plainly that
+> approving reverses it. If it exists and *contradicts* what the documents now say,
+> do not present it as a finding at all — surface it as an open conflict and let
+> the GM settle it with both sides in view. See the Ch 65 case in Notes.
+>
+> **And when a prior ruling looks wrong, check the rule before calling it wrong.**
+> The Ch 65 miss was not only that a settled question got re-asked — the audit was
+> confident about RAW while reading the wrong edition, twice (`/consistency-check`
+> step 5).
 
 Tell the user which stages were found and what will be checked. Some sessions may be partial. Run the check on whatever exists; don't try to generate missing artifacts (that's the pipeline's job, not this skill's).
 
@@ -111,6 +170,30 @@ Tell the user which stages were found and what will be checked. Some sessions ma
 **A stage that did not run did not pass, and the final summary must say so in those words.** The failure mode is a closing summary reading "Stages 0-3 complete, 13 issues, all resolved," which is true of every stage that ran and dangerously false about the three that didn't. Write `Stages 1-3: NOT RUN — no artifacts exist` and put it in the manifest as its own `carry_forward` item with `status: OPEN`, naming Stage 2 specifically. Then recommend the pipeline run and a re-invocation, rather than implying the session has been cleared.
 
 When only Stage 0 exists, offer the choice explicitly rather than defaulting: run Stage 0 alone; run Stage 0 plus a hand VTT sweep of whatever attribution is most at risk; or stop and run the pipeline first.
+
+### 1b. The verbatim sweep — run this on every prose document, before the LLM check
+
+A deterministic pass that catches what an LLM reviewer reads straight past:
+inline quotes spliced from two moments minutes apart, and quotes completed with
+words nobody said. It complements `sd_verify_quotes` (steps 3 and 4), which checks
+only `> "…"` blockquotes — this checks the inline `"…"` quotes in prose that
+`sd_verify_quotes` skips.
+
+```bash
+python3 ~/.claude/skills/staged-consistency/verify_quotes.py \
+  --doc "$SESSION/<artifact>.md" --vtt "$SESSION"/*.transcript.cleaned.vtt
+```
+
+It prints every quoted span whose text is not contiguous in the transcript. Expect
+false positives from deliberate stutter-smoothing — **each hit is a lead, not a
+finding.** Open the transcript at that point and decide. It answers *were these
+words said*, **not** *who said them* — attribution is still a speaker-label
+question (`/consistency-check` step 4.7).
+
+⛔ **Do not hand-roll this with `grep`.** A grep over the raw `.vtt` fails on every
+quote that crosses a cue boundary, because the cue index and timestamp line sit
+between the halves — you get a page of false positives and stop trusting the
+output. The script strips to cue text first, then joins.
 
 ## Report format (mandatory at every stage)
 
@@ -146,21 +229,132 @@ Sort by severity (Critical first). Number issues sequentially across the whole t
 
 **Never auto-advance on a zero count from the banner.** `check_consistency.py` counts the literal string `**Location**`, but models routinely emit `**Location:**`, so `No issues found.` is an unreliable false negative while the body lists a dozen issues. Derive your own count from the saved report the way `/consistency-check` step 4 does: the finding delimiter changes from run to run, even for the same stage on the same campaign, so no single pattern is safe. `grep -c "^### "` can return a confident 0 on a report with twelve findings, and `^- \*\*` can return 48 against 12. Run every candidate pattern, read enough of the body to see which one matches, and record the delimiter you counted. Advance automatically only when *your* count is zero and you have read the body. (A grouped Stage 2 report counts differently — see step 4.) Likewise, if `--backend claude-code` printed an auto-continuation warning, inspect the report for a seam before believing any count.
 
-### Alternative sign-off: interactive artifact (many scenes / large finding count)
+### Artifact mode (batch review)
 
-The severity-table-plus-1x1-ask flow above is fine for a handful of findings. It breaks down at Stage 2's normal scale — 8–10 scenes, 5–15 findings each, 60+ findings total — where a chat 1x1 walkthrough is exhausting for both sides and easy to lose track of. When the finding count crosses roughly a dozen, or the user asks for a batch/downloadable review, offer this instead of table-by-table 1x1. Confirmed useful on a 64-finding, 8-scene Stage 2 run (Phandalin Ch. 3, 2026-08-17).
+Chosen in step 0a. Replaces the "Going 1x1?" adjudication at each stage. The
+severity table, the stage order, the fix-propagation pass and the final summary
+are all unchanged. Full contract: `~/.claude/skills/_shared/review-artifact/CONTRACT.md`.
+It pays off most at Stage 2's normal scale — 8–10 scenes, 5–15 findings each,
+60+ findings total — where a chat 1x1 walkthrough is exhausting for both sides
+(Phandalin Ch. 3, 2026-08-17: a 64-finding, 8-scene Stage 2).
 
-1. **Run every remaining check first, unstaged.** Don't gate scene N+1 behind scene N's fix — run all `/consistency-check` passes for the whole stage back to back, VTT-adjudicate every finding the same way you would 1x1 (still required, not optional — see the delegated-workflow table above), *then* build one artifact covering everything at once. Confirm the reordering with the user first (ask: build incrementally as each scene closes, or run everything then present one artifact?) — don't silently decide to batch, and don't silently decide what's in scope (e.g. whether already-closed scenes/stages are included as a read-only record). **At Stage 2, "back to back" is now literally one call** — see the grouped invocation in step 4 — which is another reason to settle the choice before running anything rather than after N per-scene reports already exist.
-2. **Build ONE interactive HTML artifact**, not one per scene. Load `artifact-design` before writing it — a decision ledger still deserves real typographic/layout care, not a bare form — and `artifact-capabilities` before declaring any capability. Each finding becomes a card: id, scene, severity, title, one-line detail, evidence, your recommendation, and Accept / Reject / Discuss controls. A Discuss selection reveals a free-text note field.
-3. **Use the `downloads` capability, not `artifact`.** `artifact`'s live-sync semantics (`<artifact-sync>` regions, conflict/not_writer states) are built for pages that ARE the shared record — a poll, a shared checklist that multiple people edit over time. A one-shot decision export doesn't need that. `downloads.save({filename, data})` has a simple, fully-specified contract and matches what the user actually asked for ("download the artifact and my choices"). Don't reach for `artifact` just because it sounds more capable — read both type definitions and pick the one whose contract you can actually verify without live-testing.
-4. **Export schema**: a flat JSON array of `{id, scene, severity, title, target, status, note}` per finding — `status` is `"pending" | "accept" | "reject" | "discuss"`, `note` carries the Discuss free text. Keep `target` explicit per finding (which file the fix lands in — a scene doc, `gm-assist.md`, a glossary, even a GitHub issue) since one artifact will often span fixes landing in different documents.
-5. **When the exported JSON comes back:**
-   - `accept` → apply the fix to `target` exactly as evaluated during VTT adjudication.
-   - `discuss` → **read the note first.** Users often write the actual ruling directly in the note ("Fix to Norbus", "It was on Valphine", "Everyone but Vukradin saw it") rather than waiting for a live back-and-forth — treat an unambiguous note as a ruling and apply it; don't manufacture a redundant round of questions the note already answered. Only take a `discuss` item to actual conversation when the note is genuinely ambiguous, asks *you* to go do something first (re-check the tape, check what a rules module says) before a decision is possible, or is empty/silent.
-   - `reject` → no edit; record the ruling in the manifest and move on.
-6. **Fix-propagation (step 6 below) still applies, at full strength, and often surfaces gaps the artifact review didn't cover.** An artifact-driven review usually scopes itself to one document class (e.g. "scenes 03–10 only," explicitly excluding already-closed stages) by the user's choice — respect that scope for what gets *reviewed*. But the propagation sweep still has to check every sibling document (`session-summary.md`, `gm-assist.md`, grounding docs, and — if the user says so — already-closed earlier scenes) for the same stale facts, even ones outside the review's scope, and that includes checking the sibling document's OWN prose/bullet sections, not just the one place you already touched (a doc can restate the same fact in its Summary paragraph, its Scenes bullets, and its Items section — fixing one and missing the other two is a real, repeatable mistake). Don't silently expand what gets *reviewed*; don't silently skip propagating an *approved* fix to a sibling document just because that document wasn't in the review's scope — those are different questions. If the user later asks why a sibling wasn't fixed, that's the answer, and propagating it now is a mechanical follow-up, not a new review round.
-7. **Visible external actions drafted from a finding (e.g. "post a comment on GitHub issue #N") still need explicit go-ahead separately from the Accept click.** An artifact Accept authorizes the *content* of the action; posting itself may still be blocked by the permission layer as a visible external effect. Draft it, hold it, and post only once the user says so in chat — then record the resulting URL in the manifest.
-8. Manifest each finding the same as any other ruling (step 7 below) — note in `resolution.applied`/`resolution.rejected` that the ruling came via the artifact's JSON export, and whether a `discuss` item was resolved straight from the note or required actual back-and-forth.
+#### One page per stage, one URL for the run
+
+**Publish once per stage, republishing to the same `file_path` so the URL
+never changes.** This is the whole point of the staged pattern: a stage-1
+error ruled on now is fixed in one file, and stage 2 runs on corrected input
+instead of copying the error forward. Do not collate all stages into a single
+end-of-run page — that gives up the gate the skill exists for.
+
+Sequence per stage: run the check (at Stage 2, the grouped call — step 4) →
+VTT-adjudicate every finding exactly as you would 1x1 (still required) → present
+the severity table in the shell → build the items → publish → **stop** → the save
+comes back → read back → apply → **then** start the next stage.
+
+⛔ **Name the items file for the stage. The page keeps one name all run.**
+
+```bash
+python ~/.claude/skills/_shared/review-artifact/build_review.py \
+    --in  $SCRATCH/review_items_stage<N>.json --out $SCRATCH/review.html
+```
+
+Read back to `$SCRATCH/decisions_stage<N>.json` the same way. Only `--out` is
+shared, and it has to be: the artifact URL follows the `file_path`, so a
+per-stage html name would claim a second URL. Everything else is per stage.
+Reuse one `review_items.json` and stage 2 overwrites the stage-0 and stage-1
+card text — the question the GM was actually asked and the evidence beside it —
+which is what step 8's `consistency_report_stage<N>_*.md` is written from, and
+what step 1 of the *next* run reads to avoid re-asking a settled question.
+Neither the applied diffs nor `decisions_stage<N>.json` can reconstruct it.
+(Phandalin Ch 50, 2026-08-28: stages 0 and 1 had to be rebuilt from diffs and
+the GM's saved notes; the card wording was unrecoverable.)
+
+**Two ways the save reaches you, and one that is forbidden.**
+
+- **The notification.** Publishing arms a live subscription on this session. When
+  the GM saves, an `artifact-changed` task-notification naming this artifact
+  arrives on its own — **that is the save signal.** Act on it: `WebFetch` the URL
+  and read the decisions without waiting to be told. It can lag (the subscription
+  arms in the background), and it only lives as long as the session that
+  published.
+- **The GM's word.** If the session was restarted, or the notification never
+  comes, the GM simply says they are done. Same action.
+- **Never poll.** Not on a timer, not "just checking" — the two routes above
+  cover every case, and a poll loop burns a turn per check for nothing.
+
+A notification means *the page was republished*, nothing more. It is not the GM
+speaking and it is not approval of anything: the decisions come from the state
+block, and `read_decisions.py` still refuses a page whose `savedAt` is null.
+
+**One subscription per stage.** Each republish re-arms it, so the notification
+for stage 2 names the same artifact as stage 1 — check that the state's
+`savedAt` is newer than the one you already processed before treating it as a
+fresh set of rulings.
+
+Set the `eyebrow` to `<campaign> · <chapter> · stage N — <filename>` so the GM
+can tell which stage they are looking at after a republish. Keep `title`
+stable across the run so the artifact keeps one identity in the gallery.
+
+#### What is auto-applied, footer only
+
+- **Trivial**, per the rubric — surface but do not push. List them; do not ask.
+- Unambiguous corrections with exactly one right answer: a two-word factual
+  correction, or a proper-noun spelling already settled in the glossary or the
+  entity registry.
+
+Everything else — every Critical, Moderate and Minor needing a judgement —
+becomes a card. So does **any real-name scrub in a speaker label**: it asserts
+who said the line, which is an attribution change (`/consistency-check` step 5),
+not a mechanical fix. Name the auto-applied count and the files touched in the
+`footer`.
+
+#### Card shape
+
+Reuse the finding's table number as the id (`s1-03` = stage 1, finding 3) so
+the shell table and the page line up.
+
+```json
+{ "id":  "s1-03",
+  "t":   "Manshoon in person, or a simulacrum?",
+  "y":   "Edit <code>entity_registry.yaml:2361</code> to drop “appears as Manshoon’s Simulacrum.” The recap and both grounding docs are correct; the registry is the stale side.",
+  "n":   "He was a simulacrum. The recap, campaign_state and world_state get corrected instead.",
+  "ev":  "All four checks ruled against the recap citing the registry under “canon outranks generated docs.” But <code>20260810_race_to_the_vile_door.md:28</code> rebuilds him as “the real man, depleted” at CR 12." }
+```
+
+Say which file each fix lands in on the card — one page often spans fixes in
+different documents (a scene, `gm-assist.md`, a glossary). **Where the audit
+itself may be wrong, say so in `ev`.** The most valuable cards are the ones
+where a check fired against stale canon — the GM is the only one who can
+overturn that, and they can only do it if the card shows both sides. A finding
+that carries a prior GM ruling (step 1) quotes it in `ev`.
+
+#### Verdict mapping
+
+| verdict | action |
+|---|---|
+| **approve** | Apply the fix with `Edit`, then run the step-6 fix-propagation grep across every touched artifact |
+| **reject** | Log as deferred, with the location, for the final summary |
+| **discuss** + note | **Read the note first.** GMs often write the ruling itself there ("Fix to Norbus", "It was on Valphine") — an unambiguous note is a ruling; apply it without a redundant round of questions. If it settles a canon question, the fix may belong in a grounding doc rather than the recap. Take it to conversation only when the note is ambiguous or asks you to check something first |
+| **discuss**, no note | Back to the shell, grouped with the other discussed findings for that stage |
+| **unmarked** | Undecided — carry into the final summary as unresolved, and do not advance past a stage with unresolved Criticals without saying so |
+
+**Grounding-doc rewrites still stop.** `campaign_state.md`, `world_state.md`,
+`planning.md` and `party.md` are CampaignGenerator outputs. An approved card
+that implies changing one of them means fixing the *source* and regenerating
+— never a hand-edit. Say this on the card's `y` when it applies.
+
+**Fix-propagation (step 6) still applies at full strength**, including to
+sibling documents outside the page's scope. The review scope decides what gets
+*reviewed*; it does not excuse skipping propagation of an *approved* fix to a
+sibling — and check every section of the sibling (Summary prose, Scenes
+bullets, Items), not just the first place the fact appears.
+
+**Visible external actions still need a separate go-ahead.** An approve
+authorizes the *content* of, say, a GitHub comment drafted from a finding;
+posting it is a separate yes in chat. Record the resulting URL in the manifest.
+
+Manifest each ruling like any other (step 7), noting it came via the artifact
+and whether a `discuss` item was settled from the note or needed back-and-forth.
 
 ### 2. Stage 0 — gm-assist check
 
@@ -216,10 +410,10 @@ Plus the classic session-summary catches: cross-section contradictions (Summary 
 
 ### 4. Stage 2 — scene extractions check (the load-bearing one)
 
-Stage 2 has **two call shapes**. Which one you use is the same decision as "Alternative sign-off" above, so settle it with the user *before* running anything:
+Stage 2 has **two call shapes**. Which one you use follows the review mode chosen in step 0a — settle it with the user *before* running anything:
 
-- **Interactive (per-scene).** Run `/consistency-check` once per `$SESSION/scene_extractions_new/0N_*.md` in numbered order, present a severity table per scene, and gate each scene on the previous one's fixes. Unchanged.
-- **Batch (grouped).** Pass **every selected scene path, in scene order, to one `check_consistency.py` invocation**. The script audits all of them in a single model call: the shared material (system prompt, canon section, `campaign_state` + `world_state`, registry, glossaries, prep) is transmitted once instead of N times, and the model must return one result section per scene plus one cross-scene section. Use this when you are heading for the artifact sign-off.
+- **Interactive (per-scene).** Run `/consistency-check` once per scene extraction (`scene_extractions/` or `scene_extractions_new/`, whichever this session has — step 1) in numbered order, present a severity table per scene, and gate each scene on the previous one's fixes. Unchanged.
+- **Batch (grouped).** Pass **every selected scene path, in scene order, to one `check_consistency.py` invocation**. The script audits all of them in a single model call: the shared material (system prompt, canon section, `campaign_state` + `world_state`, registry, glossaries, prep) is transmitted once instead of N times, and the model must return one result section per scene plus one cross-scene section. Use this in artifact mode.
 
 In both shapes, exclude `.prev` and `.scaffold` and enumerate the scenes explicitly. **Never say "all" and never let a shell glob decide the list** — the manifest has to record exactly which documents were audited, and in grouped mode the order you pass is the order attribution is keyed to.
 
@@ -229,9 +423,9 @@ In both shapes, exclude `.prev` and `.scaffold` and enumerate the scenes explici
 
 ```bash
 python <repo>/session_doc/check_consistency.py \
-  "$SESSION"/scene_extractions_new/<scene-01>.md \
-  "$SESSION"/scene_extractions_new/<scene-02>.md ... \
-  [--config <campaign-config.yaml>] \
+  "$SESSION"/<scene-dir>/<scene-01>.md \
+  "$SESSION"/<scene-dir>/<scene-02>.md ... \
+  --config <abs campaign>/config/config.yaml \
   --backend claude-code \
   --context docs/party.md notes/vtt_transcription_corrections.md notes/vtt_known_additions.md <prep files...> \
   --output "$SESSION"/consistency_report_stage2_scenes.md
@@ -272,7 +466,7 @@ When applying fixes to verbatim quotes:
   - Example: `**GM** — *voicing Prutha (transcript per session-prep canon; raw Otter capture said "my uncle Seidan comes for everyone" — a mishearing of "great-uncle said dawn")*`
 - **Do not strip table chatter, jokes, or player improvisations** that the table values. Some "errors" the check flags are intentional flavor. The Phandalin "blacklist" / "blood money list" terminology is real OOC table vocabulary — preserve it.
 
-In the interactive shape, after each scene's fixes ask: "Continue to next scene, or revisit this one?" Don't auto-advance through all scenes silently. In the grouped shape that gate moves to the artifact rather than disappearing: the grouped report is advisory until the user rules on it, and every finding still needs an explicit Accept / Reject / Discuss before an edit lands. **This is the stage where finding counts routinely justify the artifact alternative** (see "Alternative sign-off" above) instead of a 1x1 walkthrough per scene — offer it once you can see the likely total finding count is large. One grouped call plus one artifact is the flow that scales.
+In the interactive shape, after each scene's fixes ask: "Continue to next scene, or revisit this one?" Don't auto-advance through all scenes silently. In the grouped shape that gate moves to the artifact rather than disappearing: the grouped report is advisory until the user rules on it, and every finding still needs an explicit Accept / Reject / Discuss before an edit lands. **This is the stage where finding counts routinely justify artifact mode** (step 0a) instead of a 1x1 walkthrough per scene. One grouped call plus one artifact page is the flow that scales.
 
 ### 5. Stage 3 — narration check (optional)
 
@@ -287,14 +481,40 @@ After all stages have been checked and fixed, sweep for residual bad patterns �
 ```bash
 grep -n "<bad pattern>" $SESSION/gm-assist.md $SESSION/gm-assist-update.md \
   $SESSION/session-summary.md $SESSION/narration/enhanced_sections.md \
-  $SESSION/scene_extractions_new/0*.md 2>/dev/null | grep -v ".prev\|.scaffold"
+  $SESSION/scene_extractions{,_new}/0*.md 2>/dev/null | grep -v ".prev\|.scaffold"
 ```
+
+⛔ **Use `grep -F` with a full distinctive phrase, never a short token.** A bare
+`grep -ci "Mechanis"` matches `Mechanist` and reports a fix that never regressed;
+a bare `grep -c "damage stands"` matches your own corrected `**no damage stands**`.
+Both produce phantom findings you then have to retract. Match on a whole clause.
 
 Run this for every applied fix. If grep finds the bad pattern in a file that wasn't checked or fixed, surface it and ask whether to apply the fix there. **This step is what catches the scenario where session-summary was fixed but the scene extractions still carry the original error.**
 
 **Also sweep the grounding docs.** Per `/consistency-check` step 5, a VTT-confirmed correction usually lands in more places than the recap — `world_state.md`'s timeline and `party.md`'s per-character notes both carry attributions. Check the direction before editing: in one run the GM asked for a grounding-doc fix and the docs were already right; the recap was the wrong one. Survey first, then say plainly which file was actually wrong. Anything you don't fix goes in `carry_forward`.
 
 **Never bulk-replace a name, colour, adjective or title across the campaign.** Enumerate and read every hit first.
+
+⭐ **Upward propagation is the case that actually bites.** The stage-0 artifact is
+the *pipeline's input* — `.cg/activity.jsonl` shows `enhance` reading it and
+writing the stage-1 file. A ruling applied only at stage 1 leaves the error sitting
+upstream, and the next `enhance_summary` run re-injects every one of them. When the
+sweep finds residue there, say plainly that a re-run would undo the work, and ask:
+edit the stage-0 file in place, write a `-update.md` alongside it, or accept the
+regression. Check first whether a prior run already edited that file — if it did,
+it is not a preserved original and editing in place is the honest option.
+
+⭐ **A flag written into a regenerated file does not survive.** Scene extractions
+are rebuilt by `extract`; anything you add to them — a ⚠️ to-do, a "needs a GM
+call" marker — is gone on the next pipeline run. When a ruling produces future
+work rather than a correction, write the durable copy to `notes/issues/`
+(`YYYYMMDD_slug.md`, matching the existing files there) and reference it from the
+inline flag. Ask before filing; where a note lives is the GM's call.
+
+⛔ **Never edit `logs/*_enhance_summary.md`.** It is a run log — an append-only
+record of what the pass was given and what it produced. Correcting it falsifies the
+evidence of what the pipeline actually did. Residue there is expected and correct;
+name it as out of scope and move on.
 
 ### 7. Manifests — REQUIRED
 
@@ -320,6 +540,9 @@ End with a tight summary:
 - **What the VTT caught that the check structurally could not** — on this skill's target artifacts that is usually most of the real defects
 - Anything deferred, with its location
 - Whether prep was available (or whether the run was prep-less and possibly blind to transcription errors)
+- Whether `zoom-summary.md` was available, and what it actually changed — name the findings it caught and the ones it got wrong. It is a source with a known bias; reporting its scorecard each run is how that bias stays visible.
+- Which stages did **not** exist (step 1's "NOT RUN" rule). If stage 2 was absent, say plainly that the per-scene verbatim layer was not exercised and that §1b only partly covered for it.
+- **Offer to write `consistency_report_stage<N>_<artifact>.md`** beside each stage's `.sources.yaml` (step 7), matching whatever prior-stage reports the session already has. This is what step 1 of the *next* run reads; without it the next pass re-derives settled questions from scratch. Record `resolution.open_items` even when the list is empty, and put anything a stage could not settle there rather than in prose.
 - The merged `carry_forward` list across stages
 - Recommendation on next action — usually one of:
   - "Re-run `sd_narrate` to produce a clean narration from the corrected scene extractions"
@@ -336,5 +559,6 @@ Don't commit unless asked.
 - **The standard context set is not optional and not `party.md` alone.** The auto-loaded registry and explicitly passed VTT glossaries carry the name/alias/garble finding class this skill exists to catch. Do not reintroduce the raw registry into `--context`.
 - Different pipeline stages fail differently, and the staging should reflect it: **gm-assist** fails on names (prep + glossaries catch it), **session-summary** is an enhanced recap and fails on numbers, attribution and ordering (only the VTT catches those), **scene extractions** fail on verbatim quote fidelity (only the VTT), **narration** fails on voice drift. Expect a poor report hit-rate on the enhanced and verbatim stages and say so, so it doesn't read as the documents being clean.
 - **Grouped Stage 2 (#362) is a call-shape change, not a review-gate change.** It batches the Stage 2 audit into one model call so shared context is sent once and cross-scene contradictions become visible at all; it removes no human checkpoint. Findings remain advisory, still need VTT adjudication, and still need an explicit ruling before an edit. If a grouped report ever starts auto-applying anything — glossary anchors included — that is the bug, not a shortcut.
+- **The OOTA Ch 65 stage 2 run (2026-08-27) is why step 1 reads `.sources.yaml` before presenting anything.** It carded "did Manshoon take 13 psychic damage?" as a document-internal contradiction and the GM approved the fix — while `consistency_report_stage0_gmassist.sources.yaml:56` already held an explicit, opposite GM ruling from earlier the same day. The card never showed it. Worse, that earlier ruling was right: the audit had been reading the wrong PHB edition (`/consistency-check` Notes). **A prior ruling makes a finding a conflict to surface, never a question to re-ask.** The method half of that run — attribution, retraction, read-aloud and edition — lives in `/consistency-check`'s Notes.
 - The Phandalin Ch 41 run (2026-05-17) was the discovery case — 11 prep-canonical issues survived a late-stage one-shot check that returned "no major issues." The same issues were trivially catchable at stage 0 with prep wired in. That's the failure mode this skill exists to prevent.
 - See `~/campaigns/STAGED_CONSISTENCY_HOWTO.md` for the methodology rationale, the pipeline diagram, and the per-stage table of what each check catches that the others miss.
