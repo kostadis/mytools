@@ -289,17 +289,14 @@ Omit `--registry` if `<campaign>/docs/entity_registry.yaml` doesn't exist (requi
 confirmed in required-input #6 (omit the flag if none exist). Pass
 `--registry` too if required-input #5 found a registry (or its fallback).
 
-**`--npcs-dir` is REQUIRED by the script even though required-input #4 treats
-it as optional.** A campaign need not have `docs/npcs/` — `out-of-the-abyss`
-does not — and `find_unknowns.py` exits 2 with an argparse error rather than
-defaulting. Point it at an empty scratch directory:
-
-```bash
-mkdir -p "$SCRATCH/empty_npcs"      # then --npcs-dir "$SCRATCH/empty_npcs"
-```
-
-This costs nothing when dossiers do exist, so do it unconditionally rather than
-discovering the mismatch mid-run.
+**`--npcs-dir`, `--registry` and `--extra-known` are optional, and a path you
+name must exist.** A campaign need not have `docs/npcs/` (`out-of-the-abyss`
+does not): omit `--npcs-dir` from **both** commands when required-input #4
+found no dossier dir. But a path that is passed and does not exist makes
+either script exit 1 (`Error: --npcs-dir path does not exist: …`), because a
+typo there would otherwise drop a whole source of known names without a word.
+Pass the identical set of these flags to both scripts, or the two known sets
+diverge.
 
 `find_unknowns.py` emits the raw unknown-token list with counts and
 contexts. `cluster_unknowns.py` then:
