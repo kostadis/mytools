@@ -39,21 +39,32 @@ def fmt(sec: float) -> str:
 
 
 def load_vtt(path: Path, limit: float | None) -> list[dict]:
-    cues, cur = [], None
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        m = _CUE.match(line.strip())
-        if m:
+    """Read cue blocks, preserving numeric dialogue and timestamp settings."""
+    cues = []
+    raw = path.read_text(encoding="utf-8-sig")
+    for block in re.split(r"\n[ \t]*\n", raw):
+        lines = block.splitlines()
+        if not lines:
+            continue
+        first = lines[0].strip()
+        if (first == "WEBVTT" or first.startswith("WEBVTT ")
+                or first == "NOTE" or first.startswith(("NOTE ", "NOTE\t"))
+                or first in {"STYLE", "REGION"}):
+            continue
+        for index, line in enumerate(lines):
+            m = _CUE.match(line.strip())
+            if not m:
+                continue
             a = int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3]) + float("0." + m[4])
             b = int(m[5]) * 3600 + int(m[6]) * 60 + int(m[7]) + float("0." + m[8])
-            cur = {"s": a, "e": b, "t": []}
-            cues.append(cur)
-        else:
-            s = line.strip()
-            if cur is not None and s and not s.isdigit() and not s.startswith(("WEBVTT", "NOTE")):
-                cur["t"].append(s)
-    for c in cues:
-        c["text"] = " ".join(c["t"]).strip()
-    cues = [c for c in cues if c["text"]]
+            if b <= a:
+                raise ValueError(f"invalid cue interval in {path}: {line}")
+            payload = lines[index + 1:]
+            text = "\n".join(payload)
+            if text.strip():
+                cues.append({"s": a, "e": b, "t": payload, "text": text,
+                             "timing": line, "cue_id": lines[index - 1] if index else None})
+            break
     if limit is not None:
         cues = [c for c in cues if c["s"] < limit]
     return cues
@@ -163,6 +174,11 @@ def main() -> int:
         utts = load_md(Path(args.md))
         u_starts = [u[0] for u in utts]
         spans = all(u[1] is not None for u in utts)
+        # Without end times there is no per-cue coverage, and the >=50% rule
+        # for --md-label would silently not apply: every cue in the cluster
+        # would be relabelled. Refuse instead.
+        if args.md_label and not spans:
+            ap.error("--md-label requires real start/end spans; supply Descript turns JSON")
         for c in cues:
             if spans:
                 ov = collections.Counter()
@@ -263,7 +279,9 @@ def main() -> int:
             else:
                 flagged += bool(flag)
             n += 1
-            out += [str(n), f"{fmt(c['s'])} --> {fmt(c['e'])}",
+            # Keep the source cue's own id and timing line (with any cue
+            # settings), so the output lines up cue-for-cue with the input.
+            out += [c["cue_id"] or str(n), c["timing"],
                     f"{label}{flag}: {c['text']}", ""]
         Path(args.output).write_text("\n".join(out), encoding="utf-8")
         print(f"\nwrote {args.output} — {n} cues, {flagged} flagged [?]")

@@ -47,28 +47,19 @@ import collections
 import re
 from pathlib import Path
 
-_CUE = re.compile(r"(\d\d):(\d\d):(\d\d)[.,](\d+)\s*-->\s*(\d\d):(\d\d):(\d\d)[.,](\d+)")
-_LABEL = re.compile(r"^([A-Za-z0-9_ ]{1,40}?)(?:\s*\[\?\])?:\s*(.*)$")
+from diarize_label import load_vtt
+
+_LABEL = re.compile(r"^([^:\n]{1,80}?)(?:[ \t]*\[\?\])?:[ \t]*(.*)$", re.S)
 
 
 def load(path: Path) -> list[dict]:
-    cues, cur = [], None
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        m = _CUE.match(line.strip())
-        if m:
-            cur = {"s": int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3]) + float("0." + m[4]),
-                   "e": int(m[5]) * 3600 + int(m[6]) * 60 + int(m[7]) + float("0." + m[8]),
-                   "spk": None, "text": ""}
-            cues.append(cur)
-            continue
-        s = line.strip()
-        if cur is None or not s or s.isdigit() or s.startswith(("WEBVTT", "NOTE", "[?]")):
-            continue
-        lm = _LABEL.match(s)
-        if lm and cur["spk"] is None:
-            cur["spk"], s = lm[1].strip(), lm[2]
-        cur["text"] = (cur["text"] + " " + s).strip()
-    return [c for c in cues if c["text"] and c["spk"]]
+    cues = []
+    for c in load_vtt(path, None):
+        label = _LABEL.match(c["text"])
+        if label:
+            cues.append({"s": c["s"], "e": c["e"],
+                         "spk": label[1].strip(), "text": label[2]})
+    return cues
 
 
 def fmt(sec: float) -> str:
