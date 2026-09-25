@@ -392,6 +392,31 @@ merely *overlapped* claimed 32 cues; requiring it to be the dominant speaker
 gave 24. The 8 it gave back were Kostadis answering the room person ("All right,
 we'll tell it to them in a little bit"), not the room person speaking.
 
+### The reverse merge: Descript folds a player into the GM
+
+The ch02 case above is pyannote merging two players while Descript kept them
+apart. The opposite happens too, and `--md-label` cannot fix it, because
+Descript has no id for the missing voice.
+
+*Evidence — OOTA ch03, five people:* Descript's export had four profiles
+(Kostadis, joe, ben, gabe) and **no Mike**. Mike was plainly present: he is
+addressed by name ("Mike?" 15:28, "I rolled a one, Mike." 15:35). pyannote at
+`num_speakers=5` gave him his own cluster, SPEAKER_02. Of its words, 583 sat in
+Descript's Kostadis row, so every one of its cues came back `[?]`.
+
+- **Look for the missing profile before the join.** Count the Descript labels
+  against the party, then grep the text for the absent player's name in direct
+  address. A player who is addressed but has no profile has been merged into
+  someone else's.
+- **Identify the cluster from content, not from the matrix.** The matrix row
+  says "Kostadis". The evidence that says Mike is who answers to his name, and
+  whose PC's spells get cast (Mind Sliver, Minor Illusion, Magic Missile, all
+  on Daz's sheet).
+- **The boundary between that player and the GM has only one acoustic
+  source.** Say so, and offer the GM a per-cue review of the cluster
+  (identity-review.md, *Per-cue rulings*). On ch03 the GM ruled all 115 cues:
+  113 Mike, 2 GM.
+
 ## Single acoustic source
 
 Two text exports from the same diarization are one signal, and Descript used as

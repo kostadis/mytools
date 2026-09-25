@@ -273,6 +273,25 @@ approval; only the GM's returned decisions are.
 Persist the explicit decisions to a file and hash it. Before writing final
 names, confirm the sources and turns still match the reviewed versions.
 
+### Per-cue rulings
+
+When a boundary has no independent check (acoustic-workflow.md, *The reverse
+merge*), a cluster-level mapping is not enough: the GM rules the cluster's cues
+one by one. Build one card per cue. Show the line plus about three cues either
+side, labelled with the approved cluster names. Approve and Reject name the two
+candidates, and Discuss covers anyone else.
+
+**Do not guess which lines "sound like the GM".** *Evidence — OOTA ch03:* the
+question put to the GM cited "Daz, you're up", "What's your spell DC?" and
+"He has to make an intelligence 13 save" as likely GM lines inside the Mike
+cluster. The GM ruled all three **Mike**, and 113 of the 115 cues. Players call
+turns, ask for DCs and read out saves too. A content guess can go in a card's
+text, never into the file.
+
+Save the rulings as `{"<cue id>": "<name>"}` and pass them with
+`--cue-labels` (*Writing the approved result*). A ruled cue loses its `[?]`,
+because the ruling is what resolved it. Give a cue its mapped name to confirm it.
+
 ## Writing the approved result
 
 Drafts (cluster-ID VTTs, reports, queues) stay in the run's scratch directory.
@@ -302,6 +321,14 @@ approval, as a new file; originals are never modified.
 - Headers say: player labels, the acoustic source, the second source if any
   (or the GM-accepted single-source limitation), a note identifying the approved
   mapping, and that `[?]` marks unresolved disagreement.
+
+- **Cue rulings go through `--cue-labels`**, not a hand edit afterwards: a
+  JSON file of `{"<cue id>": "<name>"}`, hashed into the run record. It wins
+  over `--names` and `--md-label` and clears the cue's `[?]`. A cue id is the
+  text VTT's own cue identifier or, when it has none, the 1-based position the
+  script prints in its drafts. An id that names no cue is refused. *Evidence:*
+  on OOTA ch03 the rulings were first applied with a regex post-pass, and
+  re-running through `--cue-labels` reproduced that file's body byte for byte.
 
 Run it **before** scene extraction. Running it after means re-extracting.
 

@@ -105,7 +105,13 @@ reference). A warning on every transcript in a directory is the stem-vouching
 rule, not a finding. `sha256sum` every transcript first (a "RAW" and a cleaned
 export can be the same bytes), check for derivatives with the tally command,
 choose the best text layer, convert Descript with `descript_turns.py`, and note
-any `GMT<date>_RecordingnewChat.txt` sidecar.
+any `GMT<date>_RecordingnewChat.txt` sidecar. A Descript `.md` that went through
+Google Drive comes back as a Google Doc with only minute markers, and
+`descript_turns.py` parses nothing. Fetch it through the Drive connector and
+give it spans with `descript_align.py` (provenance.md). **Count Descript's
+profiles against the party**: a player who is addressed by name but has no
+profile has been merged into someone else's (acoustic-workflow.md, *The reverse
+merge*).
 
 **Audio far longer than every transcript** has two causes with opposite fixes
 (provenance.md): the audio belongs to another session (check the `GMT<date>`
@@ -212,8 +218,9 @@ back to chat as one grouped pass.
 
 ## 5. Write once, verify, record
 
-Save the approved mapping to `$RUN/approved_names.json` (and any approved
-`--md-label` map to `$RUN/approved_md_labels.json`) and hash both. Confirm the
+Save the approved mapping to `$RUN/approved_names.json` (plus any approved
+`--md-label` map to `$RUN/approved_md_labels.json` and any per-cue rulings to
+`$RUN/approved_cue_labels.json`) and hash each one. Confirm the
 inputs still match the reviewed hashes, then re-run the join **on the original
 speakerless text**, never on a labelled file:
 
@@ -222,6 +229,7 @@ python3 "$SKILL_DIR/diarize_label.py" \
   --turns "$RUN/turns.json" --vtt <best-text>.vtt --md "$RUN/descript_turns.json" \
   --names "$RUN/approved_names.json" \
   [--md-label "$RUN/approved_md_labels.json" --md-label-coverage 0.5] \
+  [--cue-labels "$RUN/approved_cue_labels.json"] \
   [--limit-seconds <recording seconds>] \
   --note "Labels identify human players, not characters." \
   --note "Mapping approved by the GM: <date>, $RUN/approved_names.json sha256 <hash>." \

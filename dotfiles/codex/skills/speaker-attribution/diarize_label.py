@@ -133,6 +133,9 @@ def main() -> int:
                                        '{"Speaker 6": "Room (not at table)"}')
     ap.add_argument("--md-label-coverage", type=float, default=0.5,
                     help="fraction of a cue the named cluster must hold (default 0.5)")
+    ap.add_argument("--cue-labels", help='inline JSON or a path: GM cue rulings keyed by cue '
+                    'id, {"965": "Kostadis"}. Wins over every other label and drops the [?]. '
+                    'To confirm a cue as mapped (and clear its flag), give it its mapped name.')
     ap.add_argument("--output", help="labelled VTT; omit to report only")
     ap.add_argument("--note", action="append", default=[], help="extra NOTE line in the output header")
     ap.add_argument("--limit-seconds", type=float,
@@ -256,6 +259,16 @@ def main() -> int:
 
     names = load_names(args.names)
     md_labels = load_names(args.md_label)
+    cue_labels = load_names(args.cue_labels)
+    if cue_labels:
+        # A cue's id is the text VTT's own cue identifier, else its 1-based position:
+        # the same number the output file prints above the timing line.
+        ids = {c["cue_id"] or str(i) for i, c in enumerate(cues, 1)}
+        unseen = sorted(set(cue_labels) - ids)
+        if unseen:
+            print(f"⚠ --cue-labels names no cue {', '.join(unseen)} — use the cue numbers "
+                  f"printed in a draft written by this script.")
+            return 1
     if md_labels and not args.md:
         print("⚠ --md-label needs --md — that is where the second clustering's ids come from.")
         return 1
@@ -281,6 +294,9 @@ def main() -> int:
         for cid, lab in sorted(md_labels.items()):
             out.append(f"'{lab}' is named from {Path(args.md).name} cluster {cid}, "
                        f"a voice the diarization could not separate.")
+        if cue_labels:
+            out.append(f"{len(cue_labels)} cues are labelled by GM cue ruling (--cue-labels); "
+                       f"their [?] is cleared.")
         out += [f"{n}" for n in args.note]
         out += ["[?] marks a cue where the two clusterings disagree.", ""]
         n = 0
@@ -297,13 +313,18 @@ def main() -> int:
             if forced and (c.get("de_cov") is None or c["de_cov"] >= args.md_label_coverage):
                 label, flag = forced, ""
                 overridden[forced] += 1
-            else:
+            ruled = cue_labels.get(c["cue_id"] or str(n + 1))
+            if ruled:
+                label, flag = ruled, ""
+            elif not (forced and (c.get("de_cov") is None or c["de_cov"] >= args.md_label_coverage)):
                 flagged += bool(flag)
             n += 1
             out += [c["cue_id"] or str(n), c["timing"],
                     f"{label}{flag}: {c['text']}", ""]
         Path(args.output).write_text("\n".join(out), encoding="utf-8")
         print(f"\nwrote {args.output} — {n} cues, {flagged} flagged [?]")
+        if cue_labels:
+            print(f"   {len(cue_labels)} cues labelled by GM cue ruling")
         for lab, k in overridden.most_common():
             print(f"   {k} cues labelled '{lab}' from the second clustering")
         if not names:

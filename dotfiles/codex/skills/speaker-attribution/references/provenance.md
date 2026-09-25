@@ -217,6 +217,29 @@ with open(sys.argv[1], "rb") as f:
     print(f"{dur / scale:.1f} s")
 ```
 
+### MP3 duration without `ffprobe` or `mutagen`
+
+A Descript audio export is usually a constant-bitrate MP3. Read the first frame
+header after any ID3 tag for the bitrate, then divide:
+
+```python
+import os, sys
+p = sys.argv[1]; f = open(p, "rb").read(200_000); i = 0
+if f[:3] == b"ID3":
+    i = 10 + ((f[6] << 21) | (f[7] << 14) | (f[8] << 7) | f[9])
+while not (f[i] == 0xFF and f[i + 1] & 0xE0 == 0xE0):
+    i += 1
+kbps = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320][f[i + 2] >> 4]
+print(f"{(os.path.getsize(p) - i) * 8 / (kbps * 1000):.1f} s  ({kbps} kbps, CBR estimate)")
+```
+
+It is an estimate. A VBR file (look for a `Xing` header with varying frame
+bitrates) needs a real decoder. *Evidence — OOTA ch03:* the Drive file
+`… DND Underdark EP 3.mp3` came out at 2357.6 s against a transcript ending at
+00:39:18. That match identified it as Descript's **edited** export, not a raw
+recording, so no timeline projection was needed (*Edited-timeline transcripts*,
+option 1).
+
 ## Independent evidence versus derivatives
 
 The 4-gram grouping says two files describe the same audio. It does **not** say
@@ -336,6 +359,35 @@ The converter reports cluster shares and tags clusters under 3% of words for
 inspection. Read their lines before dismissing them: they can be a GM's NPC
 voice, crosstalk, or a real person in the room (acoustic-workflow.md, the
 coffee-room voice). Size alone neither creates nor removes a participant.
+
+### A Descript export that went through Google Drive
+
+A `.md` uploaded to Google Drive can be **converted into a Google Doc**. The
+mounted drive then shows `<name>.md.gdoc`, and reading it fails with
+`Protocol error`: it is a pointer, not the text. Fetch it through the Drive
+connector instead. Find it by title, export it as `text/markdown`, and decode
+the saved result. The content comes back base64-encoded inside a JSON envelope:
+
+```bash
+jq -r .content <saved-download>.json | base64 -d > "$SESSION/<name>.md"
+```
+
+**The round trip strips the timestamp stream.** *Evidence — OOTA ch03:* the
+EP 3 export kept one `\[hh:mm:ss\]` marker per minute (40 in 39 minutes; EP 2's
+native export had 583), and `descript_turns.py` parsed **zero** utterances.
+The labels survived, so the clustering is still usable. Give it spans by
+aligning its words to a timed VTT on the same timeline:
+
+```bash
+python3 "$SKILL_DIR/descript_align.py" --md "$SESSION/<name>.md" \
+  --vtt "$BEST_VTT" --turns "$RUN/descript_turns.json" --audio-duration <seconds>
+```
+
+ch03: 7122 of 7920 Descript words matched (89.9%), and 429 of 452 utterances
+got a span. The labels are still Descript's own voice clustering, so the
+cross-validation stays independent **on labels**. The timing is borrowed and is
+not; say so in a `--note`. When the GM can re-export, a `.txt` upload (or a
+Drive upload with conversion off) keeps the native timestamps and is better.
 
 ## Chat sidecars
 

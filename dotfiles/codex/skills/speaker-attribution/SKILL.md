@@ -98,7 +98,11 @@ directory, then the neighbouring session's endpoint), or it is the raw
 recording and the transcripts come from a Descript-edited export. Ask the GM
 which. For the edited case, prefer exporting the edited audio; otherwise
 project raw diarization onto the edited timeline by words (step 2). Choose the best text layer, and convert Descript exports to turn spans,
-using the reference instructions.
+using the reference instructions. A Descript `.md` that went through Google
+Drive comes back as a Google Doc with only minute markers; fetch it through the
+Drive connector and give it spans with `descript_align.py`. Count Descript's
+profiles against the party: a player addressed by name with no profile has
+been merged into someone else's (acoustic-workflow.md, *The reverse merge*).
 
 **GM checkpoint:** if a file appears misplaced, show the evidence and ask how
 to resolve it before relocating anything. Missing stem matches across a whole
@@ -219,7 +223,8 @@ unresolved.
 Save the approved mapping in a JSON file. Re-run the join on the original
 speakerless text, adding `--names "$RUN/approved_names.json"` (and any approved
 `--md-label` JSON file, which requires real spans and a `--md-label-coverage`
-of 0.5–1.0) and the new session-directory output path. This is the one write
+of 0.5–1.0, and any per-cue rulings as a `--cue-labels` JSON file, which clears
+the ruled cues' `[?]`) and the new session-directory output path. This is the one write
 into the session directory. Do not feed a labelled result back in as unlabelled
 speech. For a named audit, preserve labels until the exact changes are
 approved; prepare a separate unlabelled comparison copy if needed, stripping
