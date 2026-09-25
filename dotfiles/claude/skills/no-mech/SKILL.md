@@ -297,6 +297,12 @@ been narrated yet, so there is nothing to regenerate and no seams to walk. Say s
 plainly in the manifest rather than leaving a reader to wonder whether the phase was
 skipped. toee ch34 ran this way: six scenes cut, zero re-narration, zero seam risk.
 
+**Re-narration is a separate, potentially costly step — confirm it first.** When
+narration already exists, name the affected plan indices and the backend that
+will run (and whether it bills: a metered API or a remote endpoint), and wait for
+the GM's explicit yes before invoking `sd_narrate`. An approved cut authorizes
+the smoothed-layer edit only, never the re-narration.
+
 Everything below applies only when narration already exists.
 
 ```bash

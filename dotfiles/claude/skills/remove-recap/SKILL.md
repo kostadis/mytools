@@ -199,6 +199,12 @@ did not happen in.
 
 ## Phase 4 — apply, then rebuild
 
+Detection and rescue (Phases 1–2) may run without approval. **Every step below
+needs the GM's explicit ruling first** — the recap boundary, where rescued
+content goes, any file deletion, and any downstream rebuild. Re-narration may
+invoke a paid or remote backend: state which scenes, which backend and whether
+it bills, and wait for a yes before running it.
+
 **Before `scene_extract` (recommended):** edit `session-summary.md` only. Drop
 the recap scene from `## Scenes` (or trim its recap prefix, if live play begins
 partway through), and trim surfaces 2 and 3 as ruled. Put rescued bookkeeping
@@ -210,7 +216,8 @@ stale narration **before** re-narrating, never after, or you delete the new
 narration you just produced.
 
 ```bash
-git rm <session>/scene_extractions_smoothed/01_*.md     # derived layer only
+ls <session>/scene_extractions_smoothed/01_*.md        # must list EXACTLY one file
+git rm <session>/scene_extractions_smoothed/<that exact filename>.md   # derived layer only
 rm -f <session>/narration/session_doc_scene_*.md        # stale numbering — BEFORE sd_narrate
 sd_plan --scene-extractions <session>/scene_extractions_smoothed ... --out <session>/plan.md
 sd_narrate ... --plan <session>/plan.md --scene-extractions <session>/scene_extractions_smoothed \
