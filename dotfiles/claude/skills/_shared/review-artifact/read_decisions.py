@@ -47,6 +47,19 @@ STATE_RE_ALT = re.compile(
 VALID = {"approve", "reject", "discuss"}
 
 ITEMS_RE = re.compile(r"var ITEMS = (\[.*?\]);\s*$", re.M | re.S)
+EXTRA_RE = re.compile(r"var EXTRA = (\[.*?\]);\s*$", re.M | re.S)
+
+
+def page_extra_keys(html: str) -> set[str]:
+    """Verdicts the page declared beyond approve/reject/discuss (none on older pages)."""
+    m = EXTRA_RE.search(html)
+    if not m:
+        return set()
+    try:
+        return {e["key"] for e in json.loads(m.group(1).replace("\\u003c", "<"))}
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        print(f"error: the page's EXTRA verdict list is not valid: {e}", file=sys.stderr)
+        raise SystemExit(2)
 
 
 def extract(html: str) -> dict:
@@ -100,7 +113,8 @@ def main() -> int:
         print("       The GM has not pressed Save yet — do NOT treat this as 'no decisions'.", file=sys.stderr)
         raise SystemExit(1)
 
-    bad = {k: v for k, v in decisions.items() if v not in VALID}
+    valid = VALID | page_extra_keys(html)
+    bad = {k: v for k, v in decisions.items() if v not in valid}
     if bad:
         print(f"error: unrecognised verdicts: {bad}", file=sys.stderr)
         raise SystemExit(2)
@@ -123,7 +137,7 @@ def main() -> int:
                   "Is it a stale page from an earlier run?", file=sys.stderr)
             raise SystemExit(2)
 
-    tally = {v: sum(1 for x in decisions.values() if x == v) for v in sorted(VALID)}
+    tally = {v: sum(1 for x in decisions.values() if x == v) for v in sorted(valid)}
     out = {
         "schemaVersion": 1,
         "reviewId": state.get("reviewId"),
@@ -140,7 +154,7 @@ def main() -> int:
     if args.out:
         args.out.write_text(blob + "\n", encoding="utf-8")
         print(f"{len(decisions)} decided  "
-              f"({tally['approve']} approve, {tally['reject']} reject, {tally['discuss']} discuss, "
+              f"({', '.join(f'{n} {v}' for v, n in tally.items())}, "
               f"{len(out['unmarked'])} unmarked)  "
               f"saved {saved_at}  ->  {args.out}")
     else:

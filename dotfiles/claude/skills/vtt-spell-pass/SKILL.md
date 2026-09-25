@@ -402,6 +402,26 @@ DO NOT drop:
 
 For everything that survives, you have your **candidate list**.
 
+**Real-world names go to the GM as one list, not one question each.** A
+personal name that is **in none of** the entity registry, the published
+module (5etools, or the local module text; a hit only in the credits or
+playtester list does not count) or `config/party.yaml` is, by the GM's
+standing rule (OOTA ch004, 2026-09-25), out-of-game table chatter: the
+chance it matters to the game is effectively zero. Still surface it. That
+rule covers the players' coworkers, pets, celebrities and executives who
+dominate pre-roll chat (`Pat`, `Rajiv`, `Marissa Meyer`, `Willard` the dog).
+But put them all in **one** grouped question: *"None of these is in the
+registry, the module or party.yaml; all table chatter? Pick any that are
+real."* Show each with its count and one line of context. Names picked go
+back into the normal flow. The rest are `state.py ignore`d in one call, and
+their cues stay on the tape as spoken. In Artifact mode this is one
+multi-select question in chat before (or beside) the page, never a card per
+name. An empty or unanswered pick is **not** "all chatter": ask again with
+an explicit "none are real" option.
+
+Run the three lookups before listing a name as real-world. A name that hits
+any of them is not chatter and takes the normal per-pair route.
+
 ### Phase 2.5 — adjudicate against the second transcription (MANDATORY when one exists)
 
 If Phase 0 / required-input #8 found a second transcription, check **every**
@@ -682,7 +702,9 @@ python ~/.claude/skills/vtt-spell-pass/state.py \
 ```
 
 **No assumed table chatter.** If a token looks like a personal name and
-you don't know whether it's a player or an NPC, ask. Mistakes here cost
+you don't know whether it's a player or an NPC, ask. (The one batching exception is the
+real-world list in Phase 2: names in none of the registry, the module or
+party.yaml are asked once, as a group.) Mistakes here cost
 real corrections. Clustering already cuts the question count — don't
 compound that with silent dismissals.
 
@@ -1049,6 +1071,19 @@ So one card per `(token → canonical)` pair. Group them by canonical in card
 order so the GM reads a canonical's members together, but never merge them
 into a single card, and never let approving one member imply another.
 
+### A Table chatter button on every page
+
+Declare it in the items file, so the GM can dismiss out-of-game talk in one
+click instead of reading which reject a card means (OOTA ch004, 2026-09-25):
+
+```json
+"extraVerdicts": [{"key": "chatter", "label": "Table chatter",
+  "outcome": "Out-of-game talk, not a campaign name. Saved as ignored in <code>notes/.vtt_spell_pass_state.json</code>; the cue stays as spoken."}]
+```
+
+It is an ignore, never a correction. Reject still carries the card's own `n`
+(usually "add to the known set" when `reject_as: known`).
+
 ### What is auto-applied, footer only
 
 - `action ∈ {leave_alone, add_to_known_set}` — no ruling needed.
@@ -1129,6 +1164,7 @@ python ~/.claude/skills/_shared/review-artifact/read_decisions.py \
 | **approve** | apply the correction: `add_to_glossary.py --wrong <token> --right <canonical> --section <matching the canonical's EXISTING row>` (the canonical from the note when the card had none; no canonical anywhere → treat as discuss) |
 | **reject**, `reject_as: known` (`n` reads "not a misspelling — add to the known set") | append `<token> — <context excerpt> — <date>` to `notes/vtt_known_additions.md`; no glossary row |
 | **reject**, `reject_as: ignore` | `state.py ignore "<token>"` |
+| **chatter** (Table chatter) | `state.py ignore "<token>"`, regardless of the card's `reject_as`. The cue stays as spoken. |
 | **discuss** + note naming a canonical | treat as approve with the GM's canonical, not the proposed one |
 | **discuss**, no note | back to the shell, grouped with the other discussed pairs |
 | **unmarked** | undecided — leave the pair for the next run and say so |

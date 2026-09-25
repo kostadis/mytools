@@ -150,6 +150,8 @@ re-apply a stage you have already applied.
 | `items[].y` | yes | **What happens if approved. Name the files.** |
 | `items[].n` | yes | **What happens if rejected. Name the files.** |
 | `items[].ev` | no | The evidence. Cite `file:line`. |
+| `extraVerdicts` | no | Extra buttons beyond Approve / Reject / Discuss, for a skill whose natural verdicts are more than two, e.g. `[{"key":"chatter","label":"Table chatter","outcome":"Saved as ignored in <code>…state.json</code>."}]`. `key` is 1-24 chars `[a-z_]`; `outcome` is the default text of the card's extra outcome box. Declare only verdicts the skill's apply step maps to an action. |
+| `items[].x` | no | Per-card override of an extra verdict's outcome text: `{"chatter": "…"}`. |
 
 **Never pre-fill a verdict.** A page always starts unmarked and unsaved: the
 builder rejects a spec whose `state` carries `decisions`, `notes` or `savedAt`.
@@ -179,6 +181,8 @@ without a concrete `y`/`n` is a card the GM has to guess at.
 | **Approve** | Do the thing described in `y`. |
 | **Reject** | Do the thing described in `n`. |
 | **Discuss** | Neither yet — the note carries the GM's instruction, or it comes back to chat. |
+
+| *extra* | Do the thing the page's `extraVerdicts` entry (or the card's `x`) says. `read_decisions.py` accepts exactly the extra keys the page declared, and tallies them beside the three built-ins. |
 
 Plus a free-text **note** on any card (auto-revealed on Discuss).
 
