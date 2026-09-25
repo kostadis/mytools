@@ -18,6 +18,10 @@ alignment/rebuild task. Do not redo identity attribution to fix a timeline.
 
 ## Inputs and scope
 
+**No audio?** When neither the recording nor acoustic turns exist, this skill
+cannot run; use `speaker-attribution-text`, which infers labels from the
+conversation itself and marks every label as an inference.
+
 Use the supplied session directory or transcript. Inspect its audio, VTT,
 Descript exports, saved acoustic turns, and Zoom chat sidecars. Use `rg --files`
 before searching adjacent sessions for misplaced files. Read applicable

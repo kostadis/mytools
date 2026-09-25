@@ -38,7 +38,7 @@ Choose the output mode from the user's instructions:
   assignments at low confidence and record the user's authorization.
 
 Request missing facts only if the available context cannot support useful
-progress. Do not require a mode questionnaire. Acceptance of approximate
+progress, and then ask with `AskUserQuestion` so the GM's answer is explicit. Do not require a mode questionnaire. Acceptance of approximate
 attribution is not confirmation of every identity, and does not authorize new
 spelling or canon changes in a separate workflow.
 
@@ -82,7 +82,8 @@ interaction habits; do not turn phrases into identity rules.
 
 A word/character TF-IDF classifier can supply secondary style hints when there
 are enough labeled examples. It is optional: missing dependencies or sparse
-references must not block contextual work. **Its score is not the probability
+references should not block contextual work. If a particular session genuinely
+needs the classifier, say why and ask before stopping. **Its score is not the probability
 that a cue belongs to that person.** Verify across whole held-out sessions when
 reporting its performance; do not present reference-label agreement as accuracy
 on the target transcript.

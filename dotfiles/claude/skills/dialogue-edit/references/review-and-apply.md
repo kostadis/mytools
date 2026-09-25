@@ -70,7 +70,8 @@ completed runs cannot be overwritten. The helper creates:
 - `original.md`: exact original bytes (UTF-8, including existing newlines).
 - `candidate.md` and `candidate.diff`: all proposed changes, still unapproved.
 - `review.md`: exact replacements, surrounding context, and evidence.
-- `review_page.json`: the shared page queue, omitted if there are no proposals.
+- `review_page.json`: this scene's page queue, omitted if there are no proposals. Artifact
+  mode normally combines all scenes with `session-page` instead of publishing this one.
 - `review.json`: frozen proposal/input identities and skill-file fingerprints.
 
 `review.json` is written last. Its absence means preparation is incomplete.
@@ -97,34 +98,52 @@ Never populate an approval speculatively. Valid decisions are `approve`,
 `reject`, `discuss`. Omitted IDs stay unresolved. The helper rejects foreign
 IDs, duplicate JSON keys, invalid verdicts, and mismatched review IDs.
 
-For artifact review, read [the shared contract](../../_shared/review-artifact/CONTRACT.md)
-and render the existing prepared queue:
+For artifact review, read [the shared contract](../../_shared/review-artifact/CONTRACT.md).
+Prepare every selected scene first; then collect their frozen runs onto **one
+session page**:
 
 ```bash
+python3 "$SKILL_ROOT/scripts/review_edits.py" session-page \
+  --run-dir /campaign/summaries/session/dialogue_edit/scene01-r1 \
+  --run-dir /campaign/summaries/session/dialogue_edit/scene02-r1 \
+  --spec /campaign/summaries/session/dialogue_edit/session-r1/review_page.json \
+  --map  /campaign/summaries/session/dialogue_edit/session-r1/session_map.json
 REVIEW_ARTIFACT="$HOME/.claude/skills/_shared/review-artifact"
 python3 "$REVIEW_ARTIFACT/build_review.py" \
-  --in /campaign/summaries/session/dialogue_edit/scene01-r1/review_page.json \
-  --out /campaign/summaries/session/dialogue_edit/scene01-r1/review.html
+  --in  /campaign/summaries/session/dialogue_edit/session-r1/review_page.json \
+  --out /campaign/summaries/session/dialogue_edit/session-r1/review.html
 ```
 
-Publish that file with the `Artifact` tool using
+`session-page` re-verifies every run before collecting it. Item ids are
+prefixed by scene (`s01:<id>`), and the page's `reviewId` is derived from the
+runs' own review ids. It writes nothing it would overwrite, so each review
+round gets a fresh session directory; **retain any already-returned decisions**
+from earlier rounds rather than asking them again.
+
+Publish `review.html` with the `Artifact` tool using
 **`capabilities: {"artifact": {}}`** — without it the page cannot save and the
-GM silently gets the read-only fallback. This skill publishes **one page per
-scene run**, and each run owns its own `run-dir`, so the plain
-`review_page.json` name does not collide across scenes. A further review round
-for the same scene gets a fresh page path (a new `run-dir`); **retain any
-already-returned decisions** from earlier rounds rather than asking them again.
+GM silently gets the read-only fallback. One page covers the whole session.
 
 Then **stop**. The save comes back on its own — the `artifact-changed`
 notification, or the GM's word, whichever arrives first. Never poll for it.
-Read it back with `WebFetch` on the artifact URL, then recover the decision
-envelope:
+Read it back with `WebFetch` on the artifact URL, recover the decision
+envelope, and split it into one record per scene run:
 
 ```bash
 python3 "$REVIEW_ARTIFACT/read_decisions.py" \
   --html <saved-artifact.html> \
-  --out /campaign/summaries/session/dialogue_edit/scene01-r1/decisions.json
+  --items /campaign/summaries/session/dialogue_edit/session-r1/review_page.json \
+  --out /campaign/summaries/session/dialogue_edit/session-r1/decisions.json
+python3 "$SKILL_ROOT/scripts/review_edits.py" split-decisions \
+  --map /campaign/summaries/session/dialogue_edit/session-r1/session_map.json \
+  --decisions /campaign/summaries/session/dialogue_edit/session-r1/decisions.json \
+  --out-dir /campaign/summaries/session/dialogue_edit/session-r1/split
 ```
+
+Each split record carries that run's own `reviewId`, so `apply` checks it
+exactly as for a single-scene ruling. `split-decisions` refuses decisions from
+another session page, ids with an unknown scene prefix or proposal, and any run
+that changed after the page was built.
 
 The prepared queue HTML-escapes source text. It names the original and derived
 output area and shows exact before/after text and evidence. Only the returned

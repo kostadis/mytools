@@ -129,6 +129,7 @@ re-apply a stage you have already applied.
 |---|---|---|
 | `title` | yes | Becomes `<title>`, the `<h1>`, and the artifact's gallery name. Short noun phrase. |
 | `eyebrow` | no | Campaign · chapter · which skill. |
+| `reviewId` | no | Identifies this page's run, e.g. `ch63:stage-1`. Default: the title plus the build time (UTC). It is saved with the decisions, and `read_decisions.py --items` refuses a page whose `reviewId` differs from the items file's. |
 | `lede` | no | **Say how many need a ruling and that the rest already ran.** |
 | `footer` | no | What was applied without asking, and which state file it went to. |
 | `items[].id` | yes | `[A-Za-z0-9_.:-]{1,64}`, unique. Decisions are keyed by it, so it must survive back into your apply step — reuse the skill's own id (`find_residue.py`'s `c1`, a cluster/pair key, a finding number). |
@@ -178,7 +179,9 @@ whole mechanism exists to avoid.
 ## Output — `decisions.json`
 
 ```json
-{ "savedAt":  "2026-08-19 14:02 UTC",
+{ "schemaVersion": 1,
+  "reviewId": "ch63:stage-1",
+  "savedAt":  "2026-08-19 14:02 UTC",
   "decided":  10,
   "tally":    {"approve": 6, "discuss": 3, "reject": 1},
   "decisions":{"alkrist": "discuss", "manshoon": "reject"},
@@ -214,6 +217,9 @@ exits 2 rather than being passed through.
   that, take it — do not insist on the artifact.
 
 ---
+
+The page has a search box and an All / Unmarked / Approved / Rejected / Discuss
+filter. They only change what is shown; they are never saved with the decisions.
 
 ## Testing without a browser
 

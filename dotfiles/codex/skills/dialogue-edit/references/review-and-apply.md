@@ -70,7 +70,8 @@ completed runs cannot be overwritten. The helper creates:
 - `original.md`: exact original bytes (UTF-8, including existing newlines).
 - `candidate.md` and `candidate.diff`: all proposed changes, still unapproved.
 - `review.md`: exact replacements, surrounding context, and evidence.
-- `review_page.json`: the shared page queue, omitted if there are no proposals.
+- `review_page.json`: this scene's page queue, omitted if there are no proposals. Page mode
+  normally combines all scenes with `session-page` instead of publishing this one.
 - `review.json`: frozen proposal/input identities and skill-file fingerprints.
 
 `review.json` is written last. Its absence means preparation is incomplete.
@@ -97,22 +98,44 @@ Never populate an approval speculatively. Valid decisions are `approve`,
 `reject`, `discuss`. Omitted IDs stay unresolved. The helper rejects foreign
 IDs, duplicate JSON keys, invalid verdicts, and mismatched review IDs.
 
-For page review, read [the shared contract](../../_shared/review-page/CONTRACT.md)
-and render the existing prepared queue:
+For page review, read [the shared contract](../../_shared/review-page/CONTRACT.md).
+Prepare every selected scene first; then collect their frozen runs onto **one
+session page**:
 
 ```bash
+python3 "$SKILL_ROOT/scripts/review_edits.py" session-page \
+  --run-dir /campaign/summaries/session/dialogue_edit/scene01-r1 \
+  --run-dir /campaign/summaries/session/dialogue_edit/scene02-r1 \
+  --spec /campaign/summaries/session/dialogue_edit/session-r1/review_page.json \
+  --map  /campaign/summaries/session/dialogue_edit/session-r1/session_map.json
 REVIEW_PAGE="$HOME/.codex/skills/_shared/review-page"
 python3 "$REVIEW_PAGE/build_review.py" \
-  --in /campaign/summaries/session/dialogue_edit/scene01-r1/review_page.json \
-  --out /campaign/summaries/session/dialogue_edit/scene01-r1/review.html
+  --in  /campaign/summaries/session/dialogue_edit/session-r1/review_page.json \
+  --out /campaign/summaries/session/dialogue_edit/session-r1/review.html
 ```
 
-Use a fresh page path; retain any already-returned decisions. The prepared
-queue HTML-escapes source text. It names the original and derived output area
-and shows exact before/after text and evidence. Only pasted or saved decision
-JSON from this page authorizes its changes; browser state is not a callback.
-Return `discuss` notes to chat; explicit deferral can be recorded in notes and
-the session manifest while retaining the original text.
+`session-page` re-verifies every run before collecting it. Item ids are
+prefixed by scene (`s01:<id>`), and the page gets a session `reviewId` derived
+from the runs' own review ids. It writes nothing it would overwrite, so each
+review round gets a fresh session directory; retain any already-returned
+decisions. Only pasted or saved decision JSON from this page authorizes its
+changes; browser state is not a callback. Return `discuss` notes to chat;
+explicit deferral can be recorded in notes and the session manifest while
+retaining the original text.
+
+When the decisions come back, split them into one record per scene run. Each
+record carries that run's own `reviewId`, so `apply` checks it exactly as for a
+single-scene ruling:
+
+```bash
+python3 "$SKILL_ROOT/scripts/review_edits.py" split-decisions \
+  --map /campaign/summaries/session/dialogue_edit/session-r1/session_map.json \
+  --decisions /campaign/summaries/session/dialogue_edit/session-r1/decisions.json \
+  --out-dir /campaign/summaries/session/dialogue_edit/session-r1/split
+```
+
+It refuses decisions from another session page, ids with an unknown scene
+prefix or proposal, and any run that changed after the page was built.
 
 ## Dry-run and apply the approved subset
 

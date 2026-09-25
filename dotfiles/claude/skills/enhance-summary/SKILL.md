@@ -86,6 +86,20 @@ enhance_summary <session>/<cleaned-transcript>.vtt \
 Add `--claude-code-effort <level>` only when the user has chosen one. Run from
 the campaign root with resolved paths, and keep generation logging enabled.
 
+**Last known-good (the Chapter 09 run, on `codex-cli`).** A dated example, not
+a default: the model and effort are historical settings, and this goes stale
+visibly rather than silently. Either backend is fine from here when the user
+picks it.
+
+```bash
+enhance_summary <session>/<cleaned-transcript>.vtt \
+  --gmassist <session>/gm-assist.md \
+  --output <session>/session-summary.md \
+  --backend codex-cli \
+  --model gpt-5.6-sol \
+  --codex-reasoning-effort medium
+```
+
 `--batch` means the Anthropic Message Batches API, not a batch review page. It
 is Anthropic-backend only and is **not** compatible with `claude-code`. A user
 choosing batch *adjudication* has not authorized changing the generation
