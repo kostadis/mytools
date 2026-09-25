@@ -359,7 +359,7 @@ python3 ~/.claude/skills/_shared/review-artifact/build_review.py \
     --out <session>/voice_critic_review/review.html
 ```
 
-Publish `review.html` with the `Artifact` tool and **`capabilities: {"artifact": {}}`**, a stable favicon, a noun-phrase `title` and a `reviewId` naming the session and round (`vc:<session>:r1`). Then **stop** — the save comes back as an `artifact-changed` notification or the GM's word, never a poll. Read it back with `WebFetch` on the artifact URL, then:
+Publish `review.html` with the `Artifact` tool and **`capabilities: {"artifact": {}}`**, a stable favicon, a noun-phrase `title` and a `reviewId` naming the session and round (`vc:<session>:r1`). Then **stop** — the save comes back as an `artifact-changed` notification or the GM's word, never a poll. Read it back with the `Artifact` tool (CONTRACT step 5), then:
 
 ```bash
 python3 ~/.claude/skills/_shared/review-artifact/read_decisions.py \

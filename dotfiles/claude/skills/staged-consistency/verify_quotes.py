@@ -56,7 +56,10 @@ def main() -> int:
     vtt = cue_text(a.vtt)
     checked = miss = 0
     for i, ln in enumerate(open(a.doc, encoding="utf-8").read().split("\n"), 1):
-        for m in re.finditer(r'"([^"]{%d,})"' % a.min, ln):
+        # Straight or curly. Enhanced summaries quote with “…” (OOTA ch02: 40
+        # curly-quoted spans, 0 straight), and a straight-only pattern reports
+        # "0 checked" -- which reads as clean.
+        for m in re.finditer(r'["“]([^"“”]{%d,})["”]' % a.min, ln):
             q = m.group(1)
             checked += 1
             # An ellipsis marks a deliberate elision: verify each side separately.

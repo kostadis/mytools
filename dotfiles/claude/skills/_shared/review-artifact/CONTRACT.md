@@ -38,9 +38,13 @@ which ran a real `/staged-consistency` pass this way. Do not reauthor it.
    noun-phrase `title`.
 4. **Stop.** Hand over the link and say nothing further. See **Pickup** below
    for how the save comes back — it is usually automatic, and it is never a poll.
-5. **Read back.** `WebFetch` the artifact URL — it returns raw HTML for
-   `claude.ai/code/artifact` URLs, and for a large page also writes it to a
-   local file whose path it reports. Point the reader at that file:
+5. **Read back.** Use the `Artifact` tool, not `WebFetch`: `action: "read"`
+   with the artifact `url` and `path: "index.html"`. It saves the live page
+   (with the GM's saved state block) to a local file and reports the path; a
+   read without `path` returns the HTML inline, which is fine for a small page.
+   The Artifact tool's own guidance says to read claude.ai artifact links this
+   way, and it is the route that worked on OOTA ch02 (2026-09-25). Point the
+   reader at the saved file:
    ```bash
    python ~/.claude/skills/_shared/review-artifact/read_decisions.py \
        --html <saved-artifact.html> --items <session>/<skill>_review/review_items.json \
@@ -94,7 +98,7 @@ Ch 50, 2026-08-28: only stage 2's file survived; stages 0 and 1 were gone.)
 **Publishing arms a live subscription on the publishing session.** When the GM
 presses Save, the page republishes itself, and an `artifact-changed`
 task-notification naming that artifact arrives on its own. **That is the save
-signal** — act on it, `WebFetch` the URL and read the decisions without waiting
+signal** — act on it, read the page back (step 5) and read the decisions without waiting
 to be told.
 
 Two things it is not:

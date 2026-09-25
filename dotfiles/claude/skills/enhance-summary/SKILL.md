@@ -149,6 +149,15 @@ VTT: an interruption or laughter can split an otherwise supported quote across
 cues. Record any manual resolution separately, with cue evidence. Do not change
 the verifier's classification or silently repair dialogue.
 
+**"No quotes found" is zero coverage, not a pass.** Count `grep -c '^> ' session-summary.md` before reading the verifier's result. An enhancement can put every quote inline instead: the OOTA ch02 run (codex-cli, gpt-5.6-sol, 2026-09-25) wrote 40 curly-quoted spans and not one blockquote, so `sd_verify_quotes` exited 0 having checked nothing. Then run the inline sweep over the same VTT and report its counts instead:
+
+```bash
+python3 ~/.claude/skills/staged-consistency/verify_quotes.py \
+  --doc <session>/session-summary.md --vtt <session>/<cleaned-transcript>.vtt
+```
+
+On ch02 it surfaced the two defects the blockquote verifier could not see: a reworded quote (*"deal with"* for *"if he wants to be dealt with, he can be dealt with"*) and a quote spliced across the GM's asides without an ellipsis.
+
 End with the output path, generation result, quote-check result, and any
 unresolved findings. Stage 1 consistency
 (`/staged-consistency` Stage 1, which runs `/consistency-check` on `session-summary.md`) is the next review step when requested. Do not
