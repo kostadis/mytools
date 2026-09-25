@@ -308,8 +308,20 @@ sd_narrate <recap>.md --plan <session>/plan.md \
   --players-config config/players.yaml \
   --voice-dir voice --examples examples \
   --prose-mode --reflections --narrate-tokens 3200 \
-  --backend codex-cli --model gpt-5.6-sol --codex-reasoning-effort medium
+  <backend flags>
 ```
+
+**Either backend works; the GM picks per run.** Use one of:
+
+```bash
+--backend claude-code                                                    # the subscription
+--backend codex-cli --model gpt-5.6-sol --codex-reasoning-effort medium  # Codex
+```
+
+If the GM hasn't said which, ask — and mention which one narrated the
+neighbouring scenes, since a re-narrated scene sits between them. On
+`claude-code`, extended thinking eats the output budget and runs several times
+slower; `MAX_THINKING_TOKENS=0` closes most of the gap.
 
 `--scene N` takes **plan section indices**, not filename numbers. Read `plan.md`.
 

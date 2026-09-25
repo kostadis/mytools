@@ -216,14 +216,15 @@ It reports three things that change the rest of the run:
   (they usually do), that file cannot be the deliverable no matter how clean
   its text is. Say so before doing the work, not after.
 
-  **Verify a `none detected` before acting on it — the detector has a bug.**
-  `prepare_input.py` reported `speakers: none detected` on a plain WebVTT whose
-  1,008 cue lines *all* carry `Name:` prefixes; a one-line grep found four
-  speakers and their counts. Acting on the false negative would have meant
-  telling the GM their transcript could not be used. Always cross-check:
+  `prepare_input.py` counts `Name:` cue labels in WebVTT and plain labelled
+  text as well as `**name:**` in markdown. (It used to count markdown only, and
+  reported `speakers: none detected` on a WebVTT whose 1,008 cue lines *all*
+  carried `Name:` prefixes — acting on that false negative would have meant
+  telling the GM their transcript could not be used.) A `none detected` is
+  still worth one cheap cross-check before you tell the GM anything:
 
   ```bash
-  grep -oE '^[A-Za-z][A-Za-z ._-]{1,30}:' <vtt> | sort | uniq -c | sort -rn
+  grep -oE '^[A-Za-z][A-Za-z ._()-]{1,30}:' <vtt> | sort | uniq -c | sort -rn
   ```
 
   A speaker count is also a party roster check. Four labels where the campaign
