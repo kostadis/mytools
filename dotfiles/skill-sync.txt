@@ -10,6 +10,7 @@ remove-recap/find_recap.py
 remove-recap/recap_unique.py
 speaker-attribution-text/references/evidence.md
 speaker-attribution-text/scripts/attribution.py
+speaker-attribution/descript_align.py
 speaker-attribution/descript_turns.py
 speaker-attribution/diarize_label.py
 speaker-attribution/name_clusters.py
