@@ -276,6 +276,13 @@ Claude copy of this skill; here each is a rule plus at most a one-line example.
 - **The GM takes back rulings too.** Grep around any number the recap asserts; a
   take-back is often a half-sentence. Check the rule before recording the
   take-back as correct: the GM can reach for the wrong edition (Ch 65).
+- **Players retcon too.** A player can rewrite an earlier turn after the fact
+  ("Can I go back and modify some stuff?"), and the GM accepts it without
+  restating the outcome. OOTA ch03: a Second Wind retcon undid a knockout, and
+  "I am again knocked out" later counted the removed one; a card saying "two
+  knockouts" was approved before the retcon was found, and the GM ruled one.
+  Before counting knockouts, deaths, hit points or slots, grep the minutes
+  after each for `go back`, `modify`, `retroactive`, `forgot`, `dead or alive`.
 - **When the GM reads a written passage aloud, diff the quote against that
   source document, not against your ear.** Example: "Thorin … was proved right"
   became "Alyss proved right".
@@ -328,6 +335,10 @@ Claude copy of this skill; here each is a rule plus at most a one-line example.
   rested on the bible split passed as corroboration, and the tape overturned all
   10 (Shoor was in the quarters; the spools thread called fabricated is on tape).
   A finding whose only evidence is such a document is a lead to the tape.
+  It recurred on OOTA ch03: Sava for the cards on tape, a goblet for the kicked
+  can, telepathic calming, Sarith mad over Derendil and Imbros as the Mind Sliver
+  target, all overturned. Where the bible pointed at a real error, the fix still
+  came from the tape, because the bible's detail was wrong too.
 - **Canon can be wrong vs the tape.** When a finding would rewrite the target to
   match a grounding doc or AUTHORITATIVE CANON, verify on tape first; if the tape
   disagrees, the fix belongs in the grounding doc. Ask before editing `docs/`.

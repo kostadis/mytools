@@ -145,6 +145,14 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/staged-consistency/verify_quotes.py"
 On ch02 it surfaced a reworded quote and a quote spliced across the GM's asides
 without an ellipsis, neither of which the blockquote verifier could see.
 
+Labelled blockquotes (`> **Zalthir:** “…”`) used to read as "No quotes found"
+too. Until CampaignGenerator `d4e8047` (2026-09-25) the verifier required the
+quote mark straight after `>`, so OOTA ch03's 26 labelled lines were skipped; it
+now accepts the label and uses it as the speaker hint. If an older install says
+"No quotes found" while `grep -c '^> '` is nonzero, update CampaignGenerator or
+run the inline sweep. When the `'^> '` count and the checked count disagree,
+find out why before reporting either.
+
 End with the output link, generation result, quote-check result and any
 unresolved findings. Stage 1 consistency is the next review step when requested.
 Do not automatically apply consistency edits, remove recap, extract scenes,

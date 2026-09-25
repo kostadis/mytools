@@ -744,6 +744,19 @@ real company across ~8 sessions. When you find a wrong-form in a row that
 reads like it was meant for one line, check the glossary's notes section for
 its origin before trusting it.
 
+**A nickname for a real person is a real-world proper noun too.** OOTA ch003:
+the GM approved `Kostas → Kostadis` from one cue, but `grep -rhwc Kostas
+summaries/*/*.vtt` found 53 occurrences in 22 sessions: it is what the players
+call the GM. Put that count on the card ("a row rewrites all 53; a cue entry
+fixes only this one") before the GM chooses.
+
+**Rows that chain into a scrub row need the candidate settled to its fixed
+point.** Mishearings map to `Kostadis` and a scrub row maps `Kostadis` to `GM`
+(lint: `chained`). In file order a new feeding row can stop halfway: `Costados`
+ended at `GM`, `Kostas` at `Kostadis`, and idempotence failed. Re-apply until
+nothing changes, confirm the settled text matches the campaign's convention,
+and record that, not the half-applied text.
+
 **Write one-off fixes as record entries, not as edits.** A fix that fails the
 gate becomes a `transcript_corrections.yaml` entry — never a hand edit of any
 transcript. The entry is *cue-scoped*, so it does not need to be globally safe
