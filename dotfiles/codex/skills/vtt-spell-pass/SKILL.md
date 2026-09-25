@@ -22,6 +22,8 @@ The user's stated invariant: *"I know all the NPCs. If a proper name appears
 in a transcript that isn't in our notes, it's a misspelling."* The skill
 operationalises that: the unknown set IS the candidate-misspelling set.
 
+**Where this sits:** after `/speaker-attribution` (or `/transcript-rebuild`), before `enhance_summary`. Run it on the **unlabelled** tape, never on a `.speakers.vtt` — the glossary's player→PC rows would rewrite the speaker labels — then re-apply the approved speaker mapping to the `.cleaned.vtt`. Full order: `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
+
 ## Codex compatibility
 
 This is the Codex port of the Claude skill. Do not edit

@@ -15,6 +15,8 @@ This is the Codex port of the Claude skill. Do not edit
 `~/src/mytools/dotfiles/claude/skills/staged-consistency/` when changing this
 skill.
 
+**Where this sits:** phase 0/1 run after `/vtt-spell-pass` and `enhance_summary`, before `/remove-recap` and `/scene-extract` (they supersede `/gmassist-precheck`); phase 2 after `/session-summary-consistency`; phase 3 on the final selected narration. Full order: `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
+
 ## Codex Compatibility
 
 - Ask user questions in chat.

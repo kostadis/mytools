@@ -48,13 +48,11 @@ about.
 
 ## Where this sits
 
-```
-audio + transcripts
-  → [THIS SKILL] diagnose → label transfer → (diarize) → (re-transcribe) → strip hallucinations
-      → /vtt-spell-pass        name garbles, with sibling adjudication
-      → /scene-extract         now inherits correct speakers
-      → /session-summary-consistency → /voice-smooth → narration
-```
+**Neighbours:** first in the transcript front end (instead of
+`/speaker-attribution` when the names are reliable and only the timeline is
+wrong); next is `/vtt-spell-pass`, then `enhance_summary` and
+`/staged-consistency` phase 0/1. The whole order, and why, is in
+`~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md` — the single statement of it; this skill keeps no copy.
 
 Run this **before** `/scene-extract`. Running it after means re-extracting.
 

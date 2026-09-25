@@ -25,6 +25,8 @@ VTT
   -> session_doc narration
 ```
 
+The full pipeline order is in `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`; the diagram above shows only the data layers this skill touches.
+
 Never mutate the VTT, `scene_extractions_new/`, or `scene_extractions/`. Those
 remain the verbatim record. The primary outputs are
 `scene_extractions_smoothed/` and `voice_smooth.sources.yaml`. Review-page

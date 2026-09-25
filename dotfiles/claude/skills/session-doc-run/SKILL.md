@@ -10,6 +10,8 @@ and that file is authoritative for flags. This skill owns the part that is not
 written down anywhere: **what has to be true before Stage 1 will produce
 anything worth reviewing**, and where the gates go.
 
+**This skill is a driver, not a step.** It walks the order in `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md` and must stop at every `/staged-consistency` phase and every optional skill there (`/remove-recap`, `/session-summary-consistency`, `/voice-smooth`, `/no-mech`, …) rather than running the CLIs back to back.
+
 ## Where this sits
 
 ```

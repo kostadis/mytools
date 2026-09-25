@@ -18,6 +18,8 @@ VTT (raw verbatim — IMMUTABLE)
          (parallel path: session_doc.py per-scene narration → /voice-critic → hand-fix → assembly)
 ```
 
+The full pipeline order is in `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`; the diagram above shows only the data layers this skill touches.
+
 This is an **alternative render**, not a replacement for the pipeline: the smoothed layer and the VTT stay the record, and `/voice-critic` can still be run on the output as verification.
 
 ## Inputs

@@ -44,6 +44,8 @@ VTT (verbatim — IMMUTABLE)
       → /scrub                    (residue that still reached the prose)
 ```
 
+The full pipeline order is in `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`; the diagram above shows only the data layers this skill touches.
+
 **Run it BEFORE `sd_narrate`.** Running it after means re-narrating, which is
 fine but wasteful — and re-narrating has a real cost, see Phase 4.
 
