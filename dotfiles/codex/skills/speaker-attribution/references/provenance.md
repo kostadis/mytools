@@ -131,6 +131,62 @@ GM to rename a sound file because the heuristic lacked a stem match.
 | `session_20250812_transcript.vtt` last cue | 01:38:01.1 |
 | `descript_transcript.md` last word | 01:38:02 |
 
+### Audio much longer than every transcript
+
+A clean sweep whose endpoints do **not** agree is a real finding. When the
+audio runs far past every transcript, there are two causes, and they need
+opposite remedies:
+
+1. **The audio belongs to another session.** Zoom's `GMT<date>` stamp is the UTC
+   recording date, so it lands on the session date or the day after. A stamp
+   weeks away from the directory's date is a strong clue. Look for the session
+   that stamp belongs to, and compare that directory's transcript endpoint with
+   the audio's `mvhd` duration.
+2. **The audio is the raw recording, and every transcript was made from an
+   edited export of it.** The filename date fits, but the transcripts (and any
+   summary made from them) all stop at the same point, well short of the audio.
+   Edits cut material out all through the file, so this is not a truncated
+   tail. See *Edited-timeline transcripts* below.
+
+Ask the GM which case applies. The two look identical in a directory listing.
+
+*Evidence — OOTA ch02, both causes in one directory, one after the other.* The
+`2024-11-18` directory first held `GMT20250107-015545_Recording.m4a` (5711.3 s)
+next to transcripts ending at 00:40:34. The stamp pointed seven weeks later,
+and chapter 7's `2025-01-07` transcript ended at 01:35:10: that was its audio,
+within a second. The GM swapped in `GMT20241119-020233_Recording.m4a`. The date
+fit, but the file ran 5117.7 s while both transcripts **and** the gmassistant
+summary still ended at 40:34, all on the spool-burning plan. The GM confirmed it
+was the raw recording from before a Descript edit.
+
+## Edited-timeline transcripts
+
+Descript can export an edited recording, with gaps shortened, filler removed or
+passages cut, and transcripts made from that export sit on the **edited**
+timeline. Joined against diarization of the **raw** recording, every cue after
+the first cut lands on the wrong speech. The labels still look confident, and
+nothing reports an error. `--limit-seconds` cannot fix this: it cuts off a
+prefix, and the cuts here are everywhere.
+
+*Evidence:* OOTA ch02's edit removed 45 of 85 minutes in **~124 cuts** of 4–141 s
+each, not a few large ones. Its offset (raw − edited) grew from +30 s to +2672 s
+and never decreased, which is what cuts that only remove material should
+produce.
+
+In order of preference:
+
+1. **Export the edited audio from Descript** (the same composition the
+   transcript came from). It shares the transcripts' timeline, and the skill runs
+   unchanged.
+2. **Project raw diarization onto the edited timeline by words**
+   (acoustic-workflow.md, *Raw audio, edited transcript*). The GM chose this for
+   OOTA ch02. It needs a word-timestamped ASR pass over the raw audio, and some
+   cues come out with no label.
+3. Single source (Descript alone), with the GM's explicit acceptance.
+
+Descript's own turns need no projection: its export already uses the edited
+timeline.
+
 ### Audio duration without `ffprobe`
 
 A missing `ffprobe` is not a blocker: read the MP4 `mvhd` atom. **Account for
@@ -172,6 +228,13 @@ transformation history, line structure, timestamps, errors, and speaker
 tallies. "Cross-validated against a second clustering" is a false claim when
 the second clustering is the first one.
 
+**Hash first.** Two exports saved under different names can be the same bytes.
+*Evidence:* OOTA ch02's `…_transcript.vtt` and `…_transcript_RAW.vtt`, described
+as gmassistant's text before and after its correction pass, had the same
+SHA-256. That is one text layer, not two, and it was only visible from the
+hashes (the file sizes matched too). `sha256sum` every transcript before
+reasoning about which is "raw".
+
 The overlap score is not the tell; timestamp stripping depresses it
 misleadingly. Compare per-file speaker tallies:
 
@@ -204,7 +267,10 @@ Inventory separately:
 
 Do not count the same Descript clustering twice because it has both JSON and
 Markdown exports. A named voice-profile export is a proposal, not verified
-identity; it still needs identity review.
+identity; it still needs identity review. **A profile name may not even be a
+participant.** *Evidence:* OOTA ch02's export had a profile named for a member of
+the GM's household who is not a player (`<non-player>`), but the profile's lines were Mike playing Daz
+(identity-review.md). The only profile Descript called `mike` held 37 words.
 
 ## Choosing the text layer
 
