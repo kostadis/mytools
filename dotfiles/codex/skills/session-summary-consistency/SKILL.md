@@ -10,7 +10,8 @@ metadata:
 Check the verbatim quote blocks in `scene_extractions_new/` or
 `scene_extractions/` for VTT transcription errors, garbled phrases, proper-noun
 misspellings, and pronoun or clarity issues. Propose fixes before touching
-anything; apply only fixes the user approves.
+anything; apply only fixes the user approves, apart from the narrow auto-apply
+class in Batch Review Queue.
 
 This skill is quote-level only. It does not check scene summaries for canon
 facts, mechanical accuracy, or prose quality, except for player-name scrubs
@@ -29,12 +30,13 @@ changing this skill.
 - Ask user questions in chat. Do not refer to Claude `AskUserQuestion`.
 - Use `update_plan` for multi-step progress when useful.
 - Use `apply_patch` for manual edits to tracked documents.
-- Batch reviews must produce `<session-dir>/quote_consistency_review.html`, a
+- Batch reviews must produce `<session-dir>/quote_review/review.html`, a
   standalone interactive page built with the shared review-page builder. Markdown
   and JSON are supporting artifacts, not substitutes for the HTML page.
-- Preserve an already-selected batch mode across turns; do not ask again.
+- Ask the review mode in chat at the start of every run (Step 0); do not
+  remember a default across runs.
 - Do not apply edits merely because the workflow found likely fixes. User
-  approval is the gate.
+  approval is the gate, apart from the auto-apply class in Batch Review Queue.
 
 ## Inputs
 
@@ -49,6 +51,19 @@ changing this skill.
   `<campaign-root>/notes/vtt_transcription_corrections.md`.
 
 ## Workflow
+
+### 0. Choose the Review Mode
+
+Before locating anything, ask in chat and wait for an explicit answer:
+
+> Review the proposed quote fixes on a review page, or here in chat?
+> - Page: one standalone page for the whole run; mark the rulings at your own
+>   pace and export once with Copy output or Save output.
+> - Chat: the grouped proposal report and "apply all / selective / item ids".
+
+Ask this every run; do not remember a default. On the page route the per-scene
+counts and category totals are still given in chat, but the rulings move to the
+page. See Batch Review Queue below.
 
 ### 1. Locate Files
 
@@ -103,15 +118,28 @@ Cross-reference rules:
   a wrong-form column, consider the paired canonical correction.
 - Context overrides the glossary for identity. The same garble can map to
   different names in different scenes, so confirm against the scene summary,
-  surrounding dialogue, and entity registry before applying.
+  surrounding dialogue, and entity registry before applying. Example:
+  `Alley`/`Alle` phonetically matches the glossary alias for A'lai, but the
+  scene summary made one instance clearly Alkrist ("...didn't realize what was
+  going on"). Never blind-apply a glossary alias to a name-garble; surface
+  identity calls for user ruling.
 - Watch for glossary-substitution artifacts where an earlier replacement left
   doubled reads or false choices, such as the same referent appearing as both
-  sides of an "X or Y" phrase.
+  sides of an "X or Y" phrase. Example: `Semenor`/`Fembidor -> Fembris Lancer`
+  produced "one of Fembris Lancer or, Fembris Lancer". The same duplication can
+  pose as a real choice: "the man or the bowl cut" read as two things, but "the
+  bowl cut" was a mishearing of the same person's name (Tadric). Reconstruct to
+  a single clean form.
 - Do not assume a suspicious name variant is an authentic nickname. Check the
   registry, glossary nickname entries, and DO-NOT-CORRECT list first. If neither
-  corroborates it, surface it for user ruling.
+  corroborates it, surface it for user ruling. Example: "Grygumite" is a real,
+  recurring GM nickname for Grygum; "Gaz" and "Dad" for Daz looked the same way
+  and were plain mishearings, caught only after the GM corrected them.
 - Once a garble is confirmed, search the whole scene set for phonetically
-  similar variants before calling the fix complete.
+  similar variants before calling the fix complete. Example: `Bolkut`,
+  `Boldcut`, `bald cat`, `bowl cut`, and `bolt cut` were all one mishearing of
+  Tadric, found in separate rounds because each pass searched only the spelling
+  already flagged.
 - Use the scene summary as ground-truth paraphrase for meaning, not exact
   wording.
 - Use surrounding dialogue to resolve garbled phrases.
@@ -121,11 +149,23 @@ Speaker label and player-name rule:
 - Speaker labels must use the character name or `GM`, never the player's real
   name.
 - Use the campaign's own glossary `## Player names -> characters` section for
-  the mapping. Do not hardcode player names; they vary by campaign.
+  the mapping. Do not hardcode player names; they vary by campaign (Out of the
+  Abyss: `Joe -> Thorin`, `Gabe -> Zalthir`, `Mike -> Daz`, `Ben -> Grygum`,
+  `Kostadis (Roussos) -> GM`).
 - Label format varies across scenes, including `[GM]`, bold names, or other
-  Markdown forms. Sweep every scene's labels before producing the report.
+  Markdown forms. Sweep every scene's labels before producing the report; one
+  scene labelled the GM `**Kostadis Roussos**` 47 times while its siblings used
+  `[GM]`.
+- A real-name scrub in a speaker label is an attribution change, not a
+  mechanical fix: replacing a player's name with a character name asserts who
+  said the line, which `consistency-check` step 5 classes that way (Gabe ->
+  Zalthir, where the speaker was actually Daz). Always propose it for a ruling,
+  a card in batch mode, and never apply it on confidence.
 - Apply the same player-name scrub to `## Scene summary` prose. This is a name
-  replacement, not a summary rewrite.
+  replacement, not a summary rewrite. Summaries leak the GM's real name
+  (`Kostadis laid out three options...`, `per Kostadis`) and can carry Otter
+  garbles (`go to "LI"` -> A'lai); flag a garble you cannot safely scrub as an
+  upstream scene-extract issue.
 - Player names inside verbatim quote content may be left as-is when they are
   actual out-of-character table speech, but flag them as observations for the
   user.
@@ -133,11 +173,17 @@ Speaker label and player-name rule:
 Do not change:
 
 - Genuine speech disfluencies, repetitions, false starts, `um`, or `uh`.
-- Grammar, run-ons, or phrasing that reflect how someone actually spoke.
-- Profanity or table vocabulary.
+- Grammar, run-ons, or phrasing that reflect how someone actually spoke. The
+  verbatim quote is a record, and it is the raw material the voice files are
+  built from; grammar-smoothing it here would erase the very evidence that
+  calibrates them.
+- Profanity or table vocabulary. Reproduce profanity faithfully; "passes" ->
+  "asses" only when the correction is already in the glossary.
 - Clearly marked out-of-character crosstalk.
-- Numbers, dice results, or mechanics unless the transcription is plainly wrong
-  and evidence settles it.
+- Numbers, dice results, or mechanics, even if oddly phrased. A number inside a
+  quote may be corrected only when the transcripts settle it, and always as a
+  ruling (a card in batch mode), never auto-applied, because numbers feed
+  mechanics rulings downstream.
 - Speaker attribution without user confirmation. Flag suspected attribution
   errors as notes.
 
@@ -165,10 +211,10 @@ Include a summary table:
 | Grammar/pronoun | N |
 | Duplicate across scenes | N |
 
-For batch mode or a report too large for chat, follow Batch Review Queue below
-and link `<session-dir>/quote_consistency_review.html` as the primary deliverable.
-Summarize per-scene counts and category totals in chat. A Markdown report may
-supplement the page. Small interactive reviews may remain in chat.
+If the user chose the page at Step 0, follow Batch Review Queue below and link
+`<session-dir>/quote_review/review.html` as the primary deliverable. Summarize
+per-scene counts and category totals in chat. A Markdown report may supplement
+the page. If the user chose chat, the report stays in chat.
 
 ### 5. Wait for User Approval
 
@@ -201,6 +247,12 @@ and either apply the approved fix or report why it remains.
 
 ### 7. Feed Confirmed Garbles Back to the Glossary
 
+This pass catches classes that `vtt-spell-pass`'s deterministic scanner
+structurally cannot: lowercase name-garbles (`glabbagel`), sentence-initial
+one-offs it filters out (`Ragum`, `Dorin`, `Hulkrist`, `Demonor`, `Fembrance`),
+and meaning-dependent real-word swaps (`fake` -> point, `teeth` -> tea). So it
+is the natural place to grow the glossary.
+
 After approved fixes are applied, identify new VTT patterns not already in
 `notes/vtt_transcription_corrections.md` and ask:
 
@@ -219,6 +271,7 @@ Safe examples:
 - `Fembrance -> Fembris`
 - `graffled -> grappled`
 - `stinge -> singe`
+- `abald -> Avowed`
 
 Unsafe examples:
 
@@ -228,37 +281,88 @@ Unsafe examples:
 - `snake -> sneak`
 - `allowed -> Avowed`
 
-Append only user-approved safe pairs to the appropriate glossary section. If the
+Append only user-approved safe pairs to the appropriate glossary section. This
+closes the loop: what this pass confirms once, `vtt-spell-pass` applies
+automatically next session. If the
 user confirms a suspicious variant is authentic table speech or a nickname, add
 it to the glossary's DO-NOT-CORRECT area instead of the garble table.
 
 ## Batch Review Queue
 
-Use this when the report is too large for comfortable chat adjudication or the
-user asks for a batch review artifact.
+Use this when the user chose the review page at Step 0.
 
 Read `../_shared/review-page/CONTRACT.md` relative to this skill directory.
-Create the required standalone `<session-dir>/quote_consistency_review.html`
-with Approve, Reject, Discuss, notes, Copy output, and Save output controls.
-Use the shared builder rather than inventing a separate review UI:
+All review files live in the session directory under
+`<session-dir>/quote_review/`, not in a scratch location, so the run leaves an
+audit record beside the scenes it changed. Create the required standalone
+`<session-dir>/quote_review/review.html` with Approve, Reject, Discuss, notes,
+Copy output, and Save output controls. Use the shared builder rather than
+inventing a separate review UI:
 
 ```bash
 REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-page"
+mkdir -p <session-dir>/quote_review
 python "$REVIEW_PAGE/build_review.py" \
-  --in <session-dir>/quote_consistency_review_page.json \
-  --out <session-dir>/quote_consistency_review.html
+  --in <session-dir>/quote_review/review_items.json \
+  --out <session-dir>/quote_review/review.html
 ```
 
-Keep exact edit data in `quote_consistency_review.json`; map the same stable IDs
-into the shared-schema `quote_consistency_review_page.json` fields `id`, `t`,
-`y`, `n`, and `ev`. Show file, line, category, speaker, original, proposed text,
+This skill builds one page per run, so the plain names are correct, and the
+`--out` html stays on that one path for the whole run.
+
+Keep exact edit data in `<session-dir>/quote_review/quote_consistency_review.json`;
+map the same stable IDs into the shared-schema `review_items.json` fields `id`,
+`t`, `y`, `n`, and `ev`. Show file, line, category, speaker, original, proposed text,
 and evidence on every card, including any associated label edit. Escape all
 transcript text before placing it into trusted HTML fields.
-Use a run-specific `reviewId` and `outputName: quote_consistency_decisions.json`.
+Use a run-specific `reviewId` and `outputName: decisions.json`.
 Verify the generated page contains every queued ID and preserves the exact
 proposals. Link the HTML page in the final response; JSON/Markdown alone does
 not complete a batch review. Keep per-scene counts and category totals visible
 in the page or accompanying chat summary.
+
+### What is auto-applied, footer only
+
+A quote fix needs no ruling only when two independent transcripts agree on the
+correction, or it is a plain homophone with exactly one possible reading. The
+glossary/registry settling a proper noun AND the surrounding dialogue confirming
+the referent also counts:
+
+- Glossary/registry proper nouns whose corrected form is confirmed in a second
+  transcript (`Helspergaster` -> House Margaster; `Brewerdin` -> Vukradin).
+- Plain homophones with one possible reading (`and no true power` -> `and know
+  true power`; `Constitution safe` -> `Constitution save`).
+
+Nothing else is auto-applied. Player-name / real-name scrubs are not in this
+class: in a speaker label, a real-name scrub asserts who said the line, which
+`consistency-check` step 5 classes as an attribution change, so it is always a
+card. Numbers are never in it either. Apply this class before building the page
+and list the count and the files in the page `footer` and the chat summary.
+
+### What is always a card
+
+- Reconstructions: any fix that splices two transcripts, or where both
+  transcripts are garbled and you are proposing the intended words. Say in `ev`
+  which transcript said what.
+- Identity calls: a name-garble whose referent is uncertain or could map to more
+  than one entity.
+- Possible authentic coinages: a variant that might be a real table nickname or
+  in-character malapropism rather than a mishearing. The DO-NOT-CORRECT list
+  exists because that call was got wrong before (`find-us fee`, `Big Al`,
+  `Orcanese`). Check the glossary's garble lists and DO-NOT-CORRECT first, and
+  say in `ev` that the check found no corroboration rather than asserting it is
+  an error.
+- Unrecoverable lines where the choice is between `[inaudible]` and a bracketed
+  guess.
+- Player names inside quote content: they may stand; whether they do is the
+  user's call.
+- Player-name / real-name scrubs in speaker labels and scene summaries. Say in
+  `ev` which character the glossary mapping gives and whether the tape or the
+  other transcript confirms that speaker.
+- Numbers inside a quote, and only when the transcripts settle them. Say in
+  `ev` which transcript gives which number.
+
+### Cards and decisions
 
 Use stable ids like `s03-04`: scene number, then the finding number within that
 scene. Include:
@@ -277,10 +381,21 @@ scene. Include:
 }
 ```
 
-Then ask the user to paste Copy output or supply the saved decision JSON.
-Validate its reviewId and item IDs against this run before applying decisions.
-Explicit chat approvals supported in Step 5 also remain valid; merely generating
-or opening the page is never approval. Map decisions this way:
+Then ask the user to paste Copy output or supply the saved decision JSON. Save
+a pasted export to `<session-dir>/quote_review/decisions.json` (a Save output
+download goes there too), and validate its reviewId and item IDs against this
+run before applying decisions:
+
+```bash
+python "$REVIEW_PAGE/read_decisions.py" \
+  --in <session-dir>/quote_review/decisions.json \
+  --items <session-dir>/quote_review/review_items.json
+```
+
+Do not apply anything from a read that did not exit 0. Explicit chat approvals
+supported in Step 5 also remain valid; merely generating or opening the page is
+never approval, and only saved decisions authorise changes. Map decisions this
+way:
 
 | Decision | Action |
 |---|---|
@@ -290,8 +405,8 @@ or opening the page is never approval. Map decisions this way:
 | discuss without note | Bring the item back to chat for ruling |
 | unmarked | Leave unchanged and mention it in the summary |
 
-Auto-apply only after explicit user approval. Even in a batch queue, do not
-silently edit files based on confidence.
+Outside the auto-apply class above, apply only after explicit user approval.
+Even in a batch queue, do not silently edit files based on confidence.
 
 ## Conventions
 

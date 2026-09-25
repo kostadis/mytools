@@ -57,14 +57,15 @@ That pass is where **proper nouns** get settled, because it rules against the gl
 ## Inputs
 
 - **session-dir** — `summaries/YYYYMMDD/`. Default: CWD (if CWD is the campaign root, ask which session).
-- **scene dir** — `<session-dir>/scene_extractions_new/` **or** `<session-dir>/scene_extractions/` (suffix varies). Detect it; call it `<scene-dir>`.
+- **scene dir** — `<session-dir>/scene_extractions_new/` **or** `<session-dir>/scene_extractions/` (suffix varies). Detect it; call it `<scene-dir>`. **If both exist** and neither campaign convention nor freshness identifies the active source, ask the GM which one before choosing — smoothing the stale set renders quotes the upstream pass already corrected.
 - **voice files** — declared per character by a `voice:` entry in `<campaign-root>/config/party.yaml`, not discovered by filename. Resolve them the way the pipeline does (step 1). Plus `voice/_genre.md` (overall tone), if the campaign has one. **Authoritative** for how each character speaks.
 - **player→character map** — from the glossary `## Player names → characters` section (only needed if any labels still carry real names — they shouldn't after /session-summary-consistency).
 
 ## Workflow
 
 ### 1. Locate + load the guardrails
-- Detect `<scene-dir>`; if missing, stop.
+- Detect `<scene-dir>`; if missing, stop. If both scene directories exist, ask (see Inputs).
+- **No paid or remote backend without approval.** This skill needs none — it reads files the session already has. If a step seems to call for one (a fresh re-transcription, a remote model endpoint, a paid API), ask the GM and name the backend and the scope first.
 - Read `voice/_genre.md` for overall tone.
 - **Resolve voice files the way the pipeline resolves them: from the roster's declarations, not from filenames.** The rule lives in CampaignGenerator `session_doc/voice.py` — `load_declared_voices(cfg)`, keyed on `config/party.yaml`. A character gets a spec when it declares a `voice:` path **and** that file exists. Nothing is inferred from what the `voice/` directory happens to contain.
 
@@ -82,7 +83,7 @@ That pass is where **proper nouns** get settled, because it rules against the gl
   - Approximate matching fails *silently*. `Gyrgum` resolved to nothing, quietly, and the render proceeded without a spec.
   - First-name matching is wrong for any character whose name starts with a title. **`Sister Maela Dawnforge` has the first name `Sister`** — under the old rules she matches no key at all and gets no spec, while the declaration resolves her correctly. Obelisk hits exactly this case.
 
-  **Run the pre-flight instead of resolving by hand.** `voice_declaration_problems(cfg, narrators)` and `unknown_narrators(cfg, narrators)` answer the question for every speaker *before* the first API call, and they distinguish the two failures that matter — a character declaring no `voice:` entry (a statement, not an accident) from one declaring a file that is absent (a refusal):
+  **Run the pre-flight instead of resolving by hand.** `voice_declaration_problems(cfg, narrators)` and `unknown_narrators(cfg, narrators)` answer the question for every speaker *before* the first API call, and they distinguish the two failures that matter — a character declaring no `voice:` entry from one declaring a file that is absent. Both stop a PC's smoothing until the GM rules (below); they differ only in what the fix is:
 
   ```bash
   python3 -c "
@@ -102,7 +103,8 @@ That pass is where **proper nouns** get settled, because it rules against the gl
 
   `load_voice_files(voice_dir)` still exists but is **not** the resolver — it is the directory census the orphan report is computed against, i.e. which files in `voice/` no character's `voice:` entry names. Useful after a rename; useless for finding a speaker's spec. Do not compute orphans by first-name-splitting a declared key, either: `"sister maela dawnforge".split()[0]` is `sister`, which reports `maela_voice.md` as an orphan when it is correctly declared.
 
-- **Read a character's voice file before smoothing a single one of their lines** (voice files are authoritative — global campaign rule). If a speaker's spec does not resolve, say so *before* smoothing their lines rather than rendering them from nothing — and say it from the pre-flight above, not from a failed filename guess. The pre-flight distinguishes "declares no voice file" from "declares one that is missing"; those are different problems with different fixes.
+- **Read a character's voice file before smoothing a single one of their lines** (voice files are authoritative — global campaign rule).
+- **A PC in scope with no resolved spec is a STOP, not a flag.** If the pre-flight reports a PC who declares no `voice:` entry, or who declares a file that is missing, stop before smoothing any of that character's lines and ask the GM, naming which of the two failures it is (from the pre-flight, not from a failed filename guess): **proceed plainly** for that character this session (clean, readable, no invented voice — record the ruling in the manifest), **write a voice file first** (`/voice-file`, then declare it in `party.yaml` and re-run the pre-flight), or **skip** that character's lines in this pass (they stay out of the smoothed layer until a later run). Do not pick one yourself, and do not keep smoothing other characters on the assumption the answer will be "plainly" — an unanswered question is not a ruling.
 - Speakers with no voice file:
   - **GM** (narration / OOC / rules) → render as clean, plain GM prose; do not invent a voice.
   - **GM as <NPC>** → draw the NPC's characterization from its dossier (`docs/npcs/`) **or the session prep docs** (`notes/session_prep/`, `notes/sessions/`) if either gives you one, else a neutral, readable rendering. Never flatten a distinctive NPC into GM-neutral when a source gives you a voice — this run rendered Kalan (precise, professorial), Bookwyrm (compliment-as-warning, maternal-turned-glacial), Grygum (warm-as-method reassurance), and Daral (effusive) from prep/dossier characterization, not from PC voice files.
@@ -158,7 +160,7 @@ You cannot detect these from the tape, because the tape looks identical either w
 When the GM confirms one:
 
 1. Keep the line (it was said) but **relabel it OOC and annotate it** — state plainly that it is the player's knowledge, name what the character does *not* know, and write **"Do not narrate X as suspecting/asserting this."**
-2. **Record it durably.** Annotations live in a derived file that the next `scene_extract` run deletes. The boundary must outlive it — a hand-authored dossier at `docs/<Subject>.md` with a *what the party actually knows* table, plus a pointer from the campaign's `CLAUDE.md` so it loads every session. Phandalin keeps `docs/KP.md` and `docs/Margaster.md` this way.
+2. **Propose a durable record — and get its exact text approved separately.** Annotations live in a derived file that the next `scene_extract` run deletes. The boundary must outlive it — a hand-authored dossier at `docs/<Subject>.md` with a *what the party actually knows* table, plus a pointer from the campaign's `CLAUDE.md` so it loads every session. Phandalin keeps `docs/KP.md` and `docs/Margaster.md` this way. **Confirming the boundary is not approval to write it.** Show the GM the exact file path and the exact text you would add (the dossier rows and the pointer line), and write only after an explicit yes to *that* text: the relabel fixes one quote in one derived file, while the dossier is read by every future session. If the campaign is also run from Codex, the pointer goes in **both** `CLAUDE.md` and `AGENTS.md` — show both lines in the same approval.
 
 ### 2. Smooth each quote (per scene, from the source's `## Verbatim moments`)
 For every quote block:
@@ -269,8 +271,13 @@ Before any of the evidence work below, confirm the file you are about to treat a
 
 This failure is silent and it inverts your confidence exactly backwards: identical readings look like the *strongest* possible corroboration when they are in fact no evidence at all.
 
+Group the byte-identical files first — that is free and certain — then use a phrase grep to catch the ones that differ only in bytes (a header, a re-save) but carry the same reading:
+
 ```bash
-# one distinctive phrase, every candidate transcript — group the identical ones
+# 1. byte-identical files are one reading, whatever their names
+sha256sum <session-dir>/*.vtt <session-dir>/*Recording*.md | sort | uniq -w64 --all-repeated=separate
+
+# 2. one distinctive phrase, every candidate transcript — group the identical ones
 for f in <session-dir>/*.vtt <session-dir>/*Recording*.md; do
   echo "-- $f"; grep -i -m1 "<a distinctive phrase from the middle of the session>" "$f"
 done
@@ -304,7 +311,9 @@ When a line mentions a check, a roll, or a quantity and the value is absent or r
 
 #### Write new wrong-forms back to the glossary
 
-A proper-noun garble ruled here is one the upstream pass will meet again next session. When the GM settles one, offer to add it to `notes/vtt_transcription_corrections.md` as part of the same ruling — Phandalin ch48 added `Utgartian`, `Rieber`, `Vubert`, `Rueberg`, `CORN`, `Corin`, `Don Juan`.
+A proper-noun garble ruled here is one the upstream pass will meet again next session. When the GM settles one, offer to add it to `notes/vtt_transcription_corrections.md` — Phandalin ch48 added `Utgartian`, `Rieber`, `Vubert`, `Rueberg`, `CORN`, `Corin`, `Don Juan`.
+
+**The write-back is its own ruling, never part of the garble ruling.** A garble ruling fixes one quote in one derived file; a glossary row is applied by `vtt-spell-pass` to every future transcript of the campaign. So the GM's "yes" to the repair does not cover the row. Show the **exact** row you would write — the canonical, the full variant list after the merge, and the section it goes in — and write it only after an explicit yes to *that* row. An approval that did not see the row text is not an approval of it.
 
 Checking the glossary also audits it. That pass found the `Don-Jon Raskin` row pointing at an **unhyphenated** canonical form, contradicting `entity_registry.yaml` — a live bug that had been quietly producing inconsistent output. **The registry is the authority; the glossary is a lookup table that can drift from it.** When they disagree, say so and let the GM pick which one is wrong.
 
@@ -339,6 +348,8 @@ Do **not** modify anything under `<scene-dir>/`.
 
 ### 4. Human review — REQUIRED before it feeds session_doc
 Smoothing changes words, so the human is the checkpoint (LLM drafts → human reviews → then it feeds `session_doc`).
+
+**Resume from an approved calibration.** If `<session-dir>/voice_smooth.sources.yaml` already records a GM-approved calibration for this session **and the same source set** (same `<scene-dir>`, same voice declarations), verify that it does, say so, and resume from it rather than re-asking. If the sources changed, the old approval does not carry over — calibrate again.
 
 **Calibrate on one scene first.** On a first run for a session (or a new campaign), smooth a single representative scene, present *its* pairs, and get the voice fidelity and the grammar-fix aggressiveness approved **before** rendering the rest. It catches over/under-smoothing early and keeps the review tractable. (Calibration question that came up this run: how aggressively to repair grammar the *player* actually spoke — clear-meaning fixes like "we got a nail Bookwyrm" → "we've got to nail Bookwyrm" are fair game; ambiguous ones stay near-verbatim; suspected *transcription* errors get flagged upstream, never smoothed away.)
 
@@ -389,13 +400,13 @@ Phandalin ch4 caught three this way (`"Why'd that cost us the gold?"`, `"those i
 Rulings made in conversation and applied as scattered annotations are unreconstructable a week later. Write `<session-dir>/voice_smooth.sources.yaml` recording:
 
 - scene count, quote-line count, and **the garble-ruling count broken down by scene**
-- the resolved voice specs, and any NPC characterization source used
+- the resolved voice specs, any NPC characterization source used, and the GM's ruling for any PC without a resolved spec (plainly / voice file first / skipped)
 - **which transcripts were consulted and what each is good at** — this is per-campaign knowledge that makes the next run faster. Record which files turned out to be **the same text**, by name; that is the single most time-saving line in the manifest for whoever runs this next.
 - the **verdict counts** from the review round trip, including how many came back undecided and were re-asked — so a later reader can see the checkpoint held
 - the calibration decisions the GM approved (filler aggressiveness, grammar repair, stage-direction split, truncation handling)
 - every **scope** ruling — de-duplication boundaries, player-name policy, knowledge boundaries — with what moved where
 - garbles **kept deliberately**, and why, so a later reader doesn't re-flag them
-- glossary rows written back, and any registry/glossary conflict found
+- glossary rows and durable knowledge records written back — each with the exact text the GM approved — and any registry/glossary conflict found
 - upstream defects found but not fixed, and `carry_forward` for anything left open
 
 Validate it parses (`python3 -c "import yaml; yaml.safe_load(open(...))"`). Watch the indentation trap: keys that follow a list at the same indent level get swallowed into the sequence.
@@ -413,15 +424,18 @@ Say explicitly that **re-running the extractor would discard this pass**, and na
 - **A voice spec is declared, never discovered.** It resolves from a character's `voice:` entry in `party.yaml` by exact name match. Do not glob `voice/`, do not fall back to a first name, do not match a prefix — a character named `Sister Maela Dawnforge` has the first name `Sister`, and approximate matching fails silently, which is why the pipeline removed it.
 - **Preserve, don't rewrite.** Readability + voice only. Names, numbers, mechanics, attribution, and *meaning* are off-limits.
 - **Don't over-smooth.** Deliberate style is voice; only transcription noise and genuine unreadability get cleaned. A character who rambles on purpose should still ramble.
-- **Deciding a name is upstream; spelling a settled one is here.** Establishing *who someone is* is an identity decision belonging to `/session-summary-consistency` and the registry — never make one in this layer. But applying a form the registry has **already** settled is spelling, not identity: `Utgartian` → `Uthgardtian`, `Colin` → `Cullen`, `a house like Astra` → `House Margaster`. Check the registry first, say which authority you are applying, and offer the glossary write-back.
+- **Deciding a name is upstream; spelling a settled one is here.** Establishing *who someone is* is an identity decision belonging to `/session-summary-consistency` and the registry — never make one in this layer. But applying a form the registry has **already** settled is spelling, not identity: `Utgartian` → `Uthgardtian`, `Colin` → `Cullen`, `a house like Astra` → `House Margaster`. Check the registry first, say which authority you are applying, and offer the glossary write-back — as a separate approval of the exact row (step 2.5).
 - **Common-word garble is ruled here.** `app`/`hack`, `confront-free`/`conflict-free`, `bloom`/`show` are in no glossary and trip no registry check, so they survive every upstream pass and surface only when a human reads the line. Rule them here with the GM (step 2.5) and record what was ruled.
 - **Scope belongs to the human.** What belongs in which scene, and who knows what, are precision decisions — never settle a de-duplication boundary or a player-vs-character knowledge question yourself (step 1.5).
-- **Knowledge boundaries need a home outside this layer.** An annotation in a derived file dies at the next `scene_extract`. Push it to a hand-authored `docs/` dossier with a `CLAUDE.md` pointer.
+- **Knowledge boundaries need a home outside this layer.** An annotation in a derived file dies at the next `scene_extract`. Propose a hand-authored `docs/` dossier with a `CLAUDE.md` pointer — plus an `AGENTS.md` pointer when the campaign is also run from Codex, so both harnesses find the same knowledge — and write it only after the GM approves the exact text.
+- **Durable writes get their own approval of the exact content.** A glossary row, a knowledge dossier, a campaign-instruction pointer: each outlives the session, so each needs an explicit yes to the exact text, separate from the ruling that prompted it.
+- **A PC in scope without a resolved voice spec stops the pass for that character** until the GM rules: proceed plainly, write a voice file first, or skip (step 1).
+- **No paid or remote backend without the GM approving the backend and the scope.**
 - **No card, no change — in THIS layer.** A word you repair without an approved ruling is a unilateral edit no matter how obvious it looked, and obvious is not a track record (one in three of ch4's "certain" readings was wrong). If you notice it while writing, revert it and put it in `carry_forward`. Audit for these before you report done (step 5).
 
   **The rule governs the smoothed layer, because every word there has to trace to a ruling the GM made. It does not govern downstream narration, and it never governs *reporting*.** Phandalin ch4 got this backwards: asked to find logic breaks in the finished narration, the pass spotted `"let's try to freeze it"` sitting one line after `"All right, let's free the slaves!"`, declined to touch it by citing this rule, and wrote the refusal into the audit comment as considered judgment — dressing a wrong call up as a careful one. The GM had asked for exactly that class of defect. A rule that stops you editing a transcript must never stop you saying *"this sentence contradicts the one before it."* When in doubt, surface it; silence is the one option that is always wrong.
 - **An unmarked card is not a decision, and a three-word note is not a specification.** Re-ask what came back undecided; confirm what a terse DISCUSS note meant before applying it; bring exact wording back when the ruling would invent canon.
-- **Two files with different names are not two readings.** Prove independence before treating one transcript as corroboration for another — identical passes agreeing with themselves is the most convincing worthless evidence you will meet here.
+- **Two files with different names are not two readings.** Group them with `sha256sum`, then prove independence with a phrase, before treating one transcript as corroboration for another — identical passes agreeing with themselves is the most convincing worthless evidence you will meet here.
 - **Human reviews before session_doc.** This is a first-draft render, not a final artifact.
 
 ## Why this design

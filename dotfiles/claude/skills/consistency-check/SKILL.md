@@ -1,6 +1,6 @@
 ---
 name: consistency-check
-description: Run a consistency check on a session document (first-pass recap, enhanced recap, or final narration) against the campaign's context files, then adjudicate what the docs can't settle against the session transcript. Handles backfilled old chapters, where the grounding docs describe a much later party and prep often does not exist. Use when the user invokes /consistency-check [document-path].
+description: Run a consistency check on a session document (first-pass recap, enhanced recap, scene extraction, or final narration) against the campaign's context files, then adjudicate what the docs can't settle against the session transcript. Handles backfilled old chapters, where the grounding docs describe a much later party and prep often does not exist. Use when the user invokes /consistency-check [document-path].
 tools: Bash, Read, Write, Edit, Glob, AskUserQuestion
 ---
 
@@ -18,6 +18,7 @@ Resolve the path relative to CWD. Common targets:
 - `summaries/<date-or-NNN>/session-summary.md` (or the enhance_summary `--output`) — enriched recap
 - `summaries/<NNN>/session_<date>_<slug>.md` — GMAssistant-exported recap
 - `vtt_roleplay_extractions/enhanced_sections.md` — enhanced recap (post-Pass 2)
+- `summaries/<date>/scene_extractions_new/0N_*.md` — scene extraction: per-scene extraction containing quote blocks
 - `session-doc.md` (or whatever the narration `--output` was set to) — final narration
 
 **Read the document yourself before running.** It grounds the entity/beat list (who/what appears), tells you which prep is relevant, and lets you anticipate the likely findings.
@@ -184,6 +185,8 @@ python <repo>/session_doc/check_consistency.py <document> \
 
 Execute and wait. Confirm the `Context : N document(s)` count, and treat any non-zero exit before it as a STOP (see step 2).
 
+**Fail closed on a backend failure.** If the backend reports a missing executable, a missing login, an incompatible model, a timeout, or a process error — or returns an empty result, a truncated report, or an auto-continued report with a broken seam — **stop and report the failure to the GM.** Never silently retry on a different backend (`claude-code` → `anthropic`, or anything else); a different backend is a new run the GM chooses. **Partial output is not a report:** do not count it, tabulate it, or write a manifest as if the check completed.
+
 **Two script quirks that look like results but aren't:**
 
 - **The `No issues found.` banner is an unreliable false negative.** `check_consistency.py` counts occurrences of the literal string `**Location**`, but models routinely emit `**Location:**` (colon *inside* the bold), so `issue_count` comes back 0 while the body lists a dozen issues. **Always trust the report body over the banner**, and derive your own count by grepping the saved report for its actual heading pattern. **`^### ` is a guess, not the pattern** — the model also numbers findings as bold runs under `##` section headers (`**1. Moesko is a half-orc, not an orc**`), where `grep -c "^### "` returns a confident **0** on a report carrying twelve findings. That is the same false zero as the banner, arrived at a second way. Look at the file before counting it:
@@ -207,7 +210,7 @@ So you cannot carry a pattern forward from the previous run **of the same stage 
 
 - **The bullet pattern can OVERCOUNT as badly as the numbered one undercounts.** On Ch 48 Stage 0, `^- \*\*` returned **48** against 12 real findings, because each finding carries four `- **Location:** / **Issue:** / **Evidence:** / **Suggested fix:**` sub-bullets. A count four times too high is not obviously wrong the way a zero is, so it is likelier to be believed.
 - **Run every pattern, take the one that matches the body.** A single grep is never sufficient. Print all the candidate counts, read enough of the file to see which is right, and record the delimiter you counted in the manifest so the next run knows it proves nothing about the next format.
-- **`--backend claude-code` can hit its output ceiling and auto-continue**, printing a loud `WARNING: claude -p hit its output ceiling mid-generation and AUTO-CONTINUED across N assistant turns` with a possible seam at the boundary. When you see it, **inspect the saved report before trusting it**: `grep -n "^### "` for contiguous, correctly-numbered sections and check the tail is a complete entry, not a mid-sentence cut. Report what you found. If the report *is* damaged, re-run with a raised `CLAUDE_CODE_MAX_OUTPUT_TOKENS`.
+- **`--backend claude-code` can hit its output ceiling and auto-continue**, printing a loud `WARNING: claude -p hit its output ceiling mid-generation and AUTO-CONTINUED across N assistant turns` with a possible seam at the boundary. When you see it, **inspect the saved report before trusting it**: `grep -n "^### "` for contiguous, correctly-numbered sections and check the tail is a complete entry, not a mid-sentence cut. Report what you found. If the report *is* damaged — a broken seam, a gap in the numbering, a mid-sentence tail — it is partial output: stop and report it under the fail-closed rule above. A re-run with a raised `CLAUDE_CODE_MAX_OUTPUT_TOKENS` is the usual remedy, but it is the GM's call, not an automatic retry.
 
 ### 4.5. Record the sources used — REQUIRED (YAML manifest)
 
@@ -220,7 +223,7 @@ consistency_check:
   timestamp: "<ISO-8601, from `date -Iseconds`>"
   campaign: "<workspace dir or name>"
   document_checked: "<relative path>"
-  document_class: "<first-pass recap | enhanced recap | narration> [ + backfill]"
+  document_class: "<first-pass recap | enhanced recap | scene extraction | narration> [ + backfill]"
   report: "<relative path to saved report, or null>"
   config: "<config path used>"
   model: "<model the script reported>"
@@ -358,15 +361,35 @@ Two habits, both learned by getting it wrong mid-run:
 
 Quote the transcript verbatim when you present the adjudication, and record it in the manifest (step 6). Note in the manifest that the VTT was **consulted by hand**, not passed as `--context` — it is provenance for the ruling, not an input to the check.
 
-### 5. Present findings — triage, don't dump
+### 5. Present findings — a severity-ranked table, don't dump
 
-Report the issue count (yours, from the body), then show the report. **Triage the findings into buckets** rather than treating them uniformly:
+Report the issue count (yours, from the body). Run the false-positive filters below on every finding **first**; only what survives them reaches the table. Then present the findings as a **severity-ranked table** — the same rubric `/staged-consistency` uses, so the two skills agree:
 
-- **Clear-cut errors** (name/spelling/title, internal attribution settled by the VTT, place-name inconsistencies, mechanics miscategorized, chronology) — recommend applying.
-- **Canon judgment (needs the user's table knowledge)** — a "new fact" the recap asserts that no doc establishes, or a recap beat that contradicts prep because **play diverged**. Only the user knows what actually happened at the table; ask, don't guess.
-- **Minor/optional** — mechanical nitpicks, phrasing, normalization.
+```
+  ┌─────┬──────────────────────────────┬──────────────────────────────────────────────────────┐
+  │  #  │ Severity                     │                        Issue                         │
+  ├─────┼──────────────────────────────┼──────────────────────────────────────────────────────┤
+  │ 1   │ Critical · GM ruling needed  │ <one-line description>                               │
+  │ 2   │ Moderate                     │ <one-line description>                               │
+  │ 3   │ Minor                        │ <one-line description>                               │
+  │ 4   │ Trivial                      │ <one-line description>                               │
+  └─────┴──────────────────────────────┴──────────────────────────────────────────────────────┘
+```
 
-Failure modes to check *the report itself* for before recommending anything:
+**Severity rubric:**
+
+| Level | Meaning |
+|---|---|
+| **Critical** | Contradicts established canon (NPC fates, event timing, faction state, established mechanics); would cause player confusion or DM embarrassment if it reaches narration. Must fix before narrating. |
+| **Moderate** | Framing drift — what happened is right but characterised wrongly; wrong kill attribution; characterisation that conflicts with the voice file; missing context that changes meaning. Should fix before narrating. |
+| **Minor** | Misspelling of a proper noun, wrong pronoun, single-word transcription error, inconsistency within the same document. Easy to fix; fix before narrating. |
+| **Trivial** | Stylistic quirk, table-chatter artifact, item you flagged as "leave as-is" in a prior stage, or flavour call that is defensible either way. Surface but do not push. |
+
+Sort by severity (Critical first). Number issues sequentially across the whole table.
+
+**Severity ranks findings; it does not rule on them.** A **canon-judgment** finding — a "new fact" the recap asserts that no doc establishes, or a recap beat that contradicts prep because **play diverged** — needs the user's table knowledge: only the user knows what actually happened at the table; ask, don't guess. Mark it in the table (e.g. `Critical · GM ruling needed`) whatever its severity, and **never auto-apply one**.
+
+False-positive filters — check *the report itself* for these before anything reaches the table:
 
 **Grep the target for the quoted text before you believe any finding — the check attributes context text to the document under audit.** Everything in `--context` is in the model's window, and it does not reliably keep straight which file a sentence came from. The signature is a finding whose **Location** names a section of the target but whose quoted "current text" is not in the target at all; it is in a context file. This costs nothing to test and it is the cheapest filter in this step, so run it first, on every finding, before any other adjudication:
 
@@ -521,7 +544,7 @@ Close with: what was applied / partially applied / rejected, **what the VTT caug
 - **Three transcripts can give three answers.** A session dir may hold the raw `.vtt`, a glossary-`cleaned.vtt`, and a `retranscribed.cleaned.vtt`. Prefer the retranscribed one and say which you used. Instructive case: the raw ASR heard "Dessa", the glossary mapped it to "Dosa", the retranscription independently confirmed "Dosa Rook" — and the spelling that reached the docs was "**Desa**", which appears in *no* transcript. A wrong name that matches neither the garble nor the truth is a **summarizer invention**, not a transcription error, and no glossary will ever catch it.
 - **Session prep is the highest-value context for *this session's* facts** — it catches VTT transcription errors nothing else can. Discovering it (step 2.5) across the whole `notes/` tree, and choosing a focused set, is the most important part of a good *run*.
 - **The VTT is the highest-value source for the findings the run can't close** (step 4.7) — retracted GM slips, attribution, and facts absent from every doc. Prep makes the check smart; the transcript makes the *review* decisive.
-- **Different document classes fail differently, and the run should be shaped accordingly.** A **first-pass recap** fails on *names* — transcription garbles, misspellings, mis-titles — and prep plus the glossaries catch most of it. An **enhanced recap** inherits those fixes clean and fails instead on *numbers, attribution and ordering*, none of which any grounding doc records. A **backfilled old chapter** (a first-pass recap of a session from long ago, typically part of a sweep to fix historical data) fails on names *and* attribution, usually has **no prep at all**, and generates a large class of false positives where the check compares a young party against grounding docs describing the present one — in one run 3 of 13 findings were purely that gap, and the two worst real defects (a garble that fused two PCs, and every heal credited to the wrong character) were invisible to the check and came only from a speaker-labelled transcript. On the enhanced class expect the report's hit rate to be poor — in one run **8 of 12 findings could not be applied as written** (7 rejected outright as table-accurate, 1 correct about the contradiction but pointing the wrong way) — and expect the VTT to supply most of the real errors (that same run: six the check could not see, including a heal credited to the wrong PC in four sections). Say which class you are checking in the manifest, and don't let a low report hit-rate read as "the document was clean."
+- **Different document classes fail differently, and the run should be shaped accordingly.** A **first-pass recap** fails on *names* — transcription garbles, misspellings, mis-titles — and prep plus the glossaries catch most of it. An **enhanced recap** inherits those fixes clean and fails instead on *numbers, attribution and ordering*, none of which any grounding doc records. A **backfilled old chapter** (a first-pass recap of a session from long ago, typically part of a sweep to fix historical data) fails on names *and* attribution, usually has **no prep at all**, and generates a large class of false positives where the check compares a young party against grounding docs describing the present one — in one run 3 of 13 findings were purely that gap, and the two worst real defects (a garble that fused two PCs, and every heal credited to the wrong character) were invisible to the check and came only from a speaker-labelled transcript. On the enhanced class expect the report's hit rate to be poor — in one run **8 of 12 findings could not be applied as written** (7 rejected outright as table-accurate, 1 correct about the contradiction but pointing the wrong way) — and expect the VTT to supply most of the real errors (that same run: six the check could not see, including a heal credited to the wrong PC in four sections). A **scene extraction** (per-scene extraction containing quote blocks) fails on *verbatim quote fidelity and speaker attribution*, which only the transcript settles: the grounding docs record neither the exact words nor who spoke them, so for this class the VTT is not optional either. Say which class you are checking in the manifest, and don't let a low report hit-rate read as "the document was clean."
 - The check is **advisory** — review every suggested fix before applying; never bulk-apply. The report is another LLM's unreviewed output: it can be confidently wrong about which side of a discrepancy is correct, and it can be confidently wrong that a table ruling is a rules violation.
 - **The reviewer is fallible too, and mid-run self-correction is normal.** Both of the reviewer's own errors in one run came from ruling before reading far enough — one from a grep window eight lines too narrow, one from stopping at the first matching combat hit. When you overturn your own earlier reading, say so plainly to the GM *before* they act on it (it changes which edits get made), and record it in `vtt_adjudicated`. A finding you stated and then corrected is more useful documented than quietly dropped.
 - Config resolution (step 2): the only valid config is `<campaign>/config/config.yaml`, always passed with `--config`. A misplaced or unresolvable config, or a missing registry, is a STOP to report, never something to work around.

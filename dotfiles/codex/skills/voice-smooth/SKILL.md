@@ -27,20 +27,23 @@ VTT
 
 Never mutate the VTT, `scene_extractions_new/`, or `scene_extractions/`. Those
 remain the verbatim record. The primary outputs are
-`scene_extractions_smoothed/` and `voice_smooth.sources.yaml`; an optional
-review queue may also be written beside them.
+`scene_extractions_smoothed/` and `voice_smooth.sources.yaml`. Review-page
+files for a long queue live in a per-run scratch directory, not in the session
+directory (step 4).
 
 Glossary changes, durable knowledge-boundary records, or campaign-instruction
 pointers are ancillary edits. Make them only after the user explicitly approves
-their exact destination and content.
+their exact destination and content. Show the exact glossary row or knowledge
+text and get an explicit yes for that text; a garble ruling fixes one quote,
+while a glossary row changes every future transcript.
 
 ## Codex Compatibility
 
 - Ask the GM questions in chat. Do not refer to Claude `AskUserQuestion`.
 - Codex does not have Claude's Artifact review callback. Use chat for a small
-  queue. For a large queue, write a normal Markdown or JSON review file in the
-  session directory, then read the GM's decisions back from chat or a named
-  decision file.
+  queue. For a long queue, build the shared review page
+  (`../_shared/review-page/CONTRACT.md`) and read the GM's exported decisions
+  back with `read_decisions.py --items`; there is no save callback (step 4).
 - Use `apply_patch` for manual file edits. Preserve unrelated user changes.
 - A generated smoothed layer is a draft until calibration and every required
   scope or garble ruling is resolved. Do not hand it to `session_doc` early.
@@ -57,8 +60,9 @@ Allowed after review:
 
 - collapse false starts and reassemble sentences broken across cues
 - remove filler that belongs to the player rather than the character
-- complete a recorder-truncated cue when every reading makes the completion
-  unambiguous
+- complete a recorder-truncated cue when the meaning is recoverable (`"Who are
+  you talking."` -> `"Who are you talking to?"`); if the meaning is not
+  recoverable, leave the fragment or mark it `[unclear]`
 - recover a common-word ASR garble after a GM ruling
 - split stage direction out of NPC speech
 
@@ -134,15 +138,29 @@ full character name. A titled name such as `Sister Maela Dawnforge` must not be
 reduced to `Sister`.
 
 Expected `unknown_narrators` findings for NPCs and `GM` are not PC failures.
-Before smoothing a PC, stop if their declaration is absent or its declared file
-is missing. Read every resolved PC voice file and `voice/_genre.md` before
-editing that speaker's lines.
+Read every resolved PC voice file and `voice/_genre.md` before editing that
+speaker's lines.
+
+A PC in scope whose declaration is absent (no `voice:` entry) or whose declared
+file is missing is a stop, not a flag. Before smoothing any of that
+character's lines, tell the GM which of the two failures the pre-flight
+reported and ask whether to:
+
+- proceed plainly for that character this session (clean, readable, no invented
+  voice; record the ruling in the manifest)
+- write a voice file first (then declare it in `party.yaml` and re-run the
+  pre-flight)
+- skip that character's lines in this pass
+
+Do not choose for the GM, and do not treat silence as "proceed plainly".
 
 For speakers without a PC voice declaration:
 
 - `GM` narration, OOC, and rules talk: clean plain prose; invent no voice.
-- `GM as <NPC>`: use characterization from an NPC dossier or session-prep
-  document. If none exists, use a neutral readable rendering. Record the source
+- `GM as <NPC>`: use characterization from the NPC's dossier (`docs/npcs/`) or
+  the session prep documents (`notes/session_prep/`, `notes/sessions/`). If
+  none exists, use a neutral readable rendering. Never flatten a distinctive
+  NPC into GM-neutral prose when a source gives it a voice. Record the source
   used in the manifest.
 
 `load_voice_files(voice_dir)` is an orphan census, not a speaker resolver. Do
@@ -201,7 +219,11 @@ When confirmed, keep the line but mark it OOC and annotate what the character
 does not know and what `session_doc` must not narrate. Because derived
 annotations disappear on re-extraction, propose a durable knowledge record in
 `docs/` and a pointer from the campaign's persistent Codex instruction or index
-file, usually `AGENTS.md`. Obtain separate approval before those durable edits.
+file, usually `AGENTS.md`. When the campaign is also run from Claude, the same
+pointer goes in its `CLAUDE.md` too, so both harnesses load the same knowledge.
+Confirming the boundary is not approval to write it: show the exact file paths
+and the exact text (dossier content and every pointer line), and write only
+after an explicit yes for that text.
 
 ### 3. Render Each Quote
 
@@ -263,7 +285,7 @@ For each candidate provide:
 - every independent transcript's reading, named
 - nearby corroboration and the voice or scene evidence
 - full-sentence before-and-after previews
-- approve, keep/revert verbatim, and discuss options
+- approve, reject (keep the verbatim text), and discuss options
 
 Never batch a canon decision, unsettled name, transcript disagreement, or
 contextual guess. When a scene has more than roughly six candidates, offer to
@@ -271,16 +293,69 @@ batch only changes independently settled by another transcript or mechanical
 applications of a ruling already made in this session. List every batched item
 in full.
 
-For a long run, write `voice_smooth_review_queue.md` or JSON with one item per
-candidate, grouped by scene. A decision record must distinguish:
+#### Long queue: the shared review page
+
+Below the batch threshold, ask in chat. For a long run (a full session with
+dozens of rulings), build the shared review page instead of walking the queue
+in chat. Read `../_shared/review-page/CONTRACT.md` relative to this skill
+directory first. Put every review file in a per-run scratch directory, not in
+the session directory:
+
+```bash
+REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-page"
+review_dir=$(mktemp -d)
+python "$REVIEW_PAGE/build_review.py" \
+  --in "$review_dir/review_items_<round>.json" \
+  --out "$review_dir/review_<round>.html"
+```
+
+Create `review_dir` once per run, record its path, and reuse it for every
+round; a fresh `mktemp -d` in a later shell loses the earlier rounds.
+
+- One card per garble candidate, id `s<NN>-g<NN>` (scene, candidate index) so
+  the apply step can find the line, grouped by scene in scene order.
+  Calibration pairs (step 6) use `cal-<NN>`, grouped by decision class.
+- Each card carries exactly what a chat question would. `ev` holds every
+  transcript's reading, named; the corroboration found; the voice-file
+  rationale, naming the voice file; and the full-sentence verbatim -> smoothed
+  preview, verbatim first. A card that shows only the result is unreviewable.
+  Escape transcript text (`<`, `>`, `&`) before it goes into those HTML fields.
+- `y` applies the proposed rendering to the derived file; `n` keeps the
+  verbatim text there.
+- Never pre-fill a verdict. Put a recommendation in `y` or `ev`, not in `state`.
+- Each round gets its own items file, page, decisions file, and `reviewId`
+  (`voice-smooth:<session>:<round>`), per the contract's multi-page rule, so
+  every round's card text survives as the record of what the GM was asked.
+
+Give the GM the page path and stop. Copy output and Save output stay disabled
+until something is marked. Only an export the GM pastes into chat or saves
+authorizes follow-up work; the page existing, being opened, or changing mtime
+is never approval. Save a pasted export to `$review_dir/decisions_<round>.json`
+and validate it against the items file it came from:
+
+```bash
+python "$REVIEW_PAGE/read_decisions.py" \
+  --in "$review_dir/decisions_<round>.json" \
+  --items "$review_dir/review_items_<round>.json"
+```
+
+Apply nothing from a read that did not exit 0. Before treating a second export
+as new rulings, check its `savedAt` is newer than the one already processed.
+
+Apply per verdict, whether it came from the page or from chat:
 
 - `approve`: apply the exact proposed rendering
-- `revert`: restore the source text in the derived file
-- `discuss`: pause and confirm the GM's interpretation or exact wording
-- unmarked: undecided; re-ask rather than applying or silently dropping it
+- `reject`: keep the source text in the derived file; do not re-litigate
+- `discuss`: state your interpretation of the note and confirm it with the GM
+  before applying anything
+- unmarked: undecided; re-ask rather than applying your recommendation or
+  silently dropping it. Say how many came back unmarked.
 
 A short discuss note is not a specification. If implementing it would invent
 canon, propose exact wording and obtain another confirmation.
+
+Applying a ruling rewrites only the derived `scene_extractions_smoothed/` file,
+never `<scene-dir>/` or the VTT. The page itself never edits files.
 
 #### Establish transcript independence
 
@@ -307,6 +382,11 @@ go to every independent transcript. Do not invent or discard a number.
 Establishing a name belongs upstream. If the registry already settles the
 canonical form, cite it and ask whether to add the observed wrong form to
 `notes/vtt_transcription_corrections.md`.
+
+The write-back is its own ruling, never part of the garble ruling. A garble
+ruling fixes one quote; a glossary row changes every future transcript. Show the
+exact row you would write (canonical, full variant list after the merge, and
+the section) and write it only after an explicit yes for that row.
 
 If approved:
 
@@ -351,7 +431,9 @@ verbatim-to-smoothed pairs grouped by decision class:
 
 Show one representative pair per class plus every low-confidence pair. Ask the
 GM to approve, edit specific items, or request a different pass for a speaker.
-Do not render the rest until calibration is approved.
+Do not render the rest until calibration is approved. Use chat for a handful of
+pairs; if the calibration set grows past what the GM can hold in view, put it on
+the review page as `cal-<NN>` cards grouped by decision class (step 4).
 
 If `voice_smooth.sources.yaml` already records an approved calibration for the
 same session and source set, verify it and resume rather than re-asking.
@@ -397,6 +479,7 @@ Write `<session-dir>/voice_smooth.sources.yaml` with:
 
 - source and output directories; scene and quote counts
 - resolved PC voice declarations and NPC characterization sources
+- the GM's ruling for any PC without a resolved voice spec
 - transcript files consulted, independent reading groups, and duplicate files
 - calibration policy and approval
 - verdict counts, including undecided items re-asked
@@ -430,7 +513,17 @@ session-specific derived changes in the hand-off so they are not lost casually.
 - Proper-noun identity belongs upstream; settled spelling may be applied here
   with authority and approval.
 - Common-word garbles are ruled here against independent transcript evidence.
-- No approved item, no substantive word change.
+- No approved item, no substantive word change. The no-card rule governs the
+  smoothed layer; it never governs reporting. (Phandalin ch4 saw `"let's try to
+  freeze it"` one line after `"All right, let's free the slaves!"`
+  and cited this rule to
+  stay silent; say "this contradicts the line before it" and let the GM rule.)
 - Unmarked and discuss items are not approvals.
+- Glossary rows, knowledge records, and instruction pointers each need an
+  explicit yes to their exact text, separate from any garble ruling.
+- A PC in scope without a resolved voice spec stops that character's smoothing
+  until the GM chooses: proceed plainly, write a voice file first, or skip.
+- A campaign used from both harnesses keeps its knowledge pointer in both
+  `AGENTS.md` and `CLAUDE.md`.
 - The output says `## Voiced moments`, never `## Verbatim moments`.
 - Human review gates `session_doc`.

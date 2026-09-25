@@ -5,9 +5,15 @@ campaign's known-names set.
 Inputs:
   --vtt <path>         VTT transcript file
   --glossary <path>    notes/vtt_transcription_corrections.md
-  --npcs-dir <path>    docs/npcs/
+  --npcs-dir <path>    Optional docs/npcs/ (omit if none; a missing path errors)
   --extra-known <path> Optional plain-text file, one canonical name per line
                        (PCs, players, common module proper nouns, etc.)
+  --registry <path>    Optional docs/entity_registry.yaml — every entity name
+                       + alias is added to the known set directly (no manual
+                       flatten-to-txt step needed; see load_registry_names).
+                       CampaignGenerator#141: registry names/aliases are
+                       identity data, never ASR mishearings — those stay in
+                       --glossary. See registry-cleanup/SKILL.md.
 
 Outputs JSON to stdout:
   {
@@ -40,6 +46,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -116,10 +123,19 @@ def parse_glossary(path: Path) -> tuple[list[tuple[str, str]], set[str]]:
     return replacements, canonicals
 
 
-def parse_npc_dossiers(npcs_dir: Path) -> set[str]:
+def _require_exists(path: Path, flag: str) -> None:
+    """A path the caller named must exist. Omitting an optional input is
+    fine; naming one that isn't there is a typo that would otherwise drop a
+    whole known-name source without a word."""
+    if not path.exists():
+        sys.exit(f"Error: {flag} path does not exist: {path}")
+
+
+def parse_npc_dossiers(npcs_dir: Path | None) -> set[str]:
     names: set[str] = set()
-    if not npcs_dir.exists():
+    if npcs_dir is None:
         return names
+    _require_exists(npcs_dir, "--npcs-dir")
 
     alias_re = re.compile(r"^\s*[-*]?\s*(?:aka|also known as|aliases?)\s*[:\-]\s*(.+)$", re.I)
     h1_re = re.compile(r"^#\s+(.+?)\s*$")
@@ -148,6 +164,33 @@ def parse_npc_dossiers(npcs_dir: Path) -> set[str]:
     return names
 
 
+def load_registry_names(registry_path: Path | None) -> set[str]:
+    """Every entity name + alias from docs/entity_registry.yaml.
+
+    Same source and same fields as audio-to-vtt/vocab.py's registry_names()
+    (kept as a separate copy — that module builds a ranked list for Whisper
+    hotword biasing, a different shape and consumer, so sharing one function
+    across the two would be a coincidental-duplication coupling, not a real
+    one). A registry alias is, by construction (registry-cleanup/SKILL.md),
+    an approved canonical alternate name — never a misspelling — so every
+    name returned here is safe to treat as known-correct.
+    """
+    if not registry_path:
+        return set()
+    _require_exists(registry_path, "--registry")
+    import yaml
+    data = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+    names: set[str] = set()
+    for entity in data.get("entities", []) or []:
+        name = entity.get("name")
+        if name:
+            names.add(name)
+        for alias in entity.get("aliases", []) or []:
+            if alias:
+                names.add(alias)
+    return names
+
+
 def load_extra(paths: Path | list[Path] | None) -> set[str]:
     """Load verified-noun dictionaries. Accepts a single Path (back-compat),
     a list of Paths, or None. Each file is a flat one-name-per-line dump;
@@ -158,8 +201,7 @@ def load_extra(paths: Path | list[Path] | None) -> set[str]:
         paths = [paths]
     names: set[str] = set()
     for path in paths:
-        if not path or not path.exists():
-            continue
+        _require_exists(path, "--extra-known")
         names |= {
             line.strip()
             for line in path.read_text(encoding="utf-8").splitlines()
@@ -397,10 +439,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--vtt", required=True, type=Path)
     ap.add_argument("--glossary", required=True, type=Path)
-    ap.add_argument("--npcs-dir", required=True, type=Path)
+    ap.add_argument("--npcs-dir", type=Path, default=None,
+                    help="docs/npcs/ dossier dir; omit if the campaign has none "
+                         "(a path that does not exist is an error)")
     ap.add_argument("--extra-known", type=Path, nargs="*", default=[],
                     help="One or more flat one-name-per-line dictionaries of "
                          "verified nouns (e.g. notes/proper_nouns_adventure.txt)")
+    ap.add_argument("--registry", type=Path, default=None,
+                    help="docs/entity_registry.yaml — every entity name + "
+                         "alias is added to the known set (see "
+                         "load_registry_names)")
     ap.add_argument("--min-count", type=int, default=1,
                     help="Only report unknowns appearing at least this many times")
     args = ap.parse_args()
@@ -411,12 +459,13 @@ def main():
     replacements, canonicals = parse_glossary(args.glossary)
     npc_names = parse_npc_dossiers(args.npcs_dir)
     extra = load_extra(args.extra_known)
+    registry_names = load_registry_names(args.registry)
 
-    # Known set = canonicals + npc names + extras + already-classified
-    # wrong-forms (so we don't re-ask about misspellings the user already
-    # decided about) + their constituent words.
+    # Known set = canonicals + npc names + extras + registry names/aliases +
+    # already-classified wrong-forms (so we don't re-ask about misspellings
+    # the user already decided about) + their constituent words.
     wrong_forms = {w for w, _ in replacements}
-    known = set(canonicals) | npc_names | extra | wrong_forms
+    known = set(canonicals) | npc_names | extra | registry_names | wrong_forms
     # Add single-word forms of multi-word names so "Asha" alone is also known
     for name in list(known):
         for w in name.split():
@@ -440,6 +489,7 @@ def main():
             for k, v in sorted_items
         ],
         "known_names_count": len(known),
+        "registry_names_count": len(registry_names),
     }
     print(json.dumps(out, indent=2))
 
