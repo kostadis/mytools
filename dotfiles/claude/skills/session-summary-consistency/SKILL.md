@@ -80,6 +80,7 @@ Speaker labels must always use the **character name** (or `GM`), never the playe
 Two things this pass revealed:
 - **Label FORMAT varies across scenes** — some use `[GM]`, others bold `**Name**`. Sweep for the real name in *any* format (one scene labelled the GM `**Kostadis Roussos**` 47× while its siblings used `[GM]`).
 - **Sweep every scene's labels** before producing the report; a single scene can leak the real name even when the others are clean.
+- **A real-name scrub in a speaker label is an attribution change, not a mechanical fix.** Replacing a player's name with a character name asserts who said the line — `/consistency-check` step 5 classes it that way (Gabe → Zalthir, where the speaker was actually Daz). Always propose it for a ruling — a card in artifact mode — and never apply it on your own confidence.
 - **Scrub player names from the `## Scene summary` prose too, not just the labels.** The summaries leak the GM's real name (`Kostadis laid out three options…`, `per Kostadis`, `Kostadis:`) and Otter garbles (`go to "LI"` → A'lai). Apply the same name → character/GM scrub to the summary text (it's a name replacement, not a quote rewrite) and **flag** any garble you can't safely scrub — its true source is gm-assist / the scene-extract step, so it needs an upstream fix (and will otherwise reappear on the next extraction). Everything else in the summary stays untouched.
 
 Player names inside verbatim quote *content* (e.g. a PC addressing the player OOC) may be left as-is, but flag them as an observation.
@@ -87,9 +88,9 @@ Player names inside verbatim quote *content* (e.g. a PC addressing the player OO
 **What NOT to change:**
 - Genuine speech disfluencies (repetitions, false starts, "um/uh") — these are authentic VTT captures and have value for voice files
 - **Grammar and sentence structure.** Do NOT "clean up" a player's actual grammar, run-ons, or phrasing — not even to improve readability, and not even using the voice files. The verbatim quote is a *record*, and it is the raw material the voice files are built from; grammar-smoothing it here would erase the very evidence that calibrates them (and mutate a record that should stay raw). Voice-aware smoothing is the **narration** layer's job — `session_doc` renders the quotes into voice-appropriate prose on a *derived* copy, and `/voice-critic` checks that prose against the voice spec. Restore what was *said*; leave *how they said it* alone.
-- Profanity — reproduce faithfully; "passes" → "asses" only when the correction is already in the glossary
+- Profanity or table vocabulary — reproduce faithfully; "passes" → "asses" only when the correction is already in the glossary
 - Out-of-character crosstalk that is already clearly marked as OOC
-- Numbers and dice results, even if oddly phrased
+- Numbers and dice results, even if oddly phrased. A number inside a quote may be corrected only when the transcripts settle it, and **always** as a ruling — a card in artifact mode, never auto-applied — because numbers feed mechanics rulings downstream.
 
 ### 4. Produce a proposal report
 
@@ -127,6 +128,7 @@ After presenting the report (or publishing the artifact), ask:
 
 - **"apply all"** — apply every proposed fix using the Edit tool, one per Edit call. Do fixes to different files in parallel; fixes within the same file sequentially.
 - **"selective"** — walk through the report item by item and apply only what the user confirms.
+- **Item ids or ranges** (e.g. `s03-02, s04-01..s04-05`) — apply only those accepted ids, and leave the rest.
 - **"none"** / **"just the report"** — stop here.
 - In artifact mode, the page's saved decisions replace this prompt — read them back and apply per **Artifact mode**'s verdict mapping.
 
@@ -154,6 +156,8 @@ This pass catches classes that `vtt-spell-pass`'s deterministic scanner structur
 
 Append the safe pairs to the appropriate section of `notes/vtt_transcription_corrections.md`. This closes the loop: what this pass confirms once, `vtt-spell-pass` applies automatically next session.
 
+If the user confirms a suspicious variant is authentic table speech or a nickname, add it to the glossary's **DO-NOT-CORRECT** table instead of the garble table — in shell mode as well as artifact mode.
+
 ## Artifact mode (batch review)
 
 Replaces the "apply all / selective" adjudication in step 5. Steps 1-4, the
@@ -167,33 +171,68 @@ per-scene counts and summary table in the shell -> build -> publish -> **stop** 
 the save comes back -> read back -> apply -> verification grep -> offer the
 glossary loop.
 
+The review files live in the **session directory**, not the scratchpad, so the
+run leaves an audit record beside the scenes it changed:
+
 ```bash
+mkdir -p <session-dir>/quote_review
 python ~/.claude/skills/_shared/review-artifact/build_review.py \
-    --in  $SCRATCH/review_items.json --out $SCRATCH/review.html
+    --in  <session-dir>/quote_review/review_items.json \
+    --out <session-dir>/quote_review/review.html
 ```
 
 The plain `review_items.json` is correct here: this skill publishes **one** page
 per run, so there is no second build to overwrite it. `/staged-consistency`
 publishes one per stage over the same URL and must suffix the name
 (`review_items_stage<N>.json`) or it loses the earlier stages' card text — see
-**File names** in the contract.
+**File names** in the contract. The `--out` html stays on that one path for the
+whole run.
 
-Publish with **`capabilities: {"artifact": {}}`**. Set the `eyebrow` to
+Give `review_items.json` a **run-specific `reviewId`** (e.g.
+`<campaign>:<chapter>:scene-quotes:<YYYYMMDD-HHMM>`), so a save from an earlier
+run's page cannot pass for this one.
+
+Publish `<session-dir>/quote_review/review.html` with
+**`capabilities: {"artifact": {}}`**. Set the `eyebrow` to
 `<campaign> · <chapter> · scene quotes`. Never poll for the save — the
 `artifact-changed` notification or the GM's word, whichever arrives first.
+
+### Reading the save back
+
+`WebFetch` the artifact URL, then validate the saved page against this run's
+items file:
+
+```bash
+python ~/.claude/skills/_shared/review-artifact/read_decisions.py \
+    --html <saved-artifact.html> \
+    --items <session-dir>/quote_review/review_items.json \
+    --out  <session-dir>/quote_review/decisions.json
+```
+
+Passing `--items` is what validates the returned `reviewId` and item ids against
+this run: the reader exits 2 on a stale page, a different `reviewId`, or an id
+the page never asked about. Do not apply anything from a read that did not exit 0.
+
+**Generating, publishing or opening the page is never approval, and neither is
+the `artifact-changed` notification.** Only saved decisions — or an explicit
+step-5 approval in the shell — authorise a change.
 
 ### What is auto-applied, footer only
 
 A quote fix needs no ruling only when **two independent transcripts agree on the
-correction**, or the glossary/registry already settles it AND the surrounding
-dialogue confirms the referent:
+correction**, or it is a **plain homophone with exactly one possible reading**.
+The glossary/registry settling a proper noun AND the surrounding dialogue
+confirming the referent also counts:
 
 - Glossary/registry proper nouns whose corrected form is confirmed in a second
   transcript (`Helspergaster` -> House Margaster; `Brewerdin` -> Vukradin).
 - Plain homophones with one possible reading (`and no true power` -> `and know
   true power`; `Constitution safe` -> `Constitution save`).
-- Player-name scrubs in **speaker labels and scene summaries** (never inside
-  quote content — that is a card).
+
+Nothing else is auto-applied. **Player-name / real-name scrubs are not in this
+class** — in a speaker label, a real-name scrub asserts who said the line, which
+`/consistency-check` step 5 classes as an attribution change, so it is always a
+card. Numbers are never in it either.
 
 Name the count and the files in the `footer`.
 
@@ -214,6 +253,12 @@ Name the count and the files in the `footer`.
   bracketed guess.
 - **Player names inside quote content** — step 3 says these may stand; whether
   they do is the GM's call, not yours.
+- **Player-name / real-name scrubs in speaker labels and scene summaries.** A
+  label scrub is an attribution change; say in `ev` which character the
+  glossary mapping gives and whether the tape or the other transcript confirms
+  that speaker.
+- **Numbers inside a quote**, and only when the transcripts settle them. Say in
+  `ev` which transcript gives which number.
 
 ### Card shape
 
