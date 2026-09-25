@@ -274,6 +274,9 @@ Review `near` as well as `unverified`, because `near` means the quote was edited
 "No quotes found" is zero coverage, not 100%: when the enhancement quotes
 inline (OOTA ch02: 40 curly-quoted spans, no blockquotes), the inline sweep
 (`verify_quotes.py`) is the only quote check this stage has.
+Labelled blockquotes (`> **Zalthir:** “…”`, OOTA ch03: all 26 lines) were
+skipped the same way until CampaignGenerator `d4e8047`; on an older install, a
+nonzero `grep -c '^> '` beside "No quotes found" is that gap.
 
 Before adjudicating any model finding, use `grep -nF` with a distinctive excerpt
 to confirm its quoted target text occurs in `session-summary.md`. A miss usually

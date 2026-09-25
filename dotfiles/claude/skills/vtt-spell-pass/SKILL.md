@@ -764,6 +764,10 @@ The linter did warn on `Ally`; it could not warn on `Cisco`, and it never will.
 Out-of-character pre-roll is where this bites, because that is where real-world
 speech lives — jobs, tooling, sport. Expect it, and grep there first.
 
+**A player's nickname for a real person is a real-world proper noun too, so check the corpus before making it a row.** On OOTA ch003 (2026-09-25) the GM approved `Kostas → Kostadis` from one cue. `grep -rhwc Kostas summaries/*/*.vtt` found **53 occurrences in 22 sessions**: it is what the players actually call the GM (*"Hey, Kostas, can you let me share screen"*). A standing row normalises every one of them. Put the count on the card: "53× in 22 sessions — a row rewrites all of them; a cue entry fixes only this one". Let the GM choose which with that number in view.
+
+**Watch rows that chain into a scrub row, and settle the candidate to its fixed point.** OOTA's glossary maps mishearings to `Kostadis`, and a player-names section maps `Kostadis` to `GM`. The lint reports this as `chained`. Rules apply in file order, so a new row feeding `Kostadis` can stop halfway on a single pass: on ch003, `Costados` ended at `GM` while `Kostas` ended at `Kostadis`, and the idempotence check then failed. Re-apply until nothing changes, confirm the settled text is what the campaign's convention wants (chapter 2's record turned every mishearing of the GM's name into `GM`), and record that final text, not the half-applied one.
+
 **NEVER promote a cue-scoped GM ruling into a glossary row.** This is how the
 `Cisco` damage happened, and the glossary's own notes had recorded the decision
 correctly:

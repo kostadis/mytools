@@ -158,6 +158,8 @@ python3 ~/.claude/skills/staged-consistency/verify_quotes.py \
 
 On ch02 it surfaced the two defects the blockquote verifier could not see: a reworded quote (*"deal with"* for *"if he wants to be dealt with, he can be dealt with"*) and a quote spliced across the GM's asides without an ellipsis.
 
+**A labelled blockquote used to read as "No quotes found" too, and now does not.** The enhancement can also write every Memorable Moments quote as `> **Zalthir:** “…”`. Until CampaignGenerator `d4e8047` (2026-09-25) the verifier's pattern required the quote mark straight after `>`, so OOTA ch03's 26 such lines were all skipped. It now accepts the label and uses it as the speaker hint (26 checked: 24 verified, 1 near, 1 unverified). If a run on an older install says "No quotes found" while `grep -c '^> '` is nonzero, that is this gap: update CampaignGenerator, or run the inline sweep. When a `'^> '` count and the verifier's checked count disagree, find out why before reporting either.
+
 End with the output path, generation result, quote-check result, and any
 unresolved findings. Stage 1 consistency
 (`/staged-consistency` Stage 1, which runs `/consistency-check` on `session-summary.md`) is the next review step when requested. Do not
