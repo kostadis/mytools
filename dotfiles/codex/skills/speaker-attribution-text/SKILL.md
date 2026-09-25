@@ -1,6 +1,6 @@
 ---
 name: speaker-attribution-text
-description: Infer best-effort human speaker labels from a session transcript, story context, and labeled transcripts of the same people in other sessions when audio or the original speaker-labeled export is missing. Use for text-based speaker attribution, requests to learn participants' phrasing from neighboring sessions, or $speaker-attribution-text. Produces contextual guesses with provenance, not acoustic voice identification.
+description: Infer best-effort human speaker labels from a session transcript, story context, and labeled transcripts of the same people in other sessions when audio or the original speaker-labeled export is missing. Use for text-based speaker attribution, requests to learn participants' phrasing from neighboring sessions, or $speaker-attribution-text. Produces contextual guesses with provenance, not acoustic voice identification. Output is written losslessly to a NEW file; the source transcript is never modified. When audio or acoustic turns exist, use speaker-attribution instead.
 ---
 
 # Text Speaker Attribution
@@ -79,7 +79,8 @@ interaction habits; do not turn phrases into identity rules.
 
 A word/character TF-IDF classifier can supply secondary style hints when there
 are enough labeled examples. It is optional: missing dependencies or sparse
-references should not block contextual work. Its score is not the probability
+references should not block contextual work. If a particular session genuinely
+needs the classifier, say why and ask before stopping. Its score is not the probability
 that a cue belongs to that person. Verify across whole held-out sessions when
 reporting its performance; do not present reference-label agreement as accuracy
 on the target transcript.
@@ -136,6 +137,14 @@ unrecognized people, altered dialogue, and unresolved labels in best-guess
 mode. It verifies exact source-byte recovery after removing only its inserted
 NOTE and speaker prefixes, including cue identifiers, settings, numeric-only
 dialogue, multiline payloads, and original line endings.
+
+If the user wants to review ambiguous cues in a batch rather than in chat, use
+the shared review page (`../_shared/review-page/CONTRACT.md`): one page for the
+run, returned as the GM's Copy or Save export and validated with
+`read_decisions.py --items`; there is no save callback. A review page must never
+reintroduce a checkpoint the user has already waived: in accepted best-guess
+mode there is nothing to gate, so offer the page only as a record or for the
+genuinely ambiguous subset.
 
 Preserve original transcripts, summaries, and reference files. Keep corrections
 and prose smoothing in their own passes. Save source/reference hashes, method,

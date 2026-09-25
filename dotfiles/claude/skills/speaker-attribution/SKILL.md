@@ -20,6 +20,10 @@ everyone was in one room on one mic, so there are no names anywhere.
 
 ## Where this sits
 
+**No audio?** When neither the recording nor acoustic turns exist, this skill
+cannot run; use `/speaker-attribution-text`, which infers labels from the
+conversation itself and marks every label as an inference.
+
 ```
 audio + transcripts
   → [THIS SKILL] provenance → diarize → cross-validate → name clusters
