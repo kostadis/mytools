@@ -28,8 +28,8 @@ VTT
 Never mutate the VTT, `scene_extractions_new/`, or `scene_extractions/`. Those
 remain the verbatim record. The primary outputs are
 `scene_extractions_smoothed/` and `voice_smooth.sources.yaml`. Review-page
-files for a long queue live in a per-run scratch directory, not in the session
-directory (step 4).
+files for a long queue live in `<session-dir>/voice_review/` (step 4), so the
+questions asked and the rulings stay with the session.
 
 Glossary changes, durable knowledge-boundary records, or campaign-instruction
 pointers are ancillary edits. Make them only after the user explicitly approves
@@ -303,14 +303,14 @@ the session directory:
 
 ```bash
 REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-page"
-review_dir=$(mktemp -d)
+review_dir=<session-dir>/voice_review; mkdir -p "$review_dir"
 python "$REVIEW_PAGE/build_review.py" \
   --in "$review_dir/review_items_<round>.json" \
   --out "$review_dir/review_<round>.html"
 ```
 
-Create `review_dir` once per run, record its path, and reuse it for every
-round; a fresh `mktemp -d` in a later shell loses the earlier rounds.
+Reuse `review_dir` for every round; each round gets its own items and
+decisions file, so earlier rounds' questions and rulings survive.
 
 - One card per garble candidate, id `s<NN>-g<NN>` (scene, candidate index) so
   the apply step can find the line, grouped by scene in scene order.

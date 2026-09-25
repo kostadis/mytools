@@ -101,6 +101,15 @@ The page keeps no browser storage. It always opens from the builder's state,
 so a re-review never starts with a previous run's marks already ticked, and
 reloading a page mid-review loses unsaved marks. Discussed items return to chat as one grouped pass with notes.
 
+## Where the files live
+
+Every review skill keeps its items, page and decisions files in the **session
+directory**, under `<session>/<skill>_review/` (`quote_review/`,
+`spell_review/`, `staged_review/`, `voice_review/`, `voice_critic_review/`, or
+`dialogue_edit/session-*/`), never in scratch: the question the GM was asked
+and the ruling they gave belong with the session they rule on. Transcripts and
+cleaned output keep their own rules.
+
 ## File names when a run publishes more than one page
 
 A run that publishes one page uses plain names: `review_items.json`,

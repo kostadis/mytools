@@ -227,7 +227,7 @@ Build it with the shared review builder — full contract: `~/.claude/skills/_sh
 
 ```bash
 python ~/.claude/skills/_shared/review-artifact/build_review.py \
-    --in  $SCRATCH/review_items_<round>.json --out $SCRATCH/review.html
+    --in  <session-dir>/voice_review/review_items_<round>.json --out <session-dir>/voice_review/review.html
 ```
 
 - **One card per garble candidate**, id `s<NN>-g<NN>` (scene, candidate index) so the apply step can find the line, grouped by scene in scene order. Calibration pairs (step 4) use `cal-<NN>`, grouped by decision class.

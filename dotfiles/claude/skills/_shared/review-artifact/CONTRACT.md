@@ -29,10 +29,10 @@ which ran a real `/staged-consistency` pass this way. Do not reauthor it.
 3. **Build and publish.** Name the files per **File names** below.
    ```bash
    python ~/.claude/skills/_shared/review-artifact/build_review.py \
-       --in  $SCRATCH/review_items.json \
-       --out $SCRATCH/review.html
+       --in  <session>/<skill>_review/review_items.json \
+       --out <session>/<skill>_review/review.html
    ```
-   Then the `Artifact` tool on `$SCRATCH/review.html` with
+   Then the `Artifact` tool on that `review.html` with
    **`capabilities: {"artifact": {}}`** — without it the page cannot save and
    the GM gets the read-only fallback. Give it a stable `favicon` and a
    noun-phrase `title`.
@@ -43,8 +43,8 @@ which ran a real `/staged-consistency` pass this way. Do not reauthor it.
    local file whose path it reports. Point the reader at that file:
    ```bash
    python ~/.claude/skills/_shared/review-artifact/read_decisions.py \
-       --html <saved-artifact.html> --items $SCRATCH/review_items.json \
-       --out $SCRATCH/decisions.json
+       --html <saved-artifact.html> --items <session>/<skill>_review/review_items.json \
+       --out <session>/<skill>_review/decisions.json
    ```
    Pass the same items file the page was built from: the reader exits 2 if the
    page's items differ, which is how a stale page from an earlier run gets caught.
@@ -54,6 +54,15 @@ which ran a real `/staged-consistency` pass this way. Do not reauthor it.
 **Redeploying to the same URL:** republish the same `file_path` in the same
 conversation, or pass `url:` from another one. `staged-consistency` does this
 once per stage.
+
+### Where the files live
+
+Every review skill keeps its items, page and decisions files in the **session
+directory**, under `<session>/<skill>_review/` (`quote_review/`,
+`spell_review/`, `staged_review/`, `voice_review/`, `voice_critic_review/`, or
+`dialogue_edit/session-*/`), never in scratch: the question the GM was asked
+and the ruling they gave belong with the session they rule on. Transcripts and
+cleaned output keep their own rules.
 
 ### File names — one items file per page
 
