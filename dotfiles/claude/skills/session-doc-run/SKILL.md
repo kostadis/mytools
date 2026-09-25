@@ -16,7 +16,7 @@ anything worth reviewing**, and where the gates go.
 /speaker-attribution     → session_<date>.speakers.vtt   (player labels)
       ↓  [THIS SKILL — build the two inputs, then run with gates]
 Stage 1  enhance_summary → session-summary.md      → HUMAN REVIEW
-Stage 2  scene_extract   → scene_extractions/      → HUMAN REVIEW   (see /scene-extract)
+Stage 2  scene_extract   → <scene_extractions_dir> → HUMAN REVIEW   (see /scene-extract)
 Stage 3  sd_narrate      → narration/              → HUMAN REVIEW
 Stage 4  assemble        → session_doc.md
       ↓
@@ -195,9 +195,12 @@ retroactively vindicating a mid-run self-correction.
 
 ## Notes
 
-- **Do not run Stage 2 from here.** `/scene-extract` owns it — the voicing map,
-  the `party.md` format gate, the attribution-strategy checkpoint and the output
-  ceiling. It needs the same session-local `players.yaml`; hand it over.
+- **Do not run Stage 2 from here.** `/scene-extract` owns it — UI-parity
+  extraction with the saved mapping, the speaker-label preflight that stops when
+  a label does not resolve through `players.yaml`, the output directory (a raw
+  layer from `config/session_doc.yaml`, never `scene_extractions_smoothed`) and
+  the per-backend output ceiling. It needs the same session-local
+  `players.yaml`; hand it over.
 - The backend comes from `config/session_doc.yaml` (`backends.active` and
   `active_profile`), and a stale `active_profile` pointing at another session's
   knobs is easy to miss. Check it, and say which backend actually ran.

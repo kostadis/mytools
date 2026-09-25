@@ -42,6 +42,9 @@ TS = re.compile(r"\[(\d\d):(\d\d):(\d\d)\]")
 # Any label, not just "Speaker N" -- Descript keeps the name once you rename a
 # cluster in the editor, and a named export must not silently parse as zero turns.
 HEAD = re.compile(r"^\[(\d\d:\d\d:\d\d)\]\s*([^:\n]{1,40}):\s*(.*)$", re.S)
+_BOLD_HEAD = re.compile(
+    r"^(\[\d\d:\d\d:\d\d\]\s*)\*\*([^*:\n]{1,40}):\*\*\s*", re.M
+)
 
 FRAGMENT_SHARE = 0.03  # below this share of words, a cluster is not a person
 
@@ -69,6 +72,7 @@ def word_stamps(header: str, body: str) -> list[str]:
 def parse(path: Path) -> tuple[list[dict], int, int]:
     turns, skipped, shifted = [], 0, 0
     raw = path.read_text(encoding="utf-8", errors="replace")
+    raw = _BOLD_HEAD.sub(r"\1\2: ", raw)
     for block in raw.split("\n\n"):
         b = block.strip()
         if not b:
@@ -139,7 +143,7 @@ def main() -> int:
         share = n / total
         tag = ""
         if share < FRAGMENT_SHARE:
-            tag = "   ← fragment, not a person"
+            tag = "   ← small cluster; inspect before classifying"
             frags.append(who)
         print(f"   {who:<14}{n:>6} words {100*share:>6.1f}%{tag}")
     if frags:

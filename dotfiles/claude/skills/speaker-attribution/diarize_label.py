@@ -1,22 +1,14 @@
 #!/usr/bin/env python3
-"""Attach diarization turns to a speakerless real-timeline VTT, cross-validate
-against a second independent clustering, and emit a labelled VTT.
+"""Join acoustic speaker turns to a speakerless VTT without changing dialogue.
 
-This is the single-room case: everyone shares one microphone, so the conference
-tool's own speaker labels carry NO information (Zoom labels all 866 cues of a
-three-person session with the host's name). Diarization is not a second opinion
-here -- it is the only signal. That makes cross-validation mandatory rather
-than optional, because there is nothing else to catch a collapsed clustering.
+An optional second clustering supplies a word-weighted agreement report. The
+caller must verify independence and recording provenance: a second file may be
+a derivative, and agreement on a mapped subset is not a measured accuracy rate.
+Without --md, output explicitly records that independent validation is absent.
 
-The second opinion comes free: Descript (or any editor that diarizes on import)
-has already clustered the same audio with a different embedding model. Its
-cluster IDs are anonymous and usually too numerous -- 6 clusters for 3 people --
-but agreement between the two is meaningful precisely because they share no
-information. One is pyannote's speaker embedding, the other is Descript's.
-
-Expect ~80% word-level agreement. Measured: 81.3% (Hillsfar, 3 speakers, one
-room), 82.2% (Phandalin ch04, 4 speakers, mixed remote). Below ~70%, one of the
-two has failed -- find out which before building on either.
+Omit --output for a report. Anonymous labels may be written for review; --names
+and --md-label accept mappings the GM has already approved. This tool computes
+overlap, not human identity. See SKILL.md for the review checkpoints.
 """
 from __future__ import annotations
 
@@ -24,6 +16,7 @@ import argparse
 import bisect
 import collections
 import json
+import math
 import re
 from pathlib import Path
 
@@ -68,6 +61,17 @@ def load_vtt(path: Path, limit: float | None) -> list[dict]:
     if limit is not None:
         cues = [c for c in cues if c["s"] < limit]
     return cues
+
+
+def overlap_by_speaker(turns, start: float, end: float) -> collections.Counter:
+    """Include every overlapping turn, even a long turn preceding shorter ones."""
+    overlap = collections.Counter()
+    for st, en, speaker in turns:
+        if st >= end:
+            break
+        if en > start:
+            overlap[speaker] += min(en, end) - max(st, start)
+    return overlap
 
 
 def load_md(path: Path) -> list[tuple[float, float | None, str]]:
@@ -135,23 +139,31 @@ def main() -> int:
                     help="ignore cues past this offset (use when the VTT spans more than this audio)")
     args = ap.parse_args()
 
+    if args.output and Path(args.output).resolve() in {
+            Path(p).resolve() for p in (args.vtt, args.turns, args.md) if p}:
+        ap.error("--output must not overwrite an input file")
+    if not 0.5 <= args.md_label_coverage <= 1.0:
+        ap.error("--md-label-coverage must be between 0.5 and 1.0")
+
     d = json.loads(Path(args.turns).read_text(encoding="utf-8"))
-    turns = d["turns"]
+    turns = sorted(d["turns"], key=lambda t: t["start"])
+    if not turns:
+        ap.error("no acoustic turns supplied")
+    for t in turns:
+        if (not all(isinstance(t.get(k), (int, float)) and math.isfinite(t[k])
+                    for k in ("start", "end")) or t["start"] < 0
+                or t["end"] <= t["start"] or not isinstance(t.get("speaker"), str)
+                or not t["speaker"].strip()):
+            ap.error("each acoustic turn needs a valid interval and speaker ID")
     limit = args.limit_seconds if args.limit_seconds is not None else d.get("audio_duration")
     cues = load_vtt(Path(args.vtt), limit)
     if not cues:
         print("no cues in range -- check --limit-seconds and the VTT timeline")
         return 1
 
-    starts = [t["start"] for t in turns]
+    primary_spans = [(t["start"], t["end"], t["speaker"]) for t in turns]
     for c in cues:
-        ov = collections.Counter()
-        i = max(0, bisect.bisect_left(starts, c["s"]) - 1)
-        for t in turns[i:]:
-            if t["start"] >= c["e"]:
-                break
-            if t["end"] > c["s"]:
-                ov[t["speaker"]] += min(t["end"], c["e"]) - max(t["start"], c["s"])
+        ov = overlap_by_speaker(primary_spans, c["s"], c["e"])
         c["py"] = ov.most_common(1)[0][0] if ov else None
         c["mixed"] = len(ov) > 1
 
@@ -165,29 +177,27 @@ def main() -> int:
         print(f"   {s}  {v/60:6.1f} min  {100*v/total:5.1f}%")
     top = 100 * max(speech.values()) / total
     if top > 70:
-        print(f"   ⚠ largest cluster is {top:.0f}% of speech — clustering has probably collapsed.")
-        print("     Re-run with speaker-diarization-community-1 and an explicit num_speakers.")
+        print(f"   ⚠ largest cluster is {top:.0f}% of speech — check for collapse or a dominant speaker.")
+        print("     A GM-heavy two-person session can be this uneven; review the acoustic evidence.")
     print(f"\n{len(cues)} cues · {sum(c['mixed'] for c in cues)} span >1 turn (crosstalk)")
 
     mapping: dict[str, str] = {}
+    agreement = None
+    compared_words = 0
+    all_words = sum(len(c["text"].split()) for c in cues)
     if args.md:
         utts = load_md(Path(args.md))
+        if any(not math.isfinite(st) or st < 0 or not isinstance(sp, str)
+               or not sp.strip() or (en is not None and (not math.isfinite(en) or en <= st))
+               for st, en, sp in utts):
+            ap.error("second-source turns contain an invalid interval or speaker ID")
         u_starts = [u[0] for u in utts]
         spans = all(u[1] is not None for u in utts)
-        # Without end times there is no per-cue coverage, and the >=50% rule
-        # for --md-label would silently not apply: every cue in the cluster
-        # would be relabelled. Refuse instead.
         if args.md_label and not spans:
             ap.error("--md-label requires real start/end spans; supply Descript turns JSON")
         for c in cues:
             if spans:
-                ov = collections.Counter()
-                i = max(0, bisect.bisect_left(u_starts, c["s"]) - 1)
-                for st, en, sp in utts[i:]:
-                    if st >= c["e"]:
-                        break
-                    if en > c["s"]:
-                        ov[sp] += min(en, c["e"]) - max(st, c["s"])
+                ov = overlap_by_speaker(utts, c["s"], c["e"])
                 top = ov.most_common(1)
                 c["de"] = top[0][0] if top else None
                 c["de_cov"] = top[0][1] / max(c["e"] - c["s"], 1e-9) if top else 0.0
@@ -223,7 +233,7 @@ def main() -> int:
             if tot >= 0.05 * sum(words.values()) and 100 * row[best] / tot >= 60:
                 mapping[de] = pys[best]
             else:
-                print(f"{'':14s}   ↑ {tot} words, no clear home — treated as a spurious split")
+                print(f"{'':14s}   ↑ {tot} words, no qualifying mapping — review this cluster")
 
         ag = dis = 0
         for c in cues:
@@ -236,10 +246,13 @@ def main() -> int:
                     dis += w
         if ag + dis:
             pctv = 100 * ag / (ag + dis)
-            print(f"\nword-level agreement: {pctv:.1f}%")
+            agreement, compared_words = pctv, ag + dis
+            print(f"\nword-level agreement: {pctv:.1f}% ({ag + dis}/{all_words} words mapped)")
             if pctv < 70:
                 print("   ⚠ below 70% — the two signals disagree. One is broken; find out which")
                 print("     before labelling anything.")
+        else:
+            print("\nword-level agreement unavailable — no qualifying mapped words")
 
     names = load_names(args.names)
     md_labels = load_names(args.md_label)
@@ -256,7 +269,15 @@ def main() -> int:
                f"Speakers: {d.get('model')}, num_speakers={d.get('num_speakers_requested')}.",
                f"Text: {Path(args.vtt).name} (real timeline)."]
         if args.md:
-            out.append(f"Cross-validated against {Path(args.md).name}.")
+            if agreement is not None:
+                out.append(f"Compared against {Path(args.md).name}: {agreement:.1f}% agreement "
+                           f"among {compared_words}/{all_words} mapped words.")
+                out.append("The caller must verify that the second clustering is independent.")
+            else:
+                out.append(f"Comparison with {Path(args.md).name} is inconclusive; "
+                           "no mapped-word agreement available.")
+        else:
+            out.append("Single acoustic source; no independent cross-validation.")
         for cid, lab in sorted(md_labels.items()):
             out.append(f"'{lab}' is named from {Path(args.md).name} cluster {cid}, "
                        f"a voice the diarization could not separate.")
@@ -279,8 +300,6 @@ def main() -> int:
             else:
                 flagged += bool(flag)
             n += 1
-            # Keep the source cue's own id and timing line (with any cue
-            # settings), so the output lines up cue-for-cue with the input.
             out += [c["cue_id"] or str(n), c["timing"],
                     f"{label}{flag}: {c['text']}", ""]
         Path(args.output).write_text("\n".join(out), encoding="utf-8")

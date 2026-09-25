@@ -1,12 +1,12 @@
 ---
 name: voice-critic
 description: Critique a session_doc.py narration for generic prose, voice drift, doc-level budget breaches, or conflicts with the character's voice spec and the campaign's genre rulebook. Use after generating per-scene narration or an assembled fable doc, before assembly or promotion. Invoke as /voice-critic <narration-file-or-dir>.
-tools: Read, Glob, Grep, Bash, Write, Artifact
+tools: Read, Glob, Grep, Bash, Write, Artifact, WebFetch
 ---
 
 # Voice Critic
 
-Read a generated narration alongside **the same inputs the narrator model was given** — the campaign's genre rulebook, `base.md`'s HARD BANS, the character's voice spec, the per-character examples — and produce a report of sentences that read as generic, drift from the spec, or breach a rule the rulebook states. The report is a **review artifact** — never auto-apply rewrites, never overwrite the narration file.
+Read a generated narration alongside **the same inputs the narrator model was given** — the campaign's genre rulebook, `base.md`'s HARD BANS, the character's voice spec, the per-character examples — and produce a report of sentences that read as generic, drift from the spec, or breach a rule the rulebook states. The report is a **review artifact** — never apply a rewrite the GM has not approved, and never overwrite the narration you reviewed: approved fixes go into a separate derived revision (Phase 9).
 
 ## What this is for
 
@@ -24,6 +24,7 @@ Declare which one you are in, in the report. They differ in where the narrator n
 |---|---|---|---|
 | **per-scene** | `session_doc_scene_NN_*.{scrubbed.,}md`, or a directory of them | YAML frontmatter | `<narration-dir>/voice_critique_scene_<NN>_<narrator-slug>.md`, plus `voice_critique_summary.md` for a directory |
 | **assembled** | one doc split on `## <Char> — <Scene>` — `session-summary-doc.md`, `session-summary-fable-doc.md` | the `##` heading | `<doc-stem>.voice_critique.md`, sections keyed by heading |
+| **approved revision** | a `/dialogue-edit` `applied/<revision>/scene.md` (or an earlier voice-critic revision, Phase 9) | the original scene's frontmatter / the revision's source record | `<session>/voice_critic/<run>/`, with the selected revision paths recorded; the frozen dialogue-edit records are left intact |
 
 `/fable-narration` emits the assembled shape and names this skill as its verification step; it has no frontmatter, no scene numbers and no `narration/` directory, so the per-scene report path cannot be used for it. Assembled is also the shape `voice_lint` assumes.
 
@@ -33,14 +34,26 @@ Declare which one you are in, in the report. They differ in where the narrator n
 
 Detect or ask for:
 
-1. **Narration file(s)** — single file, glob, or directory. For per-scene input, prefer `session_doc_scene_NN_*.scrubbed.md` over the raw `session_doc_scene_NN_*.md` for each scene — the scrubbed files are the canonical pre-assembly source. Fall back to the raw `.md` only when no scrubbed variant exists for that scene. This mirrors `collect_scene_files` in `assemble.py`.
+1. **Narration file(s)** — single file, glob, or directory. **Critique the latest approved revision of each scene, never an unapproved candidate** — see *Which text to critique* below. With no approved revision, prefer `session_doc_scene_NN_*.scrubbed.md` over the raw `session_doc_scene_NN_*.md` for each scene — the scrubbed files are the canonical pre-assembly source. Fall back to the raw `.md` only when no scrubbed variant exists for that scene. This mirrors `collect_scene_files` in `assemble.py`.
 2. **Campaign directory** — root of the campaign workspace (derive from the narration path, or ask).
 3. **Genre rulebook** — resolved in Phase 3. Not optional; its absence is a finding.
 4. **Voice spec directory** — usually `<campaign>/voice/`. Filenames vary by campaign and are **not** limited to `<narrator>_voice.md`; resolve them with the full rule in Phase 2, which mirrors what Pass 5 actually does.
 5. **Per-character examples directory** (optional) — usually `<campaign>/examples/`. Routing is per-character for files whose stem matches a narrator's first name and **global for everything else** — see Phase 2, and note it is a *different* rule from the voice-spec one.
 6. **Party doc** (optional) — `<campaign>/docs/party.md` for character relationships and class info.
 
-If invoked with a directory or glob, iterate every scene file. If a referenced voice spec is missing, fall back to the per-character examples; if both are missing, skip that scene with a one-line note rather than fabricating a critique.
+If invoked with a directory or glob, iterate every scene file. If a referenced voice spec is missing, fall back to the per-character examples; if both are missing, **skip only the voice-drift judgment for that narrator** — Phase 5 category 2 (voice spec conflict) needs a voice to measure against, and fabricating one is worse than saying so. Every other check still runs on that narrator's prose: the rulebook, the HARD BANS, the em-dash budget, Scan A2 provenance, Scan C orphan quotes, the budget ledger and the hatch review do not depend on a voice spec. The report says, in the resolution table and the verdict, that voice drift was **not judged** for that narrator and why.
+
+### Which text to critique — `/dialogue-edit` runs first
+
+`/dialogue-edit` sits directly before this skill and writes its approved wording to a **separate revision** (`<session>/dialogue_edit/<scene-run>/applied/<revision>/scene.md`), leaving the raw and scrubbed scenes untouched. A directory scan of the narration folder therefore picks up the pre-edit text and critiques the wrong version. Before collecting any files:
+
+- **Read `<session>/dialogue_edit.sources.yaml`** if it exists, with the application records it points at, their promotion status and hashes. A revision is approved only when its `application.json` exists (the helper writes it last) and its `scene.md` still matches the recorded result hash. **Never critique `candidate.md`** — it holds every proposal, approved or not.
+- **The latest approved revision wins over the directory scan**, and an approved revision the GM names explicitly wins over both. "Latest" comes from the session index and the application records, never from modification time; when two approved revisions of one scene conflict, ask the GM rather than picking one. A voice-critic revision from an earlier run (Phase 9) counts as the latest approved text for its scene when it was derived from that same approved base.
+- For a promoted revision, verify the current narration file against the promotion record rather than assuming it.
+- Keep the original scene identity and source mapping even though the revision file is called `scene.md`: narrator, scene number and run record come from the original scene the manifest names.
+- **Say which file was critiqued**, per scene, in the report and in your reply — the revision path, or the scrubbed/raw scene when no approved revision exists. Reports for a revision go under `<session>/voice_critic/<run>/`; never write into the frozen dialogue-edit run.
+
+GM-approved dialogue-edit rewrites are **protected edited speech**, not verbatim transcript: they get the same don't-rewrite protection as any quote (Phase 1), and they are not "corrected" back to the extraction.
 
 ## Phase 1: Parse the narration
 
@@ -58,11 +71,11 @@ session: <session id>
 
 Pull `narrator` and `scene_name` from it. In assembled input there is no frontmatter: treat each `## <Name> — <Scene>` block as a separate critique target and take the narrator from the heading.
 
-When collecting per-scene files from a directory, deduplicate by scene number: for each scene, use the `.scrubbed.md` variant if it exists, otherwise the raw `.md`.
+When collecting per-scene files from a directory, deduplicate by scene number: for each scene, use its latest approved revision if one exists (see *Which text to critique*), else the `.scrubbed.md` variant if it exists, otherwise the raw `.md`.
 
 **Separate prose from non-prose before any counting.** Every scan and every budget below is over *narration prose only*. Strip, and never flag inside:
 
-- `"…"` verbatim dialogue — VTT-captured speech, load-bearing, must stay exactly as extracted.
+- `"…"` verbatim dialogue — VTT-captured speech, load-bearing, must stay exactly as extracted (or exactly as `/dialogue-edit` approved it).
 - `*…*` italic spans — direct thought and truncated VTT lines.
 - `<!-- … -->` HTML comments — including the table-speech hatch, which Phase 7 handles separately.
 
@@ -108,7 +121,7 @@ Resolve in this order:
 
 1. **The per-scene run record**, `<narration-dir>/<scene-stem>.knobs.json`. This is what that render actually used, and it beats config, which may have changed since. Two shapes exist:
    - **Post-#276:** `narration_genre_file`, `narration_genre_sha`, `narration_genre_lines`. Read the named file and compare its current digest to `narration_genre_sha`. **A mismatch means the rulebook was edited after this scene rendered** — say so, because it changes what the findings mean, and check whether sibling scenes in the same directory carry different digests from each other.
-   - **Pre-#276:** `narration_genre` holding the rulebook's *text*. Note its length and newline count. **Zero newlines in a multi-thousand-character value means this render received the rulebook as a single-line `GENRE:` label** rather than a delimited block — it was delivered, but not in a form the model could follow. Measured consequence: on Phandalin, "first-person present tense, always" reached the model this way and 3 of 62 rendered scenes are in the required tense. When you see this, register findings about tense and register as *probably delivery, not authorship*, and say so in the verdict.
+   - **Pre-#276:** `narration_genre` holding the rulebook's *text*. Note its length and newline count. **Zero newlines in a multi-thousand-character value means this render received the rulebook as a single-line `GENRE:` label** rather than a delimited block — it was delivered, but not in a form the model could follow. Measured consequence: on Phandalin, "first-person present tense, always" reached the model this way and 3 of 62 rendered scenes are in the required tense. When you see this, register findings about tense and register as *probably delivery, not authorship*, and say so in the verdict: the flattened rulebook is the **probable cause** of the generic and register-wrong prose it would have governed. Use that wording only when the evidence shows the flattening (the length and zero-newline measurement above); without it, a pre-#276 record is delivery uncertainty, not a cause.
 2. **`paths.genre_file` in `<campaign>/config/session_doc.yaml`**, resolved relative to the campaign directory. Use this when there is no run record, and always report it alongside the run record so a divergence between "what this render used" and "what the next render will use" is visible.
 
 **Three states, and two of them are findings:**
@@ -215,7 +228,7 @@ EOF
 - **A tagged two-hander.** Two speakers, an attributed opening line, then strict alternation. `"Tea? Just tea?" / "Just tea." / "You want me to boil water and give it to you?"` is unambiguous and tags would clutter it.
 - **A deliberate chorus** — overlapping table voices the narrator is rendering *as* a wash, where not knowing who said what is the effect.
 
-Everything else is a real finding, and the fix is cheap and non-destructive: **the attribution already exists upstream.** `scene_extractions_smoothed/NN_*.md` labels every quote with its speaker, including the `re-attributed from **GM** upstream` corrections. Add speaker tags and action beats around the quotes; **never touch a word inside them.** Where the smoothed layer says `UNKNOWN` or `unconfirmed`, leave that line untagged and say so in the report — an invented attribution is worse than an orphan quote.
+Everything else is a real finding, and the fix is cheap and non-destructive: **the attribution already exists upstream.** `scene_extractions_smoothed/NN_*.md` labels every quote with its speaker, including the `re-attributed from **GM** upstream` corrections. Anchor the quotes with speaker tags; **never touch a word inside them.** An action beat may be added only when the extraction or the transcript records that action — cite the line in the finding's evidence. Where neither records one, anchor with attribution alone (`Soma says.`); an invented action is invented fiction, however small. Where the smoothed layer says `UNKNOWN` or `unconfirmed`, leave that line untagged and say so in the report — an invented attribution is worse than an orphan quote.
 
 Two things this scan will surface that are *not* its own business: table-speak inside a quote (`"With a four, you probably believe him."`) belongs to `/scrub`, and a wrong speaker label belongs to `/session-summary-consistency`. Report them, hand them off, do not fix them here.
 
@@ -273,6 +286,13 @@ Budgets from: {genre_file path} @ {digest}
 
 Three verdict values only: `ok`, `**BREACH**`, and `*not checked*` with the reason. Never write `ok` for a row nothing evaluated.
 
+**For every BREACH row, say where the instances sit** — per scene, per narrator — because the remedy is decided by distribution and cost, not by the fact of a breach:
+
+- **Clustered** in one or a few scenes → spot-fix those instances (ranked, with a target count — see Hard rules), or re-narrate just those scenes (`sd_narrate --scene <N>`).
+- **Spread throughout** the document, so that no set of scene-level edits gets it under the cap → a whole-document re-render is the recommendation. That is a paid run: recommend it only in this case, and only the GM's explicit yes starts it. This skill never starts it.
+
+A breach is never a re-render signal on its own.
+
 ## Phase 7: Write the report
 
 Report path per the input shape (see **Input shapes**). Structure:
@@ -280,8 +300,8 @@ Report path per the input shape (see **Input shapes**). Structure:
 ```markdown
 # Voice Critique — {narrator}, scene {NN}: {scene_name}
 
-**Narration:** {path}
-**Input shape:** {per-scene | assembled}
+**Critiqued file:** {path actually read — the approved dialogue-edit / voice-critic revision, or the scrubbed/raw scene when none exists}
+**Input shape:** {per-scene | assembled | approved revision}
 
 ## Inputs resolved
 
@@ -290,9 +310,9 @@ Report path per the input shape (see **Input shapes**). Structure:
 | Genre rulebook | {path @ digest, or **UNSET — no genre reached Pass 5**, or **MISSING**} | {run record / config; lines, chars} |
 | Rulebook vs run record | {match, or **edited since this render**, or **pre-#276: flattened, N chars / 0 newlines**} | {sha comparison} |
 | HARD BANS | {base.md path} | {chars} |
-| Voice spec | {filename, or **MISSING**, or **AMBIGUOUS: a, b**} | {rule a / b / c, or the key set searched on a miss} |
-| Per-char examples | {filename(s), or none} | {matched `<first>_…`, or n/a} |
-| Global examples | {filenames, or none} | reached every narrator |
+| Voice spec | {filename, or **MISSING — voice drift not judged for this narrator**} | {the roster declaration it came from, or the roster searched on a miss} |
+| Per-char examples | {filename(s), or none} | {the roster `examples:` declaration, or n/a} |
+| Shared examples | {filenames from `shared_examples:`, or none} | reached every narrator |
 | Party doc | {path, or none} | {roster N/M PCs} |
 | voice_lint | {ran / not available} | {N errors, N warns, N skipped checks} |
 
@@ -316,79 +336,107 @@ quoted. Empty section with "none" when there are none — its absence should not
 
 ## Verdict
 
-{1–2 sentences: the strongest specific issue, whether the scene is worth re-narrating or
-spot-editing, and — when Phase 3 found unset/missing/flattened — that the findings are
-explained by a rulebook that did not reach the model.}
+{1–2 sentences: the strongest specific issue, the remedy its distribution supports (spot
+edits, or re-narrating the scenes the breaches cluster in; a whole-document re-render only
+when they are spread throughout, and only on the GM's yes), and — when Phase 3 found
+unset/missing/flattened — that the findings are explained by a rulebook that did not reach
+the model (flattened: its probable cause). Name any narrator whose voice drift was not judged.}
 ```
 
 **The reclassified-table-speech section is not optional.** `sd_narrate` writes `<!-- table-speech reclassified: … -->` into per-scene files when it judges a span to be out-of-fiction table talk rather than in-character speech, and `assemble.py` strips the comment at assembly — **so the per-scene files this skill reads are exactly where it survives, and this is the last chance to review it.** Each one is the model making a scope call about what is in-fiction, which is a human's decision by this repo's doctrine. List every occurrence for the GM to accept or reject; never flag the prose inside one as a style problem.
 
-## Phase 8: Publish the review artifact
+## Phase 8: Publish the review page
 
-**Always publish, once the reports are written.** The `.md` reports stay the record; the artifact is the surface the GM actually reviews on. A multi-scene critique is a triage exercise — a dozen findings at three severities across eight scenes, each needing a keep/change decision — and that does not survive terminal scrollback. Build it with the `Artifact` tool after Phase 7, never instead of it.
+**Publish by default, once the reports are written.** The `.md` reports stay the record; the page is the surface the GM actually rules on. A multi-scene critique is a triage exercise — a dozen findings at three severities across eight scenes, each needing its own decision — and that does not survive terminal scrollback. **If the GM has asked for chat only, honour it:** present the same findings in chat, one grouped pass, and record the rulings they give in the same decision envelope. Build the page after Phase 7, never instead of it.
 
-**It is a tool, not a document.** The read is *UI*, not essay. Summary before detail, severity encoded in form as well as words (a stripe, a pill), and every verdict scannable without reading a paragraph.
+Use the shared builder every other Claude review skill uses — read `~/.claude/skills/_shared/review-artifact/CONTRACT.md` first and follow it. Prepare every selected scene together and put the whole session on **one page**; do not run a scene-at-a-time approval cycle.
 
-**Do not load `artifact-design` for this artifact.** The design is fixed below, the way the `workshop` skill carries its own; re-deriving a palette and type pairing on every run produced a different-looking review page each time for the same GM. Build straight from this spec, in place of the design pass. Reference implementation: `reference/proof-sheet.html` beside this file (the ch02 scene 04 page, 2026-09-02) — copy its `<style>` and script wholesale and replace the content.
+**The review files live in the session directory, not scratch:** `<session>/voice_critic_review/review_items.json`, `review.html`, `decisions.json`, plus the frozen sidecar `review_map.json` (below). A follow-up round after a discuss pass suffixes the items, map and decisions files with its round (`review_items_r2.json`, `review_map_r2.json`, `decisions_r2.json`) and republishes the **same** `review.html` path so the URL survives — per the contract's *File names* rule.
 
-### Fixed design spec (proof sheet)
+```bash
+python3 ~/.claude/skills/_shared/review-artifact/build_review.py \
+    --in  <session>/voice_critic_review/review_items.json \
+    --out <session>/voice_critic_review/review.html
+```
 
-Cool proof-sheet greys, three type roles, severity on its own scale. Tokens on bare `:root`, redefined under `@media (prefers-color-scheme: dark)` guarded `:root:not([data-theme="light"])` and again under `:root[data-theme="dark"]`; `body` takes `background: var(--bg)` explicitly.
+Publish `review.html` with the `Artifact` tool and **`capabilities: {"artifact": {}}`**, a stable favicon, a noun-phrase `title` and a `reviewId` naming the session and round (`vc:<session>:r1`). Then **stop** — the save comes back as an `artifact-changed` notification or the GM's word, never a poll. Read it back with `WebFetch` on the artifact URL, then:
 
-| Token | Light | Dark | Role |
-|---|---|---|---|
-| `--bg` / `--panel` | `#EEF0F3` / `#FFFFFF` | `#171A1F` / `#1F232A` | page ground / tables and cards |
-| `--ink` / `--ink2` / `--mute` | `#1C2128` / `#4A5260` / `#7A828F` | `#E6E8EC` / `#B4BAC5` / `#848C99` | text tiers |
-| `--rule` / `--rule2` | `#C9CED6` / `#E3E6EB` | `#3A404A` / `#2B3038` | borders |
-| `--quote-bg` | `#F6F7F9` | `#252A32` | blockquote ground |
-| `--accent` | `#3B5B8C` | `#8FB0E0` | links and the "this scene" bar **only** |
-| `--breach` / `--breach-bg` | `#8E2A2A` / `#F6E7E7` | `#E48A8A` / `#3A2222` | BREACH, confirmed, lint error |
-| `--plaus` / `--plaus-bg` | `#9A6A12` / `#F8EFD9` | `#E0B45C` / `#3A2F17` | plausible, defer |
-| `--ok` / `--ok-bg` | `#2F6B45` / `#E3F0E7` | `#7FC49A` / `#1E3327` | ok, resolved, keep |
-| `--nc` / `--nc-bg` | `#6B7280` / hatched `repeating-linear-gradient(135deg,#E9EBEF 0 4px,#F7F8FA 4px 8px)` | `#9AA2AE` / hatched `#262B33`/`#1F232A` | **not checked** — dashed border, hatched fill, never the ok style |
+```bash
+python3 ~/.claude/skills/_shared/review-artifact/read_decisions.py \
+    --html <saved-artifact.html> \
+    --items <session>/voice_critic_review/review_items.json \
+    --out   <session>/voice_critic_review/decisions.json
+```
 
-Type, from Google Fonts with real fallbacks: **Newsreader** (serif) for every quoted narration span and suggested-rewrite text; **IBM Plex Sans** for the apparatus; **IBM Plex Mono** for line coordinates, digests, filenames, chips and the tally. Chips are mono, 11px, uppercase, `.05em` tracking, 2px radius. Body 15px; h1 is Newsreader 500 at 34px; section heads are Plex Sans 13px uppercase over a 1px rule.
+### What each card carries
 
-Layout, in the section order Phase 8 requires: masthead with a mono eyebrow (campaign · session · input shape) → a summary strip of big-number tiles (breaches in `--breach`, plausible in `--plaus`, prose words and share last) → resolution table → ledger → sticky triage bar (tally, undecided filter, **Copy decisions**, Show as text, Reset) → finding cards → per-scene grid with bars → scope-call table → hatch table → verdict → footer naming the `.md` record. Cards carry a 5px left stripe in the severity colour, `.done` cards drop to 60% opacity. Triage persists to `localStorage` under a key that names the session, scene and render (`vc-<session>-s<NN>-r<N>`), inside `try`/`catch`, and the copy button falls back to a selectable `<textarea>`. No hero, no emoji markers, no numbered markers except where the content is a ranked list.
+Every card shows **the passage, the rule broken, the proposed fix and the evidence**:
 
-### Required sections, in this order
+| field | carries |
+|---|---|
+| `id` | stable finding id that round-trips into Phase 9 — `s04-f03`, `doc-b02` for a ledger breach, `s03-h01` for a hatch |
+| `t` | the decision as a sentence: severity (**breach** / **plausible** / **scope call**), scene and line, and the rule broken — *"Breach · s04 L37 — connective em-dash; the rulebook says never as a connective"* |
+| `y` | **approve = act on the finding**: the exact `old → new` span, any dependent attribution or punctuation change shown separately, and the file it lands in (the Phase 9 derived revision — never the reviewed narration) |
+| `n` | **reject = keep as is**: the passage stays exactly as written, and the rejection is recorded |
+| `ev` | the passage **verbatim** in a `<blockquote>`, the rule's source as `file:line` (rulebook, `base.md`, voice spec, example), the `voice_lint` line if it fired, and your recommendation |
 
-1. **What was actually checked** — the Phase 7 resolution table, rendered as the *first* thing after the masthead. This is the skill's whole thesis: a rulebook that did not arrive explains every register finding below it, and a skipped `voice_lint` check is not a pass. Give resolved / skipped / missing three visibly different states. **Never render a skipped check in the same style as a passing one.**
-2. **Budget ledger** — Phase 6, with the `ok` / `BREACH` / `not checked` verdicts as distinct chips. Say the scope and the prose word count in the header.
-3. **Findings**, strongest first, one card each: severity pill, scene and line reference, the sentence **verbatim in a blockquote**, the why, and the suggested rewrite in a visually distinct block. Where a finding is a convergence between two narrators, **put both quotes in the same card** — the noun-swap is the evidence, and it is invisible when the halves sit in separate scene reports.
-4. **Per-scene grid** — prose-word count and its share of the section, as a bar. A scene that under-narrates shows up here as a short bar and nowhere else.
-5. **Locked-dialogue anachronisms** — kept separate from the flags and labelled as *the GM's scope call*, with the three dispositions named. These are decisions, not defects, and mixing them into the finding list mis-frames them.
-6. **Reclassified table speech** — span counts per scene, and which hatches deserve an explicit look rather than a rubber stamp.
+**Discuss** = defer or talk: the item stays pending and comes back to chat in one grouped pass with its note. **Unmarked** stays unresolved — never read it as approval or rejection. **Never pre-fill a verdict**: the page starts blank, and a recommendation goes in `y` or `ev`, not in state.
 
-### The triage loop — and why it is a copy button
+- **Convergence between two narrators is one card** with both quotes in its `ev` — the noun-swap is the evidence, and it is invisible when the halves sit in separate cards.
+- **A budget breach is one card**, not N: `ev` lists where the instances sit and the ranked keep/change recommendation with its target count; `y` states the remedy the distribution supports (Phase 6). When that remedy is a whole-document re-render, `y` says it is a paid run and that approving the card is the GM's yes to it — the run itself is handed off, not started here.
+- **A locked-dialogue anachronism** is a scope call: `t` says so, `y` is the disposition you recommend (keep / replace in-world / annotate), `n` keeps the quote as spoken, and the other dispositions go in `ev` for a discuss.
+- **A reclassified-table-speech hatch** is a scope call too: `y` accepts the reclassification (nothing changes), `n` records that the span is in-fiction and refers restoring it to re-narration — a voice fix cannot restore dropped speech.
+- A finding whose identity or source is unresolved gets a discuss-shaped card or a referral, never an executable speculative `old → new`.
 
-Give each finding card a three-way triage control (act / keep / defer) persisted in `localStorage` inside `try`/`catch`, plus a live tally and an "undecided" filter.
+Quoted narration is HTML in these fields: escape `<`, `>` and `&` in every span before it goes into the items file.
 
-**Then give it a way back to you, and be honest about the mechanism.** `localStorage` never reaches Claude. A page that collects decisions with no return path is worse than no page — the GM does the work twice. The right affordance is a **Copy decisions** button that puts a grouped plain-text summary on the clipboard for the GM to paste into the conversation, with a selectable `<textarea>` fallback for when the sandbox blocks the clipboard API.
+**Freeze the sidecar before publishing.** Write `review_map.json` beside the items: `reviewId`, and for each card id the target path, the target's SHA-256, the exact `old` and `new` spans (with a start offset where `old` is not unique), and which items concern narration versus an upstream referral. The page returns only ids; this map is what makes an approval executable in Phase 9 and what detects a target that changed after the GM ruled.
 
-Do **not** reach for the `artifact` runtime capability here. It would let the page save state server-side, but it does so by republishing the page as a new version of itself — which overwrites the review document, reloads it under the reader mid-review, and still requires a separate read to get the decisions back. One paste is shorter and cannot half-fail. Say this in your reply rather than shipping it as a note in the page.
+### What the page cannot carry, the lede and the report do
 
-### Design notes specific to this artifact
+The resolution table and the budget ledger are the skill's thesis — a rulebook that did not arrive explains every register finding below it, and a skipped `voice_lint` check is not a pass — so they come **before** the cards. Put a compact version in the page's `lede` (rulebook state and digest, voice specs resolved or not, `voice_lint` errors / warns / skipped checks, every `BREACH` and every `not checked` row by name) and link the full `.md` report in the `footer`. **Never let a skipped check read like a passing one**: write *not checked* and the reason, never `ok`. The per-scene prose grid (a scene that under-narrates shows up as a short share and nowhere else), the scope-call list and the hatch list live in the `.md` summary.
 
-- **Three type roles, because there are three kinds of text.** The quoted narration is the material under review, the critique is the apparatus, and line numbers are coordinates. Give them a book serif, a grotesque, and a mono respectively — the reader should never have to work out whether a sentence is the writing or the writing *about* the writing.
-- **Severity is not the accent.** The spec above keeps `breach` / `plausible` / `ok` / `not checked` on their own scale so a breach never competes with a link. Do not restyle them per run.
-- Publish with a favicon and a `description`; redeploy to the same file path when findings change so the URL survives.
+**Zero findings** still gets its report. The builder refuses an empty `items`, so do not invent a dummy card: say in the reply that there is nothing to rule on, and point at the report.
 
-### Keep the artifact honest as the work proceeds
+### Keep the review surface honest as the work proceeds
 
-When the GM triages and you apply fixes, **patch the artifact rather than leaving it asserting a state that is no longer true** — mark resolved findings, correct any number that moved, and record any claim of yours that turned out to be wrong. A stale review surface is worse than none, because it is the one the GM will open next time.
+After the GM rules and Phase 9 applies, **update the `.md` report** — mark resolved, rejected and deferred findings, correct any number that moved, and record any claim of yours that turned out to be wrong. Do not republish over a saved page to show resolved state: the saved page and `decisions.json` are the audit record of what the GM was asked and what they answered. A new round of questions is a new round's files.
+
+## Phase 9: Apply approved fixes to a derived revision
+
+**Approve means act on the finding; nothing else authorizes a write.** `decisions.json` (or the chat rulings recorded in the same envelope) is the only authority — the page existing, being opened, or `localStorage` never is. An approval of the stated `old → new` needs no second confirmation.
+
+**The reviewed narration is never overwritten.** Not the raw `.md`, not the `.scrubbed.md`, not a dialogue-edit revision. Approved fixes go into a **separate derived revision**, the same model `/dialogue-edit` uses:
+
+```
+<session>/voice_critic/<run>/applied/<revision>/
+    <scene file name>        # one per changed scene, built from the exact file critiqued
+    approved.diff
+    application.json         # written last; without it the revision is incomplete, not approved
+```
+
+1. **Validate before writing.** The decisions' `reviewId` matches `review_map.json`; every id is known; each target's current SHA-256 matches the frozen one; each `old` span is found exactly once (or at its recorded offset). A changed target or a changed proposal needs a fresh review, never a guessed merge.
+2. **Apply deterministically** — exact literal replacement of the frozen `old` with the frozen `new`, no model rewrite — onto a copy of the critiqued file. Show the complete diff first.
+3. **Write `application.json` last.** Record: `reviewId`; the decisions file path and its `savedAt`; per scene, the source path and which copy it was (raw, scrubbed, dialogue-edit revision), its SHA-256 and the result's; per applied item, the id, finding category, `old`, `new` and line; the rejected, discussed and unmarked ids; and, where the source was one half of a raw/scrubbed pair, whether each approved `old` span also occurs in the other copy — so whoever promotes the revision knows what to mirror. That list of every span changed is what the old replay file carried; it now lives with the revision it describes.
+4. **Every later revision is rebuilt from the same critiqued base plus the complete approved subset**, under a new revision name. Keep earlier approvals in the new decisions file.
+
+**`/scrub` and `sd_narrate` make the revision stale.** They regenerate the scrubbed or raw scene the revision was derived from, and nothing replays voice fixes onto the new text. When the base's hash no longer matches `application.json`, the revision is stale: say so, and re-critique the new text — do not silently replay the old spans onto it.
+
+**Then verify, as a second pass.** Read each changed paragraph and its joins. Re-run `voice_lint` and every scan whose budget you claimed to move, and report before/after counts. Re-scan for collisions *you* introduced: a rewrite that borrows a phrase already used elsewhere in the document creates the exact convergence the pass exists to remove (Phandalin ch50: a replacement reading `I set it beside the rest` landed two scenes from an existing `I set it on the shelf`, both the same narrator). A new defect is a new proposal for a new round, not a repair under an earlier approval.
+
+Finish with the revision path and state plainly that the reviewed narration is intact and the revision has not been promoted or assembled — promotion is the GM's separate action.
 
 ## Hard rules
 
-- **Never modify the narration file during the critique pass.** The report is a separate artifact. When the user subsequently applies fixes, they belong in the `.scrubbed.md` file (not the raw `.md`) so `assemble.py` picks them up. **Then warn them, in the reply and in a written record: `/scrub` regenerates `.scrubbed.md` from the raw `.md`, so the next scrub run on that scene silently wipes every voice fix.** The fixes are not in `.scrub_state.json` and nothing else remembers them. Write a `voice_fixes_<session>.md` beside the reports listing every span changed, so the pass can be replayed.
-- **Applying fixes is a second pass with its own verification.** Re-run `voice_lint` and every scan whose budget you claimed to move, and report before/after counts. Also re-scan for collisions *you* introduced: a rewrite that borrows a phrase already used elsewhere in the document creates the exact convergence the pass exists to remove. Phandalin ch50: a replacement reading `I set it beside the rest` landed two scenes from an existing `I set it on the shelf`, both the same narrator.
-- **Never auto-apply rewrites.** Suggestions are exactly that.
+- **Never modify the reviewed narration — during the critique or after it.** The report is a separate artifact, and approved fixes go into a separate derived revision with its own record (Phase 9), never into the raw `.md`, the `.scrubbed.md` or a dialogue-edit revision. **Warn the GM, in the reply and in the revision record, that `/scrub` and `sd_narrate` regenerate the scene the revision was derived from** and nothing replays voice fixes onto the new text: the revision goes stale, and the new text needs a fresh critique.
+- **Applying fixes is a second pass with its own verification** — Phase 9's re-lint, before/after counts, and collision re-scan are not optional.
+- **Never apply a rewrite the GM has not approved.** A suggestion is a suggestion until its card comes back `approve`; `reject` keeps the text as is, and `discuss` or unmarked keeps it pending.
 - **Never retype a rule into this file.** Regexes come from `voice_lint`, bans come from `base.md`, register rules and budgets come from the campaign's rulebook. If a check needs a pattern this skill does not have, add it to `voice_lint` — do not paste it here. A second copy diverges at the next tic.
 - **A check that did not run is never a pass.** `voice_lint` notes, an unresolved rulebook, an unresolved spec: each drops its category and says so. "No findings" and "not checked" are different report lines.
 - **Quote verbatim.** Paste the flagged sentence exactly from the narration. The user will search for it; an approximate quote wastes their time.
 - **Suggested rewrites must be grounded.** Pull rhythm and vocabulary from the voice spec and examples. If the spec is missing, mark the suggestion `[grounded in examples only]` or `[no spec available — best guess]`. **Earn that tag by resolving through the roster declarations first (Phase 2)** — since `sd_narrate` refuses to start without a declared spec, a report tagged `[no spec available]` is far more likely to be a lookup bug on your side than a campaign with no voice files.
 - **The examples file settles register disputes the spec cannot.** A spec describes a character in the abstract; the examples show the sentences. When a flag turns on *how* a narrator would phrase something — syntax, grammar, fluency — quote the examples, not the spec. Phandalin ch50: an aphorism in Brewbarry's mouth was defensible against his spec and indefensible against `examples/brewbarry.md`, which has him saying *"Order is bullies. They bully barbarians."*
-- **A doc-level cap breach is not N defects, so say which instances to keep.** A finding that reports "8 instances of this frame" and stops hands the GM eight rewrites, most of which would make the prose worse. Rank them, name the one or two that earn their place and why, and state the target count. A GM who approves the finding is approving your recommendation — if it does not contain one, they will delete all eight.
+- **A doc-level cap breach is not N defects, so say which instances to keep.** A finding that reports "8 instances of this frame" and stops hands the GM eight rewrites, most of which would make the prose worse. Rank them, name the one or two that earn their place and why, and state the target count. A GM who approves the finding is approving your recommendation — if it does not contain one, they will delete all eight. Say where the instances sit, and let that distribution and the cost pick the remedy (Phase 6): spot fixes or a scene re-narration where they cluster, a whole-document re-render only where they are spread throughout and only on the GM's yes.
 - **Verify an ordering claim against the whole source sequence before asserting a reorder.** Comparing two line ranges in the extraction is not enough: material *between* them may also have moved, and the narration may be in perfect order. Read the full ordered list of source beats and map narration beats onto it. Phandalin ch50 shipped a confirmed "eleven lines moved out of order" finding that was wrong — the block was in its correct position, and only the tense and an invented `Earlier, while we…` frame were real. Tense, framing and ordering are three separate claims; check them separately and drop the ones that do not hold.
 - **Never critique a spec or a rule you could not read.** If it resolves, the category is live and you are expected to use it; if it does not, say so in the resolution table and drop the category rather than inferring what it probably said.
 - **No commentary on the critique itself.** Don't open the verdict with "this scene is generally well-narrated but…". State the strongest specific issue and stop.
@@ -398,10 +446,10 @@ When the GM triages and you apply fixes, **patch the artifact rather than leavin
 
 Report each file written, the flag count, and the ledger verdict summary. Surface the strongest recurring issue across scenes (e.g. "three scenes flagged Unla for stock simile usage") so the user knows where to focus their re-narration budget.
 
-**Lead with a rulebook problem when there is one.** If Phase 3 found the rulebook unset, missing, or flattened, that is the headline and every register finding below it is downstream of it — the fix is the migration or the re-render, not a round of sentence edits.
+**Lead with a rulebook problem when there is one.** If Phase 3 found the rulebook unset, missing, or flattened, that is the headline and every register finding below it is downstream of it — the fix is the migration and then re-rendering what it affected (a paid run, on the GM's yes), not a round of sentence edits.
 
 Remind the user:
 
-- The report is review-only — they decide which flags to act on.
-- For flagged sentences they want to fix, the cheapest path is a manual edit; for systemic voice problems across many scenes, re-running `sd_narrate --scene <N>` with an updated voice file or rulebook is often more efficient than per-sentence edits.
-- Budget breaches usually cannot be spot-edited into compliance — a doc-wide cap breach is a re-render signal.
+- They decide which findings to act on, on the page (or in chat if they asked for chat only); approved fixes land in a separate derived revision, and the reviewed narration stays as it is.
+- For systemic voice problems concentrated in a few scenes, re-running `sd_narrate --scene <N>` with an updated voice file or rulebook is often more efficient than per-sentence edits.
+- A doc-wide cap breach is decided by where the breaches sit and what the fix costs: fix or re-narrate the scenes they cluster in; re-render the whole document only when they are spread throughout, and only on their yes — it is a paid run.

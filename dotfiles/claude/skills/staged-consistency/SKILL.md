@@ -255,10 +255,10 @@ comes back → read back → apply → **then** start the next stage.
 
 ```bash
 python ~/.claude/skills/_shared/review-artifact/build_review.py \
-    --in  $SCRATCH/review_items_stage<N>.json --out $SCRATCH/review.html
+    --in  <session-dir>/staged_review/review_items_stage<N>.json --out <session-dir>/staged_review/review.html
 ```
 
-Read back to `$SCRATCH/decisions_stage<N>.json` the same way. Only `--out` is
+Read back to `<session-dir>/staged_review/decisions_stage<N>.json` the same way. Only `--out` is
 shared, and it has to be: the artifact URL follows the `file_path`, so a
 per-stage html name would claim a second URL. Everything else is per stage.
 Reuse one `review_items.json` and stage 2 overwrites the stage-0 and stage-1
