@@ -10,6 +10,12 @@ metadata:
 Maintain this Codex skill under `dotfiles/codex/skills/enhance-summary/`;
 leave Claude skills intact.
 
+This skill owns **one stage**: the recorded case, turning a reviewed VTT and
+gm-assist into `session-summary.md`. Running the whole pipeline (enhancement,
+scene extraction, narration, assembly) is a separate job, and so is building a
+summary from chapter *prose* when there is no recording at all — a different
+input and a different schema discipline.
+
 Generate the artifact through CampaignGenerator's installed `enhance_summary`
 command, using its bundled prompts. Do not hand-write a replacement summary
 or substitute a direct model call. The CLI is the command path used by the
@@ -57,8 +63,14 @@ attribution limitations for subsequent review; do not rewrite the VTT or modify
 global party configuration as part of enhancement.
 
 Use `--backend codex-cli` for this saved-login workflow unless the user chooses
-another backend. Reuse explicitly established model and reasoning settings;
-otherwise resolve the UI's configured selection rather than guessing a model.
+another backend. The backend vocabulary is shared across every model-bearing CG
+CLI (`campaignlib/api/client.py::add_backend_args`): `anthropic`, `dgx`,
+`openrouter`, `claude-code`, `codex-cli`. On `codex-cli`, reasoning effort is
+`--codex-reasoning-effort`; on `claude-code` it is `--claude-code-effort` with
+`--claude-code-thinking` / `--no-claude-code-thinking` (`xhigh` and `max`
+require thinking enabled). Reuse explicitly established model and reasoning
+settings; otherwise resolve the UI's configured selection
+(`config/session_doc.yaml`, `backends.active`) rather than guessing a model.
 Do not silently fall back to a metered API or downgrade settings.
 
 Successful Chapter 09 command shape (model and effort are historical settings,
