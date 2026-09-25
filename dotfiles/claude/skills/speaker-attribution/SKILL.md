@@ -61,7 +61,7 @@ SKILL_DIR=~/.claude/skills/speaker-attribution
 RUN=$(mktemp -d "<scratchpad>/speaker-attribution.XXXXXX")   # the session's scratchpad directory
 ```
 
-The four helpers use only Python's standard library. Use participant facts the
+The five helpers use only Python's standard library. Use participant facts the
 GM already gave (people, GM included; player/PC mapping) and do not ask for
 them again. A known PC owner is not an acoustic cluster ID.
 
@@ -77,8 +77,10 @@ them again. A known PC owner is not an acoustic cluster ID.
   output header says so; without it, report an unvalidated cluster report only.
 - **Strong clues, not decisions.** A dominant cluster (possible collapse, or a
   GM-heavy session), identical turn tallies (likely derivative), the
-  chat-sidecar absence probe (who went quiet), and two PC names on one cluster
-  (one person may have run both) are put to the GM with the clue, its strength
+  chat-sidecar absence probe (who went quiet), two PC names on one cluster
+  (one person may have run both), a voice profile named for someone off the
+  roster (likely a mislabelled player), and one cluster using two PCs'
+  abilities (two players merged) are put to the GM with the clue, its strength
   and the incident behind it. Never auto-select a voice, discard a transcript,
   or re-cluster on one clue alone.
 - **The agreement percentage is a disagreement measure, not an error rate.**
@@ -103,9 +105,17 @@ A filename is an assertion, not evidence. Look for MISFILED, SPANS MULTIPLE
 RECORDINGS and "sits beside audio it does NOT transcribe"; confirm matches by
 endpoints (same words within a second or two; mvhd duration recipe in the
 reference). A warning on every transcript in a directory is the stem-vouching
-rule, not a finding. Check for derivatives with the tally command, choose the
-best text layer, convert Descript with `descript_turns.py`, and note any
-`GMT<date>_RecordingnewChat.txt` sidecar.
+rule, not a finding. `sha256sum` every transcript first (a "RAW" and a cleaned
+export can be the same bytes), check for derivatives with the tally command,
+choose the best text layer, convert Descript with `descript_turns.py`, and note
+any `GMT<date>_RecordingnewChat.txt` sidecar.
+
+**Audio far longer than every transcript** has two causes with opposite fixes
+(provenance.md): the audio belongs to another session (check the `GMT<date>`
+stamp against the directory, then the neighbouring session's endpoint), or it is
+the raw recording and the transcripts come from a Descript-edited export. Ask the
+GM which. For the edited case, the options in order are: export the edited
+audio; project raw diarization by words (step 2); or a single source.
 
 **Checkpoint 1:** if provenance reports MISFILED or a stray transcript, the GM
 decides what moves where. Do not relocate files on your own reading. Identical
@@ -123,7 +133,18 @@ looks busy and confirm `running on cuda` in the log; launch detached, redirect
 to a log, never pipe through `tail`; never stop another GPU workload.
 
 Use `Bash` with `run_in_background` for the remote job, and read its log file
-rather than waiting on buffered output.
+rather than waiting on buffered output. Launch with `ssh -f` and redirect all
+three remote streams (`</dev/null >/dev/null 2>&1 &`); otherwise the local call
+hangs until it times out. Only spark2 has the `diarize` and `audio-to-vtt`
+environments, so run Spark jobs one after another there. After one CUDA OOM,
+retry once before falling back.
+
+**Raw audio, edited transcript:** diarize the raw audio, run
+`audio-to-vtt/spark/words_remote.py` on spark2 for word timestamps, then
+`python3 "$SKILL_DIR/project_turns.py" --words … --vtt <best-text>.vtt --turns
+<raw turns> --output "$RUN/turns.json"`. The join below then runs unchanged.
+Report the unlabelled-cue count (acoustic-workflow.md, *Raw audio, edited
+transcript*).
 
 ## 3. Join and cross-validate (report only)
 
@@ -138,6 +159,13 @@ No `--output` yet. Pass `--md` the Descript **turns JSON** (real spans), not the
 split, the confusion matrix, the join type, and agreement with its denominator
 and largest single disagreement. Read small clusters' lines before dismissing
 them (the coffee-room voice).
+
+**When the GM's voice splits into several clusters** (narration vs.
+conversation), the headline leaves the GM out: that row has no qualifying
+mapping, so the GM's words are dropped from agreement and no GM cue gets `[?]`.
+Two players can also end up merged in the bin the split took (acoustic-workflow.md,
+*A GM's registers*). After the mapping is approved, compute agreement by name
+and give the GM the full list of disagreeing cues.
 
 **Checkpoint 2:** the GM confirms the agreement percentage and the speech split
 before anything is built on them. A collapsed clustering looks exactly like a
@@ -164,7 +192,9 @@ Read identity-review.md.
   directional bias) instead of a relabelled VTT.
 - **`Room (not at table)`** and any other voice named only by the second
   clustering must be GM-confirmed before `--md-label` applies it. Its speech is
-  kept.
+  kept. That voice can be a **player** pyannote merged into someone else's
+  cluster; check every profile name against the roster first (OOTA ch02:
+  `<non-player>` was Mike).
 
 **Checkpoint 3:** the cluster→name mapping and any cue-level rulings. This is
 the precision decision the skill exists to serve; nothing further along

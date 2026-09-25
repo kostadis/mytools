@@ -59,14 +59,16 @@ before searching adjacent sessions for misplaced files. Read applicable
 Resolve `SKILL_DIR` to the loaded directory, normally
 `${CODEX_HOME:-$HOME/.codex}/skills/speaker-attribution`. Create a unique run
 directory `RUN` with `mktemp -d` under an allowed scratch root. Use resolved,
-quoted paths in all commands. The four Python helpers use the standard library.
+quoted paths in all commands. The five Python helpers use the standard library.
 
 ## Strong clues, not decisions
 
-Four signals are **strong clues to put to the GM, never auto-decisions**: a
+Six signals are **strong clues to put to the GM, never auto-decisions**: a
 dominant cluster (possible collapse, or a GM-heavy session), identical turn
 tallies (likely derivative), the chat-sidecar absence probe (who went quiet),
-and two PC names on one cluster (one person may have run both). State the clue,
+two PC names on one cluster (one person may have run both), a voice profile
+named for someone off the roster (likely a mislabelled player), and one
+cluster using two PCs' abilities (two players merged). State the clue,
 its strength and the incident behind it, and ask. Never auto-select a voice,
 discard a transcript, or re-cluster on one clue alone. The references give the
 incidents.
@@ -85,9 +87,17 @@ claim. Confirm a candidate recording by opening/closing words (within a second
 or two) and timing. Duration alone and matching speaker tallies are clues, not
 proof.
 
-Keep summaries out of the second-transcript inventory. Check for derivatives,
-concatenations, timeline offsets, and Descript labels masquerading as verified
-names. Choose the best text layer, and convert Descript exports to turn spans,
+Keep summaries out of the second-transcript inventory. Hash every transcript
+first (a "RAW" and a cleaned export can be the same bytes). Check for
+derivatives, concatenations, timeline offsets, and Descript labels
+masquerading as verified names; a profile name may not even be a participant.
+
+Audio far longer than every transcript has two causes with opposite fixes: the
+audio belongs to another session (check the `GMT<date>` stamp against the
+directory, then the neighbouring session's endpoint), or it is the raw
+recording and the transcripts come from a Descript-edited export. Ask the GM
+which. For the edited case, prefer exporting the edited audio; otherwise
+project raw diarization onto the edited timeline by words (step 2). Choose the best text layer, and convert Descript exports to turn spans,
 using the reference instructions.
 
 **GM checkpoint:** if a file appears misplaced, show the evidence and ask how
@@ -112,6 +122,16 @@ inspect this skill.
 `speaker-diarization-community-1` must already exist. If it fails, stop and tell
 the GM which licence to accept themselves. Never accept model-licence terms on
 the user's behalf.
+
+Only spark2 has the `diarize` and `audio-to-vtt` environments; run Spark jobs
+one after another there. Detach remote jobs fully (`ssh -f`, all three streams
+redirected) and retry CUDA once after an OOM before falling back.
+
+**Raw audio, edited transcript:** diarize the raw audio, get word timestamps
+with `audio-to-vtt/spark/words_remote.py` on spark2, then run
+`python3 "$SKILL_DIR/project_turns.py" --words … --vtt "$BEST_VTT" --turns
+<raw turns> --output "$RUN/turns.json"`. The join then runs unchanged. Report the
+unlabelled-cue count.
 
 If only Descript turns are available, they can be the primary acoustic source,
 which makes this a single-source run (see Inputs and scope). Do not reuse their
@@ -145,6 +165,12 @@ Report it with its denominator (mapped/all words) and the largest single
 disagreement. Accepting it never approves relabelling the disagreeing cues:
 they stay flagged `[?]` unless ruled.
 
+When the GM (or anyone) splits across several diarization clusters, the
+headline leaves them out: that row has no qualifying mapping, so the GM's words
+are dropped from agreement and no GM cue gets `[?]`. Two players can also end up
+merged in the bin the split took. After the mapping is approved, compute
+agreement by name and give the GM the full list of disagreeing cues.
+
 **GM checkpoint:** confirm the agreement and speech split before using them to
 name voices. Present missing corroboration or suspicious patterns explicitly.
 An existing acceptance of these exact results need not be requested again.
@@ -176,7 +202,8 @@ changes or explicitly accept the measured unresolved disagreement.
 
 A `Room (not at table)` label, or any other voice named from the second
 clustering with `--md-label`, must be GM-confirmed before `--md-label` applies
-it.
+it. That voice can be a player pyannote merged into someone else's cluster;
+check every profile name against the roster first.
 
 **GM checkpoint:** obtain the cluster-to-player mapping or exact audit rulings
 before writing real names. Ask in Codex chat; use an available clarification

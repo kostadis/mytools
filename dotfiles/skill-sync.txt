@@ -13,6 +13,7 @@ speaker-attribution-text/scripts/attribution.py
 speaker-attribution/descript_turns.py
 speaker-attribution/diarize_label.py
 speaker-attribution/name_clusters.py
+speaker-attribution/project_turns.py
 speaker-attribution/references/acoustic-workflow.md
 speaker-attribution/references/identity-review.md
 speaker-attribution/references/provenance.md

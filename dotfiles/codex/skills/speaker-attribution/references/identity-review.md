@@ -26,7 +26,7 @@ never equate a known PC owner with an acoustic cluster ID.
 
 ## Strong clues are put to the GM, never auto-decided
 
-Four signals have been right often enough to matter and wrong-shaped often
+These signals have been right often enough to matter and wrong-shaped often
 enough to need a person. For each, state the clue, its strength and the
 incident behind it, then ask. Never auto-select a voice, discard a transcript
 or re-cluster on one of these alone.
@@ -37,6 +37,8 @@ or re-cluster on one of these alone.
 | identical per-file turn tallies | one file derives from the other | a coincidence: never observed, but not excluded | Phandalin ch08 (provenance.md) |
 | a cluster goes quiet across a typed chat absence | that cluster is the absent person | a quiet player who never left; a typed account label | Gary, Phandalin ch02 (below) |
 | two PC names land on one cluster | one person ran both PCs that session | shared or per-scene control | Brewbarry/Valphine (below) |
+| a voice-profile name is not on the roster, or a rostered player's profile is nearly empty | the profile is mislabelled and holds a real player | a genuine room voice | `<non-player>` = Mike, OOTA ch02 (below) |
+| one cluster's lines use two PCs' abilities | two players merged in one cluster | one player covering another's PC | Zalthir's fire and Daz's Shape Water, OOTA ch02 (below) |
 
 ## Anonymous clusters
 
@@ -177,6 +179,29 @@ naming anonymous clusters to **auditing an existing name→voice mapping** again
 an independent one. Everything upstream is unchanged: still diarize, still
 cross-validate. Keep the named source unaltered.
 
+**A profile's name can be wrong in a way no bijection shows: it can name
+someone who is not a participant at all.** Check every profile name against the
+roster before reading the matrix. *Evidence — OOTA ch02:* Descript's profiles
+were `Kostadis`, `ben`, `joe`, `gabe`, `mike`, and one named for a member of the
+GM's household who is not a player (shown here as `<non-player>`). The GM said
+so, and a first reading took `<non-player>` for a
+room voice. The profile's lines said otherwise:
+
+```
+[00:00:00] Kostadis: Hey, Mike. hear me?          [00:00:01] <non-player>: I can hear
+[00:04:12] <non-player>: Ben, I don't know if it's just me but, the volume … on your mic seems lower
+[00:07:27] <non-player>: Okay, But I can, I can mess with water ...
+[00:23:46] <non-player>: perception check?      (the GM: "And now we're with Daz. … Roll a perception check")
+[00:30:24] <non-player>: … and then I could do shape water and cause the spit to freeze
+```
+
+The profile answers Mike's name, comments on another player's Zoom microphone,
+rolls during Daz's spotlight, and casts Shape Water, which is on Daz's sheet and
+no other PC's. The GM ruled `<non-player>` = Mike. Descript's own `mike` profile held
+37 words. **Read the lines against the PC sheets; the sheet decides what a line
+can mean.** A room voice talks to the GM about the room. A player talks about
+their character's abilities.
+
 A clean bijection at the usual agreement band means the *mapping* is right and
 the residual is boundary noise:
 
@@ -190,8 +215,11 @@ SPEAKER_02 ↔ gary      81%      11.1%             11.9%
 Two things make this trustworthy rather than circular: the shares agree as well
 as the labels, and each row has exactly one dominant column. A row that splits
 across two columns is a merged or swapped profile, a much worse problem than a
-few misplaced turns. A clean mapping can still contain individual boundary
-errors.
+few misplaced turns. It can equally be one person's **registers** (a GM's
+narration voice), and then the row is fine and the columns merge under one name.
+Read the lines to tell which. A column holding two rows is the reverse: two
+people pyannote could not separate (acoustic-workflow.md, *A GM's registers*). A
+clean mapping can still contain individual boundary errors.
 
 What the GM needs is **not** a relabelled VTT but a **disagreement queue**,
 ranked by words at stake. Apply only a **GM-confirmed** cluster-to-player
@@ -286,7 +314,10 @@ Check, and report:
 - timestamps and cue identifiers;
 - spoken numbers, crosstalk, unresolved `UNKNOWN` labels and `[?]` markers
   preserved;
-- no original file changed (re-hash the inputs).
+- no original file changed (re-hash the inputs);
+- when anyone spans several diarization clusters, the name-level disagreement
+  count against the second clustering, since the file's `[?]` flags miss those
+  cues (acoustic-workflow.md, *When one person spans several clusters*).
 
 ```bash
 python3 - "$SKILL_DIR" "$BEST_VTT" "$SESSION_DIR/<stem>.speakers.vtt" "<approved labels, comma-separated>" [limit-seconds] <<'PY'

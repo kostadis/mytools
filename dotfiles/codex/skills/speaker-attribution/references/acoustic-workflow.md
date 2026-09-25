@@ -17,6 +17,13 @@ Check the helper, host, environment and available resources before launching,
 and do not launch remote work just to inspect this skill. Use the configured
 host (historically `spark2`), not an inferred IP.
 
+**Only spark2 has the Python environments.** `~/.venvs/diarize` (pyannote) and
+`~/.venvs/audio-to-vtt` (faster-whisper, a CUDA ctranslate2 build from source)
+exist on spark2 and not on spark1, which has no `~/.venvs` at all (checked
+2026-09-25). Having two boxes does not give two diarization hosts. Run the
+Spark jobs one after another on spark2 rather than building a second
+environment mid-task.
+
 **Resolve the remote home once and build absolute paths from it.**
 
 ```bash
@@ -96,15 +103,34 @@ people. Extra NPC voices do not add participants, and two people can voice an
 entire party. An unknown room voice will still be forced into one of the
 requested bins (see "Only the second clustering can see an unbudgeted voice").
 
+**A GM's registers can use up the bins meant for players.** `num_speakers`
+equal to the number of people is the default, not a guarantee. A GM who switches
+between conversation, read-aloud boxed text and NPC voices can take two or three
+bins, and then two players share one. *Evidence — OOTA ch02, five people:*
+
+| `num_speakers` | GM | Ben | Joe | Gabe + Mike |
+|---|---|---|---|---|
+| 5 | 2 clusters (conversation 65% / narration 32% of the GM's words) | 94% | 87% | **one cluster** |
+| 6 (GM-approved re-run) | 3 clusters (47 / 39 / 12%) | 93% | 88% | **still one cluster** |
+
+The sixth bin went to another GM register, not to the merged players. Adding
+bins does not reliably split two similar remote voices. Descript did separate
+them, under a wrongly named profile (identity-review.md), so the fix was
+`--md-label` (below), not more bins. Read a merged cluster's lines against the
+PC sheets: the tell was one cluster both breathing fire as Zalthir and casting
+Shape Water, a spell on Daz's sheet only.
+
 Timing: 93 minutes of audio on a GB10 took ~4 minutes wall clock, almost all of
 it the embedding pass.
 
 ### A busy GPU
 
 **A GPU that looks busy may not be free, and one that looks full may still
-work.** Both Sparks run one tensor-parallel vLLM (TP0 on .147, TP1 on .121)
-holding ~105 GB of 121 GB each, and `nvidia-smi` truncates that to `10528...` in
-the process table, which reads as 10 GB. Check `free -g` and
+work.** Each Spark runs a vLLM holding ~100–105 GB of 121 GB (the layout
+changes: one tensor-parallel model across both boxes until 2026-09-10, one
+single-box model per box since; `/spark-status` has the current state), and
+`nvidia-smi` can truncate that to `10528...` in the process table, which reads
+as 10 GB. Check `free -g` and
 `nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv`.
 
 Expect pyannote to OOM on `pipeline.to("cuda")` *after* it has decoded the
@@ -116,8 +142,12 @@ of audio in 4 minutes wall clock, no OOM. The failure is fast and cheap (at
 model load, right after the decode), so trying costs a couple of minutes
 against 30–60+ minutes on CPU or losing the second clustering entirely. Grep the
 log for `running on cuda` to confirm; fall back only once it actually throws.
-The no-GPU fallback is Descript turns (`descript_turns.py --turns`) or another
-already authorized backend.
+**After one OOM, retry CUDA once before falling back.** Free memory beside vLLM
+changes from minute to minute. *Evidence:* on 2026-09-25 spark2 showed ~13 GB
+available beside a 103,000 MiB `qwen38-flash`. `community-1` OOMed at
+`pipeline.to("cuda")`, and the same manifest ran on cuda a few minutes later,
+85 min of audio in ~4 min. The no-GPU fallback is Descript turns
+(`descript_turns.py --turns`) or another already authorized backend.
 
 **Never stop or shut down another GPU workload to make room.**
 
@@ -128,12 +158,66 @@ GM gets progress. **Never pipe a long background job through `tail`**: it
 buffers to completion, so there is no interim progress for the whole run. Quote
 remote shell paths properly; do not use `JSON.stringify` as shell escaping.
 
+**Detach the remote side completely**, or the local `ssh` stays open until the
+job ends. A remote `nohup … &` still holds the ssh channel while any of its
+standard streams is open. *Evidence:* two launches without redirection hung the
+local call until its 120 s timeout. This returns immediately:
+
+```bash
+ssh -f spark2 "cd $RW && nohup bash -c '<job> > job.log 2>&1; echo EXIT \$? >> job.log' \
+  </dev/null >/dev/null 2>&1 &"
+```
+
+Appending `EXIT <status>` to the log gives the local poll loop something to wait
+for (`until ssh spark2 'grep -q ^EXIT …/job.log'; do sleep 20; done`).
+
 ### Validate the returned turns
 
 Retrieve the turn envelope and validate it against the selected recording
 before joining: times finite, ordered, in range, end after start, and the
 requested people not collapsed into a single voice. `diarize_label.py` rejects
 empty turn lists and invalid intervals or blank speakers.
+
+## Raw audio, edited transcript
+
+When the transcripts are on an edited timeline and only the raw recording
+exists (provenance.md, *Edited-timeline transcripts*), diarize the **raw** audio
+as usual. Then move the turns onto the edited timeline **word by word** before
+the join. Shifting each constant-offset stretch by its offset is not precise
+enough. *Evidence:* OOTA ch02's ~124 cuts left 1–6 s of drift inside stretches
+that looked constant, which is longer than most cues.
+
+1. **Word timestamps for the raw audio.** On spark2, after the diarization job
+   (they share the GPU headroom), stage and run
+   `~/src/mytools/audio-to-vtt/spark/words_remote.py` in the `audio-to-vtt`
+   environment. It is a full-file faster-whisper `large-v3` pass with word
+   timestamps and VAD. Deploy it flat and re-copy it every run, like
+   `diarize_remote.py`. *Measured:* 85.3 min of audio in 213 s, 11,243 words.
+2. **Project.**
+
+   ```bash
+   python3 "$SKILL_DIR/project_turns.py" --words "$RUN/words_raw.json" \
+     --vtt "$BEST_VTT" --turns "$RUN/turns_raw.json" --output "$RUN/turns.json"
+   ```
+
+   It aligns the edited VTT's tokens to the raw words (exact runs of 4 or more),
+   looks up the diarization speaker at each anchored word's own raw timestamp,
+   and gives each cue the duration-weighted majority. A cue with no anchor gets
+   a bounded local search between its anchored neighbours, or an interpolation
+   when no cut falls between them. Otherwise it gets no turn and ends up
+   `UNKNOWN`. Each turn records `how` (`word` / `local` / `interp`) and its vote
+   share.
+3. **Join as usual.** `$RUN/turns.json` is on the edited timeline, the same as
+   the Descript turns, so `diarize_label.py` and its cross-validation run
+   unchanged.
+
+*Evidence — OOTA ch02:* 6317 of 7795 edited words anchored exactly (81%). 950 of
+1036 cues were labelled (824 by word, 124 by local search, 2 by interpolation),
+and 86 were not. Of the 86 left unlabelled, most are one- to three-word
+backchannels. The check that the projection is sound is the cross-validation:
+Descript's independent labels agreed with the projected clusters at 87–99% for
+every cleanly separated player. A misaligned projection scatters that matrix.
+Report the unlabelled count to the GM. Those cues are unresolved, not errors.
 
 ## Join and cross-validate
 
@@ -213,6 +297,20 @@ Do not infer cross-validation from a second file's existence. With no
 comparable spans or no qualifying mapping, agreement is unavailable, and the
 script says so.
 
+**When one person spans several clusters, the headline leaves them out.** The
+mapping rule needs one diarization cluster to own 60% of a row, so a GM split
+across registers has no qualifying mapping. The GM's words drop out of the
+denominator, and **no `[?]` is set on any GM cue**, including cues where the
+second clustering says a player is speaking. *Evidence — OOTA ch02:* the script
+reported 93.5% over only 2050 of 7778 words. After the GM-approved mapping
+merged the three GM clusters, name-level agreement was about 96% over 7348
+words. 90 cues (296 words) disagreed by name, and only 42 of them carried `[?]`.
+In that case, compute agreement **by name, after the approved mapping**: join
+each labelled cue to the Descript turn with the most overlap, translate both
+through the mappings, and list every cue where the names differ. Report that
+count and the largest single cue next to the tool's figure, and give the GM the
+list. The unflagged ones are the ones nobody will look at otherwise.
+
 ### Clusters versus people
 
 *Evidence — Descript found six speakers for three people:*
@@ -268,6 +366,14 @@ from the second clustering's id, with the approved mapping saved as a JSON file:
 ```bash
 --md-label "$RUN/approved_md_labels.json"   # {"Speaker 6": "Room (not at table)", "Speaker 7": "Room (not at table)"}
 ```
+
+The voice can be a **player**, not only an outsider: someone pyannote merged
+into another player's cluster but Descript kept apart. *Evidence — OOTA ch02:*
+the diarization cluster labelled Gabe also held Mike. The GM approved
+`{"<non-player>": "Mike", "mike": "Mike"}` (Descript's mislabelled profiles), and 28
+cues were named Mike from the second clustering. State the limit in the header:
+wherever Descript itself put Mike under another name, the file inherits that
+error.
 
 - The override applies only where the named cluster holds at least
   `--md-label-coverage` of the cue (default 0.5; the script accepts 0.5–1.0),
