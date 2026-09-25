@@ -247,7 +247,10 @@ The override wins outright and drops the `[?]`: the disagreement that flag marks
 is the *reason* this cue is being named from the other tool, not something the
 reader can act on. It applies only where the named cluster holds ≥50% of the cue
 (`--md-label-coverage`), so short backchannels stay with whoever actually holds
-them — a coverage rule that hand-editing gets wrong. On ch02, relabelling every
+them — a coverage rule that hand-editing gets wrong. Coverage needs real spans,
+so `--md-label` requires `--md` to be Descript turns JSON (`descript_turns.py`);
+given a starts-only `.md` the script refuses rather than relabelling every cue in
+the cluster. On ch02, relabelling every
 cue the room voice merely *overlapped* claimed 32 cues; requiring it to be the
 dominant speaker gives 24, and the 8 it gives back are Kostadis answering the
 room person ("All right, we'll tell it to them in a little bit") rather than the
