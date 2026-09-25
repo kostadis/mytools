@@ -88,7 +88,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .save{background:var(--accent);color:var(--ground);border:1px solid var(--accent);
   border-radius:3px;padding:9px 20px;font-family:var(--mono);font-size:12.5px;letter-spacing:0;
   text-transform:uppercase;font-weight:500;transition:opacity .15s}
-.save[disabled]{opacity:.35;cursor:not-allowed}
+.save[disabled],.bulk[disabled]{opacity:.35;cursor:not-allowed}
 :root[data-theme="dark"] .save,:root:not([data-theme="light"]) .save{color:#0D1211}
 @media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .save{color:#FAFBFA}}
 
@@ -227,8 +227,11 @@ function render(){
   });
   h += '</span>';
   h += '<button class="bulk" id="allDiscuss">Discuss all ' + ITEMS.length + '</button>';
-  h += '<button class="bulk" id="copy">Copy output</button>';
-  h += '<button class="save" id="save">Save output</button>';
+  // Nothing to export until the GM has marked or noted something, so an
+  // all-unmarked file can never pass for a review.
+  var any = Object.keys(state.decisions).length || Object.keys(state.notes).length;
+  h += '<button class="bulk" id="copy"' + (any ? '' : ' disabled') + '>Copy output</button>';
+  h += '<button class="save" id="save"' + (any ? '' : ' disabled') + '>Save output</button>';
   h += '</div>';
 
   h += '<div class="msg" id="msg" hidden></div>';
@@ -291,6 +294,9 @@ function wire(){
     n.addEventListener('input', function(){
       var id = n.getAttribute('data-note');
       if(n.value) state.notes[id] = n.value; else delete state.notes[id];
+      // No re-render here (it would steal focus), so update the export buttons directly.
+      var any = Object.keys(state.decisions).length || Object.keys(state.notes).length;
+      ['copy', 'save'].forEach(function(bid){ var b = document.getElementById(bid); if(b) b.disabled = !any; });
     });
   });
 

@@ -25,6 +25,7 @@ import html
 import json
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 FONTS = ("https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,800;1,400"
@@ -148,7 +149,16 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .foot code{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
 .foot .applied{margin:0 0 14px}
 
-@media (max-width:600px){.wrap{padding:0 16px 80px}.item-head{flex-direction:column;gap:4px}}
+.search{width:min(260px,100%);height:37px;padding:0 10px;border:1px solid var(--rule);border-radius:3px;
+  background:var(--surface);color:var(--ink);font-family:var(--sans);font-size:13px}
+.search:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
+.filters{display:flex;gap:5px;flex-wrap:wrap}
+.filter{height:37px;padding:0 10px;border:1px solid var(--rule);border-radius:3px;background:transparent;
+  color:var(--ink-2);font-family:var(--mono);font-size:11px;text-transform:uppercase}
+.filter[aria-pressed="true"]{background:var(--surface-2);border-color:var(--ink-3);color:var(--ink)}
+.none{color:var(--ink-3);font-size:14px;padding:20px 0}
+@media (max-width:600px){.wrap{padding:0 16px 80px}.item-head{flex-direction:column;gap:4px}
+  .search{width:100%}.filters{width:100%}.filter{flex:1 1 30%;min-width:0}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 """
 
@@ -178,6 +188,8 @@ if(!state.notes) state.notes = {};
 
 var dirty = false;
 var readOnly = false;
+// View-only controls. Kept out of `state`, so they are never saved with the rulings.
+var ui = {filter: 'all', search: ''};
 
 function counts(){
   var c = {approve:0,reject:0,discuss:0};
@@ -187,6 +199,13 @@ function counts(){
 
 function render(){
   var c = counts(), done = c.approve + c.reject + c.discuss;
+  var query = ui.search.toLowerCase();
+  var visible = ITEMS.filter(function(it){
+    var choice = state.decisions[it.id] || '';
+    var filterMatch = ui.filter === 'all' || (ui.filter === 'unmarked' ? !choice : choice === ui.filter);
+    var searchMatch = !query || [it.id, it.t, it.y, it.n, it.ev || ''].join(' ').toLowerCase().indexOf(query) !== -1;
+    return filterMatch && searchMatch;
+  });
   var h = '';
 
   h += '<div class="wrap">';
@@ -204,6 +223,12 @@ function render(){
   if(c.discuss) h += '<span class="chip d">' + c.discuss + ' discuss</span>';
   h += '</span>';
   h += '<span class="spacer"></span>';
+  h += '<input class="search" id="search" type="search" placeholder="Search" value="' + esc(ui.search) + '">';
+  h += '<span class="filters">';
+  [['all','All'],['unmarked','Unmarked'],['approve','Approved'],['reject','Rejected'],['discuss','Discuss']].forEach(function(pair){
+    h += '<button class="filter" data-filter="' + pair[0] + '" aria-pressed="' + (ui.filter === pair[0]) + '">' + pair[1] + '</button>';
+  });
+  h += '</span>';
   h += '<button class="bulk" id="allDiscuss">Discuss all ' + ITEMS.length + '</button>';
   h += '<button class="save" id="save"' + (dirty && !readOnly ? '' : ' disabled') + '>' +
        (readOnly ? 'Read only' : 'Save decisions') + '</button>';
@@ -212,7 +237,9 @@ function render(){
   h += '<div class="msg" id="msg" hidden></div>';
 
   h += '<div class="items">';
-  ITEMS.forEach(function(it, i){
+  if(!visible.length) h += '<p class="none">No items match this search or filter.</p>';
+  visible.forEach(function(it){
+    var i = ITEMS.indexOf(it);
     var d = state.decisions[it.id] || '';
     h += '<div class="item"' + (d ? ' data-choice="' + d + '"' : '') + '>';
     h += '<div class="item-head"><span class="num">' + (i+1 < 10 ? '0' : '') + (i+1) + '</span>';
@@ -254,6 +281,16 @@ function flash(text, warn){
 }
 
 function wire(){
+  var search = document.getElementById('search');
+  if(search) search.addEventListener('input', function(){
+    ui.search = search.value;
+    render();
+    var next = document.getElementById('search');
+    if(next){ next.focus(); next.setSelectionRange(next.value.length, next.value.length); }
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-filter]'), function(b){
+    b.addEventListener('click', function(){ ui.filter = b.getAttribute('data-filter'); render(); });
+  });
   Array.prototype.forEach.call(document.querySelectorAll('.ch'), function(b){
     b.addEventListener('click', function(){
       var id = b.getAttribute('data-item'), k = b.getAttribute('data-choice');
@@ -392,6 +429,8 @@ def validate(spec: dict) -> list[str]:
             if iid in seen:
                 errs.append(f"duplicate item id {iid!r} - decisions are keyed by id, so ids must be unique")
             seen.add(iid)
+    if spec.get("reviewId") and not re.fullmatch(r"[A-Za-z0-9_.:@-]{1,128}", str(spec["reviewId"])):
+        errs.append("'reviewId' must be 1-128 chars of [A-Za-z0-9_.:@-]")
     pre = spec.get("state") or {}
     if pre.get("decisions") or pre.get("notes") or pre.get("savedAt"):
         errs.append("'state' must not pre-fill decisions, notes or savedAt - a page always "
@@ -414,7 +453,10 @@ def build(spec: dict) -> str:
             "Check the item text for a literal closing script tag."
         )
 
-    state = {"decisions": {}, "notes": {}, "savedAt": None}
+    review_id = spec.get("reviewId") or "{}@{}".format(
+        re.sub(r"[^A-Za-z0-9_.:-]+", "-", spec["title"]).strip("-")[:80],
+        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    state = {"decisions": {}, "notes": {}, "savedAt": None, "reviewId": review_id}
     return (PAGE
             .replace("__TITLE_TEXT__", html.escape(spec["title"]))
             .replace("__FONTS_TEXT__", FONTS)

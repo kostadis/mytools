@@ -94,9 +94,24 @@ gesture, never when the page loads or renders, so a JSON without it is not a
 ruling. Before treating a second export in the same run as new rulings, check
 its `savedAt` is newer than the one already processed.
 
+**Copy output** and **Save output** stay disabled until the GM has marked or
+noted at least one item, so an all-unmarked export can never pass for a review.
+
 The page keeps no browser storage. It always opens from the builder's state,
 so a re-review never starts with a previous run's marks already ticked, and
 reloading a page mid-review loses unsaved marks. Discussed items return to chat as one grouped pass with notes.
+
+## File names when a run publishes more than one page
+
+A run that publishes one page uses plain names: `review_items.json`,
+`review.html`, `decisions.json`. A run that publishes more than one page —
+`staged-consistency`, one page per stage — gives **each page its own items,
+page and decisions files**: `review_items_stage<N>.json`, `review_stage<N>.html`,
+`decisions_stage<N>.json`. Reusing one `review_items.json` overwrites the earlier
+page's cards, and those cards are the only record of the question the GM was
+actually asked; the applied diffs and the decisions cannot reconstruct them.
+Give each page its own `reviewId` too (e.g. `…:stage-1`), so `read_decisions.py
+--items` can tell the pages apart.
 
 ## Rules
 
@@ -107,3 +122,21 @@ reloading a page mid-review loses unsaved marks. Discussed items return to chat 
 - One page covers one skill and one run. `staged-consistency` uses one page per stage.
 - The page existing, being opened, or having a newer mtime is never approval.
 - Only pasted or saved decision JSON authorizes follow-up work.
+
+## Testing without a browser
+
+```bash
+python build_review.py --in fixture.json --out page.html      # builds; no export yet
+python read_decisions.py --in never.json                       # {"decisions":{}} -> exit 1: no savedAt
+# Simulate the GM's export by hand, then validate it against the items file:
+cat > export.json <<'JSON'
+{"schemaVersion": 1, "reviewId": "<fixture reviewId>", "savedAt": "2026-01-01 00:00 UTC",
+ "decisions": {"c1": "approve"}, "notes": {}, "unmarked": ["c2"]}
+JSON
+python read_decisions.py --in export.json --items fixture.json   # exit 0
+```
+
+It must also exit 2 for a note on an id the fixture never asked about, an id
+both decided and unmarked, and an `--items` file whose ids differ (a stale
+export). A fixture whose `state` pre-fills `decisions`, `notes` or `savedAt`
+must be refused by the builder.

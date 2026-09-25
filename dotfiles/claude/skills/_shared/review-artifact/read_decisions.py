@@ -112,6 +112,10 @@ def main() -> int:
         raise SystemExit(2)
     if args.items:
         spec = json.loads(args.items.read_text(encoding="utf-8"))
+        if spec.get("reviewId") and spec["reviewId"] != state.get("reviewId"):
+            print(f"error: this page's reviewId {state.get('reviewId')!r} is not "
+                  f"--items' {spec['reviewId']!r}. Is it a page from another run?", file=sys.stderr)
+            raise SystemExit(2)
         expected = {it["id"] for it in spec.get("items", [])}
         if expected != known:
             print("error: this page was not built from --items "
@@ -121,6 +125,8 @@ def main() -> int:
 
     tally = {v: sum(1 for x in decisions.values() if x == v) for v in sorted(VALID)}
     out = {
+        "schemaVersion": 1,
+        "reviewId": state.get("reviewId"),
         "savedAt": saved_at,
         "decided": len(decisions),
         "tally": tally,
