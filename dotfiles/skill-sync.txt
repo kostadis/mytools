@@ -2,18 +2,24 @@
 # claude/skills/. Checked by check-skill-sync.sh. One path per line, relative
 # to the skills directory. Files that legitimately differ today (open
 # convergence items) are NOT listed; add one here once the two copies agree.
-dialogue-edit/scripts/review_edits.py
 dialogue-edit/references/editorial-guide.md
+dialogue-edit/scripts/review_edits.py
 no-mech/apply_cut.py
 no-mech/scan_quotes.py
 remove-recap/find_recap.py
 remove-recap/recap_unique.py
+speaker-attribution-text/references/evidence.md
+speaker-attribution-text/scripts/attribution.py
 speaker-attribution/name_clusters.py
 speaker-attribution/transcript_provenance.py
-speaker-attribution-text/scripts/attribution.py
-speaker-attribution-text/references/evidence.md
+staged-consistency/verify_quotes.py
 vtt-spell-pass/add_to_glossary.py
+vtt-spell-pass/apply_replacements.py
+vtt-spell-pass/cluster_unknowns.py
 vtt-spell-pass/dmetaphone.py
+vtt-spell-pass/find_unknowns.py
+vtt-spell-pass/lint_glossary.py
+vtt-spell-pass/prepare_input.py
 vtt-spell-pass/sibling_context.py
 vtt-spell-pass/state.py
 vtt-spell-pass/zoom_context.py

@@ -38,8 +38,9 @@ partial output.
 
 This skill owns sequencing: which artifact is checked, in what order, and where
 the human gates occur. The `consistency-check` skill owns the check method,
-including config resolution, prep selection, context, VTT adjudication, triage,
-and the sources-and-rulings manifest. Run that full procedure at every stage.
+including config resolution, prep selection, context, VTT adjudication, the
+false-positive filters and canon-judgment rule behind the severity table, and
+the sources-and-rulings manifest. Run that full procedure at every stage.
 When the two skills differ on method, `consistency-check` wins; this skill
 overrides only the sequencing and stage-level manifest granularity described
 below.
@@ -86,19 +87,51 @@ spending a model call:
 
 ```bash
 SESSION=<session-dir>
-ls "$SESSION"/gm-assist-update.md 2>/dev/null
-ls "$SESSION"/gm-assist.md 2>/dev/null
-ls "$SESSION"/session-summary.md 2>/dev/null
-ls "$SESSION"/scene_extractions_new/0*.md 2>/dev/null
+ls "$SESSION"/gm-assist-update.md "$SESSION"/gm-assist.md 2>/dev/null
+ls "$SESSION"/session-summary.md "$SESSION"/session_summary.md 2>/dev/null
+ls "$SESSION"/scene_extractions{,_new}/0*.md 2>/dev/null | grep -v ".prev\|.reviewed\|.scaffold"
 ls "$SESSION"/narration/enhanced_sections.md 2>/dev/null
 ls "$SESSION"/narration/*.md 2>/dev/null
+ls -t "$SESSION"                                     # input mtimes
+cat "$SESSION"/.cg/activity.jsonl 2>/dev/null         # stage, rc, real input/output paths
+ls "$SESSION"/consistency_report_stage*.md 2>/dev/null
+cat "$SESSION"/consistency_*stage*.sources.yaml 2>/dev/null   # prior rulings
+ls "$SESSION"/logs/*_enhance_summary.md 2>/dev/null
 ```
 
-Exclude `.prev`, `.reviewed`, and `.scaffold` scene files. Also inventory
-transcripts and prior `*.sources.yaml` manifests. Prefer the cleanest VTT for
+Exclude `.prev`, `.reviewed`, and `.scaffold` scene files.
+
+**Filenames vary.** Do not call a stage missing from one failed `ls`; read the
+directory listing. A GMAssistant export is the Stage 0 source under its own name
+(`session_<date>_session_<date>.md`), the summary may be `session_summary.md`,
+and scenes live in `scene_extractions/` or `scene_extractions_new/`. Use the
+real names everywhere below where this skill writes the usual ones.
+
+**Check input mtimes before anything else.** They show whether stage N was
+generated from corrected stage N-1 input or from the pre-review version; if the
+extract ran before Stage 1 fixes landed, this run is a redo, and the opening
+message says so. `.cg/activity.jsonl` names which file fed which; confirm that
+mapping with the user before checking anything.
+
+Also inventory transcripts and `zoom-summary.md`. Prefer the cleanest VTT for
 wording and a speaker-labelled transcript for attribution. Compare its distinct
 speakers with `docs/party.md`; a missing player often means another player ran
-that PC and attribution needs extra scrutiny. Prior manifests are hypotheses and
+that PC and attribution needs extra scrutiny. How to weigh each transcript and
+the zoom summary, attribution, retracted slips, and rules editions are method:
+they live in `consistency-check`, not here.
+
+**Read prior rulings before presenting any finding.** For each prior stage, the
+`.sources.yaml` (`consistency_stage<N>_*` or the older
+`consistency_report_stage<N>_*`) holds `resolution.gm_rulings_this_run`,
+`resolution.applied`, and `resolution.open_items`. Search them for each
+finding's subject. A finding with a prior ruling is not a fresh question: quote
+the ruling on its row or card, say that approving reverses it, and never re-ask
+it as new. If the ruling contradicts what the documents now say, present it as an
+open conflict with both sides, not as a finding. Example: OOTA Ch 65 re-asked a
+damage question the GM had ruled on earlier that day, and the GM reversed a
+correct ruling without seeing it. If a `consistency_report_stage*.md` exists,
+ask whether to re-check that stage or take it as settled; if settled, its
+rulings become the propagation checklist for step 8. Prior manifests are otherwise hypotheses and
 history, not proof: re-verify any ruling touched by the current findings.
 
 Tell the user exactly which stages and transcripts were found before continuing.
@@ -154,14 +187,39 @@ standard context file that is not auto-loaded: `docs/party.md`,
 Reuse the identical resolved list at each stage; the registry remains present
 through CampaignGenerator's automatic canonical rendering.
 
+### 2b. Verbatim Sweep
+
+Before the model check on every prose document, run the deterministic sweep for
+inline `"…"` quotes, which `sd_verify_quotes` does not check (it reads only
+`> "…"` blockquotes):
+
+```bash
+python3 ~/.codex/skills/staged-consistency/verify_quotes.py \
+  --doc "$SESSION"/<artifact>.md --vtt "$SESSION"/<transcript>.vtt
+```
+
+It prints each quoted span that is not contiguous in the transcript. Each hit is
+a lead to check in the transcript, not a finding; stutter-smoothing produces
+false positives. It shows whether the words were said, not who said them. Do not
+replace it with `grep` over the raw VTT, which misses every quote that crosses a
+cue boundary.
+
 ### 3. Stage 0: gm-assist
 
 If `gm-assist-update.md` exists, ask whether to check that instead of
 `gm-assist.md`. The common convention is that `gm-assist.md` is preserved and
-`gm-assist-update.md` is the corrected first-pass artifact.
+`gm-assist-update.md` is the corrected first-pass artifact. A GMAssistant export
+under its own filename is checked under that name. The file chosen here is the
+**Stage 0 source** for the rest of the run.
 
 Run the `consistency-check` procedure against the chosen file with the selected
 prep and standard context.
+
+Fix gm-assist before enhancing, never after. It is the spec `enhance_summary`
+renders from, so a Stage 0 fix cannot recur at Stage 1. Example: on OOTA Ch 48,
+Stage 0 found 12 issues, then Stage 1 found only 6 on a summary three times
+longer. If the file has already been enhanced from, Stage 0 is not a first pass: say
+so in the manifest, or its finding count will read as a clean result.
 
 After the report:
 - Present a severity-ranked table.
@@ -172,9 +230,11 @@ After the report:
 ### 4. Stage 1: session-summary
 
 Run the `consistency-check` procedure against `session-summary.md`. Pass the
-selected Stage 0 source (`gm-assist-update.md` or `gm-assist.md`) as additional
-context: the enhanced summary was built from that recap plus the VTT, so its
-differences are the material under test.
+Stage 0 source that was actually checked in step 3 (`gm-assist.md`,
+`gm-assist-update.md`, or the GMAssistant export under its real filename) as
+additional context, never `gm-assist.md` by default. The enhanced summary was
+built from that recap plus the VTT, so its differences are the material under
+test.
 
 Run deterministic quote verification first, using the exact VTT that generated
 the artifact:
@@ -198,7 +258,7 @@ Review `near` as well as `unverified`, because `near` means the quote was edited
 
 Before adjudicating any model finding, use `grep -nF` with a distinctive excerpt
 to confirm its quoted target text occurs in `session-summary.md`. A miss usually
-means the checker quoted the near-paraphrase source recap while naming the
+means the checker quoted the near-paraphrase Stage 0 source while naming the
 summary as the location. Do not reintroduce an error that the enhancement pass
 already removed.
 
@@ -215,20 +275,23 @@ Apply only approved fixes before moving to stage 2.
 
 ### 5. Stage 2: Scene Extractions
 
-The call shape depends on the review mode chosen in step 1:
+`<scene-dir>` below is `scene_extractions_new/` or `scene_extractions/`,
+whichever this session has (step 0). The call shape depends on the review mode
+chosen in step 1:
 
 - **Interactive review:** run the `consistency-check` procedure for each
-  `scene_extractions_new/0*.md` file in scene order. After each scene, ask
-  whether to continue or revisit before advancing.
-- **Batch review:** enumerate every selected `scene_extractions_new/0*.md`
-  path explicitly in scene order and pass the complete ordered path list to
-  one CampaignGenerator `check_consistency` invocation. This is a grouped
-  document audit: common context is transmitted once, and the CLI requires an
-  explicit result section for every scene plus a cross-scene section. Do not
-  emulate grouped mode by running one command per scene and concatenating the
-  reports locally.
+  `<scene-dir>/0*.md` file in scene order. After each scene, ask whether to
+  continue or revisit before advancing.
+- **Batch review:** enumerate every selected `<scene-dir>/0*.md` path
+  explicitly in scene order and pass the complete ordered path list to one
+  CampaignGenerator `check_consistency` invocation. This is a grouped document
+  audit: common context is transmitted once, and the CLI requires an explicit
+  result section for every scene plus a cross-scene section. Do not emulate
+  grouped mode by running one command per scene and concatenating the reports
+  locally.
 
-In both modes, exclude `.prev`, `.reviewed`, and `.scaffold` files. Never
+In both modes, exclude `.prev`, `.reviewed`, and `.scaffold` files. Enumerate
+the scenes explicitly; never let a shell glob decide the list, and never
 represent an empty scene selection as "all".
 
 Before either call shape, run the same deterministic verifier against the scene
@@ -237,22 +300,24 @@ directory, with the exact generation VTT and `--report-only`:
 ```bash
 python3 -m session_doc.sd_verify_quotes \
   --vtt <generation-vtt> \
-  --scene-extractions "$SESSION"/scene_extractions_new \
+  --scene-extractions "$SESSION"/<scene-dir> \
   --out "$SESSION"/quote_report_stage2.md \
   --report-only
 ```
 
-Read both the quote verdicts and `## Refused`. R1 means the summary and verbatim
-copies disagree and the transcript settles neither; R3 means a purportedly
-verbatim span contains an editorial insertion. Quote verification complements,
-but never replaces, manual VTT adjudication of wording and speaker attribution.
+Exit codes are as in Stage 1: `1` means review the unverified quotes or
+refusals, `2` means quote verification is degraded. Read both the quote verdicts
+and `## Refused`. R1 means the summary and verbatim copies disagree and the
+transcript settles neither; R3 means a purportedly verbatim span contains an
+editorial insertion. Quote verification complements, but never replaces, manual
+VTT adjudication of wording and speaker attribution.
 
 For grouped batch review, follow the ordinary `consistency-check` context and
 backend rules, but invoke the CLI once with every scene path before the flags:
 
 ```bash
 python3 <campaign-generator-repo>/session_doc/check_consistency.py \
-  <scene-01.md> <scene-02.md> ... \
+  "$SESSION"/<scene-dir>/<scene-01>.md "$SESSION"/<scene-dir>/<scene-02>.md ... \
   --config <campaign>/config/config.yaml \
   --backend codex-cli \
   --context <file1> <file2> ... \
@@ -260,37 +325,57 @@ python3 <campaign-generator-repo>/session_doc/check_consistency.py \
 ```
 
 Grouped mode is selected by passing more than one document; it is not a flag.
-Spell out the de-duplicated scene paths in order rather than relying on a shell
-glob. The input order keys the output sections and the manifest.
+The `...` is a placeholder for the remaining literal paths, not a glob. The
+input order keys the output sections and the manifest. The CLI rejects duplicate
+paths, so de-duplicate the list first.
 
-The grouped command is fail-closed. If it reports a setup, login, model,
-timeout, empty-result, context, or grouped-protocol failure:
+Size the output ceiling before a large batch. `check_consistency.py` reads
+`CG_CONSISTENCY_MAX_TOKENS` (default `32000`); set it for the run. However,
+`codex exec` has no output-token flag, so `--backend codex-cli` ignores it
+(CampaignGenerator #414). On this backend, output from a large batch that gets
+cut off fails the grouped protocol check and stops the run. Say that the ceiling
+was not enforced; do not assume it applied.
+
+The grouped command is fail-closed. If it reports any setup, login, model,
+timeout, empty-result, context, grouped-protocol, or validation failure:
 
 - stop Stage 2;
 - do not build or update the Stage 2 review page or sources manifest;
-- do not silently retry per scene, split the selection, or switch providers;
+- do not quietly retry per scene, split the batch, or switch backends or
+  providers. A changed call shape is a different run: do it only after telling
+  the user, and record it as that;
 - preserve any older report as historical output, not evidence that this run
-  succeeded.
+  succeeded. A failed run leaves the previous report untouched, so check its
+  timestamp.
 
-The grouped engine requires every scene-level finding to include exact target
-text that occurs in the scene assigned to that section. It also derives compact
-per-scene review anchors from exact wrong-form matches in supplied correction
-glossaries. Those anchors prevent long-batch recall loss but remain advisory:
-apply glossary exceptions and `DO NOT CORRECT` rulings, and never turn a match
-into an automatic edit. A missing or cross-attributed excerpt is a protocol
-failure; do not reconstruct or relocate the model's finding by hand to make the
-run appear valid.
+The grouped engine requires every scene-level finding to include a single-line
+**Target text** excerpt that occurs verbatim in the scene assigned to that
+section, and it rejects the run when one does not. Never hand-repair a rejected
+run: do not move a finding to the section where it seems to belong, trim an
+excerpt until it matches, or edit the report until it parses. Re-run instead.
+Cross-scene misattribution is the failure grouping introduces, and this check
+is what catches it.
+
+The engine also derives per-scene review anchors from exact wrong-form matches
+in the supplied correction glossaries. These anchors are attention aids, not
+rulings: apply glossary exceptions and `DO NOT CORRECT` rulings, and never turn
+a match into an automatic edit.
+
+Read and count the grouped report body yourself. Its shape is
+`# Grouped Consistency Report`, then one `## D01 — <path>` section per scene in
+the order passed, then `## Cross-document findings`; a clean scene is the
+literal word `CLEAN`. Count `**Location**` within each `## D` section and
+reconcile the per-scene totals with the command summary. Do not use a
+single-document heading count for grouped output. Review the cross-document
+section as new findings, not a recap. Peer scenes are not evidence for each
+other: two scenes agreeing on a name does not make it right, so never pick a
+winner by frequency.
 
 After a successful grouped run, write the Stage 2 sources manifest with the
 complete ordered `documents_checked` list plus the CLI telemetry (`model_calls`,
 `shared_context_chars`, `target_chars`, and `repeated_context_chars_avoided`).
 Adjudicate the grouped report against transcript and campaign evidence before
 building review cards; the model report remains advisory.
-
-Read the grouped report body yourself. Reconcile per-scene finding counts from
-each `## DNN` section with the command summary, and review the cross-document
-section as new findings rather than a recap. Do not use a single-document
-heading count for grouped output.
 
 This is the load-bearing stage because scene extractions contain quote blocks
 that narration may reuse literally. A fix made only in `session-summary.md` can
@@ -337,13 +422,33 @@ After all approved fixes, sweep for residual bad patterns across every stage
 artifact:
 
 ```bash
-grep -n "<bad pattern>" "$SESSION"/gm-assist.md "$SESSION"/gm-assist-update.md \
+grep -nF "<whole bad clause>" "$SESSION"/gm-assist.md "$SESSION"/gm-assist-update.md \
+  "$SESSION"/<stage-0 source, if named otherwise> \
   "$SESSION"/session-summary.md "$SESSION"/narration/enhanced_sections.md \
-  "$SESSION"/scene_extractions_new/0*.md 2>/dev/null
+  "$SESSION"/scene_extractions{,_new}/0*.md 2>/dev/null | grep -v ".prev\|.reviewed\|.scaffold"
 ```
 
-Ignore `.prev` and `.scaffold` matches. If a bad pattern remains in an unchecked
-or untouched file, surface it and ask whether to apply the corresponding fix.
+Use `grep -F` with a whole distinctive clause, never a short token. For example,
+`Mechanis` also matches `Mechanist`, so it reports a regression that never
+happened. If a bad pattern remains in an unchecked or untouched file, surface it
+and ask whether to apply the corresponding fix.
+
+**Upward propagation matters most.** The Stage 0 source is the pipeline's input:
+`enhance_summary` reads it, and a ruling applied only at Stage 1 is re-injected by
+the next run. When the sweep finds residue in the Stage 0 source, say that a
+rerun would undo the work, then ask the user to choose: edit it in place, write a
+`-update.md` alongside it, or accept the regression. If a prior run already
+edited that file, it is no longer a preserved original, and editing in place is
+the honest choice.
+
+A flag written into a regenerated file does not survive. Scene extractions are
+rebuilt, so a to-do or "needs a GM call" marker added there is lost on the next
+run. When a ruling creates future work, ask before filing it, then write the
+durable copy to `notes/issues/YYYYMMDD_slug.md` and reference it from the inline
+flag.
+
+Never edit `logs/*_enhance_summary.md`. It is the run log, and residue there is
+expected; name it as out of scope.
 
 Also survey grounding documents such as `world_state.md` and `party.md` before
 deciding the direction of propagation. They may already be correct while the
@@ -384,8 +489,17 @@ End with:
 - findings rejected, deferred, or unresolved
 - what deterministic quote verification and manual VTT review caught
 - whether prep was available
+- whether `zoom-summary.md` was available, with its scorecard: which findings it
+  caught and which it got wrong
 - propagation sweep result and merged carry-forward items
 - recommended next action
+
+If Stage 2 did not run, say that the per-scene verbatim layer was not exercised
+and that the step 2b sweep covered it only in part. Offer to write
+`consistency_report_stage<N>_<artifact>.md` beside each stage's `.sources.yaml`,
+matching any prior-stage reports in the session; step 0 of the next run reads
+them. Record `resolution.open_items` even when empty, and put anything a stage
+could not settle there rather than in prose.
 
 Likely next actions:
 - rerun `session_doc.py` from corrected upstream artifacts
@@ -411,21 +525,28 @@ For every stage:
    findings into this stage's one table.
 2. Apply only unambiguous mechanical corrections that need no ruling, and name
    their count and touched files in the review `footer`.
-3. Create `<session-dir>/staged_consistency_stage_<N>_review.json` using the
-   shared input schema. Every Critical, Moderate, or Minor judgement call gets
-   one item; reuse the table number as a stable id such as `s1-03`.
+3. Create `<session-dir>/staged_review/review_items_stage<N>.json` using the
+   shared input schema, with its own `reviewId` (e.g. `<chapter>:stage-<N>`).
+   Every Critical, Moderate, or Minor judgement call gets one item; reuse the
+   table number as a stable id such as `s1-03`. Per the contract's multi-page
+   rule, each stage has its own items, page and decisions files, so a later
+   stage never overwrites the question an earlier one asked.
 4. Render the page:
 
    ```bash
    REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-page"
    python "$REVIEW_PAGE/build_review.py" \
-     --in <session-dir>/staged_consistency_stage_<N>_review.json \
-     --out <session-dir>/staged_consistency_stage_<N>_review.html
+     --in  <session-dir>/staged_review/review_items_stage<N>.json \
+     --out <session-dir>/staged_review/review_stage<N>.html
    ```
 
 5. Give the user the HTML path and stop. Resume only when they paste the
    exported JSON or point to the downloaded file.
-6. Validate every returned id and verdict, apply the approved fixes, group all
+6. Save the export as `<session-dir>/staged_review/decisions_stage<N>.json` and
+   validate it: `python "$REVIEW_PAGE/read_decisions.py" --in
+   <session-dir>/staged_review/decisions_stage<N>.json --items
+   <session-dir>/staged_review/review_items_stage<N>.json`. It exits non-zero on
+   an unsaved, stale or foreign export. Then apply the approved fixes, group all
    discussed items with their notes into one chat pass, and carry unmarked ids
    forward as unresolved. Then advance to the next stage.
 
