@@ -236,5 +236,80 @@ class ReviewTests(unittest.TestCase):
         self.assertFalse((self.run / "applied").exists())
 
 
+    def second_scene(self):
+        """A second prepared scene run in the same session."""
+        draft2 = self.session / "narration" / "scene_02.md"
+        draft2.write_text("“Hold the line,” she says.\n")
+        source2 = self.session / "scene_extractions_smoothed" / "02.md"
+        source2.write_text("Speaker: “Hold the line,”\n")
+        proposals2 = self.session / "proposals2.json"
+        proposals2.write_text(json.dumps({"scene": "Second scene", "edits": [{
+            "id": "s2-line", "before": "Hold the line", "after": "Hold the line!", "scope": "dialogue",
+            "support": "supported", "reason": "Synthetic.", "evidence": [{"path": str(source2), "quote": "Hold the line"}]}]}))
+        run2 = self.session / "dialogue_edit" / "scene02-r1"
+        review.prepare(self.session, draft2, source2, [], proposals2, run2)
+        return run2
+
+    def make_session(self):
+        self.prepare()
+        run2 = self.second_scene()
+        # A fresh session directory that does not exist yet, as the docs use.
+        spec = self.session / "dialogue_edit" / "session-r1" / "review_page.json"
+        mapping = self.session / "dialogue_edit" / "session-r1" / "session_map.json"
+        result = review.session_page([self.run, run2], spec, mapping)
+        return run2, spec, mapping, result
+
+    def session_decisions(self, reviewId, choices, notes=None):
+        path = self.session / "session_decisions.json"
+        path.write_text(json.dumps({"schemaVersion": 1, "reviewId": reviewId, "savedAt": "synthetic test only",
+                                    "decisions": choices, "notes": notes or {}}))
+        return path
+
+    def test_session_page_split_and_apply_per_scene(self):
+        run2, spec, mapping, result = self.make_session()
+        page = json.loads(spec.read_text())
+        self.assertEqual(result["scenes"], 2)
+        self.assertEqual([i["id"] for i in page["items"]],
+                         ["s01:s1-copy", "s01:s1-question", "s01:s1-radio", "s02:s2-line"])
+        decided = self.session_decisions(result["reviewId"], {
+            "s01:s1-copy": "approve", "s01:s1-question": "reject", "s02:s2-line": "approve"},
+            {"s01:s1-radio": "leave for later"})
+        split = review.split_decisions(mapping, decided, self.session / "split")
+        by_scene = {r["scene"]: Path(r["decisions"]) for r in split["runs"]}
+        first = json.loads(by_scene["Test scene"].read_text())
+        self.assertEqual(first["decisions"], {"s1-copy": "approve", "s1-question": "reject"})
+        self.assertEqual(first["unmarked"], ["s1-radio"])
+        self.assertEqual(first["notes"], {"s1-radio": "leave for later"})
+        applied, _ = review.apply_review(self.run, by_scene["Test scene"], "r1", write=True)
+        self.assertEqual(applied["approved"], ["s1-copy"])
+        applied2, _ = review.apply_review(run2, by_scene["Second scene"], "r1", write=True)
+        self.assertEqual(applied2["approved"], ["s2-line"])
+        self.assert_inputs_unchanged()
+
+    def test_session_split_refuses_foreign_ids_and_other_sessions(self):
+        run2, spec, mapping, result = self.make_session()
+        with self.assertRaises(review.Refusal):
+            review.split_decisions(mapping, self.session_decisions(result["reviewId"], {"s03:x": "approve"}),
+                                   self.session / "a")
+        with self.assertRaises(review.Refusal):
+            review.split_decisions(mapping, self.session_decisions(result["reviewId"], {"s01:nope": "approve"}),
+                                   self.session / "b")
+        with self.assertRaises(review.Refusal):
+            review.split_decisions(mapping, self.session_decisions("dialogue-edit-session:other", {}),
+                                   self.session / "c")
+
+    def test_session_split_refuses_a_run_changed_after_the_page(self):
+        run2, spec, mapping, result = self.make_session()
+        (run2 / "candidate.md").write_text("tampered\n")
+        with self.assertRaises(review.Refusal):
+            review.split_decisions(mapping, self.session_decisions(result["reviewId"], {"s02:s2-line": "approve"}),
+                                   self.session / "d")
+
+    def test_fingerprint_covers_only_harness_neutral_files(self):
+        self.prepare()
+        record = review.read_json(self.run / "review.json")
+        self.assertEqual(sorted(record["payload"]["skill_sha256"]),
+                         ["references/editorial-guide.md", "scripts/review_edits.py"])
+
 if __name__ == "__main__":
     unittest.main()

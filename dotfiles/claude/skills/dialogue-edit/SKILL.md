@@ -6,6 +6,10 @@ tools: Read, Bash, Glob, Grep, Write, Edit, Artifact, WebFetch, AskUserQuestion
 
 # Dialogue Edit
 
+> **Ported from the Codex copy, which is canonical** (`dotfiles/codex/skills/dialogue-edit`).
+> Change it there first, then port. `scripts/` and `references/editorial-guide.md`
+> are kept byte-identical.
+
 Help the players recognize their own speech in readable narration. Use the
 surrounding scene to understand a line, then propose the smallest supported
 change. The reading pass does the editorial work; the GM decides; the helper
@@ -109,7 +113,9 @@ get that scene's input ruling before editing it. Missing narration means this
 skill is **NOT RUN** — it is not an instruction to call the narrator.
 
 Ask whether the GM wants **chat** or an **artifact** review for this run, unless
-they have already chosen. Both modes keep one scene's checkpoint at a time.
+they have already chosen. Chat rules one scene at a time. Artifact mode puts
+every prepared scene of the session on **one page**; each scene is still frozen,
+split out and applied separately afterwards.
 
 ## 2. Read the full scene; propose exact changes
 
@@ -149,10 +155,12 @@ In chat, show the exact proposals with evidence and wait for explicit rulings.
 Save those actual rulings in a decision file bound to the frozen review ID.
 Never manufacture an approval to satisfy the helper.
 
-In artifact mode, build the page from the prepared queue with the shared builder
-and publish it with `capabilities: {"artifact": {}}`, then **stop** — the save
+In artifact mode, prepare every selected scene, collect their frozen runs onto
+one session page (`review_edits.py session-page`), build it with the shared
+builder and publish it with `capabilities: {"artifact": {}}`, then **stop** — the save
 comes back as a notification or the GM's word, and is never polled for. Read it
-back with `WebFetch` and `read_decisions.py`. Full sequence in
+back with `WebFetch` and `read_decisions.py`, then `split-decisions` gives one
+decision file per scene for `apply`. Full sequence in
 [review-and-apply.md](references/review-and-apply.md); contract in
 `~/.claude/skills/_shared/review-artifact/CONTRACT.md`.
 

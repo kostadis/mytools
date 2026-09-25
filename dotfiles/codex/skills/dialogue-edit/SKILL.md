@@ -7,6 +7,10 @@ metadata:
 
 # Dialogue Edit
 
+> **This Codex copy is the canonical one.** The Claude copy
+> (`~/.claude/skills/dialogue-edit`) is ported from it; make changes here first.
+> `scripts/` and `references/editorial-guide.md` are kept byte-identical.
+
 Help the players recognize their own speech in readable narration. Use the
 surrounding scene to understand a line, then propose the smallest supported
 change. The reading pass does the editorial work; the GM decides; the helper
@@ -112,7 +116,9 @@ get that scene's input ruling before editing it. Missing narration means this
 skill is **NOT RUN**, not an instruction to call the narrator.
 
 Ask whether the GM wants **chat** or a **standalone review page** for this run,
-unless they already chose. Both modes retain one scene's checkpoint at a time.
+unless they already chose. Chat rules one scene at a time. Page mode puts every
+prepared scene of the session on **one page**; each scene is still frozen,
+split out and applied separately afterwards.
 
 ## 2. Read the full scene; propose exact changes
 
@@ -152,11 +158,14 @@ In chat, show the exact proposals with evidence and wait for explicit rulings.
 Save those actual rulings in a decision file bound to the frozen review ID.
 Never manufacture an approval to satisfy the helper.
 
-For page mode, read the sibling
-[shared review contract](../_shared/review-page/CONTRACT.md), then build the
-page from the prepared queue using the existing shared builder. Escape all
-transcript text (the helper does this). Give the GM the page path and wait for
-pasted output or the downloaded decision file; there is no save callback.
+For page mode, prepare every selected scene first, then build **one session
+page** from all of their frozen runs (`review_edits.py session-page`, see
+[review-and-apply.md](references/review-and-apply.md)) with the sibling
+[shared review contract](../_shared/review-page/CONTRACT.md)'s builder. Escape
+all transcript text (the helper does this). Give the GM the page path and wait
+for pasted output or the downloaded decision file; there is no save callback.
+Then `split-decisions` turns the session's rulings into one decision file per
+scene, and each scene is applied on its own.
 
 - **approve**: apply only the stated, supported replacement.
 - **reject**: retain original wording and record rejection.
