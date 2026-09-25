@@ -111,7 +111,9 @@ Publish that file with the `Artifact` tool using
 **`capabilities: {"artifact": {}}`** — without it the page cannot save and the
 GM silently gets the read-only fallback. This skill publishes **one page per
 scene run**, and each run owns its own `run-dir`, so the plain
-`review_page.json` name does not collide across scenes.
+`review_page.json` name does not collide across scenes. A further review round
+for the same scene gets a fresh page path (a new `run-dir`); **retain any
+already-returned decisions** from earlier rounds rather than asking them again.
 
 Then **stop**. The save comes back on its own — the `artifact-changed`
 notification, or the GM's word, whichever arrives first. Never poll for it.
