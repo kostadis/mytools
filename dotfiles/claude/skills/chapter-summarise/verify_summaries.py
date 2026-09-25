@@ -19,10 +19,11 @@ ratio >= 1.0, or a fabricated quote), so this can gate a loop.
 Usage:
   verify_summaries.py --campaign-dir DIR [--summaries-dir summaries/haiku]
                       [--chapters-glob 'docs/chapters/chapter_*.md']
-                      [--repo /home/kroussos/src/CampaignGenerator]
+                      [--repo <CampaignGenerator checkout>]
 """
 import argparse
 import difflib
+import os
 import re
 import sys
 import unicodedata
@@ -96,10 +97,16 @@ def main():
     ap.add_argument('--campaign-dir', required=True)
     ap.add_argument('--summaries-dir', default='summaries/haiku')
     ap.add_argument('--chapters-glob', default='docs/chapters/chapter_*.md')
-    ap.add_argument('--repo', default='/home/kroussos/src/CampaignGenerator',
-                    help='CampaignGenerator checkout, for campaignlib.textproc')
+    ap.add_argument('--repo', default=None,
+                    help='CampaignGenerator checkout, for campaignlib.textproc '
+                         '(default: $CAMPAIGNGENERATOR_DIR, ~/src/CampaignGenerator or ~/CampaignGenerator)')
     args = ap.parse_args()
 
+    if args.repo is None:
+        env = os.environ.get('CAMPAIGNGENERATOR_DIR')
+        candidates = [Path(env).expanduser()] if env else [
+            Path('~/src/CampaignGenerator').expanduser(), Path('~/CampaignGenerator').expanduser()]
+        args.repo = str(next((c for c in candidates if (c / 'campaignlib').is_dir()), candidates[0]))
     sys.path.insert(0, args.repo)
     try:
         from campaignlib.textproc import chunk_by_scenes

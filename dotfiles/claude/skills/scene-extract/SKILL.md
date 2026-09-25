@@ -111,7 +111,7 @@ Recommend the first for tables where the GM narrates sidekick actions in third p
 ### 7. Run
 
 ```bash
-/home/kroussos/.venvs/main/bin/scene_extract <vtt> \
+scene_extract <vtt> \                      # the installed console script; `which scene_extract`
   --summary <session-dir>/session-summary.md \
   --output-dir <session-dir>/scene_extractions \
   --backend claude-code \

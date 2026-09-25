@@ -22,12 +22,27 @@ import argparse
 import json
 import re
 import shutil
+import os
 import sys
 import time
 from pathlib import Path
 from datetime import datetime, timezone
 
-sys.path.insert(0, "/home/kroussos/src/CampaignGenerator")
+def campaigngenerator_dir() -> Path:
+    """The CampaignGenerator checkout: $CAMPAIGNGENERATOR_DIR, else the one of
+    ~/src/CampaignGenerator or ~/CampaignGenerator that exists. Fails loudly
+    rather than guessing, since the path differs across machines."""
+    env = os.environ.get("CAMPAIGNGENERATOR_DIR")
+    candidates = [Path(env).expanduser()] if env else [
+        Path("~/src/CampaignGenerator").expanduser(), Path("~/CampaignGenerator").expanduser()]
+    for c in candidates:
+        if (c / "campaignlib").is_dir():
+            return c
+    sys.exit(f"error: no CampaignGenerator checkout at {', '.join(map(str, candidates))}; "
+             "set CAMPAIGNGENERATOR_DIR")
+
+
+sys.path.insert(0, str(campaigngenerator_dir()))
 from campaignlib import make_client  # noqa: E402
 
 SIDECAR_RE = re.compile(r"^(.+)\.new_notes\.(\d+)\.md$")
