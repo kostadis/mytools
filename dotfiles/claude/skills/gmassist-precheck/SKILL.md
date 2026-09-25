@@ -10,6 +10,8 @@ Run the cheap pre-extraction pass: take a session's gm-assist + VTT, produce the
 
 This is an experimental pass. The user is trying it a few times to decide if it's worth keeping. Keep the workflow tight and don't over-elaborate.
 
+> **Superseded (2026-09-25):** `/staged-consistency` phase 0/1 is the pre-extraction check in the pipeline order (`~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`). Use this skill only as an ad-hoc one-shot; it is not a pipeline step.
+
 ## Workflow
 
 ### 1. Locate the session directory

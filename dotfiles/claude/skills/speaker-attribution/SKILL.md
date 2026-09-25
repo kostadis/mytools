@@ -40,14 +40,11 @@ supplies the Claude mechanics.
 cannot run; use `/speaker-attribution-text`, which infers labels from the
 conversation itself and marks every label as an inference.
 
-```
-audio + transcripts
-  → [THIS SKILL] provenance → diarize → cross-validate → name clusters
-      → /vtt-spell-pass      name garbles
-      → /session-doc-run     relabels to display names + the players.yaml override
-      → /scene-extract       inherits real speakers instead of a review queue
-      → /session-summary-consistency → /voice-smooth → narration
-```
+**Neighbours:** after any `/audio-to-vtt` or `/transcript-rebuild`; next is
+`/vtt-spell-pass` on the **unlabelled** tape (then re-apply this skill's
+approved mapping to the `.cleaned.vtt`), then `enhance_summary` and
+`/staged-consistency` phase 0/1. The whole order, and why, is in
+`~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md` — the single statement of it; this skill keeps no copy.
 
 The labels this skill writes are **short player names**; the session_doc
 pipeline's pre-flight wants `config/players.yaml` display names.

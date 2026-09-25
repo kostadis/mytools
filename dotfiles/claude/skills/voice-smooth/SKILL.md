@@ -19,6 +19,8 @@ VTT  (raw verbatim — IMMUTABLE, forever the record + the voice-file raw materi
   → /voice-critic (checks the finished narration against the voice spec)
 ```
 
+The full pipeline order is in `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`; the diagram above shows only the data layers this skill touches.
+
 **Inviolable rule: the verbatim is never mutated.** This skill only ever *writes* `scene_extractions_smoothed/`. It does **not** edit the VTT or `scene_extractions/`. Because the raw quotes live permanently in the VTT, the smoothed layer is a safe derived rendering — not a rewrite of a record.
 
 ## The optimization target flips here — this is the point of the layer

@@ -19,15 +19,10 @@ deterministic apply.
 **After `enhance_summary` and its human-verified consistency pass (Stage 0/1),
 and before `/scene-extract`.**
 
-```
-VTT -> /speaker-attribution
-   -> enhance_summary -> gm-assist.md + session-summary.md
-   -> /staged-consistency phase 0, phase 1      (scene structure now verified)
-   -> [ /remove-recap ]   <-- HERE
-   -> /scene-extract -> /staged-consistency phase 2 -> /voice-smooth
-   -> [ /no-mech ]
-   -> sd_plan -> sd_narrate -> /scrub -> assemble
-```
+**Neighbours:** after `/staged-consistency` phase 0/1 (the scene list is
+verified); next is `/scene-extract`. The whole order, and why, is in
+`~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md` —
+the single statement of it; this skill keeps no copy.
 
 **Not earlier:** removing a scene is a scope decision about the scene list, and
 Stage 0/1 can still move scene boundaries. Settle the list first.

@@ -10,6 +10,8 @@ Run the multi-stage consistency check pattern documented in `$CAMPAIGNS_ROOT/STA
 
 The point of this skill is to **catch verbatim transcription errors before they reach the narrator**. A single late-stage check misses the per-scene-quote layer, which is the layer that silently re-injects errors into every subsequent narration run. See `STAGED_CONSISTENCY_HOWTO.md` for the rationale.
 
+**Where this sits:** phase 0/1 run after `/vtt-spell-pass` and `enhance_summary`, before `/remove-recap` and `/scene-extract` (they supersede `/gmassist-precheck`); phase 2 after `/session-summary-consistency`; phase 3 on the final selected narration. Full order: `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
+
 ## This skill is an orchestrator, not a second implementation
 
 Every stage below runs the **full `/consistency-check` workflow**. That skill owns the method — context selection, the script's failure modes, VTT adjudication, the triage rules, the manifest. This skill owns only the *staging*: which artifact, in what order, with a human gate between each.
