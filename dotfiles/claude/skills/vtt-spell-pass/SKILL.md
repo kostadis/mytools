@@ -1013,6 +1013,12 @@ computes the same residual:
   GM question queue, applying the two checks no single agent can make: the
   corpus-wide lowercase gate (against `<batch-dir>/corpus_all.txt`) and
   cross-chapter conflicts for the same wrong form.
+- `batch/stage_c.py --campaign-dir <c> --scratch <s> --dry-run` applies the
+  glossary to every manifest target in scratch, before anything is written,
+  and reports chained rules, doubling artefacts the apply introduced, and any
+  file a second apply still changes (not idempotent). Exit 1 means it found
+  one of those. `--apply` is not implemented yet; Phase 5 still writes the
+  cleaned files.
 
 Run data (`manifest.json`, `known_flat.txt`, the per-chapter folders) stays in
 the campaign under `--batch-dir`, default `<campaign>/notes/spell_pass_batch/`.
