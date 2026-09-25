@@ -999,6 +999,25 @@ python ~/.claude/skills/vtt-spell-pass/state.py \
   processed <vtt-path>
 ```
 
+## Batch mode — a whole campaign's backlog (`batch/`)
+
+For many chapters at once, the deterministic half is scripted so every agent
+computes the same residual:
+
+- `batch/batch_scan.py --campaign-dir <c> --dir <chapter> --scratch <s> [--npcs-dir <d>]`
+  runs Phase 0, Phase 1 (apply then re-scan) and the sibling lookups for one
+  chapter, and writes `<batch-dir>/<chapter>/scan.json`.
+- An agent per chapter fills in judgments per `batch/AGENT_BRIEF.md` and writes
+  `proposals.json` beside it.
+- `batch/merge_proposals.py --campaign-dir <c> --wave <n>` merges a wave into one
+  GM question queue, applying the two checks no single agent can make: the
+  corpus-wide lowercase gate (against `<batch-dir>/corpus_all.txt`) and
+  cross-chapter conflicts for the same wrong form.
+
+Run data (`manifest.json`, `known_flat.txt`, the per-chapter folders) stays in
+the campaign under `--batch-dir`, default `<campaign>/notes/spell_pass_batch/`.
+Only the orchestrator writes the glossary.
+
 ## Artifact mode (batch review)
 
 Replaces Phase 3 only. Phases 0–2.5 and 4–6 are unchanged, and the shell path
@@ -1008,7 +1027,7 @@ stays exactly as documented. Full contract:
 ### The consent unit is the PAIR, never the cluster
 
 **This is not negotiable and it is why this skill produces more cards than the
-others.** `merge_proposals.py` states it directly:
+others.** The batch merger, `batch/merge_proposals.py`, states it directly:
 
 > *"Consent granularity: the unit is the (wrong_form → canonical) PAIR.
 > Questions are grouped by canonical for batching, but every member carries
@@ -1023,7 +1042,7 @@ into a single card, and never let approving one member imply another.
 ### What is auto-applied, footer only
 
 - `action ∈ {leave_alone, add_to_known_set}` — no ruling needed.
-- `auto_dismissed[]` under the `AGENT_BRIEF.md` gate: **`count == 1` AND
+- `auto_dismissed[]` under the `batch/AGENT_BRIEF.md` gate: **`count == 1` AND
   `kind == ordinary_words`**. Never on `inconclusive`, never on `count ≥ 2`.
 - Glossary rows that already exist — Phase 0's known-misspellings pass.
 

@@ -12,9 +12,9 @@ Load the four grounding docs for the current campaign so you have authoritative 
 
 ### 1. Locate the campaign directory
 
-Run `pwd` to confirm CWD. The user invokes this skill from inside a campaign directory (e.g. `~/campaigns/out-of-the-abyss/`, `~/campaigns/Phandalin/`). All four docs live at `docs/<name>.md` relative to that directory.
+Run `pwd` to confirm CWD. The user invokes this skill from inside a campaign directory (e.g. `~/src/campaigns/out-of-the-abyss/`, `~/src/campaigns/Phandalin/` — `$CAMPAIGNS_ROOT/<campaign>`). All four docs live at `docs/<name>.md` relative to that directory.
 
-If CWD is `~/campaigns/` itself or somewhere else without a `docs/` subdir, ask the user which campaign to enter.
+If CWD is the campaigns root (`$CAMPAIGNS_ROOT`, default `~/src/campaigns/`) itself or somewhere else without a `docs/` subdir, ask the user which campaign to enter.
 
 ### 2. Read all four docs in parallel
 

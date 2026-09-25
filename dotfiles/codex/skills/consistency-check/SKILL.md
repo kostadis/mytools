@@ -140,13 +140,13 @@ through one `--context` flag followed by all context paths.
 
 ### 5. Run the Check
 
-Locate the CampaignGenerator repo. Prefer `/home/kroussos/src/CampaignGenerator`;
-fall back to `/home/kroussos/CampaignGenerator` if needed.
+Locate the CampaignGenerator repo: `~/src/CampaignGenerator` or `~/CampaignGenerator`,
+depending on the machine. `ls` before building the command.
 
 Run from the campaign root:
 
 ```bash
-python3 /home/kroussos/src/CampaignGenerator/session_doc/check_consistency.py <document> \
+python3 <repo>/session_doc/check_consistency.py <document> \
   --config <campaign>/config/config.yaml \
   --backend codex-cli \
   --context <file1> <file2> ... \

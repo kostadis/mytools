@@ -343,7 +343,7 @@ Create `<campaign_dir>/MEMPALACE.md` as a usage guide. Document:
 10. **Troubleshooting** — missing palace, MCP tools not showing, segfaults
 11. **Known quirks** — any mis-routed files
 
-Use `/home/kroussos/campaigns/Phandalin/MEMPALACE.md` as reference template.
+Use an existing campaign's `MEMPALACE.md` as the reference template, e.g. `$CAMPAIGNS_ROOT/obelisk/MEMPALACE.md` (`$CAMPAIGNS_ROOT` defaults to `~/src/campaigns`).
 
 ### Phase 13: Report
 

@@ -10,7 +10,7 @@ description: Use when reviewing or editing D&D campaign narrative chapter markdo
 Review campaign narrative chapters as canon-bearing fiction, not generic prose. The goal is a clean edited copy that preserves session truth, character voice, campaign continuity, and the user's established chapter style.
 
 The user normally provides:
-- a campaign root path, such as `/home/kroussos/campaigns/Phandalin` or a WSL UNC path to it
+- a campaign root path, such as `~/src/campaigns/Phandalin` (`$CAMPAIGNS_ROOT/<campaign>`) or a WSL UNC path to it
 - a current summary/chapter markdown file, usually under `summaries/YYYYMMDD/`
 
 ## Expected Campaign Layout

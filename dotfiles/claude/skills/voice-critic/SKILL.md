@@ -1,7 +1,7 @@
 ---
 name: voice-critic
 description: Critique a session_doc.py narration for generic prose, voice drift, doc-level budget breaches, or conflicts with the character's voice spec and the campaign's genre rulebook. Use after generating per-scene narration or an assembled fable doc, before assembly or promotion. Invoke as /voice-critic <narration-file-or-dir>.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, Artifact
 ---
 
 # Voice Critic
