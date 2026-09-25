@@ -65,10 +65,21 @@ def detect_format(text: str) -> str:
     return "plain"
 
 
-def speakers(text: str) -> dict[str, int]:
+def speakers(text: str, fmt: str) -> dict[str, int]:
+    """Speaker label counts. Markdown uses ``**name:**``; WebVTT and plain
+    labelled text carry ``Name:`` at the start of each cue/utterance line.
+    (This used to count markdown only, so a WebVTT whose every cue was
+    labelled reported "none detected".)"""
     counts: dict[str, int] = {}
-    for m in MD_LABEL_RE.finditer(text):
-        name = m.group(1).strip()
+    if fmt == "labelled_markdown":
+        names = (m.group(1).strip() for m in MD_LABEL_RE.finditer(text))
+    elif fmt in ("webvtt", "labelled_text"):
+        names = (m.group(0).rstrip().rstrip(":").strip()
+                 for line in dialogue_lines(text, fmt)
+                 if (m := PLAIN_LABEL_RE.match(line)))
+    else:
+        names = iter(())
+    for name in names:
         counts[name] = counts.get(name, 0) + 1
     return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
@@ -218,7 +229,7 @@ def main():
         "format": fmt,
         "dialogue_lines": len(lines),
         "dialogue_words": sum(len(l.split()) for l in lines),
-        "speakers": speakers(text) if fmt == "labelled_markdown" else {},
+        "speakers": speakers(text, fmt),
         "duplication": dup or {"duplicated": False},
     }
 

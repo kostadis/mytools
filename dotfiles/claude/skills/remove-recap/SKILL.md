@@ -90,14 +90,38 @@ become section 1. Old `plan.md`, every `--scene N` invocation, and every
 `session_doc_scene_NN_*.md` filename in `narration/` are then wrong. Regenerate
 the plan and re-narrate; do not hand-renumber.
 
-## Phase 1 — detect (deterministic, no LLM)
+## Phase 1 — detect
+
+**Which path you are on decides the tool.** `find_recap.py` scores the
+speaker-attributed quotes in scene extraction files, and those do not exist
+until `/scene-extract` has run. So at the recommended insertion point the
+detection is done **by hand**, and the script is for the later paths.
+
+**Before `scene_extract` (recommended) — read it, by hand.** The recap scene is
+the first entry in `session-summary.md`'s `## Scenes` (and in `gm-assist.md`).
+Confirm it against the opening of the VTT — the recap is the start of the
+recording — using the same markers the script looks for:
+
+```bash
+head -c 20000 <session>/*.transcript.cleaned.vtt | grep -niE \
+  "let me read (to )?you what happened|last (time|session|week)|where we left off|catch (you|us) up|recap|previously|to remind you|(two|three|four|a few|several|[0-9]+) weeks|a month|we last played|bum,? bum,? bum|that'?s where we (left|stopped)|so,? here we are"
+```
+
+Then read the opening cues through the first line of live play (*"you see"*,
+*"roll a"*): who is talking (a recap is a GM monologue), where the recap's
+closing sting falls, and what else is said in there. Quote what you found; the
+GM rules on the boundary in Phase 3.
+
+**After extraction (the costlier paths) — run the script** on the scene
+directory. It reads either layer — `scene_extractions/` (detection only; that
+layer is never edited) or `scene_extractions_smoothed/`:
 
 ```bash
 python ~/.claude/skills/remove-recap/find_recap.py \
   <session>/scene_extractions_smoothed
 ```
 
-Scores the first scene 0–6 on independent evidence: explicit opening markers
+It scores the first scene 0–6 on independent evidence: explicit opening markers
 (*"let me read you what happened"*, *"last time"*), real-world scheduling talk
 (*"after, like, three weeks"*), a closing sting (*"Bum, bum, bum!"*), the word
 recap in the filename or heading, and an overwhelming GM share.
@@ -112,11 +136,20 @@ script's to set.**
 
 ## Phase 2 — rescue BEFORE you cut. Never skip this.
 
+`recap_unique.py` works on any Markdown — it reads `- ` bullets and `*(…)*`
+asides — so it runs on both paths. Before extraction, copy the recap scene's
+section out of `session-summary.md` into a scratch file and point `--recap` at
+that; after extraction, point it at the scene file:
+
 ```bash
 python ~/.claude/skills/remove-recap/recap_unique.py \
-  --recap <session>/scene_extractions_smoothed/01_*.md \
+  --recap <recap-scene.md> \
   --against <previous-session-dir>
 ```
+
+Before extraction the bullets are a summary of the recap, not the recap, so
+also read the VTT span you bounded in Phase 1 for asides and bookkeeping the
+summary may have dropped.
 
 A recap is *supposed* to be redundant. It is not reliably redundant, and three
 kinds of content die if you cut it blind:
@@ -166,18 +199,30 @@ did not happen in.
 
 ## Phase 4 — apply, then rebuild
 
-Cutting a whole scene:
+**Before `scene_extract` (recommended):** edit `session-summary.md` only. Drop
+the recap scene from `## Scenes` (or trim its recap prefix, if live play begins
+partway through), and trim surfaces 2 and 3 as ruled. Put rescued bookkeeping
+where Phase 3 said. Then run `/scene-extract` as normal; it never sees the
+recap, and numbering is clean from the start.
+
+**After extraction** — cutting a whole scene. The order matters: delete the
+stale narration **before** re-narrating, never after, or you delete the new
+narration you just produced.
 
 ```bash
 git rm <session>/scene_extractions_smoothed/01_*.md     # derived layer only
+rm -f <session>/narration/session_doc_scene_*.md        # stale numbering — BEFORE sd_narrate
 sd_plan --scene-extractions <session>/scene_extractions_smoothed ... --out <session>/plan.md
 sd_narrate ... --plan <session>/plan.md --scene-extractions <session>/scene_extractions_smoothed \
   --per-scene-output <session>/narration        # ALL scenes; indices have shifted
-rm <session>/narration/session_doc_scene_*.md   # stale numbering, before re-narrating
 ```
 
-Trimming a prefix instead: reuse `/no-mech`'s `apply_cut.py --mode spans`, which
-already refuses to write outside a `*_smoothed/` directory and warns on orphans.
+(If narration has not run yet, the `rm` finds nothing, and neither does the
+re-narration step — just re-run `sd_plan` if a plan exists.)
+
+Trimming a prefix instead, after extraction: reuse `/no-mech`'s
+`apply_cut.py --mode spans`, which already refuses to write outside a
+`*_smoothed/` directory and warns on orphans.
 
 **Then check the seams.** The narrator sometimes opens a scene by echoing the
 previous scene's closing line. Deleting scene 01 orphans that echo in the scene

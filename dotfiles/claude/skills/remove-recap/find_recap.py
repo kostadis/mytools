@@ -15,14 +15,14 @@ import argparse, glob, json, os, re, sys
 # Things a GM says out loud when starting a recap. High precision, low recall:
 # a hit is strong evidence, a miss means nothing.
 OPEN = [
-    r"let me read you what happened", r"\blast time\b", r"\blast session\b",
+    r"let me read (?:to )?you what happened", r"\blast time\b", r"\blast session\b",
     r"\blast week\b", r"where we left off", r"catch (?:you|us) up",
     r"\brecap\b", r"previously[, ]", r"to remind you", r"so far,? ",
     r"quick(?:ly)? (?:recap|summar)", r"what happened (?:last|previously)",
 ]
 # Real-world scheduling talk clusters at the very top of a recording and is
 # never in-fiction: "after, like, three weeks - or a month".
-SCHED = [r"\b(?:three|two|four|a few|several)\s+weeks?\b", r"\ba month\b",
+SCHED = [r"\b(?:three|two|four|a few|several|\d+)\s+weeks?\b", r"\ba month\b",
          r"\bit'?s been\b.{0,24}\b(?:weeks?|months?)\b", r"\bwe last played\b"]
 # A GM's verbal sting closing the recap before live play begins.
 CLOSE = [r"\bbum,? bum,? bum\b", r"\band that'?s where we (?:left|stopped)\b",
@@ -51,9 +51,12 @@ def scan(path):
     if m:
         heading = m.group(1).strip()
 
-    if "## Voiced moments" not in text:
-        return {"file": name, "error": "no '## Voiced moments' section"}
-    head, body = text.split("## Voiced moments", 1)
+    # The smoothed layer calls the quote section "Voiced moments"; the raw
+    # scene_extractions/ layer calls it "Verbatim moments". Read either.
+    section = next((h for h in ("## Voiced moments", "## Verbatim moments") if h in text), None)
+    if section is None:
+        return {"file": name, "error": "no '## Voiced moments' or '## Verbatim moments' section"}
+    head, body = text.split(section, 1)
     offset = head.count("\n") + 1
 
     quotes, speaker = [], None
