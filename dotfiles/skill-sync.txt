@@ -10,7 +10,12 @@ remove-recap/find_recap.py
 remove-recap/recap_unique.py
 speaker-attribution-text/references/evidence.md
 speaker-attribution-text/scripts/attribution.py
+speaker-attribution/descript_turns.py
+speaker-attribution/diarize_label.py
 speaker-attribution/name_clusters.py
+speaker-attribution/references/acoustic-workflow.md
+speaker-attribution/references/identity-review.md
+speaker-attribution/references/provenance.md
 speaker-attribution/transcript_provenance.py
 staged-consistency/verify_quotes.py
 vtt-spell-pass/add_to_glossary.py
