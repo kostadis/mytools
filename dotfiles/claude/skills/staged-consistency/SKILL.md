@@ -10,7 +10,7 @@ Run the multi-stage consistency check pattern documented in `$CAMPAIGNS_ROOT/STA
 
 The point of this skill is to **catch verbatim transcription errors before they reach the narrator**. A single late-stage check misses the per-scene-quote layer, which is the layer that silently re-injects errors into every subsequent narration run. See `STAGED_CONSISTENCY_HOWTO.md` for the rationale.
 
-**Where this sits:** phase 0/1 run after `/vtt-spell-pass` and `enhance_summary`, before `/remove-recap` and `/scene-extract` (they supersede `/gmassist-precheck`); phase 2 after `/session-summary-consistency`; phase 3 on the final selected narration. Full order: `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
+**Where this sits:** phase 0 runs after `/vtt-spell-pass` and **before** `enhance_summary` (it checks the spec the enhancement renders from); phase 1 runs on its output, before `/remove-recap` and `/scene-extract` (together they supersede `/gmassist-precheck`); phase 2 after `/session-summary-consistency`; phase 3 on the final selected narration. Full order: `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
 
 ## This skill is an orchestrator, not a second implementation
 
@@ -158,7 +158,7 @@ approved `prep_selection`—tier, exact files, per-file counts, and prep-only
 grep -ric "<npc>|<location>|<distinctive item>" docs/chapters/*.md | grep -v ':0$'
 ```
 
-Two cautions. It is downstream prose, so it is corroboration, not the tape — a fact it agrees with the recap on is still a VTT question if it matters. And when a fix makes the recap diverge from the bible (a registry-canonical spelling the bible doesn't use), that divergence is a `carry_forward` item for the GM, not licence to edit `docs/chapters/`.
+Two cautions. It is downstream prose, so it is corroboration, not the tape — a fact it agrees with the recap on is still a VTT question if it matters. The check will not treat it that way on its own: it labels the bible chapter "authoritative" and builds findings on it (OOTA ch02: 10 of 19 Stage 0 findings, every one overturned by the tape — see `/consistency-check` step 5). And when a fix makes the recap diverge from the bible (a registry-canonical spelling the bible doesn't use), that divergence is a `carry_forward` item for the GM, not licence to edit `docs/chapters/`.
 
 Hold the resolved prep list in the conversation. **Discover once, reuse at every stage** — that is the one thing this skill legitimately does differently from N independent `/consistency-check` runs.
 
@@ -275,7 +275,7 @@ the GM's saved notes; the card wording was unrecoverable.)
 
 - **The notification.** Publishing arms a live subscription on this session. When
   the GM saves, an `artifact-changed` task-notification naming this artifact
-  arrives on its own — **that is the save signal.** Act on it: `WebFetch` the URL
+  arrives on its own — **that is the save signal.** Act on it: read the page with the `Artifact` tool (CONTRACT step 5)
   and read the decisions without waiting to be told. It can lag (the subscription
   arms in the background), and it only lives as long as the session that
   published.
@@ -368,7 +368,7 @@ The Stage 0 file is `gm-assist.md`, its `gm-assist-update.md` (caveat below), or
 - Ask: "Apply any of these fixes to the Stage 0 source before moving to stage 1?"
 - If yes, edit that file directly. If no, log what was deferred so it can be revisited.
 
-**Stage 0 pays for itself, and the evidence is worth citing when the user asks whether to skip it.** On Ch 48 of `out-of-the-abyss` the order was spell pass → Stage 0 → `/enhance-summary` → Stage 1, and the effect was measurable: **Stage 0 found 12 issues; Stage 1 then found 6**, on a document three times longer. Every one of Stage 0's fixes survived the regeneration, because `gm-assist.md` is the structural spec the enhancement renders from — so a class of error fixed at Stage 0 *cannot* recur at Stage 1.
+**Stage 0 pays for itself, and the evidence is worth citing when the user asks whether to skip it.** On Ch 48 of `out-of-the-abyss` the order was spell pass → Stage 0 → `/enhance-summary` → Stage 1, and the effect was measurable: **Stage 0 found 12 issues; Stage 1 then found 6**, on a document three times longer. Every one of Stage 0's fixes survived the regeneration, because `gm-assist.md` is the structural spec the enhancement renders from — so a class of error fixed at Stage 0 *usually* does not recur at Stage 1. Usually, not always: see the survival check in step 4.
 
 One fix did more than survive, it **generalised**: an out-of-character label applied to a table-chatter quote at Stage 0 was re-applied by the enhancement to a second, previously unseen quote in the same anecdote, with the correct speaker. Fixing the spec changes what the renderer *produces*, not just what it copies.
 
@@ -381,6 +381,8 @@ The corollary is an ordering rule: **fix gm-assist before enhancing, never after
 > Stage 1 — running `/consistency-check $SESSION/session-summary.md` with the standard context set + prep.
 
 Same flow. **Also pass the Stage 0 source that was actually checked as context** — `gm-assist.md`, `gm-assist-update.md`, or the GMAssistant export under its real filename, whichever step 3 ran against; never `gm-assist.md` by default. `session-summary.md` is an `enhance_summary` output built from it plus the VTT, so every difference between them is *something the enhancement pass added* — exactly the material under test. `/consistency-check` step 3 calls this the single highest-value context file for this document class.
+
+**Check that every Stage 0 ruling survived the enhancement, before reading the report.** The enhancement reads the VTT as well as the spec, and where the tape seems to disagree with a ruling, the tape can win. On OOTA ch02 (2026-09-25) the GM ruled at Stage 0 that Thorin flattered Buppido and that Gracklstugh stays a *duergar* city; the enhancement credited the flattery to Gyrgum (following the diarization labels on the pitch and the roll) and rewrote Gracklstugh as *"a major city of Buppido's people"* (following the GM's hedged table line). Neither was flagged by the check — both contradicted only the Stage 0 manifest, which the check never sees. For every entry in the Stage 0 manifest's `resolution.applied` and `gm_rulings_this_run`, grep `session-summary.md` for the subject and confirm the ruled reading is what it says. A reversal is carded as a **conflict with a prior ruling** (quote the ruling, and say approving the old reading means editing the Stage 0 source too), never as a fresh finding.
 
 **That context file is also this stage's dominant false-positive source, so grep the target before believing any finding.** The two documents are near-paraphrases, and the check routinely quotes Stage 0 source prose while naming a `session-summary.md` section as the **Location**. `/consistency-check` step 5 carries the test — run `grep -nF` for a fragment of every finding's quoted text against the target, first, before any other adjudication. A miss means the finding does not apply to this document; applying it would re-introduce into the recap an error the enhancement pass had already removed. Expect a cluster of these and read them as evidence the enhancement pass worked, not as noise.
 
@@ -396,7 +398,7 @@ python -m session_doc.sd_verify_quotes \
 
 Exit `1` means the verifier ran and found unverified quotes or refusals; review them. Exit `2` means it could not run; mark quote verification degraded and do not describe the stage as fully cleared. Use `--report-only` until the GM has ruled — without it the tool writes `<!-- cg:unverified -->` markers into the artifact. The `--vtt` must be the *same* transcript the artifact was generated from; a different one reports edits nobody made.
 
-**Read a 100% result narrowly — the tool names its own two blind spots, and they are where the interesting defects live.** It checks only `> "…"` blockquotes, not inline `"…"` in prose; and it answers *were these words said*, **not** *did this person say them*. On Phandalin ch08 it returned 27/27 verified while the same document carried an invented "Santorini" (inline prose) and the upstream recap carried a quote attributed to the wrong player. It is a complement to VTT adjudication, never a substitute — and `near`, not just `unverified`, is the verdict to skim, because `near` means traceable but *edited*.
+**Read a 100% result narrowly — the tool names its own two blind spots, and they are where the interesting defects live.** It checks only `> "…"` blockquotes, not inline `"…"` in prose; and it answers *were these words said*, **not** *did this person say them*. On Phandalin ch08 it returned 27/27 verified while the same document carried an invented "Santorini" (inline prose) and the upstream recap carried a quote attributed to the wrong player. It is a complement to VTT adjudication, never a substitute — and `near`, not just `unverified`, is the verdict to skim, because `near` means traceable but *edited*. And a result of **"No quotes found" is zero coverage**, not 100%: an enhancement that quotes inline in curly marks (OOTA ch02: 40 spans, no blockquotes) gives the verifier nothing to check, so step 2b's `verify_quotes.py` is then the only quote check this stage has.
 
 What it does buy that hand-checking never does is exhaustiveness. It is also the cleanest evidence available that an enhancement pass is quote-faithful: on ch08 the pass added 26 blockquotes to gm-assist's 1, and every one was verbatim — which localises the remaining error surface to prose, attribution and numbers.
 

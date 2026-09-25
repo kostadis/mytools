@@ -131,6 +131,20 @@ the VTT: an interruption or laughter can split an otherwise supported quote
 across cues. Record any manual resolution separately, with cue evidence;
 do not change the verifier's classification or silently repair dialogue.
 
+"No quotes found" is zero coverage, not a pass. Count `grep -c '^> '` in the
+summary first. On OOTA ch02 (2026-09-25) the enhancement wrote 40 curly-quoted
+inline spans and no blockquotes, so `sd_verify_quotes` exited 0 having checked
+nothing. In that case run the inline sweep against the same VTT and report its
+counts:
+
+```bash
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/staged-consistency/verify_quotes.py" \
+  --doc <session>/session-summary.md --vtt <session>/<cleaned-transcript>.vtt
+```
+
+On ch02 it surfaced a reworded quote and a quote spliced across the GM's asides
+without an ellipsis, neither of which the blockquote verifier could see.
+
 End with the output link, generation result, quote-check result and any
 unresolved findings. Stage 1 consistency is the next review step when requested.
 Do not automatically apply consistency edits, remove recap, extract scenes,

@@ -159,7 +159,7 @@ In artifact mode, prepare every selected scene, collect their frozen runs onto
 one session page (`review_edits.py session-page`), build it with the shared
 builder and publish it with `capabilities: {"artifact": {}}`, then **stop** — the save
 comes back as a notification or the GM's word, and is never polled for. Read it
-back with `WebFetch` and `read_decisions.py`, then `split-decisions` gives one
+back with the `Artifact` tool (CONTRACT step 5) and `read_decisions.py`, then `split-decisions` gives one
 decision file per scene for `apply`. Full sequence in
 [review-and-apply.md](references/review-and-apply.md); contract in
 `~/.claude/skills/_shared/review-artifact/CONTRACT.md`.

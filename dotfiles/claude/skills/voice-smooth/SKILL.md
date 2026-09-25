@@ -238,7 +238,7 @@ python ~/.claude/skills/_shared/review-artifact/build_review.py \
 
 **Publish, hand over the link, and stop.** Two ways the save reaches you, and one that is forbidden:
 
-- **The notification.** Publishing arms a live subscription on this session. When the GM saves, an `artifact-changed` task-notification naming this artifact arrives on its own — **that is the save signal.** Act on it: `WebFetch` the URL and run `read_decisions.py` without waiting to be told. It can lag, and it only lives as long as the session that published.
+- **The notification.** Publishing arms a live subscription on this session. When the GM saves, an `artifact-changed` task-notification naming this artifact arrives on its own — **that is the save signal.** Act on it: read the page with the `Artifact` tool (CONTRACT step 5) and run `read_decisions.py` without waiting to be told. It can lag, and it only lives as long as the session that published.
 - **The GM's word.** If the session was restarted, or the notification never comes, the GM says they are done. Same action.
 - **Never poll.** Not on a timer, not "just checking".
 

@@ -322,6 +322,12 @@ Claude copy of this skill; here each is a rule plus at most a one-line example.
   text to the target. `grep -nF "<fragment>" <target>`; no hit means a false
   positive against this document. Worst at Stage 1, where `gm-assist.md` is
   context; a cluster of these suggests the enhancement pass fixed the text.
+- **A session-specific context file is not authoritative.** The model promotes
+  any document narrating this session (a bible chapter, a prior recap) to an
+  "authoritative tier". On OOTA ch02 (2026-09-25, a backfill) 10 of 19 findings
+  rested on the bible split passed as corroboration, and the tape overturned all
+  10 (Shoor was in the quarters; the spools thread called fabricated is on tape).
+  A finding whose only evidence is such a document is a lead to the tape.
 - **Canon can be wrong vs the tape.** When a finding would rewrite the target to
   match a grounding doc or AUTHORITATIVE CANON, verify on tape first; if the tape
   disagrees, the fix belongs in the grounding doc. Ask before editing `docs/`.

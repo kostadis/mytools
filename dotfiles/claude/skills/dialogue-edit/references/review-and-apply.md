@@ -126,7 +126,7 @@ GM silently gets the read-only fallback. One page covers the whole session.
 
 Then **stop**. The save comes back on its own — the `artifact-changed`
 notification, or the GM's word, whichever arrives first. Never poll for it.
-Read it back with `WebFetch` on the artifact URL, recover the decision
+Read it back with the `Artifact` tool (CONTRACT step 5), recover the decision
 envelope, and split it into one record per scene run:
 
 ```bash

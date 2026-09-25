@@ -15,7 +15,7 @@ This is the Codex port of the Claude skill. Do not edit
 `~/src/mytools/dotfiles/claude/skills/staged-consistency/` when changing this
 skill.
 
-**Where this sits:** phase 0/1 run after `/vtt-spell-pass` and `enhance_summary`, before `/remove-recap` and `/scene-extract` (they supersede `/gmassist-precheck`); phase 2 after `/session-summary-consistency`; phase 3 on the final selected narration. Full order: `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
+**Where this sits:** phase 0 runs after `/vtt-spell-pass` and **before** `enhance_summary` (it checks the spec the enhancement renders from); phase 1 runs on its output, before `/remove-recap` and `/scene-extract` (together they supersede `/gmassist-precheck`); phase 2 after `/session-summary-consistency`; phase 3 on the final selected narration. Full order: `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
 
 ## Codex Compatibility
 
@@ -218,7 +218,8 @@ Run the `consistency-check` procedure against the chosen file with the selected
 prep and standard context.
 
 Fix gm-assist before enhancing, never after. It is the spec `enhance_summary`
-renders from, so a Stage 0 fix cannot recur at Stage 1. Example: on OOTA Ch 48,
+renders from, so a Stage 0 fix usually does not recur at Stage 1 (usually: see
+the survival check in step 4). Example: on OOTA Ch 48,
 Stage 0 found 12 issues, then Stage 1 found only 6 on a summary three times
 longer. If the file has already been enhanced from, Stage 0 is not a first pass: say
 so in the manifest, or its finding count will read as a clean result.
@@ -237,6 +238,19 @@ Stage 0 source that was actually checked in step 3 (`gm-assist.md`,
 additional context, never `gm-assist.md` by default. The enhanced summary was
 built from that recap plus the VTT, so its differences are the material under
 test.
+
+Check that every Stage 0 ruling survived the enhancement before reading the
+report. The enhancement also reads the VTT, and where the tape seems to disagree
+with a ruling the tape can win. On OOTA ch02 (2026-09-25) the GM ruled at Stage 0
+that Thorin flattered Buppido and that Gracklstugh stays a duergar city; the
+enhancement credited the flattery to Gyrgum (following diarization labels) and
+rewrote Gracklstugh as "a major city of Buppido's people". The check flagged
+neither, because they contradict only the Stage 0 manifest, which it never sees.
+For every entry in the Stage 0 manifest's `resolution.applied` and
+`gm_rulings_this_run`, grep `session-summary.md` for the subject and confirm the
+ruled reading. Present a reversal as a conflict with a prior ruling (quote the
+ruling; approving the old reading means editing the Stage 0 source too), never as
+a fresh finding.
 
 Run deterministic quote verification first, using the exact VTT that generated
 the artifact:
@@ -257,6 +271,9 @@ user rules, because the default mode annotates checked artifacts.
 Read a 100% result narrowly. The verifier checks blockquotes, not inline quoted
 prose, and establishes that words occur in the transcript, not who said them.
 Review `near` as well as `unverified`, because `near` means the quote was edited.
+"No quotes found" is zero coverage, not 100%: when the enhancement quotes
+inline (OOTA ch02: 40 curly-quoted spans, no blockquotes), the inline sweep
+(`verify_quotes.py`) is the only quote check this stage has.
 
 Before adjudicating any model finding, use `grep -nF` with a distinctive excerpt
 to confirm its quoted target text occurs in `session-summary.md`. A miss usually

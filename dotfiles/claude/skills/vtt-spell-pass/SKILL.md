@@ -21,7 +21,7 @@ The user's stated invariant: *"I know all the NPCs. If a proper name appears
 in a transcript that isn't in our notes, it's a misspelling."* The skill
 operationalises that: the unknown set IS the candidate-misspelling set.
 
-**Where this sits:** after `/speaker-attribution` (or `/transcript-rebuild`), before `enhance_summary`. Run it on the **unlabelled** tape, never on a `.speakers.vtt` — the glossary's player→PC rows would rewrite the speaker labels — then re-apply the approved speaker mapping to the `.cleaned.vtt`. Full order: `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
+**Where this sits:** after `/speaker-attribution` (or `/transcript-rebuild`), before `/staged-consistency` phase 0 and `enhance_summary`. Run it on the **unlabelled** tape, never on a `.speakers.vtt` — the glossary's player→PC rows would rewrite the speaker labels — then re-apply the approved speaker mapping to the `.cleaned.vtt`. Full order: `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
 
 ## What this skill delivers — read this before Phase 5
 
@@ -1096,7 +1096,7 @@ Hand over the link and **stop**.
 
 - **The notification.** Publishing arms a live subscription on this session. When
   the GM saves, an `artifact-changed` task-notification naming this artifact
-  arrives on its own — **that is the save signal.** Act on it: `WebFetch` the URL
+  arrives on its own — **that is the save signal.** Act on it: read the page with the `Artifact` tool (CONTRACT step 5)
   and read the decisions without waiting to be told. It can lag (the subscription
   arms in the background), and it only lives as long as the session that
   published.
@@ -1109,7 +1109,7 @@ A notification means *the page was republished*, nothing more. It is not the GM
 speaking and it is not approval of anything: the decisions come from the state
 block, and `read_decisions.py` still refuses a page whose `savedAt` is null.
 
-Then `WebFetch` the URL and run `read_decisions.py` against the same items
+Then read the page with the `Artifact` tool (CONTRACT step 5) and run `read_decisions.py` against the same items
 file, writing the rulings beside it:
 
 ```bash

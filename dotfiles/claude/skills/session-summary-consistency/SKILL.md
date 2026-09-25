@@ -199,7 +199,7 @@ Publish `<session-dir>/quote_review/review.html` with
 
 ### Reading the save back
 
-`WebFetch` the artifact URL, then validate the saved page against this run's
+Read the page back with the `Artifact` tool (CONTRACT step 5), then validate the saved page against this run's
 items file:
 
 ```bash
