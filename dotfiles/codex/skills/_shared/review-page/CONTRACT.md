@@ -16,11 +16,16 @@ This directory is not a skill and intentionally has no `SKILL.md`.
 
 4. Give the user the page path. The user can paste **Copy output** into chat or
    send the JSON downloaded by **Save output**.
-5. Validate a downloaded file when useful:
+5. Validate the returned JSON (pasted into a file, or the download) against the
+   items file the page was built from:
 
    ```bash
-   python "$REVIEW_PAGE/read_decisions.py" --in decisions.json
+   python "$REVIEW_PAGE/read_decisions.py" --in decisions.json --items review_items.json
    ```
+
+   It exits 1 on an export with no `savedAt`, and 2 on a note for an id the page
+   never asked about or an export whose items differ from `--items` (a stale
+   export from an earlier run).
 
 6. Apply approved decisions through the calling skill's existing deterministic
    path. The page itself never edits source files.
@@ -48,7 +53,11 @@ This directory is not a skill and intentionally has no `SKILL.md`.
 ```
 
 Required top-level keys are `title` and non-empty `items`. Optional keys are
-`reviewId`, `outputName`, `eyebrow`, `lede`, `footer`, and initial `state`.
+`reviewId`, `outputName`, `eyebrow`, `lede`, and `footer`. **Never pre-fill a
+verdict:** the builder rejects a `state` carrying `decisions`, `notes` or
+`savedAt`, because a pre-set verdict would be exported as the GM's ruling on a
+single click. Put a recommendation, or a decision recorded earlier, in the
+card's `y` or `ev` text instead.
 
 Each item requires:
 
@@ -78,7 +87,16 @@ especially `<`, `>`, and `&`. The builder rejects an embedded `</script>`.
 ```
 
 Verdicts are `approve`, `reject`, and `discuss`. Unmarked IDs are unresolved,
-not rejected. Discussed items return to chat as one grouped pass with notes.
+not rejected.
+
+`savedAt` is stamped only by the GM's own **Copy output** or **Save output**
+gesture, never when the page loads or renders, so a JSON without it is not a
+ruling. Before treating a second export in the same run as new rulings, check
+its `savedAt` is newer than the one already processed.
+
+The page keeps no browser storage. It always opens from the builder's state,
+so a re-review never starts with a previous run's marks already ticked, and
+reloading a page mid-review loses unsaved marks. Discussed items return to chat as one grouped pass with notes.
 
 ## Rules
 

@@ -73,23 +73,21 @@ def evidence(item: dict) -> str:
 def shared_spec(queue: dict) -> dict:
     target_vtt = str(queue.get("target_vtt", "transcript.vtt"))
     items = []
-    decisions: dict[str, str] = {}
-    notes: dict[str, str] = {}
-    choice_map = {
-        "approve_correction": "approve",
-        "new_canon": "approve",
-        "ignore": "reject",
-        "discuss": "discuss",
-    }
 
     for item in queue["items"]:
         title, approved, rejected = outcome(item, target_vtt)
         item_id = str(item["id"])
-        items.append({"id": item_id, "t": title, "y": approved, "n": rejected, "ev": evidence(item)})
-        if item.get("decision") in choice_map:
-            decisions[item_id] = choice_map[item["decision"]]
+        ev = evidence(item)
+        # A recorded decision or note is shown as text, never pre-marked: a
+        # pre-set verdict would export as the GM's ruling on a single Save.
+        recorded = []
+        if item.get("decision"):
+            recorded.append(f"Recorded earlier: <code>{escaped(item['decision'])}</code>")
         if item.get("note"):
-            notes[item_id] = str(item["note"])
+            recorded.append(f"Note: {escaped(item['note'])}")
+        if recorded:
+            ev = ev + ("<br>" if ev else "") + " · ".join(recorded)
+        items.append({"id": item_id, "t": title, "y": approved, "n": rejected, "ev": ev})
 
     session = str(queue.get("session_dir", Path(target_vtt).parent))
     return {
@@ -102,7 +100,6 @@ def shared_spec(queue: dict) -> dict:
             "Reject leaves the transcript unchanged; Discuss returns the item to chat."
         ),
         "footer": "The source VTT, glossary, and saved review state remain unchanged until Codex receives the exported decisions.",
-        "state": {"decisions": decisions, "notes": notes, "savedAt": None},
         "items": items,
     }
 

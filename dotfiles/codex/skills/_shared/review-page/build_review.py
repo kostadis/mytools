@@ -185,16 +185,8 @@ if(!state.decisions) state.decisions = {};
 if(!state.notes) state.notes = {};
 state.filter = 'all';
 state.search = '';
-try {
-  var stored = JSON.parse(localStorage.getItem('codex-review:' + REVIEW_ID) || '{}');
-  if(stored.decisions) state.decisions = stored.decisions;
-  if(stored.notes) state.notes = stored.notes;
-} catch(e) {}
-
-function persist(){
-  try { localStorage.setItem('codex-review:' + REVIEW_ID, JSON.stringify({decisions:state.decisions,notes:state.notes})); }
-  catch(e) {}
-}
+// No browser storage: a page starts from the builder's state only, so a
+// re-review never opens with a previous run's marks already ticked.
 
 function counts(){
   var c = {approve:0,reject:0,discuss:0};
@@ -291,7 +283,6 @@ function wire(){
       var id = b.getAttribute('data-item'), k = b.getAttribute('data-choice');
       state.decisions[id] = (state.decisions[id] === k) ? undefined : k;
       if(!state.decisions[id]) delete state.decisions[id];
-      persist();
       render();
     });
   });
@@ -300,14 +291,12 @@ function wire(){
     n.addEventListener('input', function(){
       var id = n.getAttribute('data-note');
       if(n.value) state.notes[id] = n.value; else delete state.notes[id];
-      persist();
     });
   });
 
   var all = document.getElementById('allDiscuss');
   if(all) all.addEventListener('click', function(){
     ITEMS.forEach(function(it){ state.decisions[it.id] = 'discuss'; });
-    persist();
     render();
   });
 
@@ -424,6 +413,10 @@ def validate(spec: dict) -> list[str]:
             if iid in seen:
                 errs.append(f"duplicate item id {iid!r} - decisions are keyed by id, so ids must be unique")
             seen.add(iid)
+    pre = spec.get("state") or {}
+    if pre.get("decisions") or pre.get("notes") or pre.get("savedAt"):
+        errs.append("'state' must not pre-fill decisions, notes or savedAt - a page always "
+                    "starts unmarked and unsaved; put a recommendation in the card's y/ev text")
     return errs
 
 
@@ -445,7 +438,7 @@ def build(spec: dict) -> str:
             "Check the item text for a literal closing script tag."
         )
 
-    state = spec.get("state") or {"decisions": {}, "notes": {}, "savedAt": None}
+    state = {"decisions": {}, "notes": {}, "savedAt": None}
     return (PAGE
             .replace("__TITLE_TEXT__", html.escape(spec["title"]))
             .replace("__CSS__", CSS)

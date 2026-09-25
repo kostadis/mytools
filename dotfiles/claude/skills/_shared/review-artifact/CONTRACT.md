@@ -43,8 +43,11 @@ which ran a real `/staged-consistency` pass this way. Do not reauthor it.
    local file whose path it reports. Point the reader at that file:
    ```bash
    python ~/.claude/skills/_shared/review-artifact/read_decisions.py \
-       --html <saved-artifact.html> --out $SCRATCH/decisions.json
+       --html <saved-artifact.html> --items $SCRATCH/review_items.json \
+       --out $SCRATCH/decisions.json
    ```
+   Pass the same items file the page was built from: the reader exits 2 if the
+   page's items differ, which is how a stale page from an earlier run gets caught.
 6. **Apply** through the skill's own existing deterministic path. Never invent
    a second apply route.
 
@@ -134,6 +137,13 @@ re-apply a stage you have already applied.
 | `items[].n` | yes | **What happens if rejected. Name the files.** |
 | `items[].ev` | no | The evidence. Cite `file:line`. |
 
+**Never pre-fill a verdict.** A page always starts unmarked and unsaved: the
+builder rejects a spec whose `state` carries `decisions`, `notes` or `savedAt`.
+A pre-set verdict would be exported as the GM's ruling on a single Save. Put
+your recommendation in the card's `y` or `ev` text instead.
+
+`title` is **plain text**: it is escaped both when the page is built and every
+time it re-renders itself on save. `eyebrow`, `lede`, `footer` and
 `t` / `y` / `n` / `ev` are **rendered as HTML** — `<code>`, `<em>`, `<b>` are
 yours to use. That also means any literal `<` or `&` in quoted transcript text
 must be escaped by the caller. The builder refuses to emit a page containing
@@ -173,15 +183,18 @@ whole mechanism exists to avoid.
   "tally":    {"approve": 6, "discuss": 3, "reject": 1},
   "decisions":{"alkrist": "discuss", "manshoon": "reject"},
   "notes":    {"alkrist": "Alkrist is alive. What I meant was…"},
-  "discuss":  ["alkrist", "keys"] }
+  "discuss":  ["alkrist", "keys"],
+  "unmarked": ["jorlan"] }
 ```
 
 `read_decisions.py` **exits 1 when `savedAt` is null.** That is deliberate: a
 page the GM has not saved yet must never be read as *"approved nothing."*
 Pass `--allow-unsaved` only to inspect a freshly built page.
 
-Items the GM left unmarked simply do not appear in `decisions` — treat them as
-undecided, not as rejected, and say so when you report back.
+Items the GM left unmarked do not appear in `decisions`; they are listed in
+`unmarked`. Treat them as undecided, not as rejected, and say so when you
+report back. A decision or note keyed to an id the page never asked about
+exits 2 rather than being passed through.
 
 ---
 

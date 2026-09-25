@@ -192,7 +192,7 @@ function render(){
   h += '<div class="wrap">';
   h += '<div class="top">';
   h += '<div class="eyebrow">' + EYEBROW + '</div>';
-  h += '<h1>' + TITLE + '</h1>';
+  h += '<h1>' + esc(TITLE) + '</h1>';
   h += '<p class="lede">' + LEDE + '</p>';
   h += '</div>';
 
@@ -291,7 +291,7 @@ function renderDoc(){
   var json = JSON.stringify(state).replace(/</g, '\\u003c');
   return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>' + TITLE + '<\/title>' +
+    '<title>' + esc(TITLE) + '<\/title>' +
     '<link rel="preconnect" href="https://fonts.googleapis.com">' +
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
     '<link rel="stylesheet" href="' + FONTS + '">' +
@@ -392,6 +392,10 @@ def validate(spec: dict) -> list[str]:
             if iid in seen:
                 errs.append(f"duplicate item id {iid!r} - decisions are keyed by id, so ids must be unique")
             seen.add(iid)
+    pre = spec.get("state") or {}
+    if pre.get("decisions") or pre.get("notes") or pre.get("savedAt"):
+        errs.append("'state' must not pre-fill decisions, notes or savedAt - a page always "
+                    "starts unmarked and unsaved; put a recommendation in the card's y/ev text")
     return errs
 
 
@@ -410,7 +414,7 @@ def build(spec: dict) -> str:
             "Check the item text for a literal closing script tag."
         )
 
-    state = spec.get("state") or {"decisions": {}, "notes": {}, "savedAt": None}
+    state = {"decisions": {}, "notes": {}, "savedAt": None}
     return (PAGE
             .replace("__TITLE_TEXT__", html.escape(spec["title"]))
             .replace("__FONTS_TEXT__", FONTS)
