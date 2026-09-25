@@ -65,20 +65,31 @@ Current campaign layout is:
   summaries/
 ```
 
-Pass `--config <campaign>/config/config.yaml` explicitly. Do not require a root
-`config.yaml`.
+**`<campaign>/config/config.yaml` is the only valid config.** Pass
+`--config <campaign>/config/config.yaml` explicitly. Document paths inside it are
+relative to `config/`, so they read `../docs/…`. Anything else is a broken
+campaign: **stop, report the failing check and path, and do not run the model.**
+Do not build a temporary or absolute-path config, symlink `docs/`, or rewrite
+paths to make it resolve. A throwaway config with absolute document paths loads
+`campaign_state` and `world_state` and silently loads **no entity registry**,
+because the registry is found under the campaign root, never through
+`documents[]`.
 
-After the run, inspect the command output. If it reports missing context files
-because the config paths were resolved relative to `config/`, create a temporary
-absolute-path config and rerun. The minimum useful config is:
+Preflight before launching — any failure is a STOP:
 
-```yaml
-documents:
-  - { label: campaign_state, path: /abs/campaign/docs/campaign_state.md }
-  - { label: world_state, path: /abs/campaign/docs/world_state.md }
+```bash
+CAMP=<abs campaign root>
+test -f "$CAMP/config/config.yaml"        || echo "STOP: no $CAMP/config/config.yaml"
+test ! -e "$CAMP/config.yaml"             || echo "STOP: misplaced root config $CAMP/config.yaml"
+test -f "$CAMP/docs/entity_registry.yaml" || echo "STOP: no registry at $CAMP/docs/entity_registry.yaml"
 ```
 
-Record whichever config path was used in the manifest.
+`check_consistency.py` enforces the same rules itself (CampaignGenerator#484). It
+exits 2 on a misplaced config, and 1 on a missing registry, a missing or
+unresolvable `campaign_state`/`world_state`, or a missing `--context` file.
+Treat either exit as the same STOP.
+
+Record the config path in the manifest.
 
 ### 3. Choose Session Prep
 
@@ -195,7 +206,7 @@ consistency_check:
       - { path: notes/vtt_transcription_corrections.md, resolved_path: /absolute/campaign/notes/vtt_transcription_corrections.md, role: "ASR glossary" }
       - { path: notes/<prep>.md, resolved_path: /absolute/campaign/notes/<prep>.md, role: "session prep" }
   notes: |
-    Caveats, config workaround, missing prep, transcript choice, or
+    Caveats, missing prep, transcript choice, or
     auto-continuation inspection.
 ```
 

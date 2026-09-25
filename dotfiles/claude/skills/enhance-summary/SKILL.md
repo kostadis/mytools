@@ -137,7 +137,7 @@ the verifier's classification or silently repair dialogue.
 
 End with the output path, generation result, quote-check result, and any
 unresolved findings. Stage 1 consistency
-(`/session-summary-consistency`) is the next review step when requested. Do not
+(`/staged-consistency` Stage 1, which runs `/consistency-check` on `session-summary.md`) is the next review step when requested. Do not
 automatically apply consistency edits, remove recap, extract scenes, or
 generate narration. Ordinary enhancement needs no review artifact and no
 manifest of its own.

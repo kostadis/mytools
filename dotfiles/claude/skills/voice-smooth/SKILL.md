@@ -326,7 +326,7 @@ Finally, **flag the variants that are ordinary names.** Matching is word-boundar
 
 ### 3. Write the derived layer
 Write `<session-dir>/scene_extractions_smoothed/NN_slug.md`, mirroring the verbatim file's structure (frontmatter, `## Scene summary`, a moments section, and the same speaker labels) so it is a drop-in for `session_doc` — **with one deliberate exception, below.** Mark it as derived:
-- frontmatter `source: voice-smoothed` and `from: ../scene_extractions/NN_slug.md`
+- frontmatter `source: voice-smoothed` and `from: ../<scene-dir>/NN_slug.md` — the directory the quote actually came from (`scene_extractions/` or `scene_extractions_new/`, step 1), never a hard-coded one
 - **rename the moments heading to `## Voiced moments`.** Do NOT copy `## Verbatim moments` across. The heading is a *claim*, and CampaignGenerator's `session_doc/io.py` binds it to one: `## Verbatim moments` says *these are the tape's words*, which this skill has just stopped being true. `## Voiced moments` says *tidied for reading; not exact* — which is what a smoothed file is (CampaignGenerator#250 R5).
 
   This is not cosmetic. The heading is what drops the file out of the **contract axis**: rules R1 and R3 police exactness inside a span marked verbatim, and firing them on prose that openly declares it was edited produces refusals for edits this layer exists to make. (It does not change the verdict counts — `unverified` still means untraceable to any transcript line, which is a fabrication or a splice either way, and remains a defect here too.)
@@ -374,9 +374,9 @@ The checks above catch structural defects. They do not catch the one this layer 
 Diff the smoothed quotes against the source and read every word-level change:
 
 ```bash
-for n in 01 02 03 04 05; do
-  diff <(grep '^> ' <scene-dir>/${n}*.md) \
-       <(grep '^> ' <session-dir>/scene_extractions_smoothed/${n}*.md)
+for f in <session-dir>/scene_extractions_smoothed/[0-9]*.md; do   # EVERY scene
+  echo "== $(basename "$f")"
+  diff <(grep '^> ' <scene-dir>/"$(basename "$f")") <(grep '^> ' "$f")
 done
 ```
 
@@ -419,7 +419,7 @@ Say explicitly that **re-running the extractor would discard this pass**, and na
 - **Knowledge boundaries need a home outside this layer.** An annotation in a derived file dies at the next `scene_extract`. Push it to a hand-authored `docs/` dossier with a `CLAUDE.md` pointer.
 - **No card, no change — in THIS layer.** A word you repair without an approved ruling is a unilateral edit no matter how obvious it looked, and obvious is not a track record (one in three of ch4's "certain" readings was wrong). If you notice it while writing, revert it and put it in `carry_forward`. Audit for these before you report done (step 5).
 
-  **The rule governs the smoothed layer, which is a record. It does not govern downstream narration, and it never governs *reporting*.** Phandalin ch4 got this backwards: asked to find logic breaks in the finished narration, the pass spotted `"let's try to freeze it"` sitting one line after `"All right, let's free the slaves!"`, declined to touch it by citing this rule, and wrote the refusal into the audit comment as considered judgment — dressing a wrong call up as a careful one. The GM had asked for exactly that class of defect. A rule that stops you editing a transcript must never stop you saying *"this sentence contradicts the one before it."* When in doubt, surface it; silence is the one option that is always wrong.
+  **The rule governs the smoothed layer, because every word there has to trace to a ruling the GM made. It does not govern downstream narration, and it never governs *reporting*.** Phandalin ch4 got this backwards: asked to find logic breaks in the finished narration, the pass spotted `"let's try to freeze it"` sitting one line after `"All right, let's free the slaves!"`, declined to touch it by citing this rule, and wrote the refusal into the audit comment as considered judgment — dressing a wrong call up as a careful one. The GM had asked for exactly that class of defect. A rule that stops you editing a transcript must never stop you saying *"this sentence contradicts the one before it."* When in doubt, surface it; silence is the one option that is always wrong.
 - **An unmarked card is not a decision, and a three-word note is not a specification.** Re-ask what came back undecided; confirm what a terse DISCUSS note meant before applying it; bring exact wording back when the ruling would invent canon.
 - **Two files with different names are not two readings.** Prove independence before treating one transcript as corroboration for another — identical passes agreeing with themselves is the most convincing worthless evidence you will meet here.
 - **Human reviews before session_doc.** This is a first-draft render, not a final artifact.
