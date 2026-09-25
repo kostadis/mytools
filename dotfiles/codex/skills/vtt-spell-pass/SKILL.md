@@ -37,9 +37,46 @@ this skill.
   batch review, write the JSON queue and render the standalone review page
   described below. Accept the resulting decisions as pasted JSON or a saved
   decisions file.
-- Use `apply_patch` for manual, targeted transcript edits. The bundled scripts
-  remain the deterministic path for glossary and replacement operations.
+- Never hand-edit a transcript, with `apply_patch` or anything else. The
+  bundled scripts are the deterministic path for glossary and replacement
+  operations, and every change to a tape reaches it as an entry in
+  `transcript_corrections.yaml` (Phase 7).
 - Every new wrong-to-right mapping still requires explicit user approval.
+
+## What this skill delivers — read this before Phase 5
+
+**The deliverable is a set of entries in `transcript_corrections.yaml`, not a
+cleaned `.vtt`.**
+
+A session's `<stem>.transcript.cleaned.vtt` is *generated* by
+CampaignGenerator's `sd_corrections apply` from that cue-indexed record
+(issue #250 R4); the raw `<stem>.transcript.vtt` is the archive and is never
+written. So this skill never writes either file. It writes a **candidate**
+transcript to scratch, and Phase 7 converts the candidate's diff into record
+entries the GM reviews, which `sd_corrections import` brings into the record.
+
+This is not bookkeeping pedantry. The arrangement that predated the record —
+a spell pass writing the cleaned tape directly — put 74 unenumerated
+substitutions into Phandalin ch46, three of which inserted a surname nobody
+spoke. Every verbatim guarantee downstream is measured against that file. If
+you write it here instead of recording the diff, `sd_corrections check`
+reports the cues as unexplained and the next `apply` throws the whole pass
+away.
+
+Two consequences to keep in mind from Phase 0 onward:
+
+- **Never write a transcript into the session directory.** Not the cleaned
+  tape, not the candidate, not a filtered or deduped copy, and not a stray
+  `.vtt` of any kind: `sd_corrections` finds the raw tape by globbing every
+  non-`.cleaned` `*.vtt` in the directory and demands exactly one, so a
+  candidate parked next to the original makes its commands fail. Every
+  transcript this pass produces goes to `$SCRATCH`. The one exception is the
+  review record: the batch page's queue, page and decisions files live in
+  `<session-dir>/spell_review/` (see Batch review page), so the question the
+  GM was asked survives beside the tape. That folder holds `.json`/`.html`
+  only — never a `.vtt`.
+- **`apply_replacements.py --output` is required and has no default**, and it
+  refuses to write a file an existing record claims. There is no `--in-place`.
 
 ## Required inputs
 
@@ -54,20 +91,28 @@ Detect or ask:
    glossary already exists in the documented format — see Out of the Abyss
    for the canonical example).
 4. **NPC dossier dir** — `<campaign>/docs/npcs/` if present.
-5. **Verified-noun dictionaries** — flat, one-name-per-line files of
+5. **Entity registry — the canonical known-names source.** If
+   `<campaign>/docs/entity_registry.yaml` exists, pass it directly via
+   `--registry` on **both** scripts (`find_unknowns.py` and
+   `cluster_unknowns.py` read it natively — no flattening, no
+   `registry.py project` regeneration first, always current with the last
+   registry edit). A registry name or alias is, by construction
+   (`registry-cleanup`'s rule), an approved canonical alternate name —
+   **never** a mishearing — so it is always safe to treat as known. If no
+   registry exists yet but `docs/entity_inventory.md` (its older, generated
+   markdown projection) does, fall back to flattening that one file per the
+   bullet steps below and pass it via `--extra-known` instead.
+6. **Verified-noun dictionaries** — flat, one-name-per-line files of
    confirmed proper nouns (module NPCs, creatures, spells, locations,
    deities) that should be treated as known and therefore never surfaced
    as candidate misspellings. These are *not* the glossary — they are
    pre-verified vocabulary that suppresses false positives and improves
    clustering (dictionary entries also become canonical replacement
    targets). **Auto-detect the conventional flat path
-   `<campaign>/notes/proper_nouns_adventure.txt`. Also check whether the
-   campaign keeps a generated entity inventory: `docs/entity_inventory.md`
-   (produced from `docs/entity_registry.yaml` by `registry.py project`) is
-   the current OOTA source. Surface what you found and ask the user to
-   confirm or add more before running Phase 1.** Pass every confirmed flat
-   file to both scripts via `--extra-known` (the flag accepts multiple
-   paths).
+   `<campaign>/notes/proper_nouns_adventure.txt`. Surface what you found
+   and ask the user to confirm or add more before running Phase 1.** Pass
+   every confirmed flat file to both scripts via `--extra-known` (the flag
+   accepts multiple paths).
 
    Format matters: `--extra-known` treats every non-`#` line as a name, so
    only feed flat one-per-line dumps. Do **not** pass a markdown file raw
@@ -75,10 +120,10 @@ Detect or ask:
    and prose fragments into the known set and can silently suppress real
    unknowns.
 
-   **Flatten generated markdown sources first.** `entity_inventory.md` and
-   `notes/vtt_known_additions.md` are valuable name sources but are
-   markdown, not flat. Extract each into a throwaway `.txt` in your
-   scratchpad, then pass the `.txt`:
+   **Flatten generated markdown sources first.** `notes/vtt_known_additions.md`
+   (and `docs/entity_inventory.md`, only when used per #5's fallback) are
+   valuable name sources but are markdown, not flat. Extract each into a
+   throwaway `.txt` in your scratchpad, then pass the `.txt`:
    - pull every `**bold**` span from each `- ` bullet line;
    - split each span on ` / ` (multi-alias entries like
      `**Whistlerites / Miloites / Protanthians**` become three names);
@@ -92,11 +137,14 @@ Detect or ask:
    but the glossary maps it → `Kalan Strongbranch`; a stale "known" entry
    silently suppresses a real unknown. When you flatten it, flag any entry
    that also appears as a glossary wrong-form to the user — the glossary wins.
+   (A name confirmed there today does not promote itself into the registry;
+   that is still a separate, manual step via `entity-triage` or
+   `registry add`.)
 
    If no dictionary exists, proceed without one — it is an enhancement, not
    a hard dependency.
 
-6. **Retranscription context (when available)** — if `<vtt>`'s filename
+7. **Retranscription context (when available)** — if `<vtt>`'s filename
    contains `.retranscribed` or `.retranscribed.cleaned` (i.e. it's an
    `audio-to-vtt` output, not a plain Otter/Zoom export), two extra
    sources exist and should be used:
@@ -116,15 +164,15 @@ Detect or ask:
    with no `.retranscribed` sibling has neither, and the skill runs
    exactly as it always has.
 
-7. **A second, independent transcription (when one exists)** — the same
+8. **A second, independent transcription (when one exists)** — the same
    session transcribed by a *different* tool, with no shared timestamps and
    different segmentation (e.g. a voice-detection markdown export alongside a
-   D&D-tuned WebVTT). This is NOT the `.retranscribed` pairing in #6, which is
+   D&D-tuned WebVTT). This is NOT the `.retranscribed` pairing in #7, which is
    filename- and cue-aligned; here nothing lines up, so matching is by text.
    Use `sibling_context.py` (Phase 3). Check the session directory for one
    before starting — if two transcripts of the same date exist, you have this.
 
-8. **The published module, via the `5etools` MCP server (when the campaign
+9. **The published module, via the `5etools` MCP server (when the campaign
    runs one).** The campaign's own stores — glossary, registry, dossiers —
    only know names the table has already written down correctly at least
    once. A name the party met for the *first time* this session is in none of
@@ -149,7 +197,7 @@ Before anything else, ask in chat:
 
 Ask this every run; do not remember a default. If they choose the batch page,
 Phases 0–2.5 run exactly as written and **Batch review page** below replaces
-Phase 3. Phases 4–6 are shared.
+Phase 3. Phases 4–7 are shared.
 
 ### Scratch files — one namespace per run, never a fixed path
 
@@ -205,13 +253,22 @@ It reports three things that change the rest of the run:
   ```bash
   # keep their lines in the file, just don't mine them for names
   prepare_input.py --input <t> --exclude-speaker natasha --scan-copy "$SCRATCH/scan.txt"
-  # only if the GM says the lines should not ship at all
-  prepare_input.py --input <t> --exclude-speaker natasha --filtered-output <t>.filtered.md
+  # a label-preserving copy without their lines, for reading only
+  prepare_input.py --input <t> --exclude-speaker natasha --filtered-output "$SCRATCH/filtered.md"
   ```
 
-  `--scan-copy` filtering is always safe. `--filtered-output` deletes content
-  from the deliverable, so it needs the GM to have said so explicitly — feed
-  its output to `apply_replacements.py` in Phase 5 in place of the original.
+  `--scan-copy` filtering is always safe. `--filtered-output` writes a copy
+  with content deleted — a reading and scanning aid, never the deliverable —
+  so it goes to `$SCRATCH` like every other derived transcript.
+
+  **Do not feed a `--filtered-output` or `--dedup-output` file to Phase 5.**
+  Both drop cues, and `sd_corrections import` pairs the two transcripts by cue
+  index — it refuses a mismatched pair outright (*"the two transcripts do not
+  carry the same cue indices"*), so a filtered candidate cannot be recorded at
+  all. Filtered and deduped copies are for **scanning**; apply against the full
+  transcript. If the GM genuinely wants a speaker's lines gone from the tape,
+  that is a separate cue-level decision recorded in
+  `transcript_corrections.yaml`, not a side effect of the spell pass.
 - **`duplication`** — whether the body is recorded twice. This does not break
   replacement, but it **doubles every occurrence count**, so every "26x" you
   put in front of the GM is really 13. Detect it here, and pass
@@ -230,16 +287,33 @@ python "$SKILL_DIR/find_unknowns.py" \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
   --npcs-dir <campaign>/docs/npcs \
   --extra-known <campaign>/notes/proper_nouns_adventure.txt \
+  --registry <campaign>/docs/entity_registry.yaml \
   --min-count 1 \
 | python "$SKILL_DIR/cluster_unknowns.py" \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
   --npcs-dir <campaign>/docs/npcs \
   --extra-known <campaign>/notes/proper_nouns_adventure.txt \
+  --registry <campaign>/docs/entity_registry.yaml \
   > "$SCRATCH/clusters.json"
 ```
 
+`--registry <campaign>/docs/entity_registry.yaml` is the canonical
+known-names source. Omit it only when the campaign has no registry; then, and
+only then, required-input #5's fallback applies — flatten
+`entity_inventory.md` and pass the `.txt` via `--extra-known`.
+
 `--extra-known` accepts multiple paths — pass every dictionary the user
-confirmed in required-input #5 (omit the flag if none exist).
+confirmed in required-input #6 (omit the flag if none exist), plus the
+flattened inventory when #5 fell back to it.
+
+**`--npcs-dir`, `--registry` and `--extra-known` are optional, and a path you
+name must exist.** A campaign need not have `docs/npcs/` (`out-of-the-abyss`
+does not): omit `--npcs-dir` from **both** commands when required-input #4
+found no dossier dir. But a path that is passed and does not exist makes
+either script exit 1 (`Error: --npcs-dir path does not exist: …`), because a
+typo there would otherwise drop a whole source of known names without a word.
+Pass the identical set of these flags to both scripts, or the two known sets
+diverge.
 
 `find_unknowns.py` emits the raw unknown-token list with counts and
 contexts. `cluster_unknowns.py` then:
@@ -275,6 +349,9 @@ already said "not a name, ignore" in a prior run.
 `known_names_count` should be in the hundreds for a mature campaign. If
 it's <50 the glossary or `docs/npcs/` isn't being read correctly —
 investigate before bothering the user with hundreds of false positives.
+If `--registry` was passed, also check `registry_names_count` is nonzero
+(0 with a real registry file usually means the wrong path was passed, or
+the YAML has no `entities:` key).
 
 **Collapse the set first: apply the current glossary, then re-scan.**
 Before surfacing anything, run `apply_replacements.py` with the *existing*
@@ -288,9 +365,9 @@ python "$SKILL_DIR/apply_replacements.py" \
   --vtt <vtt> --glossary <glossary> --output "$SCRATCH/preview_current.vtt"
 python "$SKILL_DIR/find_unknowns.py" \
   --vtt "$SCRATCH/preview_current.vtt" --glossary <glossary> \
-  --npcs-dir <npcs> --extra-known <dicts> --min-count 1 \
+  --npcs-dir <npcs> --extra-known <dicts> --registry <registry> --min-count 1 \
 | python "$SKILL_DIR/cluster_unknowns.py" \
-  --glossary <glossary> --npcs-dir <npcs> --extra-known <dicts>
+  --glossary <glossary> --npcs-dir <npcs> --extra-known <dicts> --registry <registry>
 ```
 
 Many survivors are **false residuals**: multi-word capitalised runs whose
@@ -331,7 +408,7 @@ For everything that survives, you have your **candidate list**.
 
 ### Phase 2.5 — adjudicate against the second transcription (MANDATORY when one exists)
 
-If Phase 0 / required-input #7 found a second transcription, check **every**
+If Phase 0 / required-input #8 found a second transcription, check **every**
 candidate against it BEFORE putting any of them to the GM:
 
 ```bash
@@ -425,6 +502,17 @@ So weight the sibling's evidence **by kind, not by score**:
 When the two transcriptions disagree on *which character* was named, that is a
 question for the GM with both readings shown, never a proposal.
 
+**The auto-dismissal gate — the only candidate you may drop without asking.**
+A candidate may be auto-dismissed only when **`count == 1` AND its sibling
+reading is `ordinary_words`** (plain prose at that span, after the two checks
+above). Never on an `inconclusive` reading (score < 0.55, or the span isn't
+covered), never on `count ≥ 2`, never when the sibling shows a name of any
+kind. This applies in both review modes. Every auto-dismissed candidate is
+**listed** — token, count and the sibling line — in the batch page's footer
+(the queue's `summary.auto_dismissed`), or in the chat summary before Phase 3
+in interactive mode, so the GM can pull any of them back. A dismissal nobody
+can see is a silent drop, which is the thing this skill refuses to do.
+
 **Why this is mandatory.** In the session this phase was written from, five
 candidates (`Grygum`, `Grym`, `Gryumary`, `Gilly`, `Summer`) were proposed
 from fuzzy matching, approved by the GM on that framing, applied, and only
@@ -486,7 +574,7 @@ and walk them one at a time in chat as multiple choice. Wait for the user's
 answer before recording a ruling or moving to the next cluster.
 
 **Cross-referencing Zoom's original (when a `.retranscribed` sibling
-exists — see Required input #6).** Before asking about a cluster, look up
+exists — see Required input #7).** Before asking about a cluster, look up
 Zoom's original text for one representative context excerpt:
 
 ```bash
@@ -635,18 +723,45 @@ For "Ignore" decisions: take no action.
 Mark the corresponding plan item completed after each decision when a plan is
 being used.
 
-**Glossary entry vs. targeted edit — the case-insensitivity gate.**
+**Glossary row vs. record entry — the case-insensitivity gate.**
 `apply_replacements.py` matches `\bwrong\b` with `re.IGNORECASE`, so a
 wrong-form that is also a common English word will over-replace anywhere it
 appears lowercase. Before writing a *new* wrong-form to the glossary, grep
 the VTT for lowercase occurrences of it. If any exist — or the wrong-form is
 a common word (`Embrace`, `Close`, `Home`), a generic phrase (`Call and`),
 or a non-name transcription fix (`Izzy` → `he's`) — **do not add it to the
-glossary.** Apply that one correction as a targeted `Edit` on the *cleaned*
-output in Phase 5, touching only the specific line(s). This keeps the
-glossary safe to auto-apply to every future transcript. Examples this run:
-`Embrace → Fembris` (a blanket rule would corrupt "corrosive embrace"),
-`Call and → Kalan`, `Izzy → he's`.
+glossary.** This keeps the glossary safe to auto-apply to every future
+transcript. Examples this run: `Embrace → Fembris` (a blanket rule would
+corrupt "corrosive embrace"), `Call and → Kalan`, `Izzy → he's`.
+
+**NEVER promote a cue-scoped GM ruling into a glossary row.** A ruling about
+*a cue* and a rule about *every future transcript* are different objects:
+`Cisco → A'lai` was right for one line ("I don't trust Cisco anymore" is
+Gyrgum on the prisoner), was later moved into the standing row, and rewrote a
+real company across ~8 sessions. When you find a wrong-form in a row that
+reads like it was meant for one line, check the glossary's notes section for
+its origin before trusting it.
+
+**Write one-off fixes as record entries, not as edits.** A fix that fails the
+gate becomes a `transcript_corrections.yaml` entry — never a hand edit of any
+transcript. The entry is *cue-scoped*, so it does not need to be globally safe
+the way a glossary row does, and unlike an edit it survives the next
+`sd_corrections apply`. Note the cue number and the exact before/after text now
+(`find_unknowns.py` contexts give you the span; grep the transcript for the
+cue index), and add them in Phase 7 alongside the imported glossary entries:
+
+```yaml
+- id: cue-0224-fembris
+  cue: 224
+  was: 'Gary Young: The corrosive embrace of Embrace is upon us.'
+  now: 'Gary Young: The corrosive embrace of Fembris is upon us.'
+  recorded: <today>
+  verified: true
+  note: one-off; not glossaried because a blanket Embrace rule corrupts "corrosive embrace".
+```
+
+`was` must match the cue exactly, speaker prefix included — that check is what
+makes a stale entry fail loudly instead of pasting an old repair over new words.
 
 The glossary keeps its own running landmine list (a "Notes for future passes"
 section flagging risky case-insensitive rows like `Char→Shar`, `Cal→Kalan`).
@@ -687,27 +802,31 @@ offending row with a `<file>:<line>` location.
   and both are correct rules.
 
 Replacement is expected to be **idempotent** — running the pass twice must
-equal running it once. After Phase 6, re-applying the glossary to the cleaned
-file should produce a byte-identical result; if it doesn't, a row is corrupting
-correct text and the lint will say which.
+equal running it once. Re-applying the glossary to the candidate (to a second
+scratch path) should produce a byte-identical result; if it doesn't, a row is
+corrupting correct text and the lint will say which. This property is what makes
+Phase 7's import trustworthy — a non-idempotent row puts a corruption in the
+record's `now` text, where it reads as an approved correction.
 
-Then apply the now-updated glossary to the transcript:
+Then apply the now-updated glossary to the transcript, **to scratch**:
 
 ```bash
 python "$SKILL_DIR/apply_replacements.py" \
   --vtt <vtt> \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
-  --output <vtt-stem>.cleaned.vtt
+  --output "$SCRATCH/candidate.cleaned.vtt"
 ```
 
-(Default output: `<vtt-stem>.cleaned.vtt` next to the original. Pass
-`--in-place` only if the user explicitly asks to overwrite.)
+`--output` is required, there is no `--in-place`, and the script refuses to
+write a `.cleaned.vtt` that an existing `transcript_corrections.yaml` claims
+(see "What this skill delivers"). The candidate is an input to Phase 7, not the
+deliverable — nothing downstream reads it.
 
 Report the per-pair replacement count back to the user.
 
-### Phase 6 — re-scan to confirm + record processed VTT
+### Phase 6 — re-scan to confirm
 
-Re-run `find_unknowns.py` against the cleaned VTT. Any remaining
+Re-run `find_unknowns.py` against the candidate. Any remaining
 unknowns mean either (a) a candidate slipped through pre-classification
 or (b) a new word the user didn't get to. Show the user the diff and ask
 whether to do another pass.
@@ -716,11 +835,59 @@ Expect **false residuals** to remain (see Phase 1) — multi-word capitalised
 runs like `And Kalan`, `The Helmed Horror`, `Helmed Horror No` whose embedded
 name is already correct. These are *not* a reason for another pass; only a
 residual whose embedded proper noun is actually *wrong* is. Also grep the
-cleaned output for accidental doubling from full-name wrong-forms (e.g.
-`Strongbranch Strongbranch`) and fix any with a targeted edit.
+candidate for accidental doubling from full-name wrong-forms (e.g.
+`Strongbranch Strongbranch`). **Fix these in the glossary and re-run Phase 5**,
+not by editing the candidate — a doubling is a bad *row*, and an edit leaves it
+in place to fire again next session. `lint_glossary.py` names the fix.
 
-After confirming, record the VTT as processed so future runs against the
-same path are no-ops:
+### Phase 7 — hand the diff to `sd_corrections`, then regenerate
+
+The candidate is a proposal. Turn it into record entries, get them reviewed,
+and let CampaignGenerator generate the tape:
+
+```bash
+cd <session-dir>
+
+# 1. one entry per differing cue, all verified: false
+sd_corrections import --dir . \
+  --raw <stem>.transcript.vtt \
+  --edited "$SCRATCH/candidate.cleaned.vtt" \
+  --record "$SCRATCH/proposed.yaml"
+
+# 2. review, then merge into ./transcript_corrections.yaml (hand-merge if one
+#    already exists — `import --force` discards its notes and verified flags)
+
+# 3. generate the tape and confirm
+sd_corrections apply --dir .
+sd_corrections check --dir .          # expect: no findings
+```
+
+Notes that matter:
+
+- **Pass `--raw` explicitly whenever the session has more than one non-cleaned
+  `.vtt`** (any `audio-to-vtt` run leaves `<stem>.transcript.retranscribed.vtt`
+  beside the original). Auto-detection demands exactly one and exits 2
+  otherwise. The raw you name is the one the record is written against, and it
+  determines which `.cleaned.vtt` `apply` produces.
+- **Every imported entry lands `verified: false`.** Here that is a formality,
+  not a backlog: Phase 3 already put each cluster to the GM. Flipping
+  `verified: true` is transcribing rulings that were already made — so do it
+  entry by entry against your Phase 3 answers, and **delete** rather than
+  approve any cue the GM did not rule on. An import captures *whatever* differs,
+  including a substitution a glossary row made in a context nobody looked at.
+- **`import` writes one entry per cue, not per substitution.** Two glossary
+  rows firing in one cue produce one entry whose `now` holds both fixes; that is
+  correct, and the record refuses two entries on a single cue.
+- Add the Phase 4 one-off entries here too, with `verified: true` — they never
+  went through the glossary, so `import` does not know about them.
+- **`apply` is all-or-nothing.** If any `was` no longer matches the tape,
+  nothing is written and every failure is named. A stale entry means the raw
+  tape changed under the record; fix `was` or drop the entry.
+- Deleting an entry is how you *revert* a substitution: drop it and the next
+  `apply` restores what was spoken.
+
+Finally, record the transcript as processed so future runs against the same path
+are no-ops:
 
 ```bash
 python "$SKILL_DIR/state.py" \
@@ -730,22 +897,31 @@ python "$SKILL_DIR/state.py" \
 
 ## Batch review page
 
-This replaces Phase 3 only. Phases 0–2.5 and 4–6 are unchanged, and the
+This replaces Phase 3 only. Phases 0–2.5 and 4–7 are unchanged, and the
 interactive path stays exactly as documented. Read the shared contract at
-`~/.codex/skills/_shared/review-page/CONTRACT.md`, write
-`<session-dir>/vtt_spell_pass_review.json`, then render it:
+`~/.codex/skills/_shared/review-page/CONTRACT.md`.
+
+**Where the review files live.** This skill keeps its review record in the
+session directory, under `<session-dir>/spell_review/`: the queue
+`review_items.json`, the page `review.html`, the returned `decisions.json`,
+and the id sidecar map `review_map.json`. They are `.json`/`.html`, so they
+cannot trip `sd_corrections`' `*.vtt` glob, and they are the only trace of the
+question the GM was actually asked. Nothing else this pass writes goes under
+the session directory (see "What this skill delivers").
 
 ```bash
+REVIEW="<session-dir>/spell_review"; mkdir -p "$REVIEW"
 python "$SKILL_DIR/render_review.py" \
-  --queue <session-dir>/vtt_spell_pass_review.json \
-  --output <session-dir>/vtt_spell_pass_review.html
+  --queue "$REVIEW/review_items.json" \
+  --output "$REVIEW/review.html"
 ```
 
 `render_review.py` is a VTT-specific adapter over the shared Codex review-page
-renderer. The HTML is standalone, persists selections locally in the browser,
-and exports the shared decision schema through Copy output or Save output.
-Summarize the counts in chat, hand over the HTML path, then stop. Do not modify
-the glossary or transcript while the page is awaiting review.
+renderer. The HTML is standalone, keeps no browser storage (a reload loses
+unsaved marks), always opens unmarked, and exports the shared decision schema
+through Copy output or Save output. Summarize the counts in chat, hand over the
+HTML path, then stop. Do not modify the glossary or transcript while the page
+is awaiting review.
 
 ### The consent unit is the PAIR, never the cluster
 
@@ -761,15 +937,28 @@ a group into one yes/no can approve hallucinated members invisibly.
   those deterministic rules.
 - Tokens Phase 2 drops as unambiguously non-campaign names. Summarize their
   counts and reasons, but do not create queue items for them.
+- Candidates that pass the Phase 2.5 auto-dismissal gate (**`count == 1` AND
+  `ordinary_words`**; never `inconclusive`, never `count ≥ 2`). List each one
+  by name, not just a count.
 
-Record the counts in a top-level `summary` object so the GM can see what ran
-without queue items.
+Record these in a top-level `summary` object — `phase2_dropped` and
+`auto_dismissed` as lists of `{token, count, reason}` — so the GM can see what
+ran without queue items. `render_review.py` renders it into the page footer.
 
 ### What becomes a queue item
 
 Every surviving candidate becomes an item, including low-confidence and
 blocking cases. The queue must support correction, new-canon, ignore, and
 discuss rulings.
+
+**Approve always means apply the correction; "real name, not a misspelling"
+comes back as reject.** Each item's `reject_as` picks which reject its card
+offers, and the card's `n` text states it: `ignore` (not a name; saved to
+state) or `known` (*"not a misspelling — add to the known set"*). Use `known`
+when the evidence leaves open that the token is a real name — a module hit,
+both transcriptions agreeing, a named thing in the line. An item with a null
+`canonical` defaults to `known`, and its approve asks the GM to name the right
+form in the note. Never write an item whose approve keeps the token as it is.
 
 ```json
 {
@@ -783,6 +972,7 @@ discuss rulings.
   "reason": ["edit_distance", "metaphone"],
   "confidence": "medium",
   "sibling_verdict": "agent_corrected",
+  "reject_as": "ignore",
   "recommended_decision": "approve_correction",
   "decision": null,
   "note": null
@@ -790,11 +980,16 @@ discuss rulings.
 ```
 
 Item ids must round-trip to the pair. Use `<token>__<canonical>`, lowercased
-and non-alphanumerics collapsed to `_`, and keep a sidecar map in `$SCRATCH`
-from id → `{token, canonical, section, count}`. The page exports generic
-`approve`, `reject`, and `discuss` verdicts; map them back to the VTT decisions
-below. Accept the exported JSON either pasted into chat or from the downloaded
-`vtt_spell_pass_decisions.json` file.
+and non-alphanumerics collapsed to `_`, and keep a sidecar map in
+`spell_review/review_map.json` from id → `{token, canonical, section, count,
+reject_as}`. The page exports generic `approve`, `reject`, and `discuss`
+verdicts; map them back to the VTT decisions below. Accept the exported JSON
+either pasted into chat or from the downloaded `decisions.json` file, and save
+it as `spell_review/decisions.json`.
+
+`decision` and `note` exist to carry a ruling recorded in an earlier run. The
+page shows them as text on the card, never as a pre-marked verdict — the GM
+still marks every card on this page.
 
 **Always put the verbatim excerpt in `context`.** A pair judged without its context
 is the exact failure the pair-consent rule exists to prevent.
@@ -802,18 +997,28 @@ is the exact failure the pair-consent rule exists to prevent.
 ### Hand off, then stop
 
 Give the user the rendered HTML path and stop. Resume only when the user pastes
-the exported decisions or points to the saved decisions file. Validate that
-every returned id exists in the queue and that each decision is one of
-`approve`, `reject`, or `discuss`. Never infer approval from the
-HTML or queue file's mere existence or modification time.
+the exported decisions or points to the saved decisions file. Validate it
+against the queue the page was built from:
+
+```bash
+REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-page"
+python "$REVIEW_PAGE/read_decisions.py" \
+  --in "$REVIEW/decisions.json" --items "$REVIEW/review_items.json"
+```
+
+It exits 1 on an export with no `savedAt` (never read that as "approved
+nothing") and 2 on an unknown id, a bad verdict, or an export from a different
+queue. Never infer approval from the HTML or queue file's mere existence or
+modification time.
 
 ### Decision mapping — feeds Phase 4 unchanged
 
 | decision | action |
 |---|---|
-| **approve**, proposed canonical exists | `add_to_glossary.py --wrong <token> --right <canonical> --section <matching the canonical's EXISTING row>`; use a targeted edit instead when the queue says `edit_mode: targeted` |
-| **approve**, proposed canonical is null | Append the confirmed name and context to `notes/vtt_known_additions.md`; do not add a glossary row |
-| **reject** | `state.py ignore "<token>"` |
+| **approve**, proposed canonical exists | apply the correction: `add_to_glossary.py --wrong <token> --right <canonical> --section <matching the canonical's EXISTING row>`; when the queue says `edit_mode: targeted`, add a cue-scoped entry to `transcript_corrections.yaml` in Phase 7 instead of a glossary row |
+| **approve**, proposed canonical is null | apply the correction with the canonical the GM named in the note; no canonical in the note → treat as **discuss** |
+| **reject**, `reject_as: known` | append `<token> — <context excerpt> — <date>` to `notes/vtt_known_additions.md`; no glossary row |
+| **reject**, `reject_as: ignore` | `state.py ignore "<token>"` |
 | **discuss** + note naming a canonical | treat as `approve_correction` with the GM's canonical, not the proposed one |
 | **discuss**, no note | back to the shell, grouped with the other discussed pairs |
 | **unmarked** | undecided — leave the pair for the next run and say so |
@@ -840,7 +1045,7 @@ blocks the run — a batch of approvals is exactly when a `doubling` or
   actually contain a surname token (`Callan Strongfeld → Kalan Strongbranch`).
   **`lint_glossary.py` does not catch this** — the row is fine in isolation and
   only doubles when the transcript already supplies the surname, so grep the
-  *cleaned output* for repeated surnames every run. It recurs: this pass found
+  *candidate* for repeated surnames every run. It recurs: this pass found
   `Toblin → Toblen Stonehill` turning "Toblin Stonehill" into
   "Toblen Stonehill **Stonehill**"; fixed by demoting it to `Toblin → Toblen`.
 - **Don't silently expand the user's variant lists.** If the user says
@@ -853,6 +1058,13 @@ blocks the run — a batch of approvals is exactly when a `doubling` or
 - **The glossary lives in `notes/`, which is excluded from the mempalace.**
   This is intentional — the glossary is a cleanup-pass reference, not
   campaign canon. Don't try to mine it.
+- **Glossary and record are different objects; keep them straight.** The
+  glossary (`notes/vtt_transcription_corrections.md`) is a *standing rule set*,
+  campaign-wide and reusable, so every row must be safe applied blind to any
+  future transcript. The record (`<session-dir>/transcript_corrections.yaml`) is
+  *what actually happened to this one tape*, cue-scoped and auditable. A fix too
+  dangerous to generalise belongs only in the record. Nothing belongs only in a
+  file you edited by hand.
 
 ## Why this design
 
@@ -867,3 +1079,14 @@ This matches the global rule: *LLMs are renderers, not architects. Good
 pattern: LLM extracts → human reviews and imposes structure → LLM renders
 inside that structure.* Phase 1 is deterministic extraction; Phase 3 is
 the human checkpoint; Phase 5 is deterministic rendering.
+
+Phase 7 exists because that checkpoint used to leave no trace. The pass applied
+what the GM approved, wrote the cleaned tape, and kept the *rules* in the
+glossary — but not what any individual cue became, and not the one-off edits
+that never earned a rule at all. So the tape everything downstream measures
+verbatim against was, in the end, unreviewable: on Phandalin ch46, 74
+substitutions nobody could enumerate, three of them inventing a surname. The
+record closes that gap without moving any decision away from the GM: the
+glossary still holds the approved rules, and the record now holds the approved
+*results*. That is also why the applier's `--output` has no default — the one
+path it used to default to is the one it must never write.

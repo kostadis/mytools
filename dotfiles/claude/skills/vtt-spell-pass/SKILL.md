@@ -43,11 +43,16 @@ away.
 
 Two consequences to keep in mind from Phase 0 onward:
 
-- **Never write into the session directory.** Not the cleaned tape, and not a
-  stray `.vtt` either: `sd_corrections` finds the raw tape by globbing every
+- **Never write a transcript into the session directory.** Not the cleaned
+  tape, not the candidate, not a filtered or deduped copy, and not a stray
+  `.vtt` of any kind: `sd_corrections` finds the raw tape by globbing every
   non-`.cleaned` `*.vtt` in the directory and demands exactly one, so a
-  candidate parked next to the original makes its commands fail. `$SCRATCH`
-  for everything.
+  candidate parked next to the original makes its commands fail. Every
+  transcript this pass produces goes to `$SCRATCH`. The one exception is the
+  review record: the Artifact-mode items, page and decisions files live in
+  `<session-dir>/spell_review/` (see Artifact mode), so the question the GM
+  was asked survives beside the tape. That folder holds `.json`/`.html` only —
+  never a `.vtt`.
 - **`apply_replacements.py --output` is required and has no default**, and it
   refuses to write a file an existing record claims. There is no `--in-place`.
 
@@ -64,8 +69,9 @@ Detect or ask:
    glossary already exists in the documented format — see Out of the Abyss
    for the canonical example).
 4. **NPC dossier dir** — `<campaign>/docs/npcs/` if present.
-5. **Entity registry** — if `<campaign>/docs/entity_registry.yaml` exists,
-   pass it directly via `--registry` on **both** scripts (`find_unknowns.py`
+5. **Entity registry — the canonical known-names source.** If
+   `<campaign>/docs/entity_registry.yaml` exists, pass it directly via
+   `--registry` on **both** scripts (`find_unknowns.py`
    and `cluster_unknowns.py` read it natively — no flattening, no
    `registry.py project` regeneration first, always current with the last
    registry edit). A registry name or alias is, by construction
@@ -170,7 +176,7 @@ Before anything else, one `AskUserQuestion`:
 
 Ask this every run; do not remember a default. If they choose the artifact,
 Phases 0–2.5 run exactly as written and **Artifact mode** below replaces
-Phase 3. Phases 4–6 are shared.
+Phase 3. Phases 4–7 are shared.
 
 ### Scratch files — one namespace per run, never a fixed path
 
@@ -241,12 +247,13 @@ It reports three things that change the rest of the run:
   ```bash
   # keep their lines in the file, just don't mine them for names
   prepare_input.py --input <t> --exclude-speaker natasha --scan-copy "$SCRATCH/scan.txt"
-  # only if the GM says the lines should not ship at all
-  prepare_input.py --input <t> --exclude-speaker natasha --filtered-output <t>.filtered.md
+  # a label-preserving copy without their lines, for reading only
+  prepare_input.py --input <t> --exclude-speaker natasha --filtered-output "$SCRATCH/filtered.md"
   ```
 
-  `--scan-copy` filtering is always safe. `--filtered-output` deletes content,
-  so it needs the GM to have said so explicitly.
+  `--scan-copy` filtering is always safe. `--filtered-output` writes a copy
+  with content deleted — a reading and scanning aid, never the deliverable —
+  so it goes to `$SCRATCH` like every other derived transcript.
 
   **But do not feed a `--filtered-output` or `--dedup-output` file to Phase 5.**
   Both drop cues, and `sd_corrections import` pairs the two transcripts by cue
@@ -284,11 +291,14 @@ python ~/.claude/skills/vtt-spell-pass/find_unknowns.py \
   > "$SCRATCH/clusters.json"
 ```
 
-Omit `--registry` if `<campaign>/docs/entity_registry.yaml` doesn't exist (required-input #5's fallback applies instead — flatten `entity_inventory.md` and pass it via `--extra-known`).
+`--registry <campaign>/docs/entity_registry.yaml` is the canonical
+known-names source. Omit it only when the campaign has no registry; then, and
+only then, required-input #5's fallback applies — flatten
+`entity_inventory.md` and pass the `.txt` via `--extra-known`.
 
 `--extra-known` accepts multiple paths — pass every dictionary the user
-confirmed in required-input #6 (omit the flag if none exist). Pass
-`--registry` too if required-input #5 found a registry (or its fallback).
+confirmed in required-input #6 (omit the flag if none exist), plus the
+flattened inventory when #5 fell back to it.
 
 **`--npcs-dir`, `--registry` and `--extra-known` are optional, and a path you
 name must exist.** A campaign need not have `docs/npcs/` (`out-of-the-abyss`
@@ -485,6 +495,18 @@ So weight the sibling's evidence **by kind, not by score**:
 
 When the two transcriptions disagree on *which character* was named, that is a
 question for the GM with both readings shown, never a proposal.
+
+**The auto-dismissal gate — the only candidate you may drop without asking.**
+A candidate may be auto-dismissed only when **`count == 1` AND its sibling
+reading is `ordinary_words`** (after the two checks above). Never on an
+`inconclusive` reading (score < 0.55, or the span isn't covered), never on
+`count ≥ 2`, never on a `different_name` or `campaign_correct_name` reading.
+This is the same gate `batch/AGENT_BRIEF.md` sets for `auto_dismissed[]`, and
+it applies in shell mode too. Every auto-dismissed candidate is **listed** —
+token, count and the sibling line — in the page `footer` in Artifact mode, or
+in the chat summary before Phase 3 in shell mode, so the GM can pull any of
+them back. A dismissal nobody can see is a silent drop, which is the thing this
+skill refuses to do.
 
 **Why this is mandatory.** In the session this phase was written from, five
 candidates (`Grygum`, `Grym`, `Gryumary`, `Gilly`, `Summer`) were proposed
@@ -985,9 +1007,26 @@ Only the orchestrator writes the glossary.
 
 ## Artifact mode (batch review)
 
-Replaces Phase 3 only. Phases 0–2.5 and 4–6 are unchanged, and the shell path
+Replaces Phase 3 only. Phases 0–2.5 and 4–7 are unchanged, and the shell path
 stays exactly as documented. Full contract:
 `~/.claude/skills/_shared/review-artifact/CONTRACT.md`.
+
+**Where the review files live.** This skill keeps its review record in the
+session directory, not `$SCRATCH`: `<session-dir>/spell_review/review_items.json`,
+`review.html`, `decisions.json`, and the id sidecar map
+`spell_review/review_map.json`. They are `.json`/`.html`, so they cannot trip
+`sd_corrections`' `*.vtt` glob, and they are the only trace of the question the
+GM was actually asked. Nothing else this pass writes goes under the session
+directory (see "What this skill delivers").
+
+```bash
+REVIEW="<session-dir>/spell_review"; mkdir -p "$REVIEW"
+python ~/.claude/skills/_shared/review-artifact/build_review.py \
+    --in "$REVIEW/review_items.json" --out "$REVIEW/review.html"
+```
+
+Give the page a `reviewId` such as `vtt-spell-pass:<session>`, and never put a
+verdict in `state` — a recommendation goes in the card's `y` or `ev` text.
 
 ### The consent unit is the PAIR, never the cluster
 
@@ -1007,11 +1046,13 @@ into a single card, and never let approving one member imply another.
 ### What is auto-applied, footer only
 
 - `action ∈ {leave_alone, add_to_known_set}` — no ruling needed.
-- `auto_dismissed[]` under the `batch/AGENT_BRIEF.md` gate: **`count == 1` AND
+- `auto_dismissed[]` under the `batch/AGENT_BRIEF.md` gate (Phase 2.5): **`count == 1` AND
   `kind == ordinary_words`**. Never on `inconclusive`, never on `count ≥ 2`.
 - Glossary rows that already exist — Phase 0's known-misspellings pass.
 
-Name the counts in the `footer` so the GM can see what ran without them.
+Name the counts in the `footer` so the GM can see what ran without them, and
+**list every auto-dismissed token by name** (token, count, sibling line) — a
+count alone does not let the GM pull one back.
 
 ### What becomes a card
 
@@ -1020,14 +1061,27 @@ Name the counts in the `footer` so the GM can see what ran without them.
 ```json
 { "id":  "vucherton__vukradin",
   "t":   "<code>Vucherton</code> → <b>Vukradin</b> · 3 occurrences, 2 chapters",
-  "y":   "Add the row to <code>vtt_transcription_corrections.md</code>, lint, and rewrite 3 occurrences to <b>Vukradin</b>.",
+  "y":   "Apply the correction: add the row to <code>vtt_transcription_corrections.md</code>, lint, and record the 3 substitutions to <b>Vukradin</b> in <code>transcript_corrections.yaml</code> (Phase 7).",
   "n":   "Not a garbling of Vukradin. Saved to <code>.vtt_spell_pass_state.json</code> as ignored, and never asked again.",
   "ev":  "Verbatim: <em>…a no-skimming clause that Mr. Vucherton insisted…</em> · rule <code>edit_distance,metaphone</code> · confidence <code>medium</code> · sibling: <code>agent_corrected</code>" }
 ```
 
+**Approve always means apply the correction; "real name, not a misspelling"
+comes back as reject.** Each card's `n` states which reject it is. When the
+evidence leaves open that the token is a real name (new canon — module hit,
+both transcriptions agree, a named thing in the line), write `n` as
+*"Not a misspelling — add <code>Vucherton</code> to the known set
+(<code>notes/vtt_known_additions.md</code>); no glossary row."* Otherwise `n`
+is the ignore text above. A token with no proposed canonical still gets an
+approve that corrects: `y` reads *"Misspelling — write the right form in the
+note; it becomes a glossary row"*, and its `n` is the known-set text. Never
+write a card whose approve keeps the token as it is.
+
 Card ids must round-trip to the pair. Use `<token>__<canonical>`, lowercased
-and non-alphanumerics collapsed to `_`, and keep a sidecar map in `$SCRATCH`
-from id → `{token, canonical, section, count}` — the page returns ids only.
+and non-alphanumerics collapsed to `_`, and keep a sidecar map in
+`spell_review/review_map.json` from id → `{token, canonical, section, count,
+reject_as}` (`reject_as` is `ignore` or `known`, matching the card's `n`) — the
+page returns ids only.
 
 **Always put the verbatim excerpt in `ev`.** A pair judged without its context
 is the exact failure the pair-consent rule exists to prevent.
@@ -1053,14 +1107,22 @@ A notification means *the page was republished*, nothing more. It is not the GM
 speaking and it is not approval of anything: the decisions come from the state
 block, and `read_decisions.py` still refuses a page whose `savedAt` is null.
 
-Then `WebFetch` the URL and run `read_decisions.py`.
+Then `WebFetch` the URL and run `read_decisions.py` against the same items
+file, writing the rulings beside it:
+
+```bash
+python ~/.claude/skills/_shared/review-artifact/read_decisions.py \
+    --html <saved-artifact.html> --items "$REVIEW/review_items.json" \
+    --out "$REVIEW/decisions.json"
+```
 
 ### Verdict mapping — feeds Phase 4 unchanged
 
 | verdict | action |
 |---|---|
-| **approve** | `add_to_glossary.py --wrong <token> --right <canonical> --section <matching the canonical's EXISTING row>` |
-| **reject** | `state.py ignore "<token>"`, unless the card's `n` says "real name" — then append to `notes/vtt_known_additions.md` instead |
+| **approve** | apply the correction: `add_to_glossary.py --wrong <token> --right <canonical> --section <matching the canonical's EXISTING row>` (the canonical from the note when the card had none; no canonical anywhere → treat as discuss) |
+| **reject**, `reject_as: known` (`n` reads "not a misspelling — add to the known set") | append `<token> — <context excerpt> — <date>` to `notes/vtt_known_additions.md`; no glossary row |
+| **reject**, `reject_as: ignore` | `state.py ignore "<token>"` |
 | **discuss** + note naming a canonical | treat as approve with the GM's canonical, not the proposed one |
 | **discuss**, no note | back to the shell, grouped with the other discussed pairs |
 | **unmarked** | undecided — leave the pair for the next run and say so |

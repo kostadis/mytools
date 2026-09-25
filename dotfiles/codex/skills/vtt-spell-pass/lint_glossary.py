@@ -17,6 +17,15 @@ ERROR   conflict      One wrong-form mapped to two different canonicals. Which
                       one wins depends on row order -- not a decision to leave
                       to sorting.
 ERROR   noop          wrong == right. Usually a typo in the row.
+ERROR   canon_conflict (only with --campaign-dir) The row's own CANONICAL is not
+                      what the campaign's canon chain says. A glossary row is a
+                      standing rewrite rule, so a row whose right-hand column
+                      holds a non-canonical spelling does not introduce the
+                      error once -- it manufactures it in every transcript
+                      forever. This is the check that would have caught
+                      `Grygum` (the first entry in its own row's WRONG column)
+                      being written as the canonical across 1,737 occurrences
+                      in 39 files of the Out-of-the-Abyss corpus.
 WARN    chained       A canonical also appears as someone else's wrong-form, so
                       output depends on which rule runs first. apply() sorts
                       longest-wrong-form-first, which is unrelated to intent.
@@ -46,7 +55,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -179,7 +188,13 @@ def lint(rows, corpus_text: str | None):
         # lowercase occurrence -- case-folding the corpus would make every
         # wrong-form match itself.
         if corpus_text and wrong.lower() not in COMMON_WORDS and wrong.lower() != wrong:
-            if re.search(r"\b" + re.escape(wrong.lower()) + r"\b", corpus_text):
+            # Same edge-aware boundaries as apply_replacements.word_pattern, so
+            # this check agrees with what the applier would actually rewrite
+            # (\b around punctuation-edged forms like "L.A." never matches).
+            lw = wrong.lower()
+            lead = r"\b" if re.match(r"\w", lw[:1]) else r"(?<!\w)"
+            tail = r"\b" if re.match(r"\w", lw[-1:]) else r"(?!\w)"
+            if re.search(lead + re.escape(lw) + tail, corpus_text):
                 findings.append((
                     SEV_WARN, "corpus_lower", line_no,
                     f"{wrong!r} occurs in lowercase in the corpus; this rule would "
@@ -198,12 +213,207 @@ def lint(rows, corpus_text: str | None):
     return findings
 
 
+def strip_speaker_labels(text: str) -> str:
+    """Drop speaker attribution before scanning a transcript for names.
+
+    A label is attribution, not dialogue. Scanning it found `Levin` x187 in
+    the 20260907 transcript -- the tail of Gabe's Zoom display name
+    `Gabriel Tarasuk-Levin` -- and reported it against glossary row 91, whose
+    wrong column lists `Levin` as a garbling of the NPC Leuwin. Reuses
+    find_unknowns.SPEAKER_RE (the pattern the spell pass already strips with)
+    plus WebVTT `<v Name>` voice tags.
+    """
+    from find_unknowns import SPEAKER_RE
+    text = re.sub(r"<v [^>]*>", "", text)
+    return SPEAKER_RE.sub("", text)
+
+
+GLOSSARY_NAME = "notes/vtt_transcription_corrections.md"
+
+
+def load_player_names(campaign_dir) -> set:
+    """Every real player's name, display names and first name, lowercased,
+    from <campaign>/config/players.yaml.
+
+    The glossary's "Player names -> characters" rows (`Ben Pfaff` -> `Gyrgum`,
+    `Kostadis Roussos` -> `GM`) are speaker-relabelling rules for extraction,
+    not spelling corrections. Body text legitimately contains player names --
+    people address each other by name at the table -- so treating those rows as
+    canon made verify_output report `Kostadis Roussos x339` as an error and made
+    canon_conflict flag `Kostadis` for being both a canonical and a wrong-form.
+
+    Keyed on players.yaml, which DECLARES who the players are, rather than on
+    the glossary's section heading, which is prose and can be renamed.
+    """
+    path = Path(campaign_dir) / "config" / "players.yaml"
+    if not path.exists():
+        return set()
+    import yaml
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    names = set()
+    for pl in data.get("players", []) or []:
+        for n in [pl.get("name"), *(pl.get("display_names") or [])]:
+            if n:
+                names.add(str(n).lower())
+                names.add(str(n).split()[0].lower())
+    return names
+
+
+def _is_player_form(form: str, players: set) -> bool:
+    f = re.sub(r"['\u2019]s$", "", form.lower().strip())
+    return f in players or f.split(" (")[0] in players
+
+
+def player_rows(rows, players: set) -> set:
+    """Line numbers of relabelling rows: any row one of whose wrong-forms is a
+    declared player name. Its OTHER wrong-forms ("Ben Fath", a garbling of
+    "Ben Pfaff") are then relabelling rules too."""
+    return {line_no for line_no, _, w, _ in rows if _is_player_form(w, players)}
+
+
+def lint_against_canon(rows, campaign_dir, campaign_generator=None):
+    """ERROR for any row whose CANONICAL disagrees with the canon chain.
+
+    Uses entity_registry.resolve (CampaignGenerator#477), which walks
+    config/party.yaml -> this glossary -> docs/entity_registry.yaml -> a
+    dossier's stated ruling -> notes/vtt_known_additions.md and reports where a
+    name resolves and on whose authority.
+
+    Only the right-hand column is checked. The wrong column is a list of known
+    garblings and is SUPPOSED to contain non-canonical spellings -- flagging it
+    would flag the file for doing its job.
+
+    Two findings, both ERROR because both are standing rewrite rules:
+      - the canonical resolves to a DIFFERENT name (a higher tier disagrees)
+      - the canonical appears in another row's wrong column (it is a garbling
+        that has been promoted to canonical somewhere)
+
+    A canonical that is simply `not_canon` is NOT an error. Most glossary rows
+    rule on names that exist nowhere else yet, and that is the normal case.
+    """
+    sys.path.insert(0, str(campaign_generator)) if campaign_generator else None
+    try:
+        from entity_registry import resolve
+    except ImportError:
+        return [(SEV_WARN, "canon_conflict", 0,
+                 "entity_registry.resolve not importable; pass "
+                 "--campaign-generator <path-to-CampaignGenerator>. Skipped.")]
+
+    findings = []
+    players = load_player_names(campaign_dir)
+    # A player-name wrong-form is a relabelling rule, not a claim that the
+    # name is misspelled -- it must not make its canonical look promoted.
+    wrong_forms = {w.lower(): line_no for line_no, _, w, _ in rows
+                   if not _is_player_form(w, players)}
+    checked = set()
+    for line_no, _section, _wrong, canonical in rows:
+        if canonical.lower() in checked:
+            continue
+        checked.add(canonical.lower())
+
+        other = wrong_forms.get(canonical.lower())
+        if other is not None:
+            findings.append((
+                SEV_ERROR, "canon_conflict", line_no,
+                f"{canonical!r} is this row's canonical, but it is also a "
+                f"WRONG-form on line {other}. A garbling has been promoted to "
+                f"canonical; every transcript this row touches gets the "
+                f"misspelling written in."))
+            continue
+
+        r = resolve.resolve_name(campaign_dir, canonical)
+        if r["status"] == "ambiguous":
+            f = r["favoured"]
+            c = ", ".join(f"{x['value']!r} (tier {x['tier']})" for x in r["conflicts"])
+            findings.append((
+                SEV_WARN, "canon_conflict", line_no,
+                f"{canonical!r}: sources disagree -- {f['value']!r} "
+                f"(tier {f['tier']}, {f['source']}) vs {c}. Not resolved here; "
+                f"the GM rules."))
+        elif r["status"] == "resolved" and r["is_change"]:
+            findings.append((
+                SEV_ERROR, "canon_conflict", line_no,
+                f"{canonical!r} is this row's canonical, but the canon chain "
+                f"says {r['canonical']!r} (tier {r['tier']}, {r['authority']}). "
+                f"This row rewrites every transcript to the wrong spelling."))
+    return findings
+
+
+def verify_output(paths, campaign_dir, campaign_generator=None, rows=()):
+    """ERROR for any proper noun in PRODUCED text that is not already canon.
+
+    The complement to canon_conflict, and the check that actually catches the
+    Out-of-the-Abyss `Grygum` incident. That error was never in the glossary --
+    the row was correct all along (`Grygum` sits in the wrong column and
+    `**Gyrgum**` is the canonical). It entered through a card decision and
+    landed in the OUTPUT, where no row-level lint can see it, and 1,737
+    occurrences across 39 files accumulated before anything noticed.
+
+    So this reads what the pass produced and asks the only question that
+    matters about a finished transcript: does every name in it resolve to
+    itself? A name coming back `is_change: true` is one the pass wrote in a
+    form the campaign's own canon chain rejects.
+
+    Cheap enough to run every time -- one resolution per distinct token,
+    cached, no review queue. It is an assertion, not a phase. `not_canon` is
+    ignored: unknown names are the spell pass's normal input, and flagging
+    them would rebuild the very queue this avoids.
+    """
+    if campaign_generator:
+        sys.path.insert(0, str(campaign_generator))
+    try:
+        from entity_registry import resolve
+    except ImportError:
+        return [(SEV_WARN, "output_not_canon", 0,
+                 "entity_registry.resolve not importable; pass "
+                 "--campaign-generator <path-to-CampaignGenerator>. Skipped.")]
+
+    proper = re.compile(r"\b([A-Z][a-z'\-]{2,}(?:[ \-][A-Z][a-z'\-]+){0,2})\b")
+    players = load_player_names(campaign_dir)
+    relabel_lines = {f"{GLOSSARY_NAME}:{n}" for n in player_rows(rows, players)}
+    findings = []
+    seen: dict = {}
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        text = strip_speaker_labels(text)
+        for token, n in Counter(m.group(1) for m in proper.finditer(text)).items():
+            if _is_player_form(token, players):
+                continue      # table talk, not a spelling -- see load_player_names
+            if token not in seen:
+                r = resolve.resolve_name(campaign_dir, token)
+                seen[token] = ((r["canonical"], r["tier"], r["authority"])
+                               if r["status"] == "resolved" and r["is_change"]
+                               and r["authority"] not in relabel_lines
+                               else None)
+            if seen[token]:
+                canonical, tier, authority = seen[token]
+                findings.append((
+                    SEV_ERROR, "output_not_canon", 0,
+                    f"{path}: wrote {token!r} x{n}, but the canon chain says "
+                    f"{canonical!r} (tier {tier}, {authority})."))
+    return findings
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--glossary", required=True, type=Path)
     ap.add_argument("--corpus", nargs="*", type=Path, default=[],
                     help="Transcript files to check wrong-forms against empirically")
     ap.add_argument("--quiet", action="store_true", help="Show ERRORs only")
+    ap.add_argument("--campaign-dir", type=Path, default=None,
+                    help="Campaign root — enables the canon_conflict check, which "
+                         "resolves each row's CANONICAL against config/party.yaml, "
+                         "docs/entity_registry.yaml and the dossiers")
+    ap.add_argument("--verify-output", nargs="*", type=Path, default=[],
+                    help="Produced transcripts/docs to assert against canon - every "
+                         "proper noun must already resolve to itself. Requires "
+                         "--campaign-dir.")
+    ap.add_argument("--campaign-generator", type=Path, default=None,
+                    help="CampaignGenerator checkout providing entity_registry.resolve "
+                         "(default: importable from the environment)")
     args = ap.parse_args()
 
     if not args.glossary.exists():
@@ -214,6 +424,14 @@ def main():
     corpus_text = load_corpus(args.corpus) if args.corpus else None
 
     findings = lint(rows, corpus_text)
+    if args.campaign_dir:
+        findings += lint_against_canon(rows, args.campaign_dir, args.campaign_generator)
+    if args.verify_output:
+        if not args.campaign_dir:
+            print("--verify-output requires --campaign-dir", file=sys.stderr)
+            return 2
+        findings += verify_output(args.verify_output, args.campaign_dir,
+                                  args.campaign_generator, rows)
     if args.quiet:
         findings = [f for f in findings if f[0] == SEV_ERROR]
 
