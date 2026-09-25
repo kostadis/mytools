@@ -408,6 +408,26 @@ DO NOT drop:
 
 For everything that survives, you have your **candidate list**.
 
+**Real-world names go to the GM as one list, not one question each.** A
+personal name that is **in none of** the entity registry, the published
+module (5etools, or the local module text; a hit only in the credits or
+playtester list does not count) or `config/party.yaml` is, by the GM's
+standing rule (OOTA ch004, 2026-09-25), out-of-game table chatter: the
+chance it matters to the game is effectively zero. Still surface it. That
+rule covers the players' coworkers, pets, celebrities and executives who
+dominate pre-roll chat (`Pat`, `Rajiv`, `Marissa Meyer`, `Willard` the dog).
+But put them all in **one** grouped question: *"None of these is in the
+registry, the module or party.yaml; all table chatter? Pick any that are
+real."* Show each with its count and one line of context. Names picked go
+back into the normal flow. The rest are `state.py ignore`d in one call, and
+their cues stay on the tape as spoken. In Artifact mode this is one
+multi-select question in chat before (or beside) the page, never a card per
+name. An empty or unanswered pick is **not** "all chatter": ask again with
+an explicit "none are real" option.
+
+Run the three lookups before listing a name as real-world. A name that hits
+any of them is not chatter and takes the normal per-pair route.
+
 ### Phase 2.5 — adjudicate against the second transcription (MANDATORY when one exists)
 
 If Phase 0 / required-input #8 found a second transcription, check **every**
@@ -686,7 +706,9 @@ python "$SKILL_DIR/state.py" \
 ```
 
 **No assumed table chatter.** If a token looks like a personal name and
-you don't know whether it's a player or an NPC, ask. Mistakes here cost
+you don't know whether it's a player or an NPC, ask. (The one batching exception is the
+real-world list in Phase 2: names in none of the registry, the module or
+party.yaml are asked once, as a group.) Mistakes here cost
 real corrections. Clustering already cuts the question count — don't
 compound that with silent dismissals.
 

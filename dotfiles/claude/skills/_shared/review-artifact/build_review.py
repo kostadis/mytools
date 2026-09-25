@@ -4,7 +4,7 @@
 The page is a direct port of the "Chapter 63 Rulings" artifact
 (claude.ai/code/artifact/e7370038-fb48-4755-bc47-129d18b0dd23, 2026-08-19),
 which is the proven shape: one card per judgement call, Approve / Reject /
-Discuss per card, an optional per-card note, a "Discuss all N" bulk button,
+Discuss per card (plus any extraVerdicts the caller declares), an optional per-card note, a "Discuss all N" bulk button,
 a progress counter, and one Save button.
 
 Saving calls window.claude.use('artifact').publish(...) — the page rewrites
@@ -40,6 +40,7 @@ CSS = r"""
   --ok:#2F6F62; --ok-bg:#DCE9E5;
   --no:#A63446; --no-bg:#F5E2E5;
   --talk:#A26A1F; --talk-bg:#F6EBDA;
+  --x:#5A5C8F; --x-bg:#E4E4F0;
   --shadow:0 1px 2px rgba(23,27,25,.05),0 8px 24px -16px rgba(23,27,25,.18);
   --serif:"Spectral",Georgia,serif;
   --sans:"Archivo","Helvetica Neue",Arial,sans-serif;
@@ -54,6 +55,7 @@ CSS = r"""
     --ok:#6BBBA7; --ok-bg:#1B2E2A;
     --no:#E28794; --no-bg:#34191E;
     --talk:#DDAA5E; --talk-bg:#33280F;
+    --x:#A9ABE0; --x-bg:#23243A;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -18px rgba(0,0,0,.8);
   }
 }
@@ -65,6 +67,7 @@ CSS = r"""
   --ok:#6BBBA7; --ok-bg:#1B2E2A;
   --no:#E28794; --no-bg:#34191E;
   --talk:#DDAA5E; --talk-bg:#33280F;
+  --x:#A9ABE0; --x-bg:#23243A;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -18px rgba(0,0,0,.8);
 }
 *{box-sizing:border-box}
@@ -85,6 +88,7 @@ h1{font-family:var(--serif);font-weight:800;font-size:clamp(2.2rem,5.5vw,3.4rem)
 .chip.a{background:var(--ok-bg);color:var(--ok)}
 .chip.r{background:var(--no-bg);color:var(--no)}
 .chip.d{background:var(--talk-bg);color:var(--talk)}
+.chip.x{background:var(--x-bg);color:var(--x)}
 .spacer{flex:1 1 auto}
 
 button{font-family:inherit;font-size:inherit;cursor:pointer}
@@ -113,6 +117,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .item[data-choice="approve"]{border-left-color:var(--ok)}
 .item[data-choice="reject"]{border-left-color:var(--no)}
 .item[data-choice="discuss"]{border-left-color:var(--talk)}
+.item[data-x="1"]{border-left-color:var(--x)}
 
 .item-head{display:flex;gap:12px;align-items:baseline}
 .num{font-family:var(--mono);font-size:12px;color:var(--ink-3);flex:none;padding-top:4px;font-variant-numeric:tabular-nums}
@@ -124,6 +129,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   text-transform:uppercase;margin-bottom:4px}
 .outcome.y b{color:var(--ok)}
 .outcome.n b{color:var(--no)}
+.outcome.x b{color:var(--x)}
 .outcome code{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere;color:var(--ink)}
 
 .ev{font-size:13px;color:var(--ink-3);line-height:1.55;margin:0;padding-left:12px;border-left:2px solid var(--rule-soft)}
@@ -138,6 +144,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ch[aria-pressed="true"][data-choice="approve"]{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}
 .ch[aria-pressed="true"][data-choice="reject"]{background:var(--no-bg);border-color:var(--no);color:var(--no)}
 .ch[aria-pressed="true"][data-choice="discuss"]{background:var(--talk-bg);border-color:var(--talk);color:var(--talk)}
+.ch[aria-pressed="true"][data-x="1"]{background:var(--x-bg);border-color:var(--x);color:var(--x)}
 
 .note{width:100%;background:var(--ground);border:1px solid var(--rule);border-radius:3px;color:var(--ink);
   font-family:var(--sans);font-size:13.5px;padding:9px 12px}
@@ -172,8 +179,12 @@ var EYEBROW = __EYEBROW__;
 var LEDE = __LEDE__;
 var FOOTER = __FOOTER__;
 var ITEMS = __ITEMS__;
+var EXTRA = __EXTRA__;
 
 var LABEL = {approve:"Approve", reject:"Reject", discuss:"Discuss"};
+var KEYS = ['approve','reject','discuss'];
+var ISX = {};
+EXTRA.forEach(function(e){ LABEL[e.key] = e.label; KEYS.push(e.key); ISX[e.key] = true; });
 
 function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 
@@ -192,13 +203,15 @@ var readOnly = false;
 var ui = {filter: 'all', search: ''};
 
 function counts(){
-  var c = {approve:0,reject:0,discuss:0};
-  ITEMS.forEach(function(it){ var d = state.decisions[it.id]; if(d) c[d]++; });
+  var c = {};
+  KEYS.forEach(function(k){ c[k] = 0; });
+  ITEMS.forEach(function(it){ var d = state.decisions[it.id]; if(d && d in c) c[d]++; });
   return c;
 }
 
 function render(){
-  var c = counts(), done = c.approve + c.reject + c.discuss;
+  var c = counts(), done = 0;
+  KEYS.forEach(function(k){ done += c[k]; });
   var query = ui.search.toLowerCase();
   var visible = ITEMS.filter(function(it){
     var choice = state.decisions[it.id] || '';
@@ -221,11 +234,13 @@ function render(){
   if(c.approve) h += '<span class="chip a">' + c.approve + ' approve</span>';
   if(c.reject)  h += '<span class="chip r">' + c.reject + ' reject</span>';
   if(c.discuss) h += '<span class="chip d">' + c.discuss + ' discuss</span>';
+  EXTRA.forEach(function(e){ if(c[e.key]) h += '<span class="chip x">' + c[e.key] + ' ' + esc(e.label.toLowerCase()) + '</span>'; });
   h += '</span>';
   h += '<span class="spacer"></span>';
   h += '<input class="search" id="search" type="search" placeholder="Search" value="' + esc(ui.search) + '">';
   h += '<span class="filters">';
-  [['all','All'],['unmarked','Unmarked'],['approve','Approved'],['reject','Rejected'],['discuss','Discuss']].forEach(function(pair){
+  [['all','All'],['unmarked','Unmarked'],['approve','Approved'],['reject','Rejected'],['discuss','Discuss']].concat(
+    EXTRA.map(function(e){ return [e.key, esc(e.label)]; })).forEach(function(pair){
     h += '<button class="filter" data-filter="' + pair[0] + '" aria-pressed="' + (ui.filter === pair[0]) + '">' + pair[1] + '</button>';
   });
   h += '</span>';
@@ -241,17 +256,20 @@ function render(){
   visible.forEach(function(it){
     var i = ITEMS.indexOf(it);
     var d = state.decisions[it.id] || '';
-    h += '<div class="item"' + (d ? ' data-choice="' + d + '"' : '') + '>';
+    h += '<div class="item"' + (d ? ' data-choice="' + d + '"' + (ISX[d] ? ' data-x="1"' : '') : '') + '>';
     h += '<div class="item-head"><span class="num">' + (i+1 < 10 ? '0' : '') + (i+1) + '</span>';
     h += '<h2>' + it.t + '</h2></div>';
     h += '<div class="outcomes">';
     h += '<div class="outcome y"><b>If approved</b>' + it.y + '</div>';
     h += '<div class="outcome n"><b>If rejected</b>' + it.n + '</div>';
+    EXTRA.forEach(function(e){
+      h += '<div class="outcome x"><b>If ' + esc(e.label.toLowerCase()) + '</b>' + ((it.x && it.x[e.key]) || e.outcome) + '</div>';
+    });
     h += '</div>';
     if(it.ev) h += '<p class="ev">' + it.ev + '</p>';
     h += '<div class="choices">';
-    ['approve','reject','discuss'].forEach(function(k){
-      h += '<button class="ch" data-item="' + it.id + '" data-choice="' + k + '" aria-pressed="' +
+    KEYS.forEach(function(k){
+      h += '<button class="ch" data-item="' + it.id + '" data-choice="' + k + '"' + (ISX[k] ? ' data-x="1"' : '') + ' aria-pressed="' +
            (d === k ? 'true' : 'false') + '">' + LABEL[k] + '</button>';
     });
     h += '</div>';
@@ -429,6 +447,18 @@ def validate(spec: dict) -> list[str]:
             if iid in seen:
                 errs.append(f"duplicate item id {iid!r} - decisions are keyed by id, so ids must be unique")
             seen.add(iid)
+    extra = spec.get("extraVerdicts") or []
+    if not isinstance(extra, list):
+        errs.append("'extraVerdicts' must be a list")
+        extra = []
+    for j, e in enumerate(extra):
+        key = e.get("key") if isinstance(e, dict) else None
+        if not key or not re.fullmatch(r"[a-z_]{1,24}", str(key)) or key in ("approve", "reject", "discuss"):
+            errs.append(f"extraVerdicts[{j}] needs a 'key' of 1-24 chars [a-z_], not approve/reject/discuss")
+        elif not e.get("label") or not e.get("outcome"):
+            errs.append(f"extraVerdicts[{j}] ({key}) needs 'label' and 'outcome' - the outcome says what the verdict does")
+    if len({e.get("key") for e in extra if isinstance(e, dict)}) != len(extra):
+        errs.append("extraVerdicts keys must be unique")
     if spec.get("reviewId") and not re.fullmatch(r"[A-Za-z0-9_.:@-]{1,128}", str(spec["reviewId"])):
         errs.append("'reviewId' must be 1-128 chars of [A-Za-z0-9_.:@-]")
     pre = spec.get("state") or {}
@@ -445,7 +475,8 @@ def build(spec: dict) -> str:
            .replace("__EYEBROW__", js(spec.get("eyebrow", "")))
            .replace("__LEDE__", js(spec.get("lede", "")))
            .replace("__FOOTER__", js(spec.get("footer", "")))
-           .replace("__ITEMS__", js(spec["items"])))
+           .replace("__ITEMS__", js(spec["items"]))
+           .replace("__EXTRA__", js(spec.get("extraVerdicts") or [])))
 
     if re.search(r"</script", src, re.I):
         raise SystemExit(
