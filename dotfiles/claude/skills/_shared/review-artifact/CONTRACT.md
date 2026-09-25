@@ -137,6 +137,11 @@ re-apply a stage you have already applied.
 | `items[].n` | yes | **What happens if rejected. Name the files.** |
 | `items[].ev` | no | The evidence. Cite `file:line`. |
 
+**Never pre-fill a verdict.** A page always starts unmarked and unsaved: the
+builder rejects a spec whose `state` carries `decisions`, `notes` or `savedAt`.
+A pre-set verdict would be exported as the GM's ruling on a single Save. Put
+your recommendation in the card's `y` or `ev` text instead.
+
 `title` is **plain text**: it is escaped both when the page is built and every
 time it re-renders itself on save. `eyebrow`, `lede`, `footer` and
 `t` / `y` / `n` / `ev` are **rendered as HTML** — `<code>`, `<em>`, `<b>` are

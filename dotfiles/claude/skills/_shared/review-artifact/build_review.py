@@ -392,6 +392,10 @@ def validate(spec: dict) -> list[str]:
             if iid in seen:
                 errs.append(f"duplicate item id {iid!r} - decisions are keyed by id, so ids must be unique")
             seen.add(iid)
+    pre = spec.get("state") or {}
+    if pre.get("decisions") or pre.get("notes") or pre.get("savedAt"):
+        errs.append("'state' must not pre-fill decisions, notes or savedAt - a page always "
+                    "starts unmarked and unsaved; put a recommendation in the card's y/ev text")
     return errs
 
 
@@ -410,7 +414,7 @@ def build(spec: dict) -> str:
             "Check the item text for a literal closing script tag."
         )
 
-    state = spec.get("state") or {"decisions": {}, "notes": {}, "savedAt": None}
+    state = {"decisions": {}, "notes": {}, "savedAt": None}
     return (PAGE
             .replace("__TITLE_TEXT__", html.escape(spec["title"]))
             .replace("__FONTS_TEXT__", FONTS)
