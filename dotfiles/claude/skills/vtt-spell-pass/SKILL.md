@@ -166,6 +166,40 @@ Detect or ask:
    unscoped and read which source comes back. See "Consult the module" under
    Phase 2.5 for when to reach for it.
 
+10. **Session-start trims (when the campaign keeps them).** If
+    `<campaign>/notes/session_start_trims.json` exists, it records where each
+    recorded session's opening table chatter ends (`trim_before_s`, keyed by the
+    session directory name). **No question is asked about anything said before
+    that point.** A garble in the catch-up talk about jobs, kids and software is
+    not worth the GM's attention, and it was never going to reach a narrated
+    scene. Resolve the time once, before Phase 1:
+
+    ```bash
+    TRIM_S=$(python3 -c 'import json,sys; r=[x for x in json.load(open(sys.argv[1])) if x["session"]==sys.argv[2]]; print(r[0]["trim_before_s"] if r else "MISSING")' \
+      <campaign>/notes/session_start_trims.json "$(basename <session_dir>)")
+    ```
+
+    `MISSING` means the file does not list this session. Ask the GM whether to
+    scan the whole tape (`--skip-before 0`) or add the session to the file first;
+    do not guess a trim. Pass `--skip-before "$TRIM_S"` to **every**
+    `find_unknowns.py` call in this run (Phase 1, the collapse re-scan, Phase 6).
+    `--session-trims <file>` does the same lookup itself, but only when the VTT
+    sits in the session directory: on a `$SCRATCH` copy it exits with an error,
+    because the parent folder is not the session.
+
+    What it does and does not change:
+    - Cues that **start** before the trim are not scanned, so a name heard only
+      there never becomes a candidate. A name heard both before and after is
+      still asked, with its count and contexts taken from the kept part only.
+    - **Glossary replacements still apply to the whole tape**, chatter included.
+      `apply_replacements.py` and the correction record are unchanged, and
+      `applied_replacements` counts the full tape.
+    - It is a WebVTT-only feature: `find_unknowns.py` exits if asked to skip on
+      an input with no cue timestamps, rather than silently scanning everything.
+    - Say it in the review: the page footer (or the shell summary) states the
+      trim time and `cues_skipped` from the JSON, so the GM knows the opening was
+      deliberately not reviewed.
+
 ## Workflow
 
 ### Phase -1 — choose the review mode
@@ -284,7 +318,7 @@ python ~/.claude/skills/vtt-spell-pass/find_unknowns.py \
   --npcs-dir <campaign>/docs/npcs \
   --extra-known <campaign>/notes/proper_nouns_adventure.txt \
   --registry <campaign>/docs/entity_registry.yaml \
-  --min-count 1 \
+  --min-count 1 --skip-before "$TRIM_S" \
 | python ~/.claude/skills/vtt-spell-pass/cluster_unknowns.py \
   --glossary <campaign>/notes/vtt_transcription_corrections.md \
   --npcs-dir <campaign>/docs/npcs \
@@ -292,6 +326,9 @@ python ~/.claude/skills/vtt-spell-pass/find_unknowns.py \
   --registry <campaign>/docs/entity_registry.yaml \
   > "$SCRATCH/clusters.json"
 ```
+
+`--skip-before "$TRIM_S"` comes from required-input #10; drop it only when the
+campaign keeps no `session_start_trims.json`.
 
 `--registry <campaign>/docs/entity_registry.yaml` is the canonical
 known-names source. Omit it only when the campaign has no registry; then, and
@@ -362,6 +399,7 @@ python ~/.claude/skills/vtt-spell-pass/apply_replacements.py \
 python ~/.claude/skills/vtt-spell-pass/find_unknowns.py \
   --vtt "$SCRATCH/preview_current.vtt" --glossary <glossary> \
   --npcs-dir <npcs> --extra-known <dicts> --registry <registry> --min-count 1 \
+  --skip-before "$TRIM_S" \
 | python ~/.claude/skills/vtt-spell-pass/cluster_unknowns.py \
   --glossary <glossary> --npcs-dir <npcs> --extra-known <dicts> --registry <registry>
 ```
@@ -939,7 +977,8 @@ the backstop for when that rule is broken anyway.
 
 ### Phase 6 — re-scan to confirm
 
-Re-run `find_unknowns.py` against the candidate. Any remaining
+Re-run `find_unknowns.py` against the candidate, with the same
+`--skip-before "$TRIM_S"`. Any remaining
 unknowns mean either (a) a candidate slipped through pre-classification
 or (b) a new word the user didn't get to. Show the user the diff and ask
 whether to do another pass.
