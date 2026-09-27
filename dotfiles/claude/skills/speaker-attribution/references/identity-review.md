@@ -39,6 +39,7 @@ or re-cluster on one of these alone.
 | two PC names land on one cluster | one person ran both PCs that session | shared or per-scene control | Brewbarry/Valphine (below) |
 | a voice-profile name is not on the roster, or a rostered player's profile is nearly empty | the profile is mislabelled and holds a real player | a genuine room voice | `<non-player>` = Mike, OOTA ch02 (below) |
 | one cluster's lines use two PCs' abilities | two players merged in one cluster | one player covering another's PC | Zalthir's fire and Daz's Shape Water, OOTA ch02 (below) |
+| the GM says on tape they are running a player's PC ("how to use Gabe's character", "I need to roll for Zalthir") and no cluster answers that PC's name | the player was absent, whatever the attendance answer said | the player joined late, or was present but muted | OOTA ch22: GM had answered "all five"; re-asked with the quotes, GM ruled Gabe absent |
 
 ## Anonymous clusters
 
@@ -291,6 +292,38 @@ text, never into the file.
 Save the rulings as `{"<cue id>": "<name>"}` and pass them with
 `--cue-labels` (*Writing the approved result*). A ruled cue loses its `[?]`,
 because the ruling is what resolved it. Give a cue its mapped name to confirm it.
+
+### When the GM asks for context-judged review instead
+
+A card per cue is the default. It is also expensive, and it can bury the GM:
+on OOTA ch15 (291 cards) and ch19 (62 cards, 47 kept as proposed) the GM
+found about 95% of the proposals already right. On 2026-09-27 the OOTA GM gave
+a **standing instruction** instead: judge each cue from role context, and send
+only the cues **under 70% confidence where who spoke matters**, never
+backchannels ("okay", "yeah", "all right").
+
+Apply it only when the GM has said so; record the instruction in the run
+record. Then:
+
+- **Strong role evidence decides a cue:** narration and NPC speech
+  ("He looks at you and says…"); a spell or feature on one PC's sheet ("cast
+  my minor illusion", Magic Missile on Daz's sheet); a turn taken right after
+  its PC is called ("It's back to me already" just before Gyrgum acts);
+  running the VTT or the initiative order ("Oh, why didn't Grygum get
+  added?"); a real-world trip or job one player is known for.
+- **Weak evidence decides nothing:** "sounds like the GM", calling turns,
+  asking for a DC, reading a save. The ch03 lesson above still holds.
+- **Skip without judging:** backchannels, pre-game chatter, and cues that
+  mix two speakers in one text span. A label on those carries no meaning
+  downstream.
+
+Write the confident calls with `--cue-labels`, list each one in the run record
+as **model-judged under the GM's standing instruction** (separately from GM
+rulings), and ask about the rest in chat or on a page. *Evidence:* ch22 part B
+had 248 candidate cues. Context settled 11 changes (e.g. Daz's Magic Missile
+lines moved from the GM to Mike), and none remained under the bar.
+2025-08-04 (single source, projected) had 43 weak cues of 5+ words. Context
+settled 4, and the GM ruled the 4 that stayed uncertain.
 
 ## Writing the approved result
 

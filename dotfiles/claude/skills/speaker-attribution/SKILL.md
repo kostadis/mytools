@@ -72,12 +72,17 @@ them again. A known PC owner is not an acoustic cluster ID.
   acoustic source, no independent cross-validation"**. Descript used as the
   primary (no GPU free) leaves one source, so ask. With that acceptance the
   output header says so; without it, report an unvalidated cluster report only.
+- **Per-cue review follows the GM's standing preference.** The default is a card per cue.
+  When the GM has said so (OOTA, 2026-09-27), judge cues from role context instead, write the
+  confident calls as model-judged, and send only those under 70% confidence where who spoke
+  matters, never backchannels (identity-review.md, *When the GM asks for context-judged review*).
 - **Strong clues, not decisions.** A dominant cluster (possible collapse, or a
   GM-heavy session), identical turn tallies (likely derivative), the
   chat-sidecar absence probe (who went quiet), two PC names on one cluster
   (one person may have run both), a voice profile named for someone off the
-  roster (likely a mislabelled player), and one cluster using two PCs'
-  abilities (two players merged) are put to the GM with the clue, its strength
+  roster (likely a mislabelled player), one cluster using two PCs'
+  abilities (two players merged), and the GM saying on tape that they are
+  running a player's PC (that player was likely absent) are put to the GM with the clue, its strength
   and the incident behind it. Never auto-select a voice, discard a transcript,
   or re-cluster on one clue alone.
 - **The agreement percentage is a disagreement measure, not an error rate.**
@@ -97,6 +102,10 @@ Read provenance.md, then:
 ```bash
 python3 "$SKILL_DIR/transcript_provenance.py" <session-dir-or-summaries-tree>
 ```
+
+Two traps the fingerprint scan cannot see: a recording that holds the session **twice** (the
+opening small talk recurs mid-file), and a `<date>-new-chapter` folder duplicating an existing one.
+Both are in provenance.md; the GM decides which copy and what moves.
 
 A filename is an assertion, not evidence. Look for MISFILED, SPANS MULTIPLE
 RECORDINGS and "sits beside audio it does NOT transcribe"; confirm matches by

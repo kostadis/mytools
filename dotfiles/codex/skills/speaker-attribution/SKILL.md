@@ -63,19 +63,30 @@ quoted paths in all commands. The five Python helpers use the standard library.
 
 ## Strong clues, not decisions
 
-Six signals are **strong clues to put to the GM, never auto-decisions**: a
+Seven signals are **strong clues to put to the GM, never auto-decisions**: a
 dominant cluster (possible collapse, or a GM-heavy session), identical turn
 tallies (likely derivative), the chat-sidecar absence probe (who went quiet),
 two PC names on one cluster (one person may have run both), a voice profile
-named for someone off the roster (likely a mislabelled player), and one
-cluster using two PCs' abilities (two players merged). State the clue,
+named for someone off the roster (likely a mislabelled player), one cluster
+using two PCs' abilities (two players merged), and the GM saying on tape that
+they are running a player's PC (that player was likely absent). State the clue,
 its strength and the incident behind it, and ask. Never auto-select a voice,
 discard a transcript, or re-cluster on one clue alone. The references give the
 incidents.
 
+## Per-cue review follows the GM's standing preference
+
+The default is one card per cue. When the GM has asked for it (OOTA,
+2026-09-27), judge cues from role context instead: write the confident calls
+as model-judged, and send only cues under 70% confidence where who spoke
+matters, never backchannels. The rules and evidence are in identity-review.md,
+*When the GM asks for context-judged review instead*.
+
 ## 1. Establish provenance
 
-Read [provenance.md](references/provenance.md), then run:
+Read [provenance.md](references/provenance.md). Two traps the fingerprint scan cannot see are a recording that holds the
+session twice and a `<date>-new-chapter` folder duplicating an existing one;
+both are in provenance.md. Then run:
 
 ```bash
 python3 "$SKILL_DIR/transcript_provenance.py" "$SESSION_DIR"

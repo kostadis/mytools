@@ -159,6 +159,50 @@ fit, but the file ran 5117.7 s while both transcripts **and** the gmassistant
 summary still ended at 40:34, all on the spool-burning plan. The GM confirmed it
 was the raw recording from before a Descript edit.
 
+**A speech profile tells the two apart cheaply.** Diarize the audio and sum
+speech per five-minute window. Silence after the transcript's end means a long
+tail; steady speech to the end, while the transcript closes on the table's
+goodbyes, means the transcript came from an edit. *Evidence — OOTA 2025-08-04:*
+3–4 min of speech in every window up to 93:48, against a gmassistant transcript
+that ends "See y'all. Bye-bye." at 58:30. The GM ruled it raw; the projection
+then anchored 90.2% of words.
+
+## A recording that holds the session twice
+
+An export can contain the session twice, back to back: a condensed copy and
+then the full one. Every transcript made from it is doubled too, so the
+fingerprint scan sees nothing wrong, and `prepare_input.py`'s duplication check
+(which looks for a body repeated from its first line) reported *none detected*.
+The tell is the opening small talk recurring mid-file.
+
+```bash
+grep -n -iE "<the first distinctive greeting line>" <transcript>.vtt
+```
+
+*Evidence — OOTA ch022 (`…_Recording_chapter_18.mp3`, 2:11:09):* "Went to
+Tahoe for the weekend" at 0:02 and again at 42:12; the GM's Ulmara speech at
+23:40 and again at 1:31:40. Part A (0:00–39:52) was a condensed copy, then
+silence, then part B (42:07–2:11:08), the full session. Both the Descript `.md`
+and the gmassistant transcript carried both parts.
+
+The GM chooses the copy. For the chosen part, write a **new** text layer beside
+the original (never edit the original): keep the cues inside the part, shift
+their timestamps by a round offset, and state the offset in the file's `NOTE`
+header ("audio time = cue time + 2520 s"). Cut and shift the diarization turns
+and the Descript turns by the same offset before the join. A summary built from
+the doubled transcript tells the session twice; flag it for Stage 0.
+
+## Duplicate session folders
+
+Files re-downloaded from Drive can land in a new folder (`<date>-new-chapter`)
+for a session that already has one. Hash before assuming anything: on OOTA the
+new folder held byte-identical audio and Descript files plus the one genuinely
+new thing, the gmassistant exports. With the GM's ruling, move only the new
+files into the existing folder, `cmp` every duplicate before deleting it, and
+never let a moved file overwrite an untracked one of the same name. Audio is
+usually gitignored or untracked, so an overwrite is unrecoverable; rename the
+old one (`…_descript_edit.m4a`) instead.
+
 ## Edited-timeline transcripts
 
 Descript can export an edited recording, with gaps shortened, filler removed or
@@ -388,6 +432,25 @@ got a span. The labels are still Descript's own voice clustering, so the
 cross-validation stays independent **on labels**. The timing is borrowed and is
 not; say so in a `--note`. When the GM can re-export, a `.txt` upload (or a
 Drive upload with conversion off) keeps the native timestamps and is better.
+
+### Other shapes that need `descript_align.py`
+
+Two more cases where `descript_turns.py` parses zero or the wrong timeline, and
+aligning by words is the fix. Both came up on OOTA ch15–22 (2026-09-27):
+
+- **The label comes before the first stamp:** `**Kostadis:** [00:00:00] Hello?`.
+  The native per-word stamps are all there, but the parser expects the stamp
+  first and reports *no utterances parsed*.
+- **The Descript export is on a different timeline from the new text layer.**
+  A raw recording arrives later, and the GM's new transcript is on the raw
+  timeline, while the old Descript `.md` was made from an edited export. Align
+  the old Descript words to the new VTT: the labels stay independent, and words
+  the edit cut simply get no span (ch16: 88.1% of words matched; ch19: 88.1%).
+
+**A Descript export the GM has deleted from the session folder is still a
+second source.** Restore it from git into `$RUN` (`git show HEAD:<path> >
+"$RUN/descript_old.md"`), never back into the session directory, and name its
+commit path in the `--note` and the run record.
 
 ## Chat sidecars
 

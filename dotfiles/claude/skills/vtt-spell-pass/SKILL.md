@@ -410,6 +410,13 @@ embedded name is *already correct* — `And Kalan`, `The Helmed Horror`,
 split the run. Don't ask about these; the name is right. Only surface a
 residual when the embedded proper noun is actually wrong.
 
+**An interjection can look like a garbled name.** `Okay, Doki` clusters with
+`Droki` at high confidence, but it is *okey-doki*: the same corpus has
+`Okie Doki` in four other sessions, and a `Doki → Droki` row would rewrite all of
+them. Grep every occurrence of a short token corpus-wide before proposing a
+row, and read the line before and after (OOTA ch16 cue 1118: the GM saying it
+right before narration).
+
 ### Phase 2 — pre-classify candidates (LLM judgment, MINIMAL filtering)
 
 Read the unknown list. Before asking the user, **only filter what is
@@ -983,6 +990,11 @@ unknowns mean either (a) a candidate slipped through pre-classification
 or (b) a new word the user didn't get to. Show the user the diff and ask
 whether to do another pass.
 
+Treat a residual that was never on the review page as a real question, not
+noise: put it to the GM before Phase 7. *Evidence — OOTA ch15/ch19
+(2026-09-27):* the re-scan surfaced `Erdin Blackskull` and `Gustavo`, both
+absent from the pages; the GM made both rows.
+
 Expect **false residuals** to remain (see Phase 1) — multi-word capitalised
 runs like `And Kalan`, `The Helmed Horror`, `Helmed Horror No` whose embedded
 name is already correct. These are *not* a reason for another pass; only a
@@ -1021,6 +1033,10 @@ Notes that matter:
   beside the original). Auto-detection demands exactly one and exits 2
   otherwise. The raw you name is the one the record is written against, and it
   determines which `.cleaned.vtt` `apply` produces.
+  `--raw` belongs to `import` only. Once the record exists, `apply` and `check`
+  read the raw's name from the record's `transcript:` field; they reject
+  `--raw`, and they ran cleanly beside a `transcript.speakers.vtt` (OOTA
+  ch15/16/19, 2026-09-27).
 - **Every imported entry lands `verified: false`.** Here that is a formality,
   not a backlog: Phase 3 already put each cluster to the GM. Flipping
   `verified: true` is transcribing rulings that were already made — so do it
@@ -1046,6 +1062,17 @@ python ~/.claude/skills/vtt-spell-pass/state.py \
   --state <campaign>/notes/.vtt_spell_pass_state.json \
   processed <vtt-path>
 ```
+
+**Then carry the speaker labels onto the cleaned tape.** The `.cleaned.vtt` is
+unlabelled, like its raw. Build `transcript.cleaned.speakers.vtt` cue by cue:
+the timing line from `.speakers.vtt`, its label, and the cleaned cue's text.
+The two files must have the same cue count and identical timing lines; stop if
+not. Copy the `.speakers.vtt` header `NOTE` and add one line naming the cleaned
+source. Strip trailing whitespace: joining a file's final cue picked up a stray
+space on OOTA ch15. Verify every cue, text against the cleaned tape and label
+against `.speakers.vtt`, and expect zero mismatches. Rebuild it whenever either
+input changes, e.g. after a late cue ruling in either skill.
+
 
 ## Batch mode — a whole campaign's backlog (`batch/`)
 
