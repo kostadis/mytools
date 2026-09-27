@@ -165,4 +165,5 @@ unresolved findings. Stage 1 consistency
 (`/staged-consistency` Stage 1, which runs `/consistency-check` on `session-summary.md`) is the next review step when requested. Do not
 automatically apply consistency edits, remove recap, extract scenes, or
 generate narration. Ordinary enhancement needs no review artifact and no
-manifest of its own.
+manifest of its own. When the user asks for a batch review of the enhancement
+across several chapters, follow `~/.claude/skills/_shared/batch-chapters/BATCH.md`.
