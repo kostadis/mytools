@@ -219,6 +219,11 @@ Descript's independent labels agreed with the projected clusters at 87–99% for
 every cleanly separated player. A misaligned projection scatters that matrix.
 Report the unlabelled count to the GM. Those cues are unresolved, not errors.
 
+Each projected turn records `vote_share` (and `how`). Cues under ~0.6 are the ones worth reading
+when the GM has asked for context-judged review (identity-review.md). *Evidence — OOTA 2025-08-04,
+single source:* 12,602 raw words, 10,148 of 11,246 edited words anchored (90.2%), 1,334 of 1,378 cues
+labelled, and 80 cues under 0.60, of which 43 had five or more words.
+
 ## Join and cross-validate
 
 **Report-only first.** Omit `--output`; nothing is written until the report has
