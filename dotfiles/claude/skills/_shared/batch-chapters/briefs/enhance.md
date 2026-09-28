@@ -35,7 +35,9 @@ Placeholders:
 ## Failure modes to check
 
 - invented dice or damage values (grep the tape for the literal number)
-- attribution drifting toward the most prominent character
+- attribution drifting toward the most prominent character. For any spell or ability, check every candidate's character sheet
+  (`docs/party/` or equivalent) and say on the card which sheets list it. Only one listing settles it; several make it a
+  two-candidate question.
 - events duplicated or lost
 - "(truncated)" markers left in quotes
 - DM asides relocated
