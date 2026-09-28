@@ -12,12 +12,90 @@ restate it.
 
 This design comes from a six-chapter run (2026-09-27). Enhancement, Stage 1
 and remove-recap each ran as six forks and six pages. Before this, each stage
-had its own hand-written read, apply and manifest scripts.
+had its own hand-written read, apply and manifest scripts. The inventory and
+cohort sections were added on the next batch (2026-09-28). Those five chapters
+had had no pipeline stage at all. One had no recording. Two had Descript
+exports that were edited cuts, about half the length of the recording.
+
+## Before the first stage: inventory, gaps, cohorts
+
+**Do not assume the chapters are alike, or that the pipeline has started.**
+Chapters recorded months apart arrive with different inputs, and the stage you
+were asked for may not be the next one due.
+
+1. **Inventory every chapter.** List what each session directory holds. For
+   each stage, record whether it has run: `.speakers.vtt`,
+   `transcript_corrections.yaml`, `staged_review/*_stage0*`, `session-summary.md`,
+   `*_stage1*`, `remove_recap_manifest.md`. The batch starts at the earliest
+   stage **any** chapter is missing, per
+   `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`. It never starts
+   at the stage you were asked for if an earlier one is missing.
+2. **Check each chapter's inputs against its own recording.** This is cheap,
+   and every item below has been hit:
+   - **Recording present?** Look in the session directory and the campaign's
+     recordings folder. Match by the `GMT<date>` stamp, not by the chapter
+     number in a filename. Filenames carry stale pre-renumber chapter numbers.
+   - **Which tool made each transcript?** The filename does not say. Ask the GM
+     once per campaign and record the answer. On one campaign every
+     `transcript.vtt` the GM called "the Zoom VTT" was a Descript VTT export,
+     and the labelled `.md` beside it was a second Descript export of the same
+     session. Two exports from one tool are **one** text source. The only
+     independent evidence on *who spoke* is a clustering from another tool
+     (pyannote on the recording) set against Descript's voice profiles. Do not
+     report a "Zoom plus Descript" cross-check that does not exist.
+   - **Does each transcript run the full session?** Compare the last timestamp
+     with the recording's length and the Zoom VTT. A Descript export that stops
+     at 50 minutes of a 96-minute session is an **edited cut**. Its timings do
+     not align with the raw audio, so cross-checking against it needs
+     `/speaker-attribution`'s *raw audio, edited transcript* path, not the
+     plain join. A transcript much **longer** than usual may span two
+     sessions.
+   - **Duplicates.** Two exports that differ only in their title line are one
+     source, not two. Use `diff` or `sha256sum`.
+   - **Speaker labels.** Count them against the roster. Voice-profile names that
+     are PCs (`zalthir`), misspelled profiles (`kostaids`), and unlabelled Zoom
+     cues (one shared microphone) each change the attribution path.
+   - **Stage 0 source.** Record each chapter's filename. A chapter with none has
+     nothing for `enhance_summary` to render from.
+3. **Split the batch into cohorts by path, and set the odd ones out aside.**
+   One batch runs one path. A chapter that needs a different attribution route
+   (text-only, single source, or edited-cut projection) or is missing an input
+   goes into `batch.json` under `"blocked": [{"dir": …, "reason": …}]`. It is
+   not forced through a path it does not fit. `batch.py` ignores `blocked`, so
+   the manifest and commit message must name those chapters.
+4. **Show the GM the gaps first, then ask.** Give a table with one row per
+   chapter, what it has and what it lacks, plus what each gap costs. Then
+   collect every run-wide decision in **one** question set:
+   - scope: which stages
+   - model
+   - what happens to each blocked chapter
+   - each chapter's single-source acceptance (acceptance does not carry over
+     from an earlier batch)
+
+   Questions asked without the gaps in view get dismissed, and they should be.
+
+## Which stages the loop covers
+
+- **Stages whose output is edits to a document** use the whole loop below,
+  including `batch.py validate/apply/manifest`. These are Stage 0, enhancement
+  review, Stage 1 and remove-recap.
+- **Transcript front-end stages** use steps 0–7: one page per chapter,
+  `batch.py read --review-dir speaker_review --plain-names`, and the re-ask
+  pass. Their apply belongs to their own skill. These are
+  `/speaker-attribution` and `/vtt-spell-pass`. Attribution writes a new
+  `.speakers.vtt` and run record. The spell pass writes
+  `transcript_corrections.yaml` and regenerates `.cleaned.vtt`. Neither is a
+  text substitution in a summary, so `batch.py apply` must not be used for
+  them.
+- **Diarization is a queue, not a fan-out.** Only one host has the environment,
+  and it takes one job at a time. Start the queue first, because it is the long
+  pole. Publish each chapter's speaker page as its job finishes, and never wait
+  for the whole queue before handing over the first page.
 
 ## The loop, per stage
 
 ```
-0. batch.json          name the chapters, their Stage 0 sources, the target file
+0. batch.json          one cohort's chapters, their Stage 0 sources, the target file; blocked chapters listed apart
 1. deterministic run   the stage's CLI, one process per chapter (check_consistency, enhance_summary, …)
 2. fork per chapter    adjudicate from a brief → findings + items + page. No publish, no campaign edits.
 3. validate            batch.py validate — counts, card↔item ids, builds review_<stage>.html
@@ -132,7 +210,7 @@ the target file. With GM approval:
 
 ```
 batch.py validate --config batch.json --stage <s>
-batch.py read     --config batch.json --stage <s> --artifact-dir <scratchpad>/artifact-files
+batch.py read     --config batch.json --stage <s> --artifact-dir <scratchpad>/artifact-files [--review-dir D --plain-names]
 batch.py apply    --config batch.json --stage <s> [--rulings chat_rulings.json] [--propagate-stage0] [--dry-run]
 batch.py manifest --config batch.json --stage <s> [--rulings chat_rulings.json] [--out-name FILE]
 ```

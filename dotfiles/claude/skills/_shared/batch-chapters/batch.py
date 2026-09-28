@@ -8,10 +8,13 @@ One config file (batch.json) names the chapters; every subcommand reads it.
       agree, that every edit's `old` occurs exactly `count` times in the target,
       then build review_<stage>.html. Writes nothing else.
 
-  batch.py read --config batch.json --stage stage1 --artifact-dir <dir>
+  batch.py read --config batch.json --stage stage1 --artifact-dir <dir> [--review-dir D --plain-names]
       Per chapter: run read_decisions.py on <artifact-dir>/<uuid>/index.html
       (what `Artifact read ... path: index.html` saves) and print savedAt, the
       tally, unmarked and discuss ids. An unsaved page is reported, not read.
+      Works for ANY stage's pages, including speaker_review/ and spell_review/
+      (--review-dir speaker_review --plain-names); validate/apply/manifest
+      are for stages whose output is edits to a document.
 
   batch.py apply --config batch.json --stage stage1 [--rulings r.json] [--propagate-stage0] [--dry-run]
       Apply autos plus approved cards to the target file. ALL-OR-NOTHING across
@@ -87,14 +90,16 @@ def cmd_validate(a):
 
 def cmd_read(a):
     c, base = load_cfg(a.config); art = pathlib.Path(a.artifact_dir)
+    # staged_review/ uses stage-suffixed names; speaker_review/ and spell_review/ use plain ones
+    sfx = "" if a.plain_names else f"_{a.stage}"
     for ch in c["chapters"]:
-        R = base / ch["dir"] / "staged_review"; out = R / f"decisions_{a.stage}.json"
+        R = base / ch["dir"] / a.review_dir; out = R / f"decisions{sfx}.json"
         u = ch.get("artifacts", {}).get(a.stage)
         if not u: print(f"== {ch['dir']}  no artifact recorded for {a.stage}"); continue
         html = art / uuid_of(u) / "index.html"
         if not html.exists(): print(f"== {ch['dir']}  NOT FETCHED: {html}"); continue
         r = subprocess.run([sys.executable, str(RA / "read_decisions.py"), "--html", str(html),
-                            "--items", str(R / f"review_items_{a.stage}.json"), "--out", str(out)],
+                            "--items", str(R / f"review_items{sfx}.json"), "--out", str(out)],
                            capture_output=True, text=True)
         if r.returncode == 1: print(f"== {ch['dir']}  UNSAVED (savedAt null) — not a decision"); continue
         if r.returncode: print(f"== {ch['dir']}  READ FAILED rc={r.returncode}: {r.stderr.strip()[-300:]}"); continue
@@ -191,7 +196,12 @@ def main():
         p = sp.add_parser(name); p.set_defaults(fn=fn)
         p.add_argument("--config", required=True); p.add_argument("--stage", required=True,
                        help="file-name stem: enhance | stage1 | recap | ...")
-        if name == "read": p.add_argument("--artifact-dir", required=True)
+        if name == "read":
+            p.add_argument("--artifact-dir", required=True)
+            p.add_argument("--review-dir", default="staged_review",
+                           help="per-chapter folder holding the page files (speaker_review, spell_review, ...)")
+            p.add_argument("--plain-names", action="store_true",
+                           help="review_items.json / decisions.json, no _<stage> suffix (speaker and spell pages)")
         if name in ("apply", "manifest"): p.add_argument("--rulings")
         if name == "apply":
             p.add_argument("--propagate-stage0", action="store_true"); p.add_argument("--dry-run", action="store_true")
