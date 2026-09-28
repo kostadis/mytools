@@ -47,6 +47,9 @@ import argparse, json, pathlib, subprocess, sys
 RA = pathlib.Path.home() / ".claude/skills/_shared/review-artifact"
 
 
+CARD = ("card", "tape")  # "tape": a transcript garble; its writes go to transcript_corrections.yaml, not the target
+
+
 def load_cfg(p):
     c = json.load(open(p))
     base = pathlib.Path(c["campaign"]) / c.get("summaries", "summaries")
@@ -62,17 +65,32 @@ def uuid_of(v):
     return v.rstrip("/").rsplit("/", 1)[-1]
 
 
+def target_of(c, ch, a):
+    """File the edits land in: --target stage0 -> the chapter's Stage 0 source; --target NAME -> NAME; else batch.json target."""
+    t = getattr(a, "target", None)
+    if t == "stage0":
+        if not ch.get("stage0"): raise SystemExit(f"{ch['dir']}: --target stage0 but batch.json has no stage0 for it")
+        return ch["stage0"]
+    return t or c.get("target", "session-summary.md")
+
+
 def cmd_validate(a):
     c, base = load_cfg(a.config); bad = 0
     for ch in c["chapters"]:
         sd = base / ch["dir"]; R = sd / "staged_review"
+        if not (R / f"review_items_{a.stage}.json").exists():
+            print(f"== {ch['dir']}  not built yet (no review_items_{a.stage}.json)"); bad += 1; continue
         items = json.load(open(R / f"review_items_{a.stage}.json"))
-        L = findings(R, a.stage); t = (sd / c.get("target", "session-summary.md")).read_text()
-        cards = {x["id"] for x in L if x.get("disposition") == "card"}
+        L = findings(R, a.stage); t = (sd / target_of(c, ch, a)).read_text()
+        cards = {x["id"] for x in L if x.get("disposition") in CARD}
         iids = {i["id"] for i in items["items"]}
-        mism = [(x["id"], e["old"][:60], e.get("count"), t.count(e["old"]))
-                for x in L if x.get("disposition") in ("card", "auto")
-                for e in x.get("edits", []) if t.count(e["old"]) != e.get("count")]
+        mism = []  # simulate in file order, every auto and card approved -- the order apply uses
+        for x in L:
+            if x.get("disposition") not in ("auto",) + CARD: continue
+            for e in x.get("edits", []):
+                n = t.count(e["old"])
+                if n != e.get("count"): mism.append((x["id"], e["old"][:60], e.get("count"), n))
+                else: t = t.replace(e["old"], e["new"])
         lit = [i["id"] for i in items["items"] if any("\\n" in str(i.get(k, "")) for k in ("t", "y", "n"))]
         ok = not (mism or cards ^ iids or lit)
         bad += not ok
@@ -96,7 +114,7 @@ def cmd_read(a):
         R = base / ch["dir"] / a.review_dir; out = R / f"decisions{sfx}.json"
         u = ch.get("artifacts", {}).get(a.stage)
         if not u: print(f"== {ch['dir']}  no artifact recorded for {a.stage}"); continue
-        html = art / uuid_of(u) / "index.html"
+        html = pathlib.Path(u) if u.endswith(".html") else art / uuid_of(u) / "index.html"
         if not html.exists(): print(f"== {ch['dir']}  NOT FETCHED: {html}"); continue
         r = subprocess.run([sys.executable, str(RA / "read_decisions.py"), "--html", str(html),
                             "--items", str(R / f"review_items{sfx}.json"), "--out", str(out)],
@@ -118,7 +136,7 @@ def resolve(ch, a, base, rulings):
     for x in findings(R, a.stage):
         disp, i = x.get("disposition"), x["id"]
         if disp == "auto": plan.append((i, "auto", "approve", x.get("edits", []))); continue
-        if disp != "card": continue
+        if disp not in CARD: continue
         if i in chat:
             r = chat[i]; plan.append((i, "chat", r["verdict"], r.get("edits", x.get("edits", [])))); continue
         v = page.get(i)
@@ -132,9 +150,10 @@ def resolve(ch, a, base, rulings):
 
 def cmd_apply(a):
     c, base = load_cfg(a.config); rulings = json.load(open(a.rulings)) if a.rulings else {}
-    target = c.get("target", "session-summary.md"); staged, probs = [], []
+    staged, probs = [], []
     for ch in c["chapters"]:  # pass 1: resolve and count, write nothing
         plan, p, d = resolve(ch, a, base, rulings); probs += [f"{ch['dir']} {x}" for x in p]
+        target = target_of(c, ch, a)
         sd = base / ch["dir"]; t = (sd / target).read_text()
         s0p = sd / ch["stage0"] if a.propagate_stage0 and ch.get("stage0") else None
         s0 = s0p.read_text() if s0p else None; prop = []
@@ -146,13 +165,19 @@ def cmd_apply(a):
                 t = t.replace(e["old"], e["new"])
                 if s0 is not None and e["old"].strip() and s0.count(e["old"]):
                     prop.append((i, s0.count(e["old"]), e["old"][:60])); s0 = s0.replace(e["old"], e["new"])
-        staged.append((ch, sd, t, s0p, s0, plan, prop, d))
+        staged.append((ch, sd, target, t, s0p, s0, plan, prop, d))
     if probs:
         print("NOTHING WRITTEN. Resolve these first:"); [print("  ", p) for p in probs]; sys.exit(1)
-    for ch, sd, t, s0p, s0, plan, prop, d in staged:  # pass 2: write
+    for ch, sd, target, t, s0p, s0, plan, prop, d in staged:  # pass 2: write
         tally = {}
         for _, src, v, _ in plan: tally[f"{src}:{v}"] = tally.get(f"{src}:{v}", 0) + 1
         print(f"== {ch['dir']}  {tally}  propagated into stage0: {len(prop)}")
+        for i, src, v, _ in plan:
+            x = next((f for f in findings(sd / "staged_review", a.stage) if f["id"] == i), {})
+            tp = x.get("tape") or x.get("tape_cues")
+            if v == "approve" and tp:
+                print(f"    TAPE {i}: write these to transcript_corrections.yaml by hand, then sd_corrections apply/check:")
+                for tc in tp: print(f"       cue {tc.get('cue')}: {str(tc.get('was'))[:70]!r} -> {str(tc.get('now'))[:70]!r}")
         for p in prop: print("    ->", p)
         if a.dry_run: continue
         (sd / target).write_text(t)
@@ -196,6 +221,8 @@ def main():
         p = sp.add_parser(name); p.set_defaults(fn=fn)
         p.add_argument("--config", required=True); p.add_argument("--stage", required=True,
                        help="file-name stem: enhance | stage1 | recap | ...")
+        if name in ("validate", "apply"):
+            p.add_argument("--target", help="file the edits land in: 'stage0' = each chapter's Stage 0 source, or a file name (default: batch.json target)")
         if name == "read":
             p.add_argument("--artifact-dir", required=True)
             p.add_argument("--review-dir", default="staged_review",

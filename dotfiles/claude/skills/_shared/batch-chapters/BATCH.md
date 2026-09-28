@@ -142,9 +142,18 @@ in one message. Each brief must say:
 - **Do NOT publish. Do NOT edit any campaign file.**
 - **Return:** a one-line-per-card table, the counts, your doubts.
 
-The briefs that worked are archived beside this file as
-`briefs/stage1.md` and `briefs/recap.md`. Copy one and change the
-campaign-specific lines.
+The briefs that worked are archived beside this file as `briefs/stage0.md`,
+`briefs/stage1.md` and `briefs/recap.md`. Copy one and put the
+campaign-specific facts in the fork prompt: players, attendance, standing
+rulings, prep paths. A fact a fork cannot see is a fact it will contradict.
+
+**Keep the cycle's standing rulings in one file** (`$TMP/RULINGS_<batch>.md`)
+and point every fork at it. Append each ruling the moment the GM makes it.
+Rulings pile up fast across stages: a name settled in the spell pass, an
+attendance fact from speaker review, a Stage 0 reversal. When they are retyped
+into each prompt, some get dropped. A ruling that **reverses** an earlier one
+(for example, an enhancement card that undoes a Stage 0 edit) must also fix the
+earlier stage's file, and the rulings file must say so.
 
 ## The findings schema — what makes the apply mechanical
 
@@ -166,12 +175,50 @@ campaign-specific lines.
 - Card text (`t`, `y`, `n`) holds no literal `\n`. `ev` is HTML-escaped. `y`
   says what approving writes **and where**, including whether the Stage 0
   source carries the same text. `n` is always a keep-verbatim option.
+- **Tape cards have one schema:**
+
+  ```json
+  {"disposition": "tape", "tape": [{"cue": N, "was": "...", "now": "..."}]}
+  ```
+
+  `was` is the raw cue exactly. Three forks given a brief without this schema
+  wrote three shapes (`tape`; `card` plus `tape`; `card` plus
+  `kind: tape` plus `tape_cues`). When a cue already has a record entry,
+  **amend** its `now:`. Run the new `now` through the glossary first, so the
+  cue's existing fixes survive.
+
+### Cards must say exactly what they write, and the apply must write exactly that
+
+Every item below reached a GM approval on the 2026-09-28 batch:
+
+- **The card's display label is not the substitution.** A card showed
+  `<garble> → saving (throw)`. Applying the label would have written "(throw)"
+  onto the tape. Carry the exact `old → new` for the cue, from the fork's
+  `was`/`now`, and have the apply use only that.
+- **The cues a card lists are the cues it writes.** A card built its cue list
+  by pattern match and showed two cues, where the fork meant only one.
+  The GM approved both, so both were written. Build the list from the
+  finding, not from a regex.
+- **A glossary row's wrong-form is the name alone.** `For <Name> →
+  <Name>` would have deleted "For" from every future transcript. Strip
+  function words before a row reaches a card.
+- **"In none of the canon sources" is a claim to check, never a template
+  string.** The page builder printed it on every new-name card. Two names it
+  called new were registry NPCs spelled one letter differently. Stage 0 caught one, and
+  a fuzzy registry check caught the other. Before a card says "not in canon",
+  the orchestrator runs a fuzzy match against the registry and the bible
+  chapter for that session. When a later stage overturns an earlier ruling's
+  evidence, **re-ask with the new evidence**. Do not defend the ruling, and
+  do not silently flip it.
 
 ## Steps 6–8 — reading back without rubber-stamping
 
 - `Artifact` `action: read`, `url`, `path: "index.html"` saves to
-  `<scratchpad>/artifact-files/<uuid>/index.html`. Pass the parent directory as
-  `--artifact-dir`.
+  `<scratchpad>/artifact-files/<uuid>/index.html`. **That `<uuid>` is not the
+  id in the page URL**, and it can change between reads. Record the saved path
+  the read result names under `artifacts.<stage>` in `batch.json`. `batch.py
+  read` accepts a path ending in `.html` directly. Keep the URL under
+  `urls.<stage>` for re-reads.
 - **Watches run out at 10 per session.** After that, publish results stop
   confirming a watch, so do not wait for a save notification. Rely on the GM
   saying "done", then read every page.
@@ -188,6 +235,32 @@ campaign-specific lines.
   `--dry-run` first. `--propagate-stage0` also applies an identical edit to the
   chapter's Stage 0 source wherever the same text occurs, and reports each hit.
   Use it when the Stage 0 source must stay in agreement, as at Stage 1.
+
+## When a stage has only a handful of rulings
+
+Per the CLAUDE.md threshold (about a dozen), a stage whose cards total fewer
+than that across **all** chapters is ruled in chat, not on pages. Build the
+items files anyway, since they are the record. Ask one question per card with
+the exact before and after text, and put every answer in the rulings file.
+`batch.py apply` accepts a chapter whose page was never published, as long
+as the chat rulings cover every card. The manifest records "ruled in chat".
+The 2026-09-28 remove-recap stage (8 cards across 3 chapters) ran this way.
+
+## Cross-chapter checks catch what per-chapter checks cannot
+
+Each fork sees one chapter, plus its neighbours only as prose. Names drift
+between chapters in ways no single chapter shows. One chapter's tape used an
+NPC's canonical name; two chapters later the tape used a different word for
+the same NPC (same friend, same role), and that chapter's spell pass ruled it a
+new real name. Only the earlier chapter's
+enhancement review, reading its own tape, surfaced the collision. So:
+
+- Give every enhancement and Stage 1 fork the neighbouring chapters' **tapes**
+  as well as their summaries, and ask it to grep them for every NPC the
+  chapter names.
+- Before a spell-pass card says a name is new, grep the whole batch's tapes
+  and the previous batch's summaries for other names used in the same role
+  (same friend, same place, same title).
 
 ## Tape corrections found along the way
 
@@ -213,19 +286,31 @@ the target file. With GM approval:
   name in `batch.json`. Never glob for it.
 - **Model choice.** Every model-bearing CLI takes the model the user named for
   this run. Pass it explicitly each time; never rely on the fallback.
+- **`add_to_glossary.py --section` knows only `pcs|npcs|items|factions|locations|table`.**
+  Any other key creates a brand-new section at the end of the glossary: a
+  `races` key split two existing rows in two. Check the
+  canonical's existing row first, and `git diff` the glossary after every
+  batch of rows.
 - **One commit per stage, one campaign per commit.** Check `git diff --cached`
   for audio files after any broad `git add`.
 
 ## `batch.py`
 
 ```
-batch.py validate --config batch.json --stage <s>
+batch.py validate --config batch.json --stage <s> [--target stage0|FILE]
 batch.py read     --config batch.json --stage <s> --artifact-dir <scratchpad>/artifact-files [--review-dir D --plain-names]
-batch.py apply    --config batch.json --stage <s> [--rulings chat_rulings.json] [--propagate-stage0] [--dry-run]
+batch.py apply    --config batch.json --stage <s> [--target stage0|FILE] [--rulings chat_rulings.json] [--propagate-stage0] [--dry-run]
 batch.py manifest --config batch.json --stage <s> [--rulings chat_rulings.json] [--out-name FILE]
 ```
 
-`--stage` is the file-name stem (`enhance`, `stage1`, `recap`). File names are
+`--target stage0` sends edits to each chapter's Stage 0 source, which is what
+Stage 0 edits. `validate` simulates the edits in file order, autos first, the
+same way `apply` runs them. Checking each edit against the unedited file gives
+false mismatches once an auto has renamed something a card anchors on.
+Approved **tape** cards are listed for hand-application to
+`transcript_corrections.yaml`. `apply` never writes the record.
+
+`--stage` is the file-name stem (`stage0`, `enhance`, `stage1`, `recap`). File names are
 `staged_review/{findings,review_items,decisions}_<stage>.json` and
 `review_<stage>.html`. `batch.json` and `chat_rulings.json` formats are in the
 script's docstring. The script was verified against a real two-chapter
