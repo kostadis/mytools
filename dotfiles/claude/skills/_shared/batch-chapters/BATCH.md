@@ -23,6 +23,16 @@ exports that were edited cuts, about half the length of the recording.
 Chapters recorded months apart arrive with different inputs, and the stage you
 were asked for may not be the next one due.
 
+0. **Take the inventory from a fresh branch off `origin/main`, never from the
+   branch you happen to be on.** Other sessions land work in parallel. An
+   inventory from a stale worktree branch once reported a chapter as having
+   no recording and no attribution, when its attribution had already been
+   merged by another session. Also run `git log --all --oneline -- <chapter
+   dir>` for work still in flight on unmerged branches.
+   **Media are not in worktrees.** Audio files (`.m4a`, `.mp3`) are untracked,
+   so they exist only in the **main checkout** (and any `recordings/` folder
+   there). Look for them there, by absolute path, before calling a recording
+   missing.
 1. **Inventory every chapter.** List what each session directory holds. For
    each stage, record whether it has run: `.speakers.vtt`,
    `transcript_corrections.yaml`, `staged_review/*_stage0*`, `session-summary.md`,
