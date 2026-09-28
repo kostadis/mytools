@@ -19,6 +19,9 @@ Placeholders: <CAMPAIGN> (absolute campaign dir), <BRANCH>, <CH> (session dir na
 ## Evidence and prior rulings
 
 The tape settles everything. Use transcript.cleaned.speakers.vtt and cite cue numbers and timestamps.
+For any card about which PC cast a spell or used an ability, check every candidate's character sheet (the campaign's
+`docs/party/` or equivalent) and state on the card which sheets list it. One sheet settles it; several make it a genuine
+two-candidate question that the card must show both sides of.
 The neighbouring chapters' session-summary.md files (<PREV>, <NEXT>) are continuity evidence, not canon.
 
 Before carding anything, grep every prior rulings log for its subject:

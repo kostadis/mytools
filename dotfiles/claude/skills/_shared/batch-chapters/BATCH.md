@@ -262,6 +262,32 @@ enhancement review, reading its own tape, surfaced the collision. So:
   and the previous batch's summaries for other names used in the same role
   (same friend, same place, same title).
 
+## Re-asks carry context, or they get dismissed
+
+A chat re-ask of an unmarked card or a note-less Discuss card must bring:
+
+- the surrounding cues (±4), **each with its speaker label**;
+- the second transcription's reading of the same span;
+- the module or bible line when the card rests on one.
+
+On the second batch, the GM dismissed a whole round of bare "X → Y?" questions: *"I don't have context."* Asked again with context, every one was answered at once. One was answered differently from the card's guess: the name the card proposed to correct was ruled "Correct." as heard.
+
+## Speaker attribution when the chapters differ
+
+- **Zoom per-participant VTT** (each person on their own connection) is the strongest second source. Convert its cues to a turns JSON (speaker = Zoom name) and pass it as `diarize_label.py --md`.
+- **No second recording:** `/speaker-attribution-text` run by a fork that **never sees the diarization** is a usable cross-check. Weigh it as an inference, and say so on the page.
+- **When the acoustic clustering fails:**
+  - The signs are one cluster above 55%, and three players scattered across clusters with no qualifying mapping.
+  - Offer a re-run with one extra bin first. On the second batch it changed nothing.
+  - If that fails too, the GM may make the text inference primary. Render it in best-guess mode: every label marked inferred, and the GM's cue rulings recorded as `gm_confirmed`.
+- **Tiny extra clusters (under 0.5%) can be someone in the GM's room.** Read their lines before mapping them to the GM. A line like "<someone not at the table> is saying…" right after one is the tell. Label such a voice `Room (not at table)` only after the GM confirms.
+- **Relabelling an already-approved attribution** (a new second source arrives later): a card must say plainly that it revises the earlier approval. Leave prior cue rulings untouched. Fix the file header when it no longer holds, for example a "single acoustic source" line.
+
+## Tool gaps found on the second batch
+
+- `sibling_context.py` does not strip a Descript `.md` export's unescaped `[hh:mm:ss]` stamps, so every candidate scores low against it. Search a cleaned copy by hand until that's fixed.
+- `lint_glossary.py --verify-output` flags ordinary words that collide with a row's multi-word wrong-form. Example: "Lay down your weapons" against a row whose wrong-form is "a lay". Read each hit before calling it an error.
+
 ## Tape corrections found along the way
 
 A fork will find tape errors, such as one creature name misheard as another. These are not edits to

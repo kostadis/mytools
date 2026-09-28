@@ -34,6 +34,10 @@ Placeholders:
 
   Card any real miss it finds that the report did not.
 - **Attribution is a speaker-label question.** Use the labels in `<TAPE>`. Never settle "who said it" from a summary.
+- **Check who *can* do it: read the character sheets.** For any card about which PC cast a spell or used an ability, look it up in
+  every candidate's sheet (the campaign's `docs/party/` or equivalent) and put the result on the card: "on the wizard's sheet (a
+  cantrip) and on the monk's (a subclass feature)". If only one sheet has it, that settles it. If several do, the card presents a real
+  two-candidate question, never a one-sided one. Speaker labels are fallible at turn boundaries; the sheet is not.
 
 ## False-positive filters (per /consistency-check step 5)
 
