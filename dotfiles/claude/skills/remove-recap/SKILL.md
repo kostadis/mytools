@@ -98,9 +98,18 @@ Confirm it against the opening of the VTT — the recap is the start of the
 recording — using the same markers the script looks for:
 
 ```bash
-head -c 20000 <session>/*.transcript.cleaned.vtt | grep -niE \
-  "let me read (to )?you what happened|last (time|session|week)|where we left off|catch (you|us) up|recap|previously|to remind you|(two|three|four|a few|several|[0-9]+) weeks|a month|we last played|bum,? bum,? bum|that'?s where we (left|stopped)|so,? here we are"
+head -c 40000 <session>/*.transcript.cleaned.vtt | grep -niE \
+  "let me read (to )?you what happened|last (time|session|week)|where we left off|we last left|where (were|are) we|where we were|just to remind|remind (us|me|everyone) (of )?where|catch (you|us) up|recap|previously|to remind you|(two|three|four|a few|several|[0-9]+) weeks|a month|we last played|bum,? bum,? bum|that'?s where we (left|stopped)|so,? here we are"
 ```
+
+**A miss is not a verdict.** The grep is high precision, low recall. Serial-style
+openers (*"when we last left our noble adventurers"*, *"so, where were we?"*)
+were missing from this list until four sessions in one batch opened that way and
+the grep found nothing. And ten minutes of pre-game chatter can push the recap
+past the first 20 KB, which is why the window is now 40 KB. If the campaign
+keeps a session-start trim, start reading at the trim, not at byte 0. When the
+grep is silent, read the opening cues anyway. The recap is the GM's first
+monologue after the chatter, whatever words open it.
 
 Then read the opening cues through the first line of live play (*"you see"*,
 *"roll a"*): who is talking (a recap is a GM monologue), where the recap's
