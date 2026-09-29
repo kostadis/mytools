@@ -19,6 +19,11 @@ OPEN = [
     r"\blast week\b", r"where we left off", r"catch (?:you|us) up",
     r"\brecap\b", r"previously[, ]", r"to remind you", r"so far,? ",
     r"quick(?:ly)? (?:recap|summar)", r"what happened (?:last|previously)",
+    # Serial-style openers: "when we last left our noble adventurers",
+    # "so, where were we?", "just to remind yourselves". Each one opened a real
+    # recap that the list above missed.
+    r"\bwe last left\b", r"\bwhere (?:were|are) we\b", r"\bwhere we were\b",
+    r"\bjust to remind\b", r"\bremind (?:us|me|everyone) (?:of )?where\b",
 ]
 # Real-world scheduling talk clusters at the very top of a recording and is
 # never in-fiction: "after, like, three weeks - or a month".
