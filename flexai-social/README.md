@@ -21,6 +21,31 @@ python3 app.py
 # open http://localhost:5105
 ```
 
+## Situational mode (decision model + chat model)
+
+The card at the top of the page reads the scene instead of rolling on the tables.
+Type who the NPC is and what is happening right now; **Suggest** returns a
+probability for each of eight response stances (helps, answers, bargains,
+questions motives, deceives, ignores, leaves, turns hostile), rolls one by those
+weights, and writes a line of dialogue in that stance. **Reroll** samples again;
+**Write a line** voices any other stance.
+
+- Stances come from a decision model behind the Jev/SystemOne API — by default
+  vLLM Semantic Router's **Decision-2.0-Nox-4B**; Cloudflare's **Clef** speaks the
+  same API. The line comes from an OpenAI-compatible chat model. Both are on the
+  DGX Spark by default — see `situational.py` for the `CLEF_URL` / `CLEF_MODEL` /
+  `CHAT_URL` / `CHAT_MODEL` env vars. If the decision model is not running the card
+  says so; the dice tables below still work.
+- Set `CAMPAIGN_DIR` to a campaign root and leave *What they're like* blank to
+  use the NPC's voice file (`voice/<name>_voice.md`) or dossier
+  (`docs/npcs/`, `docs/distill/npcs/`). The card names the file it used.
+- Typical latency on the Spark: ~0.25–0.8 s for the stances (Nox-4B; Clef 27B ~1 s), ~2.5 s for the line.
+- It is a suggestion for the GM to read, never a ruling.
+
+```bash
+CAMPAIGN_DIR=~/out-of-the-abyss/out-of-the-abyss python3 app.py
+```
+
 ## Data files
 
 The tool reads two xlsx files from the FlexAI Digital Resource Companion:

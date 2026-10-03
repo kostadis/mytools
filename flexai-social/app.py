@@ -17,6 +17,7 @@ from typing import Optional
 from flask import Flask, jsonify, render_template_string, request
 
 import flexai_social as fs
+import situational as sit
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +104,46 @@ def _register_routes(app: Flask) -> None:
     @app.route("/")
     def index():
         return render_template_string(_INDEX_HTML, vocab=_vocab_for_ui())
+
+    # --- Situational (Clef + chat model); see situational.py -----------------
+
+    def _situational_inputs(body):
+        npc = str(body.get("npc", "")).strip()
+        situation = str(body.get("situation", ""))
+        notes = str(body.get("notes", ""))
+        source = None
+        if not notes.strip() and body.get("use_campaign", True):
+            notes, source = sit.find_notes(npc, os.environ.get("CAMPAIGN_DIR"))
+        return npc, notes, situation, source
+
+    @app.route("/api/situational/suggest", methods=["POST"])
+    def api_situational_suggest():
+        npc, notes, situation, source = _situational_inputs(request.get_json(silent=True) or {})
+        try:
+            res = sit.suggest(npc, notes, situation, post=app.config.get("SIT_POST", sit._post))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except sit.BackendError as e:
+            return jsonify({"error": f"Decision model unavailable: {e}"}), 502
+        return jsonify({
+            "stances": [{"key": k, "label": sit.STANCE_LABELS[k], "p": p} for k, p in res["stances"]],
+            "rolled": sit.roll(res["stances"]),
+            "notes_source": source,
+            "ms": round(res["ms"]),
+        })
+
+    @app.route("/api/situational/line", methods=["POST"])
+    def api_situational_line():
+        body = request.get_json(silent=True) or {}
+        npc, notes, situation, _ = _situational_inputs(body)
+        try:
+            res = sit.voice_line(npc, notes, situation, str(body.get("stance", "")),
+                                 post=app.config.get("SIT_POST", sit._post))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except sit.BackendError as e:
+            return jsonify({"error": f"Chat model unavailable: {e}"}), 502
+        return jsonify({"line": res["line"], "ms": round(res["ms"])})
 
     @app.route("/api/cell")
     def api_cell():
@@ -236,6 +277,38 @@ _INDEX_HTML = r"""<!doctype html>
     <div class="d-flex align-items-center mb-3">
       <h1 class="h3 m-0 me-3">FlexAI Social Encounter</h1>
       <a class="btn btn-sm btn-outline-secondary" href="/rules" target="_blank">View rules (pp. 260-265)</a>
+    </div>
+
+    <!-- Situational (Clef) -->
+    <div class="card mb-3 border-primary">
+      <div class="card-header small-caps d-flex justify-content-between">
+        <span>Situational &mdash; reads the scene (a decision model picks the stance, the chat model voices it)</span>
+        <span id="sit-ms" class="text-muted"></span>
+      </div>
+      <div class="card-body">
+        <div class="row g-2">
+          <div class="col-md-4">
+            <label class="form-label small-caps">Who</label>
+            <input id="sit-npc" class="form-control" placeholder="Gorglak, duergar trader">
+            <label class="form-label small-caps mt-2">What they're like <span class="text-muted">(optional)</span></label>
+            <textarea id="sit-notes" class="form-control" rows="3" placeholder="Blank: use the campaign voice file / dossier if CAMPAIGN_DIR is set"></textarea>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label small-caps">The situation right now</label>
+            <textarea id="sit-situation" class="form-control" rows="5" placeholder="The party wants passage on his barge, they have no money, and Thorin just insulted his beard."></textarea>
+            <div class="mt-2 d-flex gap-2">
+              <button id="btn-sit-suggest" class="btn btn-primary">Suggest</button>
+              <button id="btn-sit-reroll" class="btn btn-outline-primary" disabled>Reroll</button>
+            </div>
+          </div>
+        </div>
+        <div id="sit-error" class="text-danger mt-2"></div>
+        <div id="sit-source" class="scratch mt-2"></div>
+        <table class="table table-sm mt-2 mb-0" id="sit-table" hidden>
+          <tbody id="sit-body"></tbody>
+        </table>
+        <div id="sit-line" class="mt-3 fs-5"></div>
+      </div>
     </div>
 
     <!-- Selector row -->
@@ -451,6 +524,55 @@ for (const id of ['role', 'size', 'context', 'rank', 'system']) {
   });
 }
 qs('btn-roll-npc-turn').addEventListener('click', rollNpcTurn);
+
+// --- Situational ----------------------------------------------------------
+const sit = { stances: [], rolled: null };
+function sitInputs() {
+  return { npc: qs('sit-npc').value, notes: qs('sit-notes').value, situation: qs('sit-situation').value };
+}
+function rollFrom(stances) {
+  let r = Math.random(), acc = 0;
+  for (const s of stances) { acc += s.p; if (r <= acc) return s.key; }
+  return stances[0].key;
+}
+function renderSit() {
+  const body = qs('sit-body'); body.innerHTML = '';
+  for (const s of sit.stances) {
+    if (s.p < 0.03 && s.key !== sit.rolled) continue;
+    const tr = document.createElement('tr');
+    if (s.key === sit.rolled) tr.className = 'table-primary';
+    const pct = Math.round(s.p * 100);
+    tr.innerHTML = `<td style="width:11rem">${s.key === sit.rolled ? '🎲 ' : ''}<strong>${s.label}</strong></td>
+      <td><div class="progress" style="height:1.1rem"><div class="progress-bar" style="width:${pct}%">${pct}%</div></div></td>
+      <td style="width:8rem"><button class="btn btn-sm btn-outline-secondary" data-stance="${s.key}">Write a line</button></td>`;
+    body.appendChild(tr);
+  }
+  qs('sit-table').hidden = false;
+  body.querySelectorAll('button[data-stance]').forEach(b => b.addEventListener('click', () => writeLine(b.dataset.stance)));
+}
+async function sitSuggest() {
+  qs('sit-error').textContent = ''; qs('sit-line').textContent = ''; qs('sit-ms').textContent = 'thinking…';
+  const resp = await fetch('/api/situational/suggest', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sitInputs())});
+  const data = await resp.json();
+  if (!resp.ok) { qs('sit-error').textContent = data.error; qs('sit-ms').textContent = ''; return; }
+  sit.stances = data.stances; sit.rolled = data.rolled;
+  qs('sit-ms').textContent = `Clef ${data.ms} ms`;
+  qs('sit-source').textContent = data.notes_source ? `Using ${data.notes_source}` : (qs('sit-notes').value.trim() ? '' : 'No voice file or dossier found; going on the situation alone.');
+  qs('btn-sit-reroll').disabled = false;
+  renderSit();
+  writeLine(sit.rolled);
+}
+async function writeLine(stance) {
+  const label = (sit.stances.find(s => s.key === stance) || {}).label || stance;
+  qs('sit-line').innerHTML = `<span class="text-muted">${label}: writing…</span>`;
+  const resp = await fetch('/api/situational/line', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...sitInputs(), stance})});
+  const data = await resp.json();
+  if (!resp.ok) { qs('sit-line').innerHTML = `<span class="text-danger"></span>`; qs('sit-line').firstChild.textContent = data.error; return; }
+  qs('sit-line').innerHTML = `<div class="small-caps text-muted">${label} <span class="scratch">(${data.ms} ms)</span></div><div></div>`;
+  qs('sit-line').lastChild.textContent = data.line;
+}
+qs('btn-sit-suggest').addEventListener('click', sitSuggest);
+qs('btn-sit-reroll').addEventListener('click', () => { sit.rolled = rollFrom(sit.stances); renderSit(); writeLine(sit.rolled); });
 
 setDropdownsFromState();
 refreshCell();
