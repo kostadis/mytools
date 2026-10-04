@@ -30,6 +30,11 @@ Read the opening cues up to the first line of live play, and apply the skill's m
 - where live play begins
 - which scene or scenes in session-summary.md carry the recap, and which Summary paragraphs or sentences
 
+**Read-aloud recaps are often an older summary, read out with corrections.** The GM reads the previous chapter's summary,
+which may hold errors that a later review fixed, and corrects it on the fly ("no, that was a typo, it was X"). Never carry a
+read-aloud fact into this chapter. Report each on-the-fly correction as a note quoting the live-play cue it contradicts or
+supports. The orchestrator asks the GM about every one.
+
 Also check whether a recap sits **inside** the first live scene. Two patterns to look for: a "GM recap:" bullet in a later scene,
 or a first scene titled "Recap and …" that mixes recap with live play.
 

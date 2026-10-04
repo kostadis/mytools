@@ -629,6 +629,30 @@ next session on the rule is a live hazard. **Read what the module search
 returns around your hit, not just the hit** — near-collisions with the row you
 are about to write are exactly what you cannot see from the transcript.
 
+### Phase 2.6 — known-name cross-check (MANDATORY when the sibling shares the timeline)
+
+Phases 1–2.5 only ever see **unknown** tokens. An LLM-based transcriber can
+also write a **correct canon name for the wrong person**. The token is known,
+so it never becomes a candidate, and every downstream document inherits it.
+In one nine-chapter batch this happened in five chapters, 3 to 15 times each.
+
+When the sibling is on the same timeline (a Zoom per-participant VTT against
+a GMAssistant tape agrees to within about a second):
+
+1. Glossary-normalise both files (Phase 2.5 check 1).
+2. For each occurrence of a registry name or alias in the target, collect the
+   registry names the sibling has within ±4 s of that cue.
+3. Flag occurrences where the sibling has a **different** registry name and
+   not this one. Rank names with zero agreement first. Generic aliases ("Hold"
+   in "hold on") give false positives, so read each flagged cue.
+4. Each confirmed occurrence becomes a **cue-scoped card**: one cue, the exact
+   `was` → `now`, and both readings in `ev`. Never a glossary row, since both
+   names are canon.
+
+The same timeline also speeds up Phase 2.5. Restrict each `sibling_context`
+lookup to the sibling cues within ±90 s of the candidate's own cue. A
+whole-file search is quadratic and also matches the wrong span.
+
 ### Phase 3 — ask the user, one CLUSTER at a time, ALWAYS
 
 Per the user's stated preferences (memories: `feedback_question_style`,

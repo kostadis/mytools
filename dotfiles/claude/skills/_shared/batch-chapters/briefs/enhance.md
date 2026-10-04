@@ -34,6 +34,10 @@ Placeholders:
 
 ## Failure modes to check
 
+- **Re-introduced Stage 0 removals.** For every approved Stage 0 card, check that its subject did not come back in the new
+  summary: a struck word, a corrected referent, a quote trimmed by ruling. A re-introduction is a card that quotes the ruling.
+- **Wrong-referent names.** The transcriber can write one canon name for another. Check every NPC the summary names against
+  the tape and the second transcript at that beat.
 - invented dice or damage values (grep the tape for the literal number)
 - attribution drifting toward the most prominent character. For any spell or ability, check every candidate's character sheet
   (`docs/party/` or equivalent) and say on the card which sheets list it. Only one listing settles it; several make it a

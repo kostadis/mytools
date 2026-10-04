@@ -120,7 +120,15 @@ and never claim success merely because a file exists.
 
 Confirm a successful exit and a nonempty, plausibly complete summary containing
 `## Summary` and `## Scenes`. Compare its scene structure against the reviewed
-GM-assist for obvious omissions or truncation. Keep the generation log in the
+GM-assist for obvious omissions or truncation. A count of `####` scene headings
+in both files is a quick first check.
+
+**The enhancement can re-introduce what Stage 0 removed.** It renders from the
+reviewed gm-assist *and* the tape, and the tape still holds the words a Stage 0
+ruling struck. In one batch, three chapters got back a struck phrase, a quote
+word the GM had cut, and a "feat" the GM had ruled to be a spell. Say so at
+hand-off: the next review (enhancement review or Stage 1) must check every
+approved Stage 0 card's subject in the new summary. Keep the generation log in the
 session's `logs/` directory. This inspection is **not** Stage 1 consistency —
 do not report it as such.
 
