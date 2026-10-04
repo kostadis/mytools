@@ -17,6 +17,11 @@ cohort sections were added on the next batch (2026-09-28). Those five chapters
 had had no pipeline stage at all. One had no recording. Two had Descript
 exports that were edited cuts, about half the length of the recording.
 
+The third batch (2026-10-04) ran nine chapters through every stage from
+speaker attribution to remove-recap, with about 350 GM rulings. It added the
+known-name substitution check, the stage-to-stage re-introduction checks,
+and the read-back rules for approvals that are not decisions.
+
 ## Before the first stage: inventory, gaps, cohorts
 
 **Do not assume the chapters are alike, or that the pipeline has started.**
@@ -81,6 +86,21 @@ were asked for may not be the next one due.
    - what happens to each blocked chapter
    - each chapter's single-source acceptance (acceptance does not carry over
      from an earlier batch)
+   - whether to **replace** existing `session-summary.md` files that an older
+     pipeline produced. Enhancement overwrites them, and every
+     `scene_extractions*/` and `narration/` built from them goes stale. Name
+     those directories in the question.
+
+   **"Through stage X unless already done" means a per-chapter stage list.**
+   A chapter that an older pass already took through the later stages gets
+   only the stages it lacks. Record each chapter's list in `batch.json` and
+   say so in the scope answer, so the GM can correct the reading.
+
+   **Prep is chosen once, with dates in view.** For consistency stages,
+   match session prep to chapters by the date in the prep filename and show
+   each file's commit date beside it. A prep file committed weeks after its
+   session may be a reconstruction, not prep. Reuse the approved set at every
+   consistency stage.
 
    Questions asked without the gaps in view get dismissed, and they should be.
 
@@ -143,7 +163,7 @@ in one message. Each brief must say:
 - **Return:** a one-line-per-card table, the counts, your doubts.
 
 The briefs that worked are archived beside this file as `briefs/stage0.md`,
-`briefs/stage1.md` and `briefs/recap.md`. Copy one and put the
+`briefs/enhance.md`, `briefs/stage1.md` and `briefs/recap.md`. Copy one and put the
 campaign-specific facts in the fork prompt: players, attendance, standing
 rulings, prep paths. A fact a fork cannot see is a fact it will contradict.
 
@@ -154,6 +174,18 @@ attendance fact from speaker review, a Stage 0 reversal. When they are retyped
 into each prompt, some get dropped. A ruling that **reverses** an earlier one
 (for example, an enhancement card that undoes a Stage 0 edit) must also fix the
 earlier stage's file, and the rulings file must say so.
+
+**A fresh general-purpose agent with a brief file works as well as a fork**,
+and costs far less once your own context is large: a fork inherits all of it.
+Keep the brief self-contained (paths, the rulings file, the archived brief to
+follow, the output schema, "write only these files"), and put the
+chapter-specific facts in the spawn prompt: attendance, the prior rulings that
+touch this chapter, the previous and next session dirs. On the third batch,
+eight general-purpose agents per stage ran in parallel with no loss of quality.
+
+**Spawn each chapter's agent the moment its deterministic run finishes.**
+Watch the run logs for their exit lines and do not wait for the slowest
+chapter. The check for one chapter and the adjudication of another overlap.
 
 ## The findings schema — what makes the apply mechanical
 
@@ -225,6 +257,29 @@ Every item below reached a GM approval on the 2026-09-28 batch:
 - `batch.py read` prints, per chapter, one of: saved with a tally, UNMARKED ids,
   DISCUSS notes, or **UNSAVED**. An unsaved page means the GM marked it but did
   not press Save. Ask them to save. Do not treat it as zero approvals.
+  **"Done" does not guarantee a save.** On the third batch, five of eight
+  pages came back unsaved after the GM said done, and two were still unsaved
+  after a second request. Re-read after each "done". A page whose only cards
+  write nothing (a boundary marker) can be ruled in chat instead of asking a
+  third time.
+- **Some approvals are not decisions.** Take these back to chat as well:
+  - **An approved card that needs replacement text but has none.** A card
+    whose `y` reads "write the right form in the note" was approved without a
+    note. Treat it as Discuss and ask for the exact text.
+  - **An approved card whose own evidence argued for rejecting it.** A
+    conflict card said "the evidence favours rejecting". The GM approved it in
+    a run of approvals, then reversed it when asked once with the evidence.
+    Confirm these one at a time and say why you are asking.
+- **Discuss notes need the canon chain too.** Notes are typed at speed and
+  carry name misspellings: an NPC's surname with one letter changed, and a
+  PC's name with two letters transposed. Show the canonical spelling
+  letter by letter in the follow-up, and write the canonical form.
+- **"Just drop one in" is not licence to pick a name.** When a note asks you to
+  supply a name ("I was searching for another X's name"), offer the canon
+  candidates that fit, with their registry notes, and let the GM choose.
+- **One reading per note, or ask.** A note like "I meant X" can mean edit the
+  document, edit the tape, or both. Offer each reading as an option that names
+  the files it writes.
 - Take everything left open to chat, grouped: unmarked cards, discuss notes (one
   at a time, per CLAUDE.md), and whole unsaved pages if the GM would rather rule
   in chat. Record each answer in `chat_rulings.json` **with the GM's own words**
@@ -246,6 +301,33 @@ the exact before and after text, and put every answer in the rulings file.
 as the chat rulings cover every card. The manifest records "ruled in chat".
 The 2026-09-28 remove-recap stage (8 cards across 3 chapters) ran this way.
 
+## Each stage can bring back what an earlier stage removed
+
+`enhance_summary` renders from the reviewed Stage 0 source and the tape, and
+it can still re-introduce wording that Stage 0 removed. On the third batch it
+brought back a struck "contact poison", a quote word the GM had cut, and a
+"feat" the GM had ruled to be a spell. So:
+
+- **The enhancement brief must list every approved Stage 0 card's subject.**
+  The agent then checks each one in the new summary. A re-introduction is a
+  card that quotes the Stage 0 ruling.
+- **Later-stage cards that fix the Stage 0 source are hand-applied.**
+  `batch.py apply --propagate-stage0` copies an edit to the Stage 0 source only
+  where the *same* text occurs. A card that needs a different edit there (the
+  summary was already right but the gm-assist was not) carries a
+  `stage0_edits` list. Apply those by hand with exact counts and name them in
+  the manifest.
+- **An approval covers the target file only.** When a card's `y` says "the same
+  wording also sits in the Stage 0 source", approving it does not authorise
+  editing that file. Ask, or leave it and say so.
+- **Ruling conflicts between stages are expected.** A later stage that finds
+  two earlier GM rulings in conflict, or a GM aside contradicting a ruling,
+  makes a card quoting both. Remove-recap is where these surface most: the GM
+  reads an older summary aloud and corrects it on the fly ("no, that was a
+  typo, it was X"). Collect those asides as questions for after the pages, and
+  put the live-play cue beside each one. On the third batch, one such aside
+  overturned an earlier ruling and two did not.
+
 ## Cross-chapter checks catch what per-chapter checks cannot
 
 Each fork sees one chapter, plus its neighbours only as prose. Names drift
@@ -262,6 +344,34 @@ enhancement review, reading its own tape, surfaced the collision. So:
   and the previous batch's summaries for other names used in the same role
   (same friend, same place, same title).
 
+### Known-name substitution: the check the spell pass cannot make
+
+An LLM-based transcriber can write a **correct canon name for the wrong
+person**: one NPC's name where another was spoken, or a PC's name where the
+speaker named an NPC. On the third batch this happened in five of eight
+chapters: one name stood in for another 5 to 15 times in a session. The tape
+was internally consistent, and every downstream document inherited the error.
+`/vtt-spell-pass` cannot see it, because it only surfaces unknown tokens.
+
+When a second, independent transcript shares the recording's timeline (a Zoom
+per-participant VTT does, to within about a second):
+
+1. Normalise both through the glossary.
+2. For every registry name or alias in the target tape, collect the registry
+   names the other transcript has within ±4 s.
+3. Flag a name whose window never contains it but does contain a *different*
+   registry name. Flag names that never agree (agree = 0, misses ≥ 2) first.
+   Expect false positives from generic words that are also aliases ("Hold
+   on", a capitalised common noun). Read each flagged cue before carding it.
+4. Card each confirmed one as a **cue-scoped** tape entry, one cue per card,
+   with both readings side by side. Never make it a glossary row: both names
+   are canon.
+
+Tell the Stage 0 agents to expect the same wrong names in the gmassist
+export, which was generated from the same text, and to card each occurrence.
+On the third batch, Stage 0 and enhancement found every place the wrong names
+had reached.
+
 ## Re-asks carry context, or they get dismissed
 
 A chat re-ask of an unmarked card or a note-less Discuss card must bring:
@@ -275,6 +385,11 @@ On the second batch, the GM dismissed a whole round of bare "X → Y?" questions
 ## Speaker attribution when the chapters differ
 
 - **Zoom per-participant VTT** (each person on their own connection) is the strongest second source. Convert its cues to a turns JSON (speaker = Zoom name) and pass it as `diarize_label.py --md`.
+  - **Map Zoom display names to players explicitly**, and fail on any label not in the map. Display names drift between sessions: a player may join under a PC's name or a full name. Take each mapping from `players.yaml` or from an earlier GM-approved run record, and never infer one.
+  - **Set `num_speakers` per chapter** from the people present. Absences show up as Zoom names missing from a session; confirm them with the GM once, in the inventory question set.
+  - **When pyannote spends two bins on the GM, two players merge.** Name the merged player's cues from their own Zoom feed (`--md-label {"<player>":"<player>"}`). The tool's agreement figure then looks bad, because it excludes multi-bin speakers. Report **by-name agreement on the final file** instead: each cue's label against the Zoom participant with the most overlap. On the third batch, the tool reported 76.5% and by-name agreement was 97.7%.
+  - **Context-judged cue review scales.** Nine chapters had about 1,800 disagreeing cues. Agents judged about 420 of them at ≥ 70% confidence and sent 13 to the GM. Have the judging agent return both the lean and the confidence inside each `ask_gm` entry, so the page can show "approve = the lean" without having to look it up.
+  - **Relabels after the speaker file is written:** later stages surface mislabelled cues. Patch the label in `transcript.speakers.vtt` (text and timing untouched), add the cue to `approved_cue_labels.json`, append the ruling and the new sha256 to the run record, then rebuild `transcript.cleaned.speakers.vtt`.
 - **No second recording:** `/speaker-attribution-text` run by a fork that **never sees the diarization** is a usable cross-check. Weigh it as an inference, and say so on the page.
 - **When the acoustic clustering fails:**
   - The signs are one cluster above 55%, and three players scattered across clusters with no qualifying mapping.
@@ -288,6 +403,40 @@ On the second batch, the GM dismissed a whole round of bare "X → Y?" questions
 - `sibling_context.py` does not strip a Descript `.md` export's unescaped `[hh:mm:ss]` stamps, so every candidate scores low against it. Search a cleaned copy by hand until that's fixed.
 - `lint_glossary.py --verify-output` flags ordinary words that collide with a row's multi-word wrong-form. Example: "Lay down your weapons" against a row whose wrong-form is "a lay". Read each hit before calling it an error.
 
+## Tool gaps found on the third batch
+
+- **`batch/batch_scan.py` passes neither `--registry` nor the session-start
+  trim**, and needs a `manifest.json` some campaigns lack. A small wrapper
+  that runs the same Phase 0/1/2.5 steps with `--registry` and
+  `--skip-before` works. Pin `PYTHONHASHSEED=0` in the wrapper too.
+- **Sibling lookups over a whole transcript are slow.** About 100 candidates
+  against a 1,100-cue sibling did not finish in two minutes. When the two
+  transcripts share a timeline, search only the sibling cues within ±90 s of
+  the candidate's own cue. That runs in seconds and gives better matches.
+- **`find_unknowns.py` surfaces sentence-initial ordinary words** ("All",
+  "Do", "We're") and tokens already in the state's ignored list. Agents
+  should suppress both without a card.
+- **Raw GMAssistant tapes can have a cue whose end precedes its start.**
+  `diarize_label.py` refuses it. Repair the timing in a derived scratch copy
+  only, and carry the repaired timing into the speaker file with a NOTE.
+  `sd_corrections` keeps the original timing in the cleaned tape, so the
+  labelled cleaned tape must accept that one mismatch by name.
+- **Raw GMAssistant tapes can drop spoken numbers** ("at p.m.", "at around .").
+  This is a source limitation, not spell-pass damage. Check the raw cue
+  before blaming a glossary row.
+- **Cue edits must match the whole cue, not its first line.** GMAssistant cues
+  run to several text lines. A matcher that reads only the first line misses
+  later occurrences silently, so assert that every listed cue matched.
+- **`batch.py validate` builds no page when a chapter has zero items.** That
+  is expected. List the chapter as "nothing to rule" when handing over links.
+- **`registry alias` rewraps long note lines** across the YAML. Parse the
+  before and after files and confirm that only the intended entity changed
+  before you commit.
+- **`add_to_glossary.py` searches one section, and a canonical can have two
+  rows.** Moving a form between rows must find the row that *holds* the form,
+  not the first row with that canonical. A script that edits the glossary
+  should refuse to write until every move resolves.
+
 ## Tape corrections found along the way
 
 A fork will find tape errors, such as one creature name misheard as another. These are not edits to
@@ -300,6 +449,20 @@ the target file. With GM approval:
   entry.
 - Patch `transcript.cleaned.speakers.vtt` by cue id, keeping the speaker label.
   The speaker labels are not regenerated from the record.
+- **A tape card may also edit the summary's quote of the same cue.** Give it
+  `edits` on the target as well as its `tape` list. `batch.py apply` writes the
+  target edits, and the tape entry stays a hand step. Verify both landed.
+- **Settle glossary output to a fixed point after cue edits.** A card that
+  writes a name the glossary rewrites again (a player's real name mapped to
+  "GM") changes on the next pass. Re-apply the glossary until nothing changes,
+  record the settled text, and tell the GM when a card's literal wording was
+  normalised this way.
+- **A standing row can fire on a literal phrase.** A row mapping a mishearing
+  that is also an ordinary phrase (a haircut description mapped to an NPC's
+  name) rewrites every literal use. When the GM drops the form from the row,
+  existing records still carry the old substitution. Grep every chapter's
+  record for entries whose `was` holds the dropped form, and put each one to
+  the GM. Some are real nicknames for the NPC.
 
 ## Environment traps
 
@@ -319,6 +482,15 @@ the target file. With GM approval:
   batch of rows.
 - **One commit per stage, one campaign per commit.** Check `git diff --cached`
   for audio files after any broad `git add`.
+- **The 10-watch limit is reached within one stage.** A batch of eight
+  chapters publishes eight pages per stage, so from the second stage onward no
+  page is watched. Plan on the GM's "done" from the start, and say so when you
+  hand over the links.
+- **Background stdout is buffered.** A Python loop run in the background
+  prints nothing until it exits. Check progress by the files it writes, or run
+  it with `python3 -u`.
+- **`pkill -f <script>` can kill your own shell** when the shell's command line
+  contains the script name. Kill by PID.
 
 ## `batch.py`
 

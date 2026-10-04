@@ -284,6 +284,21 @@ scheduling chatter that precedes them.
   latter is framing context for every scene's narration prompt.
 - **Trimming the summary prose is a judgement call about where the chapter
   starts.** Get it ruled; do not infer it from the first scene's boundary.
+- **A read-aloud recap is often an older document, corrected on the fly.** The
+  GM reads the previous chapter's summary, which may carry errors a later
+  review fixed, and corrects it aloud ("no, that was a typo, it was X"). Never
+  carry a read-aloud fact or correction into either chapter. Put each
+  correction to the GM with the live-play cue it contradicts or supports. In
+  one batch, three such asides came up: one overturned an earlier ruling and
+  two were slips.
+- **The recap may never have reached the summary.** When enhancement already
+  started at live play, the right card is "mark cue N as the start of play,
+  cut nothing". A page whose only card is that boundary still needs a saved
+  ruling, or a chat one.
+- **Reference sections can carry the previous chapter in the present tense.**
+  NPC, item and spell entries copied from the recap read as this chapter's
+  events. Re-tense them ("in the previous session") rather than deleting state
+  that is still true.
 
 ## Why this design
 

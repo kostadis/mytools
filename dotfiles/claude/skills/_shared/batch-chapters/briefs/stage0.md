@@ -23,6 +23,9 @@ Placeholders:
 
 ## Evidence
 
+- **Expect wrong-referent names.** The gmassist export was generated from the same transcriber text as the tape. Where the
+  tape wrote one canon name for another (found by the spell pass's known-name cross-check), the export carries the same
+  wrong name. Check every NPC it names against the corrected tape and card each occurrence.
 - **The tape settles everything.** Use `<TAPE>` and cite cue numbers and timestamps.
 - **The report's "authoritative" sources are not authoritative.** A bible chapter and a module excerpt are downstream prose or the published plan. The table often diverged from both.
 - **The neighbouring chapters' summaries** (<PREV>, <NEXT>) are continuity evidence, not canon.

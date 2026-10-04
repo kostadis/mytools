@@ -179,6 +179,18 @@ Two players can also end up merged in the bin the split took (acoustic-workflow.
 *A GM's registers*). After the mapping is approved, compute agreement by name
 and give the GM the full list of disagreeing cues.
 
+**A Zoom per-participant VTT as the second clustering.** When each person had
+their own connection, convert the Zoom cues to a turns JSON and pass it as
+`--md`. Map every Zoom display name to a short player name **explicitly**,
+from `players.yaml` or an earlier GM-approved run record, and fail on any
+label not in the map. People join under a PC's name, a full name or a
+nickname, and a guessed mapping is an attribution ruling nobody made. When
+pyannote merges two players, name the one with their own feed through
+`--md-label`. Then report **by-name agreement on the final file**: each
+cue's label against the Zoom participant with the most overlap. The tool's
+cluster-level figure excludes multi-bin speakers. On one chapter it reported
+76.5% while by-name agreement was 97.7%.
+
 **Checkpoint 2:** the GM confirms the agreement percentage and the speech split
 before anything is built on them. A collapsed clustering looks exactly like a
 valid one downstream. An existing acceptance of these exact results need not
