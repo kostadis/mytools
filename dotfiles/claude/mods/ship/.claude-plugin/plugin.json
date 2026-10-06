@@ -1,0 +1,13 @@
+{
+  "name": "ship",
+  "version": "0.1.0",
+  "description": "/ship [merge] runs the whole commit-push-PR(-merge) sequence from one command; /sync switches to the default branch and pulls without the model",
+  "userConfig": {
+    "branch_overrides": {
+      "type": "string",
+      "title": "Default-branch overrides",
+      "description": "repo-folder=branch pairs, comma separated, for repos whose working branch is not origin's default",
+      "default": "Mempalace=kostadis-dev"
+    }
+  }
+}

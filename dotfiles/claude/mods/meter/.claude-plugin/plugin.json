@@ -1,0 +1,5 @@
+{
+  "name": "meter",
+  "version": "0.1.0",
+  "description": "Rate-limit windows and context fill in the status line, with a toast before either runs out"
+}

@@ -1,0 +1,6 @@
+{
+  "name": "git-band",
+  "version": "0.1.0",
+  "description": "Branch, worktree, dirty files, ahead/behind, the branch's PR and a stale default branch, in a band above the prompt",
+  "types": "./types/index.d.ts"
+}
