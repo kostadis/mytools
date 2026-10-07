@@ -1,11 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "mcp__zvec_grep__*"
+      "mcp__zvec_grep__*",
+      "mcp__github__merge_pull_request"
     ],
     "defaultMode": "auto"
   },
-  "model": "sonnet",
   "hooks": {
     "PreToolUse": [
       {
@@ -74,7 +74,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/src/Mempalace/hooks/mempal_save_hook.sh",
+            "command": "PATH=$HOME/.venvs/main/bin:$PATH MEMPALACE_BACKEND=turbovec $HOME/src/Mempalace/hooks/mempal_save_hook.sh",
             "timeout": 30
           }
         ]
@@ -85,7 +85,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/src/Mempalace/hooks/mempal_precompact_hook.sh",
+            "command": "PATH=$HOME/.venvs/main/bin:$PATH MEMPALACE_BACKEND=turbovec $HOME/src/Mempalace/hooks/mempal_precompact_hook.sh",
             "timeout": 30
           }
         ]
@@ -105,7 +105,7 @@
     }
   },
   "effortLevel": "xhigh",
-  "tui": "fullscreen",
+  "tui": "default",
   "skipWorkflowUsageWarning": true,
   "theme": "dark",
   "agentPushNotifEnabled": true,
@@ -138,6 +138,7 @@
       "**Org-specific CLIs**: None configured"
     ]
   },
+  "model": "opus",
   "env": {
     "CLAUDE_CODE_PLUGIN_DIRS": "~/src/mytools/dotfiles/claude/mods/ship:~/src/mytools/dotfiles/claude/mods/jobs:~/src/mytools/dotfiles/claude/mods/git-band:~/src/mytools/dotfiles/claude/mods/backend-guard:~/src/mytools/dotfiles/claude/mods/meter"
   }
