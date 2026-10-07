@@ -1,0 +1,14 @@
+{
+  "name": "backend-guard",
+  "version": "0.1.0",
+  "description": "Blocks a CampaignGenerator pipeline command that would run on the Anthropic API key unless the user asked for it",
+  "userConfig": {
+    "preferred_backend": {
+      "type": "string",
+      "title": "Preferred backend",
+      "description": "The backend the guard tells Claude to use instead of the API key",
+      "default": "claude-code",
+      "options": ["claude-code", "dgx", "codex-cli", "openrouter"]
+    }
+  }
+}

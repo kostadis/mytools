@@ -1,0 +1,6 @@
+{
+  "name": "jobs",
+  "version": "0.1.0",
+  "description": "A live pane of background shells, subagents and monitors, a toast when one ends, and one-line notification rows",
+  "types": "./types/index.d.ts"
+}
