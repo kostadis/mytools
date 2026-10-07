@@ -18,5 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify shared skill files
+      - name: Verify canonical skill layout
         run: bash dotfiles/check-skill-sync.sh
+      - name: Test Codex link management
+        run: bash dotfiles/tests/test-codex-links.sh
