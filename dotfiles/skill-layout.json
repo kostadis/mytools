@@ -10,6 +10,12 @@
   ],
   "intentional_adapters": {
     "paired": [
+      "_shared/batch-chapters/BATCH.md",
+      "_shared/batch-chapters/batch.py",
+      "_shared/batch-chapters/briefs/enhance.md",
+      "_shared/batch-chapters/briefs/recap.md",
+      "_shared/batch-chapters/briefs/stage0.md",
+      "_shared/batch-chapters/briefs/stage1.md",
       "consistency-check/SKILL.md",
       "dialogue-edit/SKILL.md",
       "dialogue-edit/references/review-and-apply.md",
@@ -27,11 +33,11 @@
       "vtt-spell-pass/SKILL.md"
     ],
     "claude_only": [
-      "_shared/batch-chapters",
       "_shared/review-artifact",
       "vtt-spell-pass/batch"
     ],
     "codex_only": [
+      "_shared/batch-chapters/tests/test_batch.py",
       "_shared/review-page",
       "dialogue-edit/agents/openai.yaml",
       "speaker-attribution/agents/openai.yaml",

@@ -37,7 +37,10 @@ new byte-identical copies outside the shared tree. `SKILL.md` files are intentio
 shared contract because their tool names, question flows, backend selection,
 and review UI differ by harness. The two review implementations are also
 intentionally different: Claude uses `_shared/review-artifact`, while Codex uses
-`_shared/review-page` plus local HTML handoff.
+`_shared/review-page` plus local HTML handoff. Batch chapter orchestration is
+implemented on both sides as a paired adapter. Its deterministic validation
+and all-or-nothing apply semantics match, while each adapter uses its own
+review transport.
 
 The audit that produced this document found two real drifts in files already
 declared shared:
@@ -62,7 +65,8 @@ Keep these as harness adapters rather than forcing byte identity:
   files would create invalid or misleading configuration.
 - Review UI adapters and `agents/openai.yaml`. They are runtime integration,
   not campaign logic.
-- Claude-only batch orchestration until Codex has an equivalent reviewed flow.
+- Batch orchestration adapters. Claude publishes and reads Artifact state;
+  Codex hands off local review pages and validates saved decision JSON.
 
 ## Recommended structure
 
