@@ -1,5 +1,9 @@
 # Claude and Codex dotfile convergence
 
+**Status: implemented.** The six-step migration is complete on the
+`codex/claude-codex-sync` integration branch. CI enforces the canonical layout
+and exercises safe Codex link management.
+
 ## Current state
 
 The Claude tree contains 40 authored skills. Codex currently ports 13 of them:
