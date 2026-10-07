@@ -1,0 +1,50 @@
+{
+  "shared_skills": [
+    "dialogue-edit",
+    "no-mech",
+    "remove-recap",
+    "speaker-attribution",
+    "speaker-attribution-text",
+    "staged-consistency",
+    "vtt-spell-pass"
+  ],
+  "intentional_adapters": {
+    "paired": [
+      "_shared/batch-chapters/BATCH.md",
+      "_shared/batch-chapters/batch.py",
+      "_shared/batch-chapters/briefs/enhance.md",
+      "_shared/batch-chapters/briefs/recap.md",
+      "_shared/batch-chapters/briefs/stage0.md",
+      "_shared/batch-chapters/briefs/stage1.md",
+      "consistency-check/SKILL.md",
+      "dialogue-edit/SKILL.md",
+      "dialogue-edit/references/review-and-apply.md",
+      "dialogue-edit/tests/test_review_edits.py",
+      "enhance-summary/SKILL.md",
+      "no-mech/SKILL.md",
+      "remove-recap/SKILL.md",
+      "scene-extract/SKILL.md",
+      "session-summary-consistency/SKILL.md",
+      "speaker-attribution/SKILL.md",
+      "speaker-attribution-text/SKILL.md",
+      "staged-consistency/SKILL.md",
+      "voice-critic/SKILL.md",
+      "voice-smooth/SKILL.md",
+      "vtt-spell-pass/SKILL.md"
+    ],
+    "claude_only": [
+      "_shared/review-artifact",
+      "vtt-spell-pass/batch"
+    ],
+    "codex_only": [
+      "_shared/batch-chapters/tests/test_batch.py",
+      "_shared/review-page",
+      "dialogue-edit/agents/openai.yaml",
+      "speaker-attribution/agents/openai.yaml",
+      "speaker-attribution-text/agents/openai.yaml",
+      "voice-critic/agents/openai.yaml",
+      "voice-critic/references/checks-and-report.md",
+      "vtt-spell-pass/render_review.py"
+    ]
+  }
+}

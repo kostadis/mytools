@@ -1,0 +1,24 @@
+name: Skill sync
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/skill-sync.yml"
+      - "dotfiles/**"
+  push:
+    paths:
+      - ".github/workflows/skill-sync.yml"
+      - "dotfiles/**"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify canonical skill layout
+        run: bash dotfiles/check-skill-sync.sh
+      - name: Test Codex link management
+        run: bash dotfiles/tests/test-codex-links.sh
