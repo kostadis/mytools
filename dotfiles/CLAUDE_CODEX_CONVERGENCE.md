@@ -103,10 +103,10 @@ references used by both adapters, then link to them from each `SKILL.md`.
 4. **Complete:** `skill-layout.json` declares shared skill directories and
    intentional adapters. The checker fails on copied platform-neutral files,
    broken links, wrong links, and undeclared shared directories.
-5. Review the 27 Claude-only skills by value and compatibility. Port a skill
-   only when its workflow is useful in Codex and every Claude-specific tool has
-   a deliberate Codex equivalent. Track that decision in a short manifest with
-   `ported`, `claude-only`, or `candidate` status.
+5. **Complete:** `skill-compatibility.json` classifies all 40 authored Claude
+   skills as `ported`, `claude-only`, or `candidate`, records a reason for each,
+   and names the missing Codex equivalent for every candidate. The layout
+   checker rejects unclassified or stale entries.
 6. Add a Codex link/install checker analogous to `claude-links.sh`; today this
    repository documents how Claude files reach the live home directory but has
    no equivalent proof for Codex.

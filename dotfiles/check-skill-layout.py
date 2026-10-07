@@ -84,13 +84,46 @@ def main() -> int:
         if right.is_file() and left.read_bytes() == right.read_bytes():
             errors.append(f"DUPLICATED neutral file outside shared tree: {rel}")
 
+    compatibility = json.loads(
+        (root / "skill-compatibility.json").read_text(encoding="utf-8")
+    )["skills"]
+    names = [entry.get("name") for entry in compatibility]
+    if len(names) != len(set(names)):
+        errors.append("DUPLICATED skill name in skill-compatibility.json")
+    authored = {
+        path.name for path in claude.iterdir() if (path / "SKILL.md").is_file()
+    }
+    classified = set(names)
+    for name in sorted(authored - classified):
+        errors.append(f"UNCLASSIFIED authored Claude skill: {name}")
+    for name in sorted(classified - authored):
+        errors.append(f"STALE compatibility entry: {name}")
+    valid_statuses = {"ported", "claude-only", "candidate"}
+    for entry in compatibility:
+        name = entry.get("name", "<missing>")
+        status = entry.get("status")
+        if status not in valid_statuses:
+            errors.append(f"INVALID compatibility status for {name}: {status}")
+        if not entry.get("reason"):
+            errors.append(f"MISSING compatibility reason: {name}")
+        if status == "candidate" and not entry.get("missing_codex_equivalent"):
+            errors.append(f"MISSING Codex gap for candidate: {name}")
+        has_codex_port = (codex / name / "SKILL.md").is_file()
+        if status == "ported" and not has_codex_port:
+            errors.append(f"PORTED skill has no Codex adapter: {name}")
+        if status != "ported" and has_codex_port:
+            errors.append(f"Codex adapter is not classified ported: {name}")
+
     if errors:
         print("skill layout is invalid:", file=sys.stderr)
         for error in errors:
             print(f"  {error}", file=sys.stderr)
         return 1
 
-    print(f"skill layout valid: {shared_files} canonical files across {len(declared)} shared skills")
+    print(
+        f"skill layout valid: {shared_files} canonical files across "
+        f"{len(declared)} shared skills; {len(authored)} skills classified"
+    )
     return 0
 
 
