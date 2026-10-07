@@ -1046,9 +1046,11 @@ python "$SKILL_DIR/render_review.py" \
 `render_review.py` is a VTT-specific adapter over the shared Codex review-page
 renderer. The HTML is standalone, keeps no browser storage (a reload loses
 unsaved marks), always opens unmarked, and exports the shared decision schema
-through Copy output or Save output. Summarize the counts in chat, hand over the
-HTML path, then stop. Do not modify the glossary or transcript while the page
-is awaiting review.
+through Copy output or Save output. Prefer serving it with the shared
+`serve_review.py`, configured to write `$REVIEW/decisions.json`; summarize the
+counts, hand over the capability URL, and keep the server running. Fall back to
+the HTML path when the VM is unreachable. Do not modify the glossary or
+transcript while the page is awaiting review.
 
 ### The consent unit is the PAIR, never the cluster
 

@@ -183,7 +183,9 @@ fields. The GM returns decisions with Copy output or Save output; validate them
 with `read_decisions.py --in <session>/voice_critic_review/decisions.json --items
 <session>/voice_critic_review/review_items.json`. Only returned decisions
 authorize proposed edits; localStorage and file timestamps do not. Return the
-page and report paths.
+page and report paths. Prefer `serve_review.py` from the shared contract and
+return its capability URL too; its successful **Save to VM** writes the same
+validated decisions path without a phone download.
 
 ## After the GM returns decisions
 

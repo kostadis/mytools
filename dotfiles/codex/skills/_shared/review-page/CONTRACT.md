@@ -14,8 +14,21 @@ This directory is not a skill and intentionally has no `SKILL.md`.
    python "$REVIEW_PAGE/build_review.py" --in review_items.json --out review.html
    ```
 
-4. Give the user the page path. The user can paste **Copy output** into chat or
-   send the JSON downloaded by **Save output**.
+4. Prefer serving the page from the Codex VM when it is reachable from the
+   user's phone over Tailscale:
+
+   ```bash
+   python "$REVIEW_PAGE/serve_review.py" \
+     --page review.html --items review_items.json --out decisions.json
+   ```
+
+   Give the user the capability URL printed by the server and keep the process
+   running. **Save to VM** validates and atomically writes the configured
+   decisions file in the session directory. The random URL is intended for a
+   tailnet or trusted LAN and changes every time the server starts.
+
+   If the VM cannot be reached, give the user the page path instead. A page
+   opened directly retains **Copy output** and the **Save output** download.
 5. Validate the returned JSON (pasted into a file, or the download) against the
    items file the page was built from:
 
@@ -89,13 +102,13 @@ especially `<`, `>`, and `&`. The builder rejects an embedded `</script>`.
 Verdicts are `approve`, `reject`, and `discuss`. Unmarked IDs are unresolved,
 not rejected.
 
-`savedAt` is stamped only by the GM's own **Copy output** or **Save output**
-gesture, never when the page loads or renders, so a JSON without it is not a
-ruling. Before treating a second export in the same run as new rulings, check
-its `savedAt` is newer than the one already processed.
+`savedAt` is stamped only by the GM's own **Copy output**, **Save output**, or
+**Save to VM** gesture, never when the page loads or renders, so a JSON without
+it is not a ruling. Before treating a second export in the same run as new
+rulings, check its `savedAt` is newer than the one already processed.
 
-**Copy output** and **Save output** stay disabled until the GM has marked or
-noted at least one item, so an all-unmarked export can never pass for a review.
+The copy and save controls stay disabled until the GM has marked or noted at
+least one item, so an all-unmarked export can never pass for a review.
 
 The page keeps no browser storage. It always opens from the builder's state,
 so a re-review never starts with a previous run's marks already ticked, and
@@ -130,7 +143,27 @@ Give each page its own `reviewId` too (e.g. `…:stage-1`), so `read_decisions.p
 - IDs must round-trip to the calling skill's apply data or a sidecar map.
 - One page covers one skill and one run. `staged-consistency` uses one page per stage.
 - The page existing, being opened, or having a newer mtime is never approval.
-- Only pasted or saved decision JSON authorizes follow-up work.
+- Only pasted or saved decision JSON authorizes follow-up work. An HTTP success
+  from `serve_review.py` is a save: the same validator used by the CLI has
+  accepted the payload and written it to the configured path. Merely loading
+  the URL is not a decision.
+
+## Phone review over Tailscale
+
+`serve_review.py` binds to `0.0.0.0:8765` by default and prints the machine's
+Tailscale IPv4 address when the `tailscale` CLI is available. It serves one
+HTML file at an unguessable `/r/<token>/` URL and accepts `PUT` only at that
+URL's `decisions` endpoint. It does not expose a directory listing, arbitrary
+file reads, or a caller-selected write path.
+
+The server must remain in the foreground while the page is in use. Stop it
+after the decisions file has been saved and validated. Use `--port` when 8765
+is occupied, and `--host 127.0.0.1` for local-only testing.
+
+The server is stdlib-only. It is designed for a private tailnet or trusted LAN;
+do not expose its port to the public internet. The capability URL prevents
+ambient tailnet clients from discovering the review, while Tailscale supplies
+the network identity and encryption.
 
 ## Testing without a browser
 

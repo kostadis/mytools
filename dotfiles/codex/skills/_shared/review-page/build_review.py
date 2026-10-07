@@ -170,6 +170,7 @@ var FOOTER = __FOOTER__;
 var ITEMS = __ITEMS__;
 var REVIEW_ID = __REVIEW_ID__;
 var OUTPUT_NAME = __OUTPUT_NAME__;
+var HOSTED = document.querySelector('meta[name="codex-review-save"]') !== null;
 
 var LABEL = {approve:"Approve", reject:"Reject", discuss:"Discuss"};
 
@@ -231,7 +232,8 @@ function render(){
   // all-unmarked file can never pass for a review.
   var any = Object.keys(state.decisions).length || Object.keys(state.notes).length;
   h += '<button class="bulk" id="copy"' + (any ? '' : ' disabled') + '>Copy output</button>';
-  h += '<button class="save" id="save"' + (any ? '' : ' disabled') + '>Save output</button>';
+  h += '<button class="save" id="save"' + (any ? '' : ' disabled') + '>' +
+       (HOSTED ? 'Save to VM' : 'Save output') + '</button>';
   h += '</div>';
 
   h += '<div class="msg" id="msg" hidden></div>';
@@ -263,7 +265,9 @@ function render(){
 
   h += '<div class="foot">';
   if(FOOTER) h += '<p class="applied">' + esc(FOOTER) + '</p>';
-  h += 'Use Copy output to paste the rulings into chat, or Save output to download <code>' + esc(OUTPUT_NAME) + '</code>. ' +
+  h += (HOSTED
+       ? 'Save to VM writes <code>' + esc(OUTPUT_NAME) + '</code> in the active Codex workspace. '
+       : 'Use Copy output to paste the rulings into chat, or Save output to download <code>' + esc(OUTPUT_NAME) + '</code>. ') +
        'Unmarked findings remain unresolved; they are never treated as rejected.';
   h += '</div>';
   h += '</div>';
@@ -365,7 +369,24 @@ function fallbackCopy(value){
   area.remove();
 }
 
-function doSave(){
+async function doSave(){
+  if(HOSTED){
+    var button = document.getElementById('save');
+    if(button) button.disabled = true;
+    try {
+      var response = await fetch(new URL('decisions', window.location.href), {
+        method:'PUT', headers:{'Content-Type':'application/json'}, body:outputText()
+      });
+      var result = await response.json().catch(function(){ return {}; });
+      if(!response.ok) throw new Error(result.error || ('save failed (' + response.status + ')'));
+      flash('Saved on VM: ' + result.saved + '.');
+    } catch(e) {
+      flash('Could not save on VM: ' + e.message, true);
+    } finally {
+      if(button) button.disabled = false;
+    }
+    return;
+  }
   var blob = new Blob([outputText()], {type:'application/json'});
   var url = URL.createObjectURL(blob);
   var link = document.createElement('a');

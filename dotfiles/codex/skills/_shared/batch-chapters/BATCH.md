@@ -243,14 +243,19 @@ Every item below reached a GM approval on the 2026-09-28 batch:
 
 ## Steps 6–8 — reading back without rubber-stamping
 
-- The page's **Save output** button downloads a JSON export. Put it in the
-  same review directory as the page, using the page's requested output name:
-  `decisions_<stage>.json`, or `decisions.json` for a plain-name front-end
-  review. A pasted **Copy output** payload is equivalent after it is saved to
-  that path. `batch.py read` validates each export against the exact
+- Prefer `../review-page/serve_review.py` when the Codex VM is reachable over
+  Tailscale. Its **Save to VM** button validates and atomically writes the JSON
+  to the configured `--out` path. If the page is opened directly, **Save
+  output** downloads a JSON export; put it in the same review directory as the
+  page, using the page's requested output name: `decisions_<stage>.json`, or
+  `decisions.json` for a plain-name front-end review. A pasted **Copy output**
+  payload is equivalent after it is saved to that path. `batch.py read`
+  validates each export against the exact
   `review_items` file that built its page, so a stale export is rejected.
-- There is no save notification. Wait for the GM to return the export or say
-  that it is ready, then read every chapter's decision file.
+- With a directly opened page there is no save notification; wait for the GM
+  to return the export or say that it is ready. With the server, a successful
+  **Save to VM** response confirms the configured file was written. Then read
+  every chapter's decision file.
 - `batch.py read` prints, per chapter, one of: saved with a tally, UNMARKED ids,
   DISCUSS notes, **NOT EXPORTED**, **UNSAVED**, or **READ FAILED**. A missing
   export usually means the GM marked the page but did not press Save or Copy.
