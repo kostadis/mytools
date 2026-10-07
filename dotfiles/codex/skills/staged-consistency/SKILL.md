@@ -22,10 +22,12 @@ skill.
 - Ask user questions in chat.
 - Keep the user informed as each stage starts, stops, or reaches its review gate.
 - Use `apply_patch` for manual edits.
-- Do not use Claude Artifact mode. Codex has no equivalent save notification.
-- For batch review, use the shared standalone page at
-  `~/.codex/skills/_shared/review-page/`; accept its output pasted into chat or
-  from a downloaded JSON file. Do not wait for callbacks or infer a save.
+- Do not use Claude Artifact mode.
+- For batch review, use the shared page at
+  `~/.codex/skills/_shared/review-page/`. Prefer its Tailscale server, whose
+  explicit **Save to VM** action writes a validated decision file; retain Copy
+  output and the standalone download as fallbacks. Never infer a save from a
+  page load or file timestamp.
 - For the single-document check procedure, follow the Codex
   `consistency-check` skill. If it is not already loaded, read
   `~/.codex/skills/consistency-check/SKILL.md`.
@@ -562,8 +564,10 @@ For every stage:
      --out <session-dir>/staged_review/review_stage<N>.html
    ```
 
-5. Give the user the HTML path and stop. Resume only when they paste the
-   exported JSON or point to the downloaded file.
+5. Prefer starting `serve_review.py` with that stage's page, items, and decision
+   paths, then give the user its capability URL and keep it running. Otherwise
+   give the HTML path. Resume only after **Save to VM** succeeds, they paste the
+   exported JSON, or they point to the downloaded file.
 6. Save the export as `<session-dir>/staged_review/decisions_stage<N>.json` and
    validate it: `python "$REVIEW_PAGE/read_decisions.py" --in
    <session-dir>/staged_review/decisions_stage<N>.json --items

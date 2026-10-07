@@ -305,6 +305,10 @@ mkdir -p <session-dir>/quote_review
 python "$REVIEW_PAGE/build_review.py" \
   --in <session-dir>/quote_review/review_items.json \
   --out <session-dir>/quote_review/review.html
+python "$REVIEW_PAGE/serve_review.py" \
+  --page <session-dir>/quote_review/review.html \
+  --items <session-dir>/quote_review/review_items.json \
+  --out <session-dir>/quote_review/decisions.json
 ```
 
 This skill builds one page per run, so the plain names are correct, and the
@@ -381,10 +385,11 @@ scene. Include:
 }
 ```
 
-Then ask the user to paste Copy output or supply the saved decision JSON. Save
-a pasted export to `<session-dir>/quote_review/decisions.json` (a Save output
-download goes there too), and validate its reviewId and item IDs against this
-run before applying decisions:
+Give the user the server's capability URL and keep it running. After **Save to
+VM** succeeds, or after the user supplies Copy output or a downloaded decision
+file, validate its reviewId and item IDs against this run before applying
+decisions. Save pasted or downloaded output to
+`<session-dir>/quote_review/decisions.json` first:
 
 ```bash
 python "$REVIEW_PAGE/read_decisions.py" \

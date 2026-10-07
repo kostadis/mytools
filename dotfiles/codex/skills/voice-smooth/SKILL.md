@@ -45,7 +45,8 @@ while a glossary row changes every future transcript.
 - Codex does not have Claude's Artifact review callback. Use chat for a small
   queue. For a long queue, build the shared review page
   (`../_shared/review-page/CONTRACT.md`) and read the GM's exported decisions
-  back with `read_decisions.py --items`; there is no save callback (step 4).
+  back with `read_decisions.py --items`. Prefer the shared Tailscale server so
+  the GM's explicit save writes the file on the VM (step 4).
 - Use `apply_patch` for manual file edits. Preserve unrelated user changes.
 - A generated smoothed layer is a draft until calibration and every required
   scope or garble ruling is resolved. Do not hand it to `session_doc` early.
@@ -309,6 +310,10 @@ review_dir=<session-dir>/voice_review; mkdir -p "$review_dir"
 python "$REVIEW_PAGE/build_review.py" \
   --in "$review_dir/review_items_<round>.json" \
   --out "$review_dir/review_<round>.html"
+python "$REVIEW_PAGE/serve_review.py" \
+  --page "$review_dir/review_<round>.html" \
+  --items "$review_dir/review_items_<round>.json" \
+  --out "$review_dir/decisions_<round>.json"
 ```
 
 Reuse `review_dir` for every round; each round gets its own items and
@@ -329,8 +334,9 @@ decisions file, so earlier rounds' questions and rulings survive.
   (`voice-smooth:<session>:<round>`), per the contract's multi-page rule, so
   every round's card text survives as the record of what the GM was asked.
 
-Give the GM the page path and stop. Copy output and Save output stay disabled
-until something is marked. Only an export the GM pastes into chat or saves
+Give the GM the server's capability URL and keep it running; fall back to the
+page path when the VM is unreachable. Copy output and Save stay disabled until
+something is marked. Only an export the GM pastes or an explicit save
 authorizes follow-up work; the page existing, being opened, or changing mtime
 is never approval. Save a pasted export to `$review_dir/decisions_<round>.json`
 and validate it against the items file it came from:

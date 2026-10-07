@@ -140,8 +140,9 @@ dialogue, multiline payloads, and original line endings.
 
 If the user wants to review ambiguous cues in a batch rather than in chat, use
 the shared review page (`../_shared/review-page/CONTRACT.md`): one page for the
-run, returned as the GM's Copy or Save export and validated with
-`read_decisions.py --items`; there is no save callback. A review page must never
+run, preferably served over Tailscale so **Save to VM** writes its validated
+decision file in place. Copy and standalone download remain fallbacks. Validate
+the result with `read_decisions.py --items`. A review page must never
 reintroduce a checkpoint the user has already waived: in accepted best-guess
 mode there is nothing to gate, so offer the page only as a record or for the
 genuinely ambiguous subset.
