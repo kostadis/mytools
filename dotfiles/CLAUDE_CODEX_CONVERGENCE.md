@@ -107,9 +107,10 @@ references used by both adapters, then link to them from each `SKILL.md`.
    only when its workflow is useful in Codex and every Claude-specific tool has
    a deliberate Codex equivalent. Track that decision in a short manifest with
    `ported`, `claude-only`, or `candidate` status.
-6. Add a Codex link/install checker analogous to `claude-links.sh`; today this
-   repository documents how Claude files reach the live home directory but has
-   no equivalent proof for Codex.
+6. **Complete:** `codex-links.sh` checks and safely applies the per-skill links
+   owned by this repository while leaving Codex system and independently
+   installed skills alone. Isolated tests cover correct, missing, wrong, and
+   colliding paths.
 
 This removes duplicated executable logic first, where divergence changes
 behavior, while leaving readable runtime instructions explicit.
