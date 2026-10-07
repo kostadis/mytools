@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-Personal dotfiles for Claude Code. The `claude/` directory is the source of truth — individual paths under `~/.claude/` are symlinks pointing into `claude/` here, so every edit is automatically git-tracked. There is no build, test, or lint step; changes take effect the next time Claude Code loads the config or the skill is invoked.
+Personal dotfiles for Claude Code, plus Codex ports of selected campaign skills. The `claude/` directory is the source of truth for Claude-only configuration — individual paths under `~/.claude/` are symlinks pointing into `claude/` here, so every edit is automatically git-tracked. Skills with Codex ports also have a second runtime adapter under `codex/skills/`; run `./check-skill-sync.sh` after changing shared implementation files. There is no build step; changes take effect the next time the relevant harness loads the config or skill.
 
 **A fresh checkout does nothing on its own — the links are made per machine by `claude-links.sh`.** Run `./claude-links.sh` to check (read-only, exit 1 on drift) and `./claude-links.sh --apply` to create or repair the links; it never overwrites a real file or directory. Run it once on every machine, and again after any `git pull` that changes the link set below. A machine where `~/.claude/skills` is a real directory is silently running a different config from the one in git, and the failure is quiet: a skill that isn't linked is simply invisible.
 
@@ -30,7 +30,7 @@ The link set — this is what "symmetric across machines" means, and it is what 
 
 - `claude/CLAUDE.md` — the user's **global** Claude Code instructions, loaded into every session's context. This is distinct from the repo-root `CLAUDE.md` you are reading right now, which describes the dotfiles repo itself. Its last line is `@RTK.md`, an import of a file that **does not exist** in this repo or in `~/.claude/` — a dangling import inherited from an older machine. Either add `claude/RTK.md` or drop the line.
 - `claude/settings.json` — a **reference baseline, not linked** (settings are per-machine on purpose; see the link set above) of the user-level settings: `model: sonnet`, `advisorModel: opus`, `effortLevel: xhigh`, `theme: dark`, `tui: fullscreen`, `permissions.defaultMode: auto`, the `frontend-design` plugin, and two independent hook families (below).
-- `claude/skills/<name>/SKILL.md` — 24 user-invocable skills. See the catalogue below.
+- `claude/skills/<name>/SKILL.md` — 40 user-invocable skills. See the catalogue below.
 - `claude/agents/<name>.md` — custom subagent definitions (`kostadis-architect`, `ux-reviewer`).
 - `claude/plugins/blocklist.json` — plugin blocklist, linked. `claude/plugins/known_marketplaces.json` is a reference copy only and is **not linked**: it embeds per-user absolute paths and Claude Code refreshes its timestamps, so linking it would flip `installLocation` between home directories and dirty the working tree on every refresh.
 

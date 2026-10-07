@@ -15,6 +15,14 @@ Inputs:
                        identity data, never ASR mishearings — those stay in
                        --glossary. See registry-cleanup/SKILL.md.
 
+  --skip-before <s>    Optional. Cues that START before this many seconds are
+                       not scanned: the session's opening table chatter, whose
+                       garbles are not worth a question. Glossary replacements
+                       still apply to the whole tape (apply_replacements.py);
+                       only the candidate questions are dropped.
+  --session-trims <p>  Optional alternative: notes/session_start_trims.json,
+                       looked up by the VTT's parent directory name.
+
 Outputs JSON to stdout:
   {
     "applied_replacements": [{"wrong": "...", "right": "...", "count": N}, ...],
@@ -231,20 +239,58 @@ PROPER_RE = re.compile(
 SENTENCE_END = re.compile(r"[.!?]\s+")
 
 
-def extract_text(vtt_text: str) -> str:
-    # Strip cue metadata; keep dialogue body
+def _cue_start_seconds(ts_line: str) -> float:
+    h, m, s = ts_line.split("-->")[0].strip().split(":")
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
+def extract_text(vtt_text: str, skip_before: float = 0.0) -> tuple[str, int]:
+    """Strip cue metadata and keep the dialogue body.
+
+    skip_before > 0 drops every cue that STARTS before that many seconds: the
+    session's opening table chatter (notes/session_start_trims.json), whose
+    names and garbles are not worth a question. Returns (text, cues_skipped).
+    """
     lines = []
+    cue_start = None
+    skipped = 0
+    seen_timestamp = False
     for line in vtt_text.splitlines():
         if WEBVTT_RE.match(line):
             continue
         if TIMESTAMP_RE.match(line):
+            seen_timestamp = True
+            cue_start = _cue_start_seconds(line)
+            if cue_start < skip_before:
+                skipped += 1
             continue
         if CUE_NUM_RE.match(line):
+            continue
+        if skip_before and (cue_start is None or cue_start < skip_before):
             continue
         # Strip speaker labels
         line = SPEAKER_RE.sub("", line)
         lines.append(line)
-    return "\n".join(lines)
+    if skip_before and not seen_timestamp:
+        sys.exit("Error: --skip-before/--session-trims needs a timed WebVTT; this "
+                 "input has no cue timestamps, so nothing could be skipped safely.")
+    return "\n".join(lines), skipped
+
+
+def resolve_session_trim(trims_path: Path, vtt_path: Path) -> float:
+    """Look up this transcript's session in notes/session_start_trims.json.
+
+    The session is the VTT's parent directory name. A session the file does not
+    list is an error, not a silent 'skip nothing': the caller asked for trims.
+    """
+    _require_exists(trims_path, "--session-trims")
+    rows = json.loads(trims_path.read_text(encoding="utf-8"))
+    session = vtt_path.resolve().parent.name
+    for row in rows:
+        if row.get("session") == session:
+            return float(row["trim_before_s"])
+    sys.exit(f"Error: session {session!r} is not listed in {trims_path}; "
+             "add it there or pass --skip-before explicitly (0 to scan everything).")
 
 
 # ── Phonetic "sounds-like-a-known-name" rescue ──────────────────────────────
@@ -451,10 +497,23 @@ def main():
                          "load_registry_names)")
     ap.add_argument("--min-count", type=int, default=1,
                     help="Only report unknowns appearing at least this many times")
+    trim = ap.add_mutually_exclusive_group()
+    trim.add_argument("--skip-before", type=float, default=None, metavar="SECONDS",
+                      help="Do not scan cues that start before this time (the "
+                           "session's opening table chatter)")
+    trim.add_argument("--session-trims", type=Path, default=None,
+                      help="notes/session_start_trims.json; the session is the "
+                           "VTT's parent directory name")
     args = ap.parse_args()
 
+    skip_before = 0.0
+    if args.skip_before is not None:
+        skip_before = args.skip_before
+    elif args.session_trims is not None:
+        skip_before = resolve_session_trim(args.session_trims, args.vtt)
+
     vtt_text = args.vtt.read_text(encoding="utf-8")
-    text = extract_text(vtt_text)
+    text, cues_skipped = extract_text(vtt_text, skip_before)
 
     replacements, canonicals = parse_glossary(args.glossary)
     npc_names = parse_npc_dossiers(args.npcs_dir)
@@ -472,7 +531,10 @@ def main():
             if len(w) > 2:
                 known.add(w)
 
-    applied = apply_replacements_dryrun(text, replacements)
+    # Known glossary fixes still apply to the whole tape, trimmed chatter included;
+    # only the new-candidate questions are limited to the kept part.
+    full_text = text if not skip_before else extract_text(vtt_text)[0]
+    applied = apply_replacements_dryrun(full_text, replacements)
     unknowns = find_propers(text, known)
 
     filtered = {
@@ -488,6 +550,8 @@ def main():
             {"token": k, "count": v["count"], "contexts": v["contexts"]}
             for k, v in sorted_items
         ],
+        "skipped_before_s": skip_before,
+        "cues_skipped": cues_skipped,
         "known_names_count": len(known),
         "registry_names_count": len(registry_names),
     }
