@@ -22,6 +22,14 @@ The link set — this is what "symmetric across machines" means, and it is what 
 | `hooks/` | **real dir, not linked** | — |
 | `memory/`, `projects/*/memory/` | **real dirs, not linked** | owned by `~/src/claude-memory` |
 
+Codex uses a different link shape. `~/.codex/skills/` stays a real directory so
+Codex system skills and independently installed personal skills can coexist.
+Every immediate directory under `codex/skills/` is repository-owned and should
+be an individual symlink at `~/.codex/skills/<name>`. Run `./codex-links.sh` to
+check that set and `./codex-links.sh --apply` to create missing links or repair
+wrong symlinks. It leaves extra live skills alone and refuses to overwrite a
+real file or directory.
+
 `settings.json` is per-machine because it names machine-local tools (`rtk`, the MemPalace hook scripts, `~/.claude/hooks/cbm-*`) and Claude Code rewrites it. `plugins/known_marketplaces.json` is per-machine because it embeds per-user absolute paths (`/home/kostadis/…` vs `/home/kroussos/…`) and refreshed timestamps. The copies of both under `claude/` are reference baselines only and can drift from any live machine.
 
 `skills/` and `agents/` are linked as whole directories, so a new skill written to `~/.claude/skills/<name>/` lands in this repo automatically. **Link `skills/` whole, never per skill**: per-skill links go stale on every pull that adds a skill, and miss `skills/_shared/`, which five skills read as `~/.claude/skills/_shared/…`. Claude Code also writes its own `skills/synced/` (claude.ai account skills) into the linked directory; `claude/.gitignore` hides it.
