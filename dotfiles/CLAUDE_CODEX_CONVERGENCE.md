@@ -27,9 +27,9 @@ not as a directory sync operation.
 The shared implementations comprise 28 canonical files under
 `dotfiles/shared/skills/`. The Claude and Codex runtime trees expose those files
 through repository-relative symbolic links, removing 318,825 duplicated bytes.
-`skill-sync.txt` still names that contract and `check-skill-sync.sh` enforces it;
-the next migration step replaces that copy-oriented format with an explicit
-link and adapter manifest. `SKILL.md` files are intentionally outside the
+`skill-layout.json` names the shared skill directories and intentional runtime
+adapters, while `check-skill-sync.sh` validates every canonical link and rejects
+new byte-identical copies outside the shared tree. `SKILL.md` files are intentionally outside the
 shared contract because their tool names, question flows, backend selection,
 and review UI differ by harness. The two review implementations are also
 intentionally different: Claude uses `_shared/review-artifact`, while Codex uses
@@ -100,9 +100,9 @@ references used by both adapters, then link to them from each `SKILL.md`.
    through both runtime paths.
 3. **Complete:** the remaining 27 shared files moved in skill-sized PRs, with
    modes preserved and affected tests or smoke checks run before merge.
-4. Replace `skill-sync.txt` with a smaller manifest of shared links plus a list
-   of intentional adapter-only files. The checker should fail on a copied
-   platform-neutral file, because that reintroduces two authorities.
+4. **Complete:** `skill-layout.json` declares shared skill directories and
+   intentional adapters. The checker fails on copied platform-neutral files,
+   broken links, wrong links, and undeclared shared directories.
 5. Review the 27 Claude-only skills by value and compatibility. Port a skill
    only when its workflow is useful in Codex and every Claude-specific tool has
    a deliberate Codex equivalent. Track that decision in a short manifest with
