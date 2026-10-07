@@ -137,5 +137,8 @@
       "**Trusted repo**: kostadis/campaigns (github.com), the repo the agent started in at /home/kostadis/phandalin/Phandalin/summaries/20260902 — PUBLIC, so only this repo's own work belongs here; confidential material, secrets, and personal data are never cleared into it by visibility alone",
       "**Org-specific CLIs**: None configured"
     ]
+  },
+  "env": {
+    "CLAUDE_CODE_PLUGIN_DIRS": "~/src/mytools/dotfiles/claude/mods/ship:~/src/mytools/dotfiles/claude/mods/jobs:~/src/mytools/dotfiles/claude/mods/git-band:~/src/mytools/dotfiles/claude/mods/backend-guard:~/src/mytools/dotfiles/claude/mods/meter"
   }
 }
