@@ -1,10 +1,11 @@
-# Batch chapters — running one review stage across several chapters
+# Batch chapters — orchestration reference
 
-Not a skill: there is no `SKILL.md`. It holds the **orchestration** used when a
-stage skill (`/enhance-summary`, `/staged-consistency`, `/remove-recap`, or any
-other skill with a review page) runs on N chapters at once. **The method
-belongs to the stage skill.** This file covers only what repeats around it:
-fan-out, one page per chapter, read-back, apply and manifest.
+The `batch-chapters` skill is the entry point for one or more chapters through
+one or more requested pipeline stages. This file gives the detailed mechanics
+for chapter inventory, cohorts, review pages, read-back, apply, and manifests.
+Each stage skill still owns its method and verification. The skill's run ledger
+tracks the full requested range so a completed review loop cannot hide a
+missing preceding or following stage.
 
 The review page itself is defined in `../review-page/CONTRACT.md` (the builder,
 `savedAt`, unmarked cards, never pre-fill). Read that first; this file does not
