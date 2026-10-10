@@ -1,4 +1,4 @@
-# Stage 1 adjudication brief — one chapter per fork
+# Stage 1 adjudication brief — one chapter per agent
 
 Placeholders: <CAMPAIGN> (absolute campaign dir), <BRANCH>, <CH> (session dir name), <N> (chapter number),
 <PREV>/<NEXT> (neighbouring session dirs), <STAGE0> (this chapter's Stage 0 source file), <TMP> (job tmp dir).
@@ -45,7 +45,7 @@ If a finding would reverse a prior ruling, make it a CONFLICT card that quotes t
 
 Resolve every name through the canon chain in the campaign CLAUDE.md, and never invent a spelling. The registry holds names only.
 
-Standing GM rulings from this cycle (state each one literally, because forks cannot see the chat):
+Standing GM rulings from this cycle (state each one literally, because agents cannot see the chat):
 - <ruling 1>
 - <ruling 2>
 

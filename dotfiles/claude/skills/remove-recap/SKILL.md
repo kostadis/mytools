@@ -180,7 +180,7 @@ chapter's text. Low coverage means *look*, never *keep* or *cut*.
 
 ## Phase 3 — the GM rules
 
-For several chapters at once, run Phases 1–2 as one fork per chapter and give
+For several chapters at once, run Phases 1–2 as one general-purpose agent per chapter and give
 the rulings on one page per chapter. The brief, read-back and apply are in
 `~/.claude/skills/_shared/batch-chapters/BATCH.md`.
 

@@ -1,4 +1,4 @@
-# Enhancement review brief — one chapter per fork
+# Enhancement review brief — one chapter per agent
 
 Placeholders:
 - `<CAMPAIGN>` and `<BRANCH>`

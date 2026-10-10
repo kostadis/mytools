@@ -1,4 +1,4 @@
-# Stage 0 adjudication brief — one chapter per fork
+# Stage 0 adjudication brief — one chapter per agent
 
 Placeholders:
 - `<CAMPAIGN>` (absolute campaign dir) and `<BRANCH>`

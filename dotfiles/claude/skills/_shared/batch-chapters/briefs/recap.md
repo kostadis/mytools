@@ -1,4 +1,4 @@
-# remove-recap, Phases 1–2: one chapter per fork
+# remove-recap, Phases 1–2: one chapter per agent
 
 Placeholders:
 - `<CAMPAIGN>`: the absolute campaign directory
