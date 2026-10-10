@@ -127,7 +127,7 @@ were asked for may not be the next one due.
 ```
 0. batch.json          one cohort's chapters, their Stage 0 sources, the target file; blocked chapters listed apart
 1. deterministic run   the stage's CLI, one process per chapter (check_consistency, enhance_summary, …)
-2. fork per chapter    adjudicate from a brief → findings + items + page. No publish, no campaign edits.
+2. agent per chapter   general-purpose agent, adjudicates from a brief → findings + items + page. No publish, no campaign edits.
 3. validate            batch.py validate — counts, card↔item ids, builds review_<stage>.html
 4. publish             one Artifact per chapter; record each uuid in batch.json under artifacts.<stage>
 5. STOP                hand over the links; wait for the GM to say "done"
@@ -138,12 +138,12 @@ were asked for may not be the next one due.
 10. verify + commit    the stage's own checks (quote verifier, …); one commit per stage, one campaign
 ```
 
-## Step 2 — the fork brief
+## Step 2 — the agent brief
 
-Forks (`subagent_type: "fork"`) keep the tape reading out of your context. You
-keep the rulings. Write the brief **once per stage**, as a file with `<CH>`,
-`<N>`, `<PREV>`, `<NEXT>` and `<STAGE0>` placeholders, and spawn all the forks
-in one message. Each brief must say:
+One fresh agent per chapter (`subagent_type: "general-purpose"`) keeps the tape
+reading out of your context. You keep the rulings. Write the brief **once per
+stage**, as a file with `<CH>`, `<N>`, `<PREV>`, `<NEXT>` and `<STAGE0>`
+placeholders, and spawn one agent per chapter. Each brief must say:
 
 - **Campaign dir, branch, target file**, and what has already been reviewed
   upstream. Give the exact prior `findings_*/decisions_*/manifest_*` files.
@@ -153,35 +153,46 @@ in one message. Each brief must say:
 - **Grep every prior rulings log for the subject before carding it.** A finding
   that would reverse a ruling becomes a CONFLICT card that quotes the ruling.
 - **The standing GM rulings from this cycle**, stated literally (for example,
-  "the creatures in the chapter 20 fight are X, not Y"). Forks cannot see your chat.
+  "the creatures in the chapter 20 fight are X, not Y"). Agents cannot see your chat.
 - **Canon chain from CLAUDE.md for every name; never invent a spelling.** The
   registry holds names only.
 - **Schema** (below), the review-items title/eyebrow/`reviewId`, and the builder
   path: `tmp/<CH>_<stage>_write.py`, so a card can be regenerated without
-  re-running the fork.
+  re-running the agent.
 - **Do NOT publish. Do NOT edit any campaign file.**
 - **Return:** a one-line-per-card table, the counts, your doubts.
 
 The briefs that worked are archived beside this file as `briefs/stage0.md`,
 `briefs/enhance.md`, `briefs/stage1.md` and `briefs/recap.md`. Copy one and put the
-campaign-specific facts in the fork prompt: players, attendance, standing
-rulings, prep paths. A fact a fork cannot see is a fact it will contradict.
+campaign-specific facts in the spawn prompt: players, attendance, standing
+rulings, prep paths. A fact an agent cannot see is a fact it will contradict.
 
 **Keep the cycle's standing rulings in one file** (`$TMP/RULINGS_<batch>.md`)
-and point every fork at it. Append each ruling the moment the GM makes it.
+and point every agent at it. Append each ruling the moment the GM makes it.
 Rulings pile up fast across stages: a name settled in the spell pass, an
 attendance fact from speaker review, a Stage 0 reversal. When they are retyped
 into each prompt, some get dropped. A ruling that **reverses** an earlier one
 (for example, an enhancement card that undoes a Stage 0 edit) must also fix the
 earlier stage's file, and the rulings file must say so.
 
-**A fresh general-purpose agent with a brief file works as well as a fork**,
-and costs far less once your own context is large: a fork inherits all of it.
+**Do not fork.** A fork (`subagent_type: "fork"`) inherits your whole context
+and always runs on your model, and by Step 2 your context is large. In the
+2026-09-26..29 run, the 100 per-chapter forks cost a median 1.74M input tokens
+each against 0.67M for the 77 general-purpose agents doing the same jobs:
+233M of that session's 288M subagent spend. On the third batch, eight
+general-purpose agents per stage ran in parallel with no loss of quality.
 Keep the brief self-contained (paths, the rulings file, the archived brief to
 follow, the output schema, "write only these files"), and put the
 chapter-specific facts in the spawn prompt: attendance, the prior rulings that
-touch this chapter, the previous and next session dirs. On the third batch,
-eight general-purpose agents per stage ran in parallel with no loss of quality.
+touch this chapter, the previous and next session dirs. If an agent needs
+something only your chat holds, write it into the rulings file; that is the fix,
+not a fork.
+
+**The agent's own model is inherited unless you pass `model`.** Every agent in
+that run that named no model ran on Opus. Adjudication and cue judging are
+precision work, so that may be the right model, but make it a choice: pass
+`model` explicitly. Moving a stage to Sonnet is untested; try it on one chapter
+and compare its cards against an Opus run before switching the batch.
 
 **Spawn each chapter's agent the moment its deterministic run finishes.**
 Watch the run logs for their exit lines and do not wait for the slowest
@@ -225,10 +236,10 @@ Every item below reached a GM approval on the 2026-09-28 batch:
 
 - **The card's display label is not the substitution.** A card showed
   `<garble> → saving (throw)`. Applying the label would have written "(throw)"
-  onto the tape. Carry the exact `old → new` for the cue, from the fork's
+  onto the tape. Carry the exact `old → new` for the cue, from the agent's
   `was`/`now`, and have the apply use only that.
 - **The cues a card lists are the cues it writes.** A card built its cue list
-  by pattern match and showed two cues, where the fork meant only one.
+  by pattern match and showed two cues, where the agent meant only one.
   The GM approved both, so both were written. Build the list from the
   finding, not from a regex.
 - **A glossary row's wrong-form is the name alone.** `For <Name> →
@@ -330,14 +341,14 @@ brought back a struck "contact poison", a quote word the GM had cut, and a
 
 ## Cross-chapter checks catch what per-chapter checks cannot
 
-Each fork sees one chapter, plus its neighbours only as prose. Names drift
+Each agent sees one chapter, plus its neighbours only as prose. Names drift
 between chapters in ways no single chapter shows. One chapter's tape used an
 NPC's canonical name; two chapters later the tape used a different word for
 the same NPC (same friend, same role), and that chapter's spell pass ruled it a
 new real name. Only the earlier chapter's
 enhancement review, reading its own tape, surfaced the collision. So:
 
-- Give every enhancement and Stage 1 fork the neighbouring chapters' **tapes**
+- Give every enhancement and Stage 1 agent the neighbouring chapters' **tapes**
   as well as their summaries, and ask it to grep them for every NPC the
   chapter names.
 - Before a spell-pass card says a name is new, grep the whole batch's tapes
@@ -390,7 +401,7 @@ On the second batch, the GM dismissed a whole round of bare "X → Y?" questions
   - **When pyannote spends two bins on the GM, two players merge.** Name the merged player's cues from their own Zoom feed (`--md-label {"<player>":"<player>"}`). The tool's agreement figure then looks bad, because it excludes multi-bin speakers. Report **by-name agreement on the final file** instead: each cue's label against the Zoom participant with the most overlap. On the third batch, the tool reported 76.5% and by-name agreement was 97.7%.
   - **Context-judged cue review scales.** Nine chapters had about 1,800 disagreeing cues. Agents judged about 420 of them at ≥ 70% confidence and sent 13 to the GM. Have the judging agent return both the lean and the confidence inside each `ask_gm` entry, so the page can show "approve = the lean" without having to look it up.
   - **Relabels after the speaker file is written:** later stages surface mislabelled cues. Patch the label in `transcript.speakers.vtt` (text and timing untouched), add the cue to `approved_cue_labels.json`, append the ruling and the new sha256 to the run record, then rebuild `transcript.cleaned.speakers.vtt`.
-- **No second recording:** `/speaker-attribution-text` run by a fork that **never sees the diarization** is a usable cross-check. Weigh it as an inference, and say so on the page.
+- **No second recording:** `/speaker-attribution-text` run by an agent that **never sees the diarization** is a usable cross-check. Weigh it as an inference, and say so on the page.
 - **When the acoustic clustering fails:**
   - The signs are one cluster above 55%, and three players scattered across clusters with no qualifying mapping.
   - Offer a re-run with one extra bin first. On the second batch it changed nothing.
@@ -439,7 +450,7 @@ On the second batch, the GM dismissed a whole round of bare "X → Y?" questions
 
 ## Tape corrections found along the way
 
-A fork will find tape errors, such as one creature name misheard as another. These are not edits to
+An agent will find tape errors, such as one creature name misheard as another. These are not edits to
 the target file. With GM approval:
 
 - Add them to `transcript_corrections.yaml`, then run `sd_corrections apply --dir`
