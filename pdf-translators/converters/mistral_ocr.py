@@ -55,6 +55,21 @@ def run_mistral_ocr(pdf_path: Path, api_key: str, verbose: bool = False) -> str:
             print(f"[mistral-ocr] deleted upload {file_id}")
 
     pages = sorted(resp.pages, key=lambda p: p.index)
+    page_mds = []
+    n_tbl = 0
+    for p in pages:
+        md = p.markdown
+        # Mistral returns each table's body in page.tables[] and leaves only a
+        # [tbl-N.md](tbl-N.md) link in the page markdown. Splice the content
+        # back in (same as batch/batch_mistral_ocr.py); without this the
+        # stat-block ability tables come out empty.
+        for tbl in p.tables or []:
+            if not tbl.id or not tbl.content:
+                continue
+            ref = f"[{tbl.id}]({tbl.id})"
+            md = md.replace(ref, tbl.content) if ref in md else f"{md}\n\n{tbl.content}"
+            n_tbl += 1
+        page_mds.append(md)
     if verbose:
-        print(f"[mistral-ocr] {len(pages)} pages OCR'd")
-    return "\n\n".join(p.markdown for p in pages)
+        print(f"[mistral-ocr] {len(pages)} pages OCR'd, {n_tbl} tables inlined")
+    return "\n\n".join(page_mds)
