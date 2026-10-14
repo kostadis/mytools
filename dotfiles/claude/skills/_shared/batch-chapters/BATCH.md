@@ -1,10 +1,12 @@
 # Batch chapters — running one review stage across several chapters
 
-Not a skill: there is no `SKILL.md`. It holds the **orchestration** used when a
-stage skill (`/enhance-summary`, `/staged-consistency`, `/remove-recap`, or any
-other skill with a review page) runs on N chapters at once. **The method
-belongs to the stage skill.** This file covers only what repeats around it:
-fan-out, one page per chapter, read-back, apply and manifest.
+The `/batch-chapters` skill (`~/.claude/skills/batch-chapters/SKILL.md`) is the
+entry point: it owns the run's inventory, stage order, review gates and ledger.
+This file holds the **mechanics** it uses when a stage skill
+(`/enhance-summary`, `/staged-consistency`, `/remove-recap`, or any other skill
+with a review page) runs on N chapters at once. **The method belongs to the
+stage skill.** This file covers only what repeats around it: fan-out, one page
+per chapter, read-back, apply and manifest.
 
 The review page itself is defined in `../review-artifact/CONTRACT.md` (the builder,
 `savedAt`, unmarked cards, never pre-fill). Read that first; this file does not
