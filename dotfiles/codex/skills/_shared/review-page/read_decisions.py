@@ -161,7 +161,7 @@ def main() -> int:
     blob = json.dumps(normalized, indent=2, ensure_ascii=False)
     if args.out:
         args.out.write_text(blob + "\n", encoding="utf-8")
-        print(f"{len(decisions)} decided -> {args.out}")
+        print(f"{normalized['decided']} decided -> {args.out}")
     else:
         print(blob)
     return 0
