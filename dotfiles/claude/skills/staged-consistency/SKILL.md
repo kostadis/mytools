@@ -236,7 +236,7 @@ Sort by severity (Critical first). Number issues sequentially across the whole t
 Chosen in step 1. Replaces the "Going 1x1?" adjudication at each stage. The
 severity table, the stage order, the fix-propagation pass and the final summary
 are all unchanged. Full contract: `~/.claude/skills/_shared/review-artifact/CONTRACT.md`.
-For more than one chapter at a time (a general-purpose agent and a page per chapter, plus read-back, all-or-nothing apply and manifest), see
+For more than one chapter at a time (a general-purpose agent and a page per chapter, plus read-back, all-or-nothing apply and manifest), use `/batch-chapters`; its mechanics are in
 `~/.claude/skills/_shared/batch-chapters/BATCH.md`.
 It pays off most at Stage 2's normal scale — 8–10 scenes, 5–15 findings each,
 60+ findings total — where a chat 1x1 walkthrough is exhausting for both sides
