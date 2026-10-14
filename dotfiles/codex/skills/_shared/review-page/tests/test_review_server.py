@@ -152,3 +152,17 @@ def test_generated_page_keeps_hosted_and_standalone_save_paths():
     assert "meta[name=\"codex-review-save\"]" in html
     assert "fetch(new URL('decisions'" in html
     assert "new Blob([outputText()]" in html
+
+
+def test_cli_out_writes_normalized_json_and_exits_zero(tmp_path):
+    import subprocess
+    inp, items, out = tmp_path / "decisions.json", tmp_path / "items.json", tmp_path / "norm.json"
+    inp.write_text(json.dumps(payload()), encoding="utf-8")
+    items.write_text(json.dumps(SPEC), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(HERE / "read_decisions.py"), "--in", str(inp), "--items", str(items), "--out", str(out)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"1 decided -> {out}"
+    assert json.loads(out.read_text(encoding="utf-8"))["decisions"] == {"one": "approve"}
