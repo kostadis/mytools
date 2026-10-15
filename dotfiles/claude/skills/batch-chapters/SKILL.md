@@ -109,6 +109,10 @@ first and publish each chapter's page as its job finishes.
 - Approved edits landed in the named files with exact counts. Tape corrections
   went through `transcript_corrections.yaml` and `sd_corrections apply/check`.
   Edits to the Stage 0 source were made only where the ruling covered that file.
+- Every edit landed in its **origin** file, and the files generated from it
+  were regenerated with their own tools, never hand-edited. See BATCH.md,
+  "Edits go to the origin file, never a replica", and the campaign
+  `CLAUDE.md`.
 - The stage manifest records sources, rulings, false positives, open items and
   verification.
 - The next stage's output is searched for wording an earlier ruling removed. A

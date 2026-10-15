@@ -461,6 +461,35 @@ On the second batch, the GM dismissed a whole round of bare "X → Y?" questions
   not the first row with that canonical. A script that edits the glossary
   should refuse to write until every move resolves.
 
+## Edits go to the origin file, never a replica
+
+Every ruling, carry-forward fix and tape correction is written to its
+**origin** file, then the files generated from it are regenerated with their
+own tools. A hand edit to a generated copy is lost on the next rebuild, and
+until then the two disagree. Check the campaign `CLAUDE.md` for its
+origin-to-replica table. Before editing any file, look for a generated header
+(`published by`, `cg-generated - do not hand-edit`, `mneme-rendered`,
+`Generated from`).
+
+- Summary text: edit `summaries/<chapter>/session-summary.md` or the Stage 0
+  source, then republish the derived summary copy (for example
+  `docs/summaries/` via `scripts/publish_sumamries`) and rebuild anything built
+  from it.
+- Transcript text: `transcript_corrections.yaml`, then `sd_corrections apply`
+  and `check`, then rejoin the speaker labels.
+- Text that came from an LLM draft (a published NPC dossier, a promoted
+  grounding doc): edit the draft, which is the origin, and republish it through
+  its own gate. The GM signs; you never do.
+- Commit the origin edit and its regenerated replicas together, and say in the
+  commit which tool regenerated what.
+- If a replica has no regeneration tool, say so and ask before editing it.
+
+On 2026-10-15 a Chapter 58 carry-forward (a creature-name spelling) was first
+made by hand in `docs/summaries/055` and a published NPC dossier. Both were
+reverted and redone from `summaries/`, the dossier draft, and the evidence
+rebuild. The GM's instruction: changes go to the origin files, not the
+replicated version.
+
 ## Tape corrections found along the way
 
 An agent will find tape errors, such as one creature name misheard as another. These are not edits to
