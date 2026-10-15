@@ -180,7 +180,7 @@ without a concrete `y`/`n` is a card the GM has to guess at.
 |---|---|
 | **Approve** | Do the thing described in `y`. |
 | **Reject** | Do the thing described in `n`. |
-| **Discuss** | Neither yet — the note carries the GM's instruction, or it comes back to chat. |
+| **Discuss** | Neither yet — the note carries the GM's instruction, or it comes back to chat. A Discuss with **no note** means "read the surrounding context and bring me your best guess": come back with that guess as the first option, then the card's proposal, then keep-verbatim. Apply nothing until the GM chooses. |
 
 | *extra* | Do the thing the page's `extraVerdicts` entry (or the card's `x`) says. `read_decisions.py` accepts exactly the extra keys the page declared, and tallies them beside the three built-ins. |
 

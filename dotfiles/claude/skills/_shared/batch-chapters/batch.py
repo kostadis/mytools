@@ -124,7 +124,9 @@ def cmd_read(a):
         d = json.load(open(out))
         print(f"== {ch['dir']}  savedAt={d.get('savedAt')}  tally={d.get('tally')}")
         if d.get("unmarked"): print("   UNMARKED (re-ask):", d["unmarked"])
-        for i in d.get("discuss", []): print(f"   DISCUSS {i}: {d.get('notes', {}).get(i, '')!r}")
+        for i in d.get("discuss", []):
+            note = d.get('notes', {}).get(i, '')
+            print(f"   DISCUSS {i}: {note!r}" if note.strip() else f"   DISCUSS {i}: (no note: bring back a best guess from context)")
 
 
 def resolve(ch, a, base, rulings):
@@ -141,7 +143,10 @@ def resolve(ch, a, base, rulings):
             r = chat[i]; plan.append((i, "chat", r["verdict"], r.get("edits", x.get("edits", [])))); continue
         v = page.get(i)
         if v is None: probs.append(f"{i}: {'page unsaved' if not d.get('savedAt') else 'unmarked'} — re-ask")
-        elif v == "discuss": probs.append(f"{i}: discuss ({d.get('notes', {}).get(i, '')!r}) — needs a chat ruling")
+        elif v == "discuss":
+            note = d.get('notes', {}).get(i, '')
+            probs.append(f"{i}: discuss ({note!r}) — needs a chat ruling" if note.strip() else
+                         f"{i}: discuss, no note — read the context, bring back a best guess for the GM to confirm")
         else: plan.append((i, "page", v, x.get("edits", [])))
     for i in chat:
         if i not in {p[0] for p in plan}: probs.append(f"{i}: chat ruling for an id that is not a card")
