@@ -45,10 +45,16 @@ same question again.
    needs `CG_BACKEND=claude-code` in the environment or `--backend claude-code`. Any
    shell line that merely *contains* the word `campaign_state` trips the guard too, so
    prefix greps as well. Never set `CG_ALLOW_API=1` unless the GM asked for the API.
-5. **Model choice:** pass the backend and model explicitly every time. The prose step
-   uses `--backend claude-code --model claude-sonnet-5-5` unless the GM names another.
-   Never let a call fall through to a default (Fable). Extraction on the Spark uses
-   `--backend dgx --model <live model id>` and both `--endpoints`.
+5. **Model choice:** pass the backend and model explicitly every time, and never let a
+   call fall through to a default (Fable). **Sonnet reads and writes; Opus adjudicates.**
+   - Writing (synth prose): `--backend claude-code --model claude-sonnet-5-5`.
+   - Adjudicating (`audit`, one judgment per tracking claim):
+     `--backend claude-code --model claude-opus-5-5`.
+   - Reading: any subagent that reads drafts, summaries or rulings (Phase 5 review,
+     comparing against `notes/`) runs on Sonnet and returns findings. Opus, in the main
+     session or an Opus agent, rules on those findings before anything reaches the GM.
+   - Extraction on the Spark uses `--backend dgx --model <live model id>` and both `--endpoints`.
+   The GM can name other models; otherwise use these.
 
 ## Phase 1 — validate and build the corpus
 
@@ -85,7 +91,7 @@ summary_native extract --summaries-dir docs/summaries --since 2 --until N \
 ```bash
 F="--since 2 --until N --summaries-dir docs/summaries --backend claude-code --model claude-sonnet-5-5"
 summary_native synth world_state $F
-summary_native audit $F                      # tracking files; slow, one judgment per item
+summary_native audit ${F/claude-sonnet-5-5/claude-opus-5-5}   # adjudication: Opus; slow, one judgment per item
 summary_native synth campaign_state $F       # renders the audit it finds
 summary_native synth party $F
 summary_native synth planning $F
