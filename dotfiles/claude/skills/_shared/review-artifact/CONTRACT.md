@@ -235,6 +235,41 @@ exits 2 rather than being passed through.
 
 ---
 
+## NPC reviews: `npc_review_items.py`
+
+A summary_native NPC review (`<campaign>/docs/reviews/npc-review-*/`) does
+not need a hand-written builder. This adapter reads the review's
+`manifest.json`, current item revisions and `events/` (read-only) and writes a
+contract-shaped items file:
+
+```bash
+python ~/.claude/skills/_shared/review-artifact/npc_review_items.py \
+    <campaign>/docs/reviews/<review-id> --out <items>.json \
+    [--undecided] [--ids ID,ID | --ids-file FILE] [--action signoff_npc_draft]
+python ~/.claude/skills/_shared/review-artifact/build_review.py --in <items>.json --out <page>.html
+```
+
+- Card ids are the review's item ids, so decisions round-trip straight to
+  `summary_native review decide` (findings) and `review npc sign`
+  (sign-offs). The adapter records nothing in the review.
+- Every card has a keep-as-is outcome. For a finding, Approve keeps the draft
+  line as written (`accept_no_change`) and Reject means the draft (the origin)
+  needs a fix, which the note gives. For a sign-off, Approve signs the exact
+  bytes shown and Reject keeps the draft unsigned and unchanged.
+- `--undecided` leaves out items with a current approve or reject. An item
+  counts as undecided if it was never decided, was decided on an older
+  revision, was withdrawn, or was left at discuss.
+- Sign-off cards embed the full draft text. If a draft's bytes no longer
+  match the item's `draft_sha256`, it exits 2. `--allow-stale` builds anyway,
+  with those cards marked STALE, for inspection only.
+- Cards are grouped by draft file: findings in line order, then the sign-off.
+  Override `--title/--eyebrow/--lede/--footer/--review-id` as needed.
+  A 427-item review builds a page of about 2.3 MB.
+
+Tests: `python3 -m pytest tests/` in this directory.
+
+---
+
 The page has a search box and an All / Unmarked / Approved / Rejected / Discuss
 filter. They only change what is shown; they are never saved with the decisions.
 

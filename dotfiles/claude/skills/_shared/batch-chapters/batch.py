@@ -22,6 +22,19 @@ One config file (batch.json) names the chapters; every subcommand reads it.
       count matches. Refuses while any card is unmarked, on an unsaved page, or
       in discuss, unless --rulings carries the GM's chat ruling for it.
 
+  batch.py apply-edits edits.json [--root DIR] [--dry-run]
+      Generic count-checked bulk replacement, for a fix that is not a review
+      stage's findings (a GM ruling carried across several chapters, say).
+      edits.json: [{"file": "summaries/<ch>/session-summary.md", "old": "...",
+                    "new": "...", "count": 1}, ...]; "file" is relative to
+      --root (default: cwd) or absolute. Same check as `apply`: edits run in
+      order per file, each `old` must occur exactly `count` times in the text
+      as it stands after the edits before it, and NOTHING is written unless
+      every edit in every file matches. Origin files only: it refuses
+      docs/summaries/ copies, *.vtt and files with a generated header (see
+      BATCH.md, "Edits go to the origin file, never a replica"). Tape fixes
+      still go through transcript_corrections.yaml + sd_corrections.
+
   batch.py manifest --config batch.json --stage stage1 [--out-name NAME]
       Print (or write per chapter) a Markdown "Rulings" section: every finding,
       its verdict, where the verdict came from (page / chat), and what applied.
@@ -48,6 +61,14 @@ RA = pathlib.Path.home() / ".claude/skills/_shared/review-artifact"
 
 
 CARD = ("card", "tape")  # "tape": a transcript garble; its writes go to transcript_corrections.yaml, not the target
+
+
+def count_replace(t, e):
+    """One edit's count check, shared by validate, apply and apply-edits.
+    Returns (text, found): the text is replaced only when found == e["count"]."""
+    if not e.get("old"): return t, -1  # "" would match everywhere: never a valid edit
+    n = t.count(e["old"])
+    return (t.replace(e["old"], e["new"]) if n == e.get("count") else t), n
 
 
 def load_cfg(p):
@@ -88,9 +109,8 @@ def cmd_validate(a):
         for x in L:
             if x.get("disposition") not in ("auto",) + CARD: continue
             for e in x.get("edits", []):
-                n = t.count(e["old"])
+                t, n = count_replace(t, e)
                 if n != e.get("count"): mism.append((x["id"], e["old"][:60], e.get("count"), n))
-                else: t = t.replace(e["old"], e["new"])
         lit = [i["id"] for i in items["items"] if any("\\n" in str(i.get(k, "")) for k in ("t", "y", "n"))]
         ok = not (mism or cards ^ iids or lit)
         bad += not ok
@@ -165,9 +185,8 @@ def cmd_apply(a):
         for i, src, v, edits in plan:
             if v != "approve": continue
             for e in edits:
-                n = t.count(e["old"])
+                t, n = count_replace(t, e)
                 if n != e["count"]: probs.append(f"{ch['dir']} {i}: expected {e['count']} of {e['old'][:60]!r}, found {n}"); continue
-                t = t.replace(e["old"], e["new"])
                 if s0 is not None and e["old"].strip() and s0.count(e["old"]):
                     prop.append((i, s0.count(e["old"]), e["old"][:60])); s0 = s0.replace(e["old"], e["new"])
         staged.append((ch, sd, target, t, s0p, s0, plan, prop, d))
@@ -195,6 +214,58 @@ def cmd_apply(a):
         json.dump({"plan": [{"id": i, "source": s, "verdict": v, "edits": len(e)} for i, s, v, e in plan],
                    "stage0_propagated": prop}, open(R / f"apply_{a.stage}_log.json", "w"), indent=1)
     if a.dry_run: print("(dry run: nothing written)")
+
+
+REPLICA_MARKS = ("published by", "cg-generated - do not hand-edit", "mneme-rendered", "generated from")
+
+
+def replica_reason(path, text):
+    """Why `path` looks like a generated replica, or None. See BATCH.md, "Edits go to
+    the origin file, never a replica"."""
+    parts = path.parts
+    if any(parts[k:k + 2] == ("docs", "summaries") for k in range(len(parts) - 1)):
+        return "docs/summaries/ is published from summaries/<chapter>/session-summary.md (scripts/publish_sumamries)"
+    if path.suffix == ".vtt":
+        return "transcript text: record the fix in transcript_corrections.yaml, then sd_corrections apply/check"
+    head = "\n".join(text.splitlines()[:5]).lower()
+    m = next((k for k in REPLICA_MARKS if k in head), None)
+    return f"generated header ({m!r}) in its first lines: edit its origin and regenerate" if m else None
+
+
+def cmd_apply_edits(a):
+    root = pathlib.Path(a.root).resolve()
+    edits = json.load(open(a.edits, encoding="utf-8"))
+    if not isinstance(edits, list) or not edits:
+        raise SystemExit(f"{a.edits}: expected a non-empty JSON list of {{file, old, new, count}}")
+    files, probs = {}, []  # resolved path -> [(index, edit)], in edits.json order
+    for k, e in enumerate(edits):
+        bad = [f for f in ("file", "old", "new", "count") if f not in e] if isinstance(e, dict) else ["(not an object)"]
+        if bad: probs.append(f"edit #{k}: missing {', '.join(bad)}"); continue
+        if not isinstance(e["count"], int) or isinstance(e["count"], bool) or e["count"] < 1:
+            probs.append(f"edit #{k}: count must be an integer >= 1, got {e['count']!r}"); continue
+        if not isinstance(e["old"], str) or not isinstance(e["new"], str) or not e["old"]:
+            probs.append(f"edit #{k}: old must be a non-empty string and new a string"); continue
+        p = pathlib.Path(e["file"]); p = (p if p.is_absolute() else root / p).resolve()
+        files.setdefault(p, []).append((k, e))
+    staged = []  # pass 1: read, check every count, write nothing
+    for p, es in files.items():
+        if not p.is_file(): probs.append(f"{p}: no such file"); continue
+        t0 = p.read_bytes().decode("utf-8"); t = t0
+        why = replica_reason(p, t0)
+        if why: probs.append(f"{p}: refused, looks like a replica: {why}"); continue
+        reps = 0
+        for k, e in es:
+            t, n = count_replace(t, e)
+            if n != e["count"]: probs.append(f"{p}: edit #{k}: expected {e['count']} of {e['old'][:60]!r}, found {n}")
+            else: reps += n
+        staged.append((p, t0, t, len(es), reps))
+    if probs:
+        print("NOTHING WRITTEN. Resolve these first:"); [print("  ", x) for x in probs]; sys.exit(1)
+    for p, t0, t, n_ed, reps in staged:  # pass 2: write
+        shown = p.relative_to(root) if p.is_relative_to(root) else p
+        print(f"== {shown}  edits={n_ed}  replacements={reps}  {'unchanged' if t == t0 else 'changed'}")
+        if not a.dry_run and t != t0: p.write_bytes(t.encode("utf-8"))
+    print("(dry run: nothing written)" if a.dry_run else f"wrote {sum(t != t0 for _, t0, t, _, _ in staged)} file(s)")
 
 
 def cmd_manifest(a):
@@ -238,6 +309,14 @@ def main():
         if name == "apply":
             p.add_argument("--propagate-stage0", action="store_true"); p.add_argument("--dry-run", action="store_true")
         if name == "manifest": p.add_argument("--out-name", help="write <chapter>/<NAME> instead of printing")
+    p = sp.add_parser("apply-edits", help="count-checked bulk replacement in ORIGIN files (all-or-nothing)",
+                      description="Apply a list of {file, old, new, count} edits. Every count is checked before "
+                                  "anything is written. Origin files only (summaries/, drafts); refuses generated "
+                                  "replicas and *.vtt. Tape fixes go through transcript_corrections.yaml + sd_corrections.")
+    p.set_defaults(fn=cmd_apply_edits)
+    p.add_argument("edits", help="JSON list of {file, old, new, count}")
+    p.add_argument("--root", default=".", help="base for relative 'file' paths (default: cwd)")
+    p.add_argument("--dry-run", action="store_true", help="check and print the per-file summary, write nothing")
     a = ap.parse_args(); a.fn(a)
 
 
