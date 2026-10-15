@@ -552,6 +552,7 @@ batch.py validate --config batch.json --stage <s> [--target stage0|FILE]
 batch.py read     --config batch.json --stage <s> --artifact-dir <scratchpad>/artifact-files [--review-dir D --plain-names]
 batch.py apply    --config batch.json --stage <s> [--target stage0|FILE] [--rulings chat_rulings.json] [--propagate-stage0] [--dry-run]
 batch.py manifest --config batch.json --stage <s> [--rulings chat_rulings.json] [--out-name FILE]
+batch.py apply-edits edits.json [--root DIR] [--dry-run]
 ```
 
 `--target stage0` sends edits to each chapter's Stage 0 source, which is what
@@ -571,3 +572,29 @@ apply without the chat rulings, and refused a second apply.
 **What it does not do:** detection, adjudication, publishing, or anything
 stage-specific in the manifest (renumbering, upstream gaps, and so on). Those
 stay with the stage skill and with you.
+
+### `apply-edits`: one ruling, many files
+
+For a fix that is not a review stage's findings, such as a GM ruling carried
+across several chapters (one spelling, one relationship), write the edits as
+`[{"file": ..., "old": ..., "new": ..., "count": N}, ...]` and run
+`batch.py apply-edits edits.json --root <campaign> --dry-run`, then again
+without `--dry-run`. `file` is relative to `--root` (default: the current
+directory) or absolute. It is the same count check as `apply`, using the same
+helper: edits run in order per file, each `old` must occur exactly `count`
+times in the text as it stands after the edits before it, and if any edit in
+any file misses, it lists every miss and writes nothing.
+
+**Origin files only.** Point it at `summaries/<chapter>/session-summary.md`,
+the Stage 0 source, or an LLM draft. Never point it at a replica (see "Edits go
+to the origin file, never a replica"). It refuses `docs/summaries/` copies,
+`*.vtt` and any file with a generated header. Republish the replicas with their
+own tools afterwards. It does **not** replace `transcript_corrections.yaml` plus
+`sd_corrections apply`/`check` for tape fixes.
+
+**Scripts you write twice belong in `_shared/`, not the session scratchpad.**
+If a session needs the same throwaway twice (a bulk replacer, a review-page
+builder), add it here with a test instead. `apply-edits` and
+`../review-artifact/npc_review_items.py` began as copies of scratchpad scripts.
+
+Tests: `python3 -m pytest batch-chapters/tests review-artifact/tests` from `_shared/`.
