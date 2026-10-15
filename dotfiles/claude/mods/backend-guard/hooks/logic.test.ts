@@ -54,6 +54,36 @@ test('non-pipeline commands and look-alikes are ignored', () => {
   expect(inspect('ls docs/query', undefined)).toBe(null)
 })
 
+test('a heredoc body that names a pipeline is data, not a command', () => {
+  const md = "cat > notes.md <<'EOF'\n| summary_native NPC evidence | x |\nsummary_native build\nEOF\nwc -l notes.md"
+  expect(inspect(md, undefined)).toBe(null)
+  expect(inspect('python3 - <<EOF\n(summary_native review)\nEOF', undefined)).toBe(null)
+})
+
+test('a heredoc fed to a shell is still checked', () => {
+  expect(inspect('bash <<EOF\nsummary_native build\nEOF', undefined)?.script).toBe('summary_native')
+})
+
+test('a command after the heredoc is still checked', () => {
+  expect(inspect("cat > a <<'EOF'\nhi\nEOF\nsummary_native build", undefined)?.script).toBe('summary_native')
+})
+
+test('quoted text that names a pipeline is data', () => {
+  expect(inspect("printf '\\n# (summary_native review service)\\n' >> .gitignore", undefined)).toBe(null)
+  expect(inspect('grep -rn "x | summary_native |" docs', undefined)).toBe(null)
+  expect(inspect('git commit -m "rebuild; summary_native build --force"', undefined)).toBe(null)
+})
+
+test('a python -c program is data', () => {
+  expect(inspect(`python3 -c "import re; re.findall(r'(enhance_summary|registry)', s)"`, undefined)).toBe(null)
+})
+
+test('a quoted bash -c argument is still checked', () => {
+  expect(inspect('bash -c "summary_native build"', undefined)?.script).toBe('summary_native')
+  expect(inspect("sh -lc 'enhance_summary x'", undefined)?.script).toBe('enhance_summary')
+  expect(inspect("CG_BACKEND='claude-code' summary_native build", undefined)?.backend).toBe('claude-code')
+})
+
 test('wrappers, loops and chained commands are caught', () => {
   expect(inspect('cd ~/oota && timeout 600 enhance_summary x', undefined)?.script).toBe('enhance_summary')
   expect(inspect('for c in 1 2; do sd_narrate --ch $c; done', undefined)?.script).toBe('sd_narrate')
