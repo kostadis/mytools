@@ -87,8 +87,9 @@ Follow BATCH.md's loop. In short:
   saved path under `artifacts.<stage>`), then `batch.py read`. Unsaved pages,
   unmarked cards, Discuss notes, approvals with no replacement text, and
   approvals whose own evidence argued against them all go back to chat, with
-  ±4 cues of context and speaker labels. Record answers, in the GM's own
-  words, in `chat_rulings.json`.
+  ±4 cues of context and speaker labels. A Discuss with no note comes back
+  with your best guess from that context as the first option, for the GM
+  to confirm. Record answers, in the GM's own words, in `chat_rulings.json`.
 - **Apply:** `batch.py apply ... --dry-run`, then for real. It writes nothing
   in any chapter until every card resolves and every count matches.
 - **Manifest** (`batch.py manifest`), the stage's own verification (quote

@@ -293,6 +293,15 @@ Every item below reached a GM approval on the 2026-09-28 batch:
 - **One reading per note, or ask.** A note like "I meant X" can mean edit the
   document, edit the tape, or both. Offer each reading as an option that names
   the files it writes.
+- **A Discuss with no note means "make a best guess".** The GM's standing
+  instruction: read the surrounding cues (±4, with speaker labels), the second
+  transcription and the card's evidence, then work out what was most likely
+  meant. Bring that guess back as the first option, with the reasoning in one
+  or two lines, beside the card's own proposal and keep-verbatim. Do not ask
+  "what did you mean?" with nothing to choose from. The guess is still a
+  question: nothing is applied until the GM picks an option. On Chapter 58 a
+  blank Discuss on "No, Cannibus." (Zoom: "No cap.") came back as "No,
+  cambions." from the GM's previous line, and the GM chose it.
 - Take everything left open to chat, grouped: unmarked cards, discuss notes (one
   at a time, per CLAUDE.md), and whole unsaved pages if the GM would rather rule
   in chat. Record each answer in `chat_rulings.json` **with the GM's own words**
@@ -387,7 +396,9 @@ had reached.
 
 ## Re-asks carry context, or they get dismissed
 
-A chat re-ask of an unmarked card or a note-less Discuss card must bring:
+A chat re-ask of an unmarked card or a note-less Discuss card must bring
+(and a note-less Discuss card also brings your best guess, see "A Discuss
+with no note" above):
 
 - the surrounding cues (±4), **each with its speaker label**;
 - the second transcription's reading of the same span;
