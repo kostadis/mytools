@@ -53,7 +53,8 @@ pub struct OutlinePanel {
     redo: Vec<Snapshot>,
     scroll_to_selected: bool,
     pending_offset: Option<f32>,
-    clicked: Option<usize>,
+    /// Block the other panes should show: the row clicked or last edited.
+    focus: Option<usize>,
 }
 
 impl OutlinePanel {
@@ -66,9 +67,9 @@ impl OutlinePanel {
         &self.blocks
     }
 
-    /// The row the user clicked since the last call, if any.
-    pub fn take_clicked(&mut self) -> Option<usize> {
-        self.clicked.take()
+    /// The block clicked or edited since the last call, if any.
+    pub fn take_focus(&mut self) -> Option<usize> {
+        self.focus.take()
     }
 
     /// Select block `idx`, expanding any collapsed sections that hide it, and
@@ -137,6 +138,7 @@ impl OutlinePanel {
         self.anchor = snapshot.selected;
         self.rename = None;
         self.scroll_to_selected = true;
+        self.focus = self.selected;
     }
 
     /// Undo and redo save the current state on the other stack first, so text
@@ -156,8 +158,14 @@ impl OutlinePanel {
     }
 
     /// Run a structural operation and write the result back into `text`.
-    /// Collapse and selection state follow their blocks to their new indices.
-    fn apply(&mut self, text: &mut String, op: impl FnOnce(&mut Vec<Block>) -> bool) {
+    /// Collapse and selection state follow their blocks to their new indices,
+    /// and the other panes are sent to `subject`, the block the edit was about.
+    fn apply(
+        &mut self,
+        text: &mut String,
+        subject: Option<usize>,
+        op: impl FnOnce(&mut Vec<Block>) -> bool,
+    ) {
         let mut blocks = self.blocks.clone();
         if !op(&mut blocks) {
             return;
@@ -174,6 +182,7 @@ impl OutlinePanel {
         self.selection = remap(&self.selection);
         self.selected = self.selected.and_then(new_index);
         self.anchor = self.anchor.and_then(new_index);
+        self.focus = subject.and_then(new_index);
 
         *text = outline::serialize(&blocks);
         self.parsed_text = text.clone();
@@ -181,6 +190,7 @@ impl OutlinePanel {
         // An unclosed code fence moved above other headings swallows them.
         if self.blocks.len() != blocks.len() {
             self.clear_row_state();
+            self.focus = None;
         }
         self.scroll_to_selected = true;
     }
@@ -220,7 +230,7 @@ impl OutlinePanel {
         match action {
             Action::Click { idx, ctrl, shift } => {
                 self.click(idx, ctrl, shift);
-                self.clicked = Some(idx);
+                self.focus = Some(idx);
             }
             Action::ToggleCollapse(idx) => {
                 if !self.collapsed.remove(&idx) {
@@ -228,12 +238,24 @@ impl OutlinePanel {
                 }
             }
             Action::Level(idx, delta) => {
-                self.apply(text, |b| outline::change_level(b, &BTreeSet::from([idx]), delta))
+                let roots = self.shift_roots(idx);
+                if roots.len() == 1 {
+                    self.select(idx);
+                }
+                self.apply(text, Some(idx), |b| outline::shift_sections(b, &roots, delta));
             }
-            Action::MoveUp(idx) => self.apply(text, |b| outline::move_up(b, idx)),
-            Action::MoveDown(idx) => self.apply(text, |b| outline::move_down(b, idx)),
+            Action::MoveUp(idx) => {
+                self.select(idx);
+                self.apply(text, Some(idx), |b| outline::move_up(b, idx));
+            }
+            Action::MoveDown(idx) => {
+                self.select(idx);
+                self.apply(text, Some(idx), |b| outline::move_down(b, idx));
+            }
             Action::Delete(idx) => {
-                self.apply(text, |b| outline::delete_sections(b, &BTreeSet::from([idx])))
+                let row = BTreeSet::from([idx]);
+                self.apply(text, None, |b| outline::delete_sections(b, &row));
+                self.focus_after_delete(idx);
             }
             Action::StartRename(idx) => {
                 self.rename = Some(Rename {
@@ -246,23 +268,44 @@ impl OutlinePanel {
                 if let Some(rename) = self.rename.take()
                     && commit
                 {
-                    self.apply(text, |b| outline::rename(b, rename.idx, &rename.value));
+                    self.select(rename.idx);
+                    let subject = Some(rename.idx);
+                    self.apply(text, subject, |b| outline::rename(b, rename.idx, &rename.value));
                 }
             }
             Action::LevelSelected(delta) => {
                 let selection = self.selection.clone();
-                self.apply(text, |b| outline::change_level(b, &selection, delta));
+                let subject = self.selected.or(selection.first().copied());
+                self.apply(text, subject, |b| outline::shift_sections(b, &selection, delta));
             }
             Action::DeleteSelected => {
                 let selection = std::mem::take(&mut self.selection);
-                self.apply(text, |b| outline::delete_sections(b, &selection));
+                self.apply(text, None, |b| outline::delete_sections(b, &selection));
                 self.selected = None;
                 self.anchor = None;
+                if let Some(&first) = selection.first() {
+                    self.focus_after_delete(first);
+                }
             }
             Action::ClearSelection => self.selection.clear(),
             Action::Undo => self.undo(text),
             Action::Redo => self.redo(text),
         }
+    }
+
+    /// What a row's promote/demote button shifts: the whole selection when the
+    /// row is part of a multi-selection, otherwise just that row's section.
+    fn shift_roots(&self, idx: usize) -> BTreeSet<usize> {
+        if self.selection.len() > 1 && self.selection.contains(&idx) {
+            self.selection.clone()
+        } else {
+            BTreeSet::from([idx])
+        }
+    }
+
+    /// After deleting from index `idx` on, show whatever now sits there.
+    fn focus_after_delete(&mut self, idx: usize) {
+        self.focus = (!self.blocks.is_empty()).then(|| idx.min(self.blocks.len() - 1));
     }
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
@@ -340,10 +383,24 @@ impl OutlinePanel {
         if self.selection.len() > 1 {
             ui.horizontal_wrapped(|ui| {
                 ui.label(format!("{} selected", self.selection.len()));
-                if ui.small_button("⏴ Promote").on_hover_text("[").clicked() {
+                let can_promote = outline::can_shift(&self.blocks, &self.selection, -1);
+                let can_demote = outline::can_shift(&self.blocks, &self.selection, 1);
+                let tip = "Shifts each selected section with its subsections. \
+                           Disabled when any heading would go past H1 or H6.";
+                if ui
+                    .add_enabled(can_promote, egui::Button::new("⏴ Promote").small())
+                    .on_hover_text(format!("[ — {tip}"))
+                    .on_disabled_hover_text(tip)
+                    .clicked()
+                {
                     actions.push(Action::LevelSelected(-1));
                 }
-                if ui.small_button("Demote ⏵").on_hover_text("]").clicked() {
+                if ui
+                    .add_enabled(can_demote, egui::Button::new("Demote ⏵").small())
+                    .on_hover_text(format!("] — {tip}"))
+                    .on_disabled_hover_text(tip)
+                    .clicked()
+                {
                     actions.push(Action::LevelSelected(1));
                 }
                 if ui.small_button("✖ Delete").on_hover_text("Delete").clicked() {
@@ -444,6 +501,7 @@ impl OutlinePanel {
         };
         ui.add(egui::Label::new(egui::RichText::new(badge).monospace().weak()).selectable(false));
 
+        let roots = self.shift_roots(idx);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if block.level > 0 {
                 let mut button = |ui: &mut egui::Ui, icon, tip, enabled, action| {
@@ -460,8 +518,15 @@ impl OutlinePanel {
                 button(ui, "⬇", "Move down (d)", can_down, Action::MoveDown(idx));
                 let can_up = outline::prev_sibling(blocks, idx).is_some();
                 button(ui, "⬆", "Move up (u)", can_up, Action::MoveUp(idx));
-                button(ui, "⏵", "Demote (])", block.level < 6, Action::Level(idx, 1));
-                button(ui, "⏴", "Promote ([)", block.level > 1, Action::Level(idx, -1));
+                let (demote, promote) = if roots.len() > 1 {
+                    ("Demote selection (])", "Promote selection ([)")
+                } else {
+                    ("Demote section (])", "Promote section ([)")
+                };
+                let can_demote = outline::can_shift(blocks, &roots, 1);
+                let can_promote = outline::can_shift(blocks, &roots, -1);
+                button(ui, "⏵", demote, can_demote, Action::Level(idx, 1));
+                button(ui, "⏴", promote, can_promote, Action::Level(idx, -1));
             }
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 match &mut self.rename {
@@ -492,5 +557,57 @@ impl OutlinePanel {
             });
         });
         response
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DOC: &str = "# A\n## A1\ntext\n# B\n";
+
+    fn panel(text: &str) -> OutlinePanel {
+        let mut panel = OutlinePanel::default();
+        panel.sync(text);
+        panel
+    }
+
+    #[test]
+    fn level_change_rewrites_text_and_focuses_the_heading() {
+        let mut text = DOC.to_owned();
+        let mut panel = panel(&text);
+        panel.perform(Action::Level(1, -1), &mut text);
+        assert_eq!(text, "# A\n# A1\ntext\n# B\n");
+        assert_eq!(panel.take_focus(), Some(1));
+        assert_eq!(panel.selection, BTreeSet::from([1]));
+    }
+
+    #[test]
+    fn moved_section_is_focused_at_its_new_index() {
+        let mut text = DOC.to_owned();
+        let mut panel = panel(&text);
+        panel.perform(Action::MoveUp(2), &mut text);
+        assert_eq!(text, "# B\n# A\n## A1\ntext\n");
+        assert_eq!(panel.take_focus(), Some(0));
+    }
+
+    #[test]
+    fn delete_focuses_what_takes_its_place() {
+        let mut text = DOC.to_owned();
+        let mut panel = panel(&text);
+        panel.perform(Action::Delete(2), &mut text);
+        assert_eq!(text, "# A\n## A1\ntext\n");
+        assert_eq!(panel.take_focus(), Some(1));
+    }
+
+    #[test]
+    fn undo_restores_text_and_focus() {
+        let mut text = DOC.to_owned();
+        let mut panel = panel(&text);
+        panel.perform(Action::Level(1, -1), &mut text);
+        panel.take_focus();
+        panel.perform(Action::Undo, &mut text);
+        assert_eq!(text, DOC);
+        assert_eq!(panel.take_focus(), Some(1));
     }
 }

@@ -238,19 +238,36 @@ pub fn move_down(blocks: &mut [Block], i: usize) -> bool {
     true
 }
 
-/// Add `delta` to the level of every listed heading, clamped to 1..=6.
-pub fn change_level(blocks: &mut [Block], indices: &BTreeSet<usize>, delta: i8) -> bool {
-    let mut changed = false;
-    for &i in indices {
-        let block = &mut blocks[i];
-        if block.level == 0 {
-            continue;
-        }
-        let level = (block.level as i8 + delta).clamp(1, 6) as u8;
-        changed |= level != block.level;
-        block.level = level;
+/// The headings a shift of `roots` moves: each root heading with its whole
+/// subtree, counted once even when a selection nests a child in its parent.
+fn shift_targets(blocks: &[Block], roots: &BTreeSet<usize>) -> BTreeSet<usize> {
+    roots
+        .iter()
+        .filter(|&&i| blocks[i].level > 0)
+        .flat_map(|&i| i..section_end(blocks, i))
+        .collect()
+}
+
+/// Whether every heading `shift_sections` would move stays within 1..=6.
+pub fn can_shift(blocks: &[Block], roots: &BTreeSet<usize>, delta: i8) -> bool {
+    let targets = shift_targets(blocks, roots);
+    !targets.is_empty()
+        && targets
+            .iter()
+            .all(|&i| (1..=6).contains(&(blocks[i].level as i8 + delta)))
+}
+
+/// Shift each root section, subtree included, `delta` levels deeper (positive)
+/// or shallower (negative). All or nothing: if any heading would leave 1..=6,
+/// nothing moves, so levels inside the selection keep their relative shape.
+pub fn shift_sections(blocks: &mut [Block], roots: &BTreeSet<usize>, delta: i8) -> bool {
+    if !can_shift(blocks, roots, delta) {
+        return false;
     }
-    changed
+    for i in shift_targets(blocks, roots) {
+        blocks[i].level = (blocks[i].level as i8 + delta) as u8;
+    }
+    true
 }
 
 /// Delete every listed section with its subtree; nested selections are fine.
@@ -344,14 +361,33 @@ mod tests {
     }
 
     #[test]
-    fn changes_levels_with_clamping() {
+    fn shifts_carry_the_subtree() {
         let mut blocks = parse(DOC);
-        assert!(change_level(&mut blocks, &set(&[0, 1, 2]), -1));
+        assert!(shift_sections(&mut blocks, &set(&[1]), 1));
         assert_eq!(
-            levels(&blocks)[..3],
-            [(0, ""), (1, "A"), (1, "A1")]
+            levels(&blocks),
+            [(0, ""), (2, "A"), (3, "A1"), (3, "A2"), (1, "B")]
         );
-        assert!(!change_level(&mut blocks, &set(&[1]), -1));
+    }
+
+    #[test]
+    fn shifts_nested_selections_once() {
+        let mut blocks = parse(DOC);
+        assert!(shift_sections(&mut blocks, &set(&[1, 2, 4]), 2));
+        assert_eq!(
+            levels(&blocks),
+            [(0, ""), (3, "A"), (4, "A1"), (4, "A2"), (3, "B")]
+        );
+    }
+
+    #[test]
+    fn shift_is_all_or_nothing_at_the_edges() {
+        let mut blocks = parse(DOC);
+        assert!(!can_shift(&blocks, &set(&[2, 4]), -1), "B is already H1");
+        assert!(!shift_sections(&mut blocks, &set(&[2, 4]), -1));
+        assert_eq!(blocks, parse(DOC));
+        assert!(!can_shift(&blocks, &set(&[0]), 1), "the preamble has no level");
+        assert!(can_shift(&blocks, &set(&[2, 3]), -1));
     }
 
     #[test]
