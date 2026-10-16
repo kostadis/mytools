@@ -1,0 +1,11 @@
+[package]
+name = "markdown-editor"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "A small desktop Markdown editor for Linux and macOS"
+
+[dependencies]
+eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+egui_commonmark = { version = "0.25.0", default-features = false }
+rfd = "0.17.2"
