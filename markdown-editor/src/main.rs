@@ -1,8 +1,11 @@
 mod document;
+mod outline;
+mod outline_panel;
 
 use document::Document;
 use eframe::egui;
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
+use outline_panel::OutlinePanel;
 use std::path::PathBuf;
 
 /// Font size of a level-1 heading in the preview; lower levels step down toward body size.
@@ -18,6 +21,8 @@ enum PendingAction {
 struct MarkdownEditor {
     document: Document,
     preview_cache: CommonMarkCache,
+    outline: OutlinePanel,
+    show_outline: bool,
     pending: Option<PendingAction>,
     error: Option<String>,
     show_preview: bool,
@@ -29,6 +34,8 @@ impl Default for MarkdownEditor {
         Self {
             document: Document::default(),
             preview_cache: CommonMarkCache::default(),
+            outline: OutlinePanel::default(),
+            show_outline: true,
             pending: None,
             error: None,
             show_preview: true,
@@ -48,7 +55,10 @@ impl MarkdownEditor {
 
     fn perform(&mut self, action: PendingAction, ctx: &egui::Context) {
         match action {
-            PendingAction::New => self.document.new_file(),
+            PendingAction::New => {
+                self.document.new_file();
+                self.outline.reset();
+            }
             PendingAction::Open => {
                 if let Some(path) = Self::open_dialog() {
                     self.open_path(path);
@@ -70,7 +80,10 @@ impl MarkdownEditor {
 
     fn open_path(&mut self, path: PathBuf) {
         match self.document.open(path) {
-            Ok(()) => self.error = None,
+            Ok(()) => {
+                self.error = None;
+                self.outline.reset();
+            }
             Err(error) => self.error = Some(format!("Could not open file: {error}")),
         }
     }
@@ -154,6 +167,7 @@ impl MarkdownEditor {
                 }
             });
             ui.separator();
+            ui.checkbox(&mut self.show_outline, "Outline");
             ui.checkbox(&mut self.show_preview, "Preview");
             ui.separator();
             ui.label(
@@ -203,8 +217,12 @@ impl eframe::App for MarkdownEditor {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.request(PendingAction::Quit, &ctx);
         }
+        self.outline.sync(self.document.text());
         if self.pending.is_none() {
             self.shortcuts(&ctx);
+            if self.show_outline {
+                self.outline.shortcuts(&ctx, self.document.text_mut());
+            }
         }
 
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.document.title()));
@@ -216,6 +234,16 @@ impl eframe::App for MarkdownEditor {
             egui::vec2(ui.available_width(), content_height),
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
+                if self.show_outline {
+                    egui::Panel::left("outline")
+                        .resizable(true)
+                        .default_size(280.0)
+                        .show(ui, |ui| {
+                            ui.add_enabled_ui(self.pending.is_none(), |ui| {
+                                self.outline.ui(ui, self.document.text_mut());
+                            });
+                        });
+                }
                 if self.show_preview {
                     ui.columns(2, |columns| {
                         columns[0].heading("Markdown");
@@ -274,7 +302,8 @@ impl eframe::App for MarkdownEditor {
         let words = self.document.text().split_whitespace().count();
         let lines = self.document.text().lines().count().max(1);
         ui.horizontal(|ui| {
-            ui.label(format!("{words} words  ·  {lines} lines"));
+            let headings = self.outline.heading_count();
+            ui.label(format!("{words} words  ·  {lines} lines  ·  {headings} headings"));
             if let Some(error) = &self.error {
                 ui.separator();
                 ui.colored_label(egui::Color32::RED, error);

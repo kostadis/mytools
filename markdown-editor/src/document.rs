@@ -59,17 +59,28 @@ impl Document {
                 "Choose a file name with Save As first",
             )
         })?;
-        fs::write(path, &self.text)?;
+        write_with_backup(&path, &self.text)?;
         self.saved_text.clone_from(&self.text);
         Ok(())
     }
 
     pub fn save_as(&mut self, path: PathBuf) -> io::Result<()> {
-        fs::write(&path, &self.text)?;
+        write_with_backup(&path, &self.text)?;
         self.path = Some(path);
         self.saved_text.clone_from(&self.text);
         Ok(())
     }
+}
+
+/// Copy an existing file to `<name>.bak` before overwriting it, so the
+/// previous version survives a bad outline edit that has already been saved.
+fn write_with_backup(path: &Path, text: &str) -> io::Result<()> {
+    if path.exists() {
+        let mut backup = path.as_os_str().to_owned();
+        backup.push(".bak");
+        fs::copy(path, backup)?;
+    }
+    fs::write(path, text)
 }
 
 #[cfg(test)]
@@ -95,7 +106,10 @@ mod tests {
             fs::read_to_string(&path).unwrap(),
             "# Original\nMore text\n"
         );
+        let backup = path.with_extension("md.bak");
+        assert_eq!(fs::read_to_string(&backup).unwrap(), "# Original\n");
         fs::remove_file(path).unwrap();
+        fs::remove_file(backup).unwrap();
     }
 
     #[test]

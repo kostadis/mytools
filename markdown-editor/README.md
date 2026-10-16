@@ -33,3 +33,11 @@ Install Rust with rustup and Xcode Command Line Tools (`xcode-select --install`)
 | Save As | Ctrl+Shift+S | Cmd+Shift+S |
 
 The editor reads and writes UTF-8 text files. Opening a different file preserves the current document if the new file cannot be read.
+
+## Outline panel
+
+The left panel lists the document's headings as a collapsible tree. Each row can promote or demote its heading, move the whole section up or down among its siblings, or delete the section; double-click a heading to rename it. Ctrl/Cmd-click and Shift-click select several rows for bulk promote, demote or delete. Headings inside fenced code blocks are ignored.
+
+When the text editor does not have focus: `u`/`d` move, `[`/`]` promote/demote, Delete deletes, Esc clears the selection, Ctrl/Cmd+A selects all visible rows, and Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z undo and redo outline changes.
+
+Saving over an existing file first copies it to `<name>.bak`.
