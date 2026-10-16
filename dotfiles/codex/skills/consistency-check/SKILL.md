@@ -101,7 +101,8 @@ locations include:
 - `notes/session_prep/`
 - `notes/prep/`
 - `notes/sessions/`
-- `notes/sessions/handouts/`
+- every `handouts/` directory under `notes/` (`find notes -type d -name handouts`):
+  `notes/handouts/` in Out of the Abyss, `notes/sessions/handouts/` in older layouts
 - `notes/canon/`
 - `notes/threads/`
 - `notes/npcs/`
@@ -213,7 +214,7 @@ consistency_check:
     total_chars: 145429              # prep/handout files only; no standard context
     files:
       - { path: notes/<prep>.md, chars: 65916 }
-      - { path: notes/sessions/handouts/<...>.md, chars: 79513 }
+      - { path: notes/handouts/<...>.md, chars: 79513 }
   entity_registry_used: true
   session_date: "<the session's own date, not today's>"
   temporal_gap: |                    # OMIT unless this is a backfilled chapter

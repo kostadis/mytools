@@ -172,7 +172,8 @@ Search the whole `notes/` tree, including:
 - `notes/session_prep/`
 - `notes/prep/`
 - `notes/sessions/`
-- `notes/sessions/handouts/`
+- every `handouts/` directory under `notes/` (`find notes -type d -name handouts`):
+  `notes/handouts/` in Out of the Abyss, `notes/sessions/handouts/` in older layouts
 - location, arc, NPC, and canon notes
 
 If the user says `none`, proceed but record in the final summary that the run was
