@@ -41,3 +41,7 @@ The left panel lists the document's headings as a collapsible tree. Each row can
 When the text editor does not have focus: `u`/`d` move, `[`/`]` promote/demote, Delete deletes, Esc clears the selection, Ctrl/Cmd+A selects all visible rows, and Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z undo and redo outline changes.
 
 Saving over an existing file first copies it to `<name>.bak`.
+
+## Synced panes
+
+Clicking in any pane brings the other two to the same place: an outline row scrolls the source and preview to that heading, and a click in the source or preview selects the enclosing section in the outline and scrolls the remaining pane to match. Clicks on a heading line up exactly; clicks inside a section map proportionally within it. The preview is rendered one section at a time to make this possible, so footnotes defined in a different section do not resolve (reference-style links do).

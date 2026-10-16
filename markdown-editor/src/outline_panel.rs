@@ -52,12 +52,38 @@ pub struct OutlinePanel {
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
     scroll_to_selected: bool,
+    pending_offset: Option<f32>,
+    clicked: Option<usize>,
 }
 
 impl OutlinePanel {
     /// Forget everything about the previous document.
     pub fn reset(&mut self) {
         *self = Self::default();
+    }
+
+    pub fn blocks(&self) -> &[Block] {
+        &self.blocks
+    }
+
+    /// The row the user clicked since the last call, if any.
+    pub fn take_clicked(&mut self) -> Option<usize> {
+        self.clicked.take()
+    }
+
+    /// Select block `idx`, expanding any collapsed sections that hide it, and
+    /// scroll it into view.
+    pub fn reveal(&mut self, idx: usize) {
+        let mut level = self.blocks[idx].level;
+        for j in (0..idx).rev() {
+            let parent = self.blocks[j].level;
+            if parent > 0 && parent < level {
+                self.collapsed.remove(&j);
+                level = parent;
+            }
+        }
+        self.select(idx);
+        self.scroll_to_selected = true;
     }
 
     pub fn heading_count(&self) -> usize {
@@ -192,7 +218,10 @@ impl OutlinePanel {
 
     fn perform(&mut self, action: Action, text: &mut String) {
         match action {
-            Action::Click { idx, ctrl, shift } => self.click(idx, ctrl, shift),
+            Action::Click { idx, ctrl, shift } => {
+                self.click(idx, ctrl, shift);
+                self.clicked = Some(idx);
+            }
             Action::ToggleCollapse(idx) => {
                 if !self.collapsed.remove(&idx) {
                     self.collapsed.insert(idx);
@@ -332,16 +361,28 @@ impl OutlinePanel {
         }
         let visible = self.visible();
         let row_height = ui.spacing().interact_size.y;
+        let row_pitch = row_height + ui.spacing().item_spacing.y;
         let mut scroll = egui::ScrollArea::vertical().id_salt("outline").auto_shrink(false);
-        if std::mem::take(&mut self.scroll_to_selected)
-            && let Some(pos) = self.selected.and_then(|s| visible.iter().position(|&i| i == s))
-        {
-            let row_pitch = row_height + ui.spacing().item_spacing.y;
-            scroll = scroll.vertical_scroll_offset((pos as f32 * row_pitch - 80.0).max(0.0));
+        if let Some(offset) = self.pending_offset.take() {
+            scroll = scroll.vertical_scroll_offset(offset);
         }
+        let target = std::mem::take(&mut self.scroll_to_selected)
+            .then(|| self.selected.and_then(|s| visible.iter().position(|&i| i == s)))
+            .flatten();
         scroll.show_rows(ui, row_height, visible.len(), |ui, range| {
-            for &idx in &visible[range] {
-                self.row(ui, idx, row_height, &mut actions);
+            // Only drawn rows can scroll themselves into view; jump to an
+            // off-screen row by offset on the next frame instead.
+            if let Some(pos) = target
+                && !range.contains(&pos)
+            {
+                self.pending_offset = Some((pos as f32 * row_pitch - 80.0).max(0.0));
+                ui.ctx().request_repaint();
+            }
+            for pos in range {
+                let response = self.row(ui, visible[pos], row_height, &mut actions);
+                if target == Some(pos) {
+                    response.scroll_to_me(None);
+                }
             }
         });
 
@@ -350,7 +391,13 @@ impl OutlinePanel {
         }
     }
 
-    fn row(&mut self, ui: &mut egui::Ui, idx: usize, height: f32, actions: &mut Vec<Action>) {
+    fn row(
+        &mut self,
+        ui: &mut egui::Ui,
+        idx: usize,
+        height: f32,
+        actions: &mut Vec<Action>,
+    ) -> egui::Response {
         let blocks = &self.blocks;
         let block = &blocks[idx];
         let (rect, response) =
@@ -444,5 +491,6 @@ impl OutlinePanel {
                 }
             });
         });
+        response
     }
 }

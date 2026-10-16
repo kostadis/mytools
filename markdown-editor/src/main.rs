@@ -11,6 +11,13 @@ use std::path::PathBuf;
 /// Font size of a level-1 heading in the preview; lower levels step down toward body size.
 const PREVIEW_H1_SIZE: f32 = 32.0;
 
+#[derive(Clone, Copy, PartialEq)]
+enum Pane {
+    Outline,
+    Source,
+    Preview,
+}
+
 #[derive(Clone, Copy)]
 enum PendingAction {
     New,
@@ -23,6 +30,10 @@ struct MarkdownEditor {
     preview_cache: CommonMarkCache,
     outline: OutlinePanel,
     show_outline: bool,
+    /// Byte offset the source pane should scroll to on its next draw.
+    source_target: Option<(usize, egui::Align)>,
+    /// Block and fraction of its height the preview should scroll to.
+    preview_target: Option<(usize, f32)>,
     pending: Option<PendingAction>,
     error: Option<String>,
     show_preview: bool,
@@ -36,6 +47,8 @@ impl Default for MarkdownEditor {
             preview_cache: CommonMarkCache::default(),
             outline: OutlinePanel::default(),
             show_outline: true,
+            source_target: None,
+            preview_target: None,
             pending: None,
             error: None,
             show_preview: true,
@@ -128,6 +141,144 @@ impl MarkdownEditor {
                 self.error = Some(format!("Could not save file: {error}"));
                 false
             }
+        }
+    }
+
+    /// Bring the panes other than `from` to `fraction` of the way through block
+    /// `block`, where 0 means its heading line.
+    fn navigate(&mut self, from: Pane, block: usize, fraction: f32, ctx: &egui::Context) {
+        let text = self.document.text();
+        let blocks = self.outline.blocks();
+        if block >= blocks.len() {
+            return;
+        }
+        let span = outline::block_span(blocks, block, text.len());
+        if from != Pane::Source {
+            let mut pos = span.start;
+            if fraction > 0.0 {
+                let guess = span.start + (span.len() as f32 * fraction) as usize;
+                let guess = text.floor_char_boundary(guess.min(span.end));
+                pos = text[..guess].rfind('\n').map_or(0, |nl| nl + 1).max(span.start);
+            }
+            let align = if pos == span.start { egui::Align::TOP } else { egui::Align::Center };
+            self.source_target = Some((pos, align));
+        }
+        if from != Pane::Preview {
+            self.preview_target = Some((block, fraction));
+        }
+        if from != Pane::Outline {
+            self.outline.reveal(block);
+        }
+        ctx.request_repaint();
+    }
+
+    fn source_editor(&mut self, ui: &mut egui::Ui) {
+        let output = ui
+            .add_enabled_ui(self.pending.is_none(), |ui| {
+                egui::TextEdit::multiline(self.document.text_mut())
+                    .code_editor()
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(40)
+                    .show(ui)
+            })
+            .inner;
+        let text = self.document.text();
+
+        if let Some((pos, align)) = self.source_target.take() {
+            let pos = text.floor_char_boundary(pos.min(text.len()));
+            let cursor = egui::text::CCursor::new(text[..pos].chars().count());
+            let rect = output.galley.pos_from_cursor(cursor);
+            ui.scroll_to_rect(rect.translate(output.galley_pos.to_vec2()), Some(align));
+        }
+
+        if output.response.clicked()
+            && let Some(range) = output.cursor_range
+        {
+            let pos = text
+                .char_indices()
+                .nth(range.primary.index.into())
+                .map_or(text.len(), |(byte, _)| byte);
+            self.outline.sync(text);
+            let blocks = self.outline.blocks();
+            if let Some(block) = outline::block_at(blocks, pos) {
+                let span = outline::block_span(blocks, block, text.len());
+                let heading_end = text[span.clone()].find('\n').map_or(span.end, |nl| span.start + nl);
+                let fraction = if blocks[block].level > 0 && pos <= heading_end {
+                    0.0
+                } else {
+                    (pos - span.start) as f32 / span.len().max(1) as f32
+                };
+                let ctx = ui.ctx().clone();
+                self.navigate(Pane::Source, block, fraction, &ctx);
+            }
+        }
+    }
+
+    /// Render the preview one outline block at a time, so each block's place on
+    /// screen is known for scrolling to it and for mapping clicks back to it.
+    fn preview(&mut self, ui: &mut egui::Ui) {
+        // egui_commonmark sizes headings between the Body and Heading text
+        // styles; widen that span so each level is visibly distinct.
+        ui.style_mut().text_styles.insert(
+            egui::TextStyle::Heading,
+            egui::FontId::proportional(PREVIEW_H1_SIZE),
+        );
+        let text = self.document.text();
+        if text.is_empty() {
+            ui.weak("Your rendered Markdown will appear here.");
+            return;
+        }
+        self.outline.sync(text);
+        let blocks = self.outline.blocks();
+        let links = outline::link_definitions(text);
+        let target = self.preview_target.take();
+        let click = ui.input(|i| {
+            i.pointer
+                .primary_clicked()
+                .then(|| i.pointer.interact_pos())
+                .flatten()
+        });
+        let click = click.filter(|&pos| {
+            self.pending.is_none()
+                && ui.clip_rect().contains(pos)
+                && ui.ctx().layer_id_at(pos) == Some(ui.layer_id())
+        });
+        let mut clicked = None;
+
+        for (i, block) in blocks.iter().enumerate() {
+            let mut source = text[outline::block_span(blocks, i, text.len())].to_owned();
+            if !links.is_empty() {
+                source.push_str("\n\n");
+                source.push_str(&links);
+            }
+            let rect = ui
+                .push_id(i, |ui| {
+                    CommonMarkViewer::new().show(ui, &mut self.preview_cache, &source)
+                })
+                .response
+                .rect;
+
+            if let Some((block, fraction)) = target
+                && block == i
+            {
+                let y = rect.top() + rect.height() * fraction;
+                let line = egui::Rect::from_x_y_ranges(rect.x_range(), y..=y + 1.0);
+                let align = if fraction > 0.0 { egui::Align::Center } else { egui::Align::TOP };
+                ui.scroll_to_rect(line, Some(align));
+            }
+            if let Some(pos) = click
+                && rect.y_range().contains(pos.y)
+            {
+                let offset = pos.y - rect.top();
+                let on_heading = block.level > 0 && offset < PREVIEW_H1_SIZE * 1.3;
+                let fraction = if on_heading { 0.0 } else { offset / rect.height().max(1.0) };
+                clicked = Some((i, fraction));
+            }
+        }
+
+        if let Some((block, fraction)) = clicked {
+            let ctx = ui.ctx().clone();
+            self.navigate(Pane::Preview, block, fraction, &ctx);
         }
     }
 
@@ -244,56 +395,25 @@ impl eframe::App for MarkdownEditor {
                             });
                         });
                 }
+                if let Some(block) = self.outline.take_clicked() {
+                    self.navigate(Pane::Outline, block, 0.0, &ctx);
+                }
                 if self.show_preview {
                     ui.columns(2, |columns| {
                         columns[0].heading("Markdown");
-                        egui::ScrollArea::vertical().id_salt("source").show(
-                            &mut columns[0],
-                            |ui| {
-                                ui.add_enabled(
-                                    self.pending.is_none(),
-                                    egui::TextEdit::multiline(self.document.text_mut())
-                                        .code_editor()
-                                        .desired_width(f32::INFINITY)
-                                        .desired_rows(40),
-                                );
-                            },
-                        );
+                        egui::ScrollArea::vertical()
+                            .id_salt("source")
+                            .show(&mut columns[0], |ui| self.source_editor(ui));
                         columns[1].heading("Preview");
-                        egui::ScrollArea::vertical().id_salt("preview").show(
-                            &mut columns[1],
-                            |ui| {
-                                // egui_commonmark sizes headings between the Body and
-                                // Heading text styles; widen that span so each level
-                                // is visibly distinct.
-                                ui.style_mut().text_styles.insert(
-                                    egui::TextStyle::Heading,
-                                    egui::FontId::proportional(PREVIEW_H1_SIZE),
-                                );
-                                if self.document.text().is_empty() {
-                                    ui.weak("Your rendered Markdown will appear here.");
-                                } else {
-                                    CommonMarkViewer::new().show(
-                                        ui,
-                                        &mut self.preview_cache,
-                                        self.document.text(),
-                                    );
-                                }
-                            },
-                        );
+                        egui::ScrollArea::vertical()
+                            .id_salt("preview")
+                            .show(&mut columns[1], |ui| self.preview(ui));
                     });
                 } else {
+                    self.preview_target = None;
                     egui::ScrollArea::vertical()
                         .id_salt("source_only")
-                        .show(ui, |ui| {
-                            ui.add_enabled(
-                                self.pending.is_none(),
-                                egui::TextEdit::multiline(self.document.text_mut())
-                                    .code_editor()
-                                    .desired_width(f32::INFINITY)
-                                    .desired_rows(40),
-                            );
-                        });
+                        .show(ui, |ui| self.source_editor(ui));
                 }
             },
         );
