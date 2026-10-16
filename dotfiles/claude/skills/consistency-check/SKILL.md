@@ -121,12 +121,13 @@ Note that a missing prep layer is **much less costly on a first-pass recap in a 
 **Then sweep the WHOLE `notes/` tree, and do not assume a `session_prep/` subdir exists.** Prep layout is per-campaign convention, and there are at least three shapes in the wild:
 
 - **Dated prep dir** — `notes/session_prep/2026-05-31.md`
-- **Scattered across subdirs** — OOTA/Candlekeep kept only 4 files in `notes/session_prep/` while the bulk of the arc prep lived in `notes/sessions/` and its `handouts/` subdir
+- **Scattered across subdirs** — OOTA/Candlekeep kept only 4 files in `notes/session_prep/` while the bulk of the arc prep lived in `notes/sessions/` and a `handouts/` subdir (OOTA has since moved its handouts to `notes/handouts/`; the location varies by campaign, so find it, never assume it)
 - **Flat, location-named** — obelisk has no prep subdir at all; the prep for the Redbrand Hideout session is `notes/redbrand_hideout.md`, a co-GM working doc headed *"Not canon yet — staging for the Redbrand Hideout session."* **A file named for the dungeon/location/arc, marked as staging, IS the session prep.** Match on the document's beats and locations, not on the filename containing "prep" or a date.
 
 ```bash
-ls notes/ notes/session_prep/ notes/prep/ notes/sessions/ notes/sessions/handouts/ \
+ls notes/ notes/session_prep/ notes/prep/ notes/sessions/ \
    notes/canon/ notes/threads/ notes/npcs/ docs/npcs/ 2>/dev/null
+find notes -type d -name handouts    # handouts live in notes/handouts/, notes/sessions/handouts/, or elsewhere; list each hit
 ```
 
 Then **categorize** candidates by relevance to *this* session (use the entities/beats you got from reading the document in step 1):
@@ -235,7 +236,7 @@ consistency_check:
     total_chars: 145429              # prep/handout files only; no standard context
     files:
       - { path: notes/<prep>.md, chars: 65916 }
-      - { path: notes/sessions/handouts/<...>.md, chars: 79513 }
+      - { path: notes/handouts/<...>.md, chars: 79513 }
   entity_registry_used: true         # false if the campaign has no registry
   session_date: "<the session's own date, not today's>"
   temporal_gap: |                    # OMIT unless this is a backfilled chapter
@@ -254,7 +255,7 @@ consistency_check:
       - { path: docs/party.md, resolved_path: /absolute/campaign/docs/party.md, role: "PCs (campaign-standard)" }
       - { path: notes/vtt_transcription_corrections.md, resolved_path: /absolute/campaign/notes/vtt_transcription_corrections.md, role: "ASR garble glossary (campaign-standard)" }
       - { path: notes/<prep>.md, resolved_path: /absolute/campaign/notes/<prep>.md, role: "session prep (authoritative)" }
-      - { path: notes/sessions/handouts/<...>.md, resolved_path: /absolute/campaign/notes/sessions/handouts/<...>.md, role: "in-world handout / NPC tracker" }
+      - { path: notes/handouts/<...>.md, resolved_path: /absolute/campaign/notes/handouts/<...>.md, role: "in-world handout / NPC tracker" }
   notes: |
     Caveats worth recording — prep was `none`,
     auto-continuation seam checked, session diverged from prep (step 5).
