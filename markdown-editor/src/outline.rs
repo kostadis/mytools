@@ -14,6 +14,8 @@ pub struct Block {
     /// Index of this block when it was parsed. Operations reorder blocks, so
     /// callers use it to carry per-block UI state across a change.
     pub id: usize,
+    /// Byte offset of the block in the parsed text.
+    pub start: usize,
     /// 0 for the preamble before the first heading, 1..=6 for `#`..`######`.
     pub level: u8,
     /// Heading text, without the hashes, the spacing after them, or the line end.
@@ -27,8 +29,11 @@ pub fn parse(md: &str) -> Vec<Block> {
     let mut blocks: Vec<Block> = Vec::new();
     let mut preamble = String::new();
     let mut fence: Option<(char, usize)> = None;
+    let mut offset = 0;
 
     for raw in md.split_inclusive('\n') {
+        let start = offset;
+        offset += raw.len();
         let eol_len = if raw.ends_with("\r\n") {
             2
         } else if raw.ends_with('\n') {
@@ -44,6 +49,7 @@ pub fn parse(md: &str) -> Vec<Block> {
         if let Some((level, sep, text)) = heading {
             blocks.push(Block {
                 id: blocks.len(),
+                start,
                 level,
                 text: text.to_owned(),
                 sep: sep.to_owned(),
@@ -62,6 +68,7 @@ pub fn parse(md: &str) -> Vec<Block> {
             0,
             Block {
                 id: 0,
+                start: 0,
                 level: 0,
                 text: String::new(),
                 sep: String::new(),
@@ -132,6 +139,30 @@ pub fn renumber(blocks: &mut [Block]) {
     for (i, block) in blocks.iter_mut().enumerate() {
         block.id = i;
     }
+}
+
+/// Index of the block containing byte offset `pos`.
+pub fn block_at(blocks: &[Block], pos: usize) -> Option<usize> {
+    blocks.partition_point(|b| b.start <= pos).checked_sub(1)
+}
+
+/// Byte range of block `i` alone, without its subsections.
+pub fn block_span(blocks: &[Block], i: usize, text_len: usize) -> std::ops::Range<usize> {
+    blocks[i].start..blocks.get(i + 1).map_or(text_len, |next| next.start)
+}
+
+/// The document's reference-style link definitions (`[name]: url`), so a
+/// section rendered on its own can still resolve links defined elsewhere.
+pub fn link_definitions(md: &str) -> String {
+    md.lines()
+        .filter(|line| {
+            let line = line.trim_start_matches(' ');
+            line.starts_with('[')
+                && !line.starts_with("[^")
+                && line.find("]:").is_some_and(|end| end > 1)
+        })
+        .map(|line| format!("{line}\n"))
+        .collect()
 }
 
 // ── Tree helpers ───────────────────────────────────────────────────────────
@@ -328,6 +359,23 @@ mod tests {
         let mut blocks = parse(DOC);
         assert!(delete_sections(&mut blocks, &set(&[0, 1, 2])));
         assert_eq!(serialize(&blocks), "# B\nb body\n");
+    }
+
+    #[test]
+    fn locates_blocks_by_offset() {
+        let blocks = parse(DOC);
+        assert_eq!(block_at(&blocks, 0), Some(0));
+        let a1 = DOC.find("## A1").unwrap();
+        assert_eq!(block_at(&blocks, a1), Some(2));
+        assert_eq!(block_at(&blocks, a1 - 1), Some(1));
+        assert_eq!(&DOC[block_span(&blocks, 2, DOC.len())], "## A1\n");
+        assert_eq!(&DOC[block_span(&blocks, 4, DOC.len())], "# B\nb body\n");
+    }
+
+    #[test]
+    fn collects_link_definitions() {
+        let doc = "# A\nsee [x]\n# B\n[x]: https://example.com\n[^1]: footnote\n[]: no\n";
+        assert_eq!(link_definitions(doc), "[x]: https://example.com\n");
     }
 
     #[test]
