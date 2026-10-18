@@ -43,7 +43,11 @@ pub fn parse(md: &str) -> Vec<Block> {
         };
         let line = &raw[..raw.len() - eol_len];
 
-        let heading = if fence.is_none() { parse_heading(line) } else { None };
+        let heading = if fence.is_none() {
+            parse_heading(line)
+        } else {
+            None
+        };
         update_fence(&mut fence, line);
 
         if let Some((level, sep, text)) = heading {
@@ -95,7 +99,7 @@ fn parse_heading(line: &str) -> Option<(u8, &str, &str)> {
     Some((hashes as u8, &rest[..rest.len() - text.len()], text))
 }
 
-fn update_fence(fence: &mut Option<(char, usize)>, line: &str) {
+pub fn update_fence(fence: &mut Option<(char, usize)>, line: &str) {
     let indent = line.len() - line.trim_start_matches(' ').len();
     if indent > 3 {
         return;
@@ -168,7 +172,10 @@ pub fn link_definitions(md: &str) -> String {
 // ── Tree helpers ───────────────────────────────────────────────────────────
 
 pub fn has_children(blocks: &[Block], i: usize) -> bool {
-    blocks[i].level > 0 && blocks.get(i + 1).is_some_and(|next| next.level > blocks[i].level)
+    blocks[i].level > 0
+        && blocks
+            .get(i + 1)
+            .is_some_and(|next| next.level > blocks[i].level)
 }
 
 /// Exclusive end index of the section that starts at `i`.
@@ -386,7 +393,10 @@ mod tests {
         assert!(!can_shift(&blocks, &set(&[2, 4]), -1), "B is already H1");
         assert!(!shift_sections(&mut blocks, &set(&[2, 4]), -1));
         assert_eq!(blocks, parse(DOC));
-        assert!(!can_shift(&blocks, &set(&[0]), 1), "the preamble has no level");
+        assert!(
+            !can_shift(&blocks, &set(&[0]), 1),
+            "the preamble has no level"
+        );
         assert!(can_shift(&blocks, &set(&[2, 3]), -1));
     }
 

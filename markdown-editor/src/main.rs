@@ -1,4 +1,5 @@
 mod document;
+mod html_table;
 mod outline;
 mod outline_panel;
 
@@ -175,9 +176,16 @@ impl MarkdownEditor {
             if fraction > 0.0 {
                 let guess = span.start + (span.len() as f32 * fraction) as usize;
                 let guess = text.floor_char_boundary(guess.min(span.end));
-                pos = text[..guess].rfind('\n').map_or(0, |nl| nl + 1).max(span.start);
+                pos = text[..guess]
+                    .rfind('\n')
+                    .map_or(0, |nl| nl + 1)
+                    .max(span.start);
             }
-            let align = if pos == span.start { egui::Align::TOP } else { egui::Align::Center };
+            let align = if pos == span.start {
+                egui::Align::TOP
+            } else {
+                egui::Align::Center
+            };
             self.source_target = Some((pos, align));
         }
         if from != Pane::Preview {
@@ -219,7 +227,9 @@ impl MarkdownEditor {
             let blocks = self.outline.blocks();
             if let Some(block) = outline::block_at(blocks, pos) {
                 let span = outline::block_span(blocks, block, text.len());
-                let heading_end = text[span.clone()].find('\n').map_or(span.end, |nl| span.start + nl);
+                let heading_end = text[span.clone()]
+                    .find('\n')
+                    .map_or(span.end, |nl| span.start + nl);
                 let fraction = if blocks[block].level > 0 && pos <= heading_end {
                     0.0
                 } else {
@@ -255,9 +265,14 @@ impl MarkdownEditor {
                 .then(|| i.pointer.interact_pos())
                 .flatten()
         });
+        // A vertical scroll area clips only vertically, so its clip rect spans
+        // the whole window; take the horizontal extent from the column itself,
+        // or clicks in the outline and source panes register here too.
+        let visible =
+            egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), ui.clip_rect().y_range());
         let click = click.filter(|&pos| {
             self.pending.is_none()
-                && ui.clip_rect().contains(pos)
+                && visible.contains(pos)
                 && ui.ctx().layer_id_at(pos) == Some(ui.layer_id())
         });
         let mut clicked = None;
@@ -281,7 +296,7 @@ impl MarkdownEditor {
                     body = section.split_once('\n').map_or("", |(_, rest)| rest);
                 }
                 if !body.trim().is_empty() {
-                    let mut source = body.to_owned();
+                    let mut source = html_table::tables_to_markdown(body).into_owned();
                     if !links.is_empty() {
                         source.push_str("\n\n");
                         source.push_str(&links);
@@ -297,7 +312,11 @@ impl MarkdownEditor {
             {
                 let y = rect.top() + rect.height() * fraction;
                 let line = egui::Rect::from_x_y_ranges(rect.x_range(), y..=y + 1.0);
-                let align = if fraction > 0.0 { egui::Align::Center } else { egui::Align::TOP };
+                let align = if fraction > 0.0 {
+                    egui::Align::Center
+                } else {
+                    egui::Align::TOP
+                };
                 ui.scroll_to_rect(line, Some(align));
             }
             if let Some(pos) = click
@@ -305,7 +324,11 @@ impl MarkdownEditor {
             {
                 let offset = pos.y - rect.top();
                 let on_heading = section.inner.is_some_and(|bottom| pos.y <= bottom);
-                let fraction = if on_heading { 0.0 } else { offset / rect.height().max(1.0) };
+                let fraction = if on_heading {
+                    0.0
+                } else {
+                    offset / rect.height().max(1.0)
+                };
                 clicked = Some((i, fraction));
             }
         }
@@ -392,8 +415,8 @@ impl MarkdownEditor {
     }
 }
 
-impl eframe::App for MarkdownEditor {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+impl MarkdownEditor {
+    fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         if ctx.input(|i| i.viewport().close_requested())
             && !self.allow_close
@@ -457,7 +480,9 @@ impl eframe::App for MarkdownEditor {
         let lines = self.document.text().lines().count().max(1);
         ui.horizontal(|ui| {
             let headings = self.outline.heading_count();
-            ui.label(format!("{words} words  ·  {lines} lines  ·  {headings} headings"));
+            ui.label(format!(
+                "{words} words  ·  {lines} lines  ·  {headings} headings"
+            ));
             if let Some(error) = &self.error {
                 ui.separator();
                 ui.colored_label(egui::Color32::RED, error);
@@ -467,6 +492,12 @@ impl eframe::App for MarkdownEditor {
             }
         });
         self.confirmation(&ctx);
+    }
+}
+
+impl eframe::App for MarkdownEditor {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.draw(ui);
     }
 }
 
@@ -482,7 +513,9 @@ fn preview_heading(
 ) -> f32 {
     let font = egui::FontId::new(HEADING_SIZES[level as usize - 1], family.clone());
     ui.scope(|ui| {
-        ui.style_mut().text_styles.insert(egui::TextStyle::Body, font);
+        ui.style_mut()
+            .text_styles
+            .insert(egui::TextStyle::Body, font);
         CommonMarkViewer::new().show(ui, cache, &heading_markdown(text));
     });
     if level <= 2 {
@@ -522,7 +555,10 @@ fn heading_markdown(text: &str) -> String {
 /// family, with the bundled fonts as fallback for missing glyphs, and return
 /// that family; without one, headings stay in the regular font.
 fn load_heading_font(ctx: &egui::Context) -> egui::FontFamily {
-    let Some(bytes) = HEADING_FONT_PATHS.iter().find_map(|path| std::fs::read(path).ok()) else {
+    let Some(bytes) = HEADING_FONT_PATHS
+        .iter()
+        .find_map(|path| std::fs::read(path).ok())
+    else {
         return egui::FontFamily::Proportional;
     };
     let mut fonts = egui::FontDefinitions::default();
@@ -532,7 +568,11 @@ fn load_heading_font(ctx: &egui::Context) -> egui::FontFamily {
     );
     let family = egui::FontFamily::Name("heading".into());
     let mut chain = vec!["heading-bold".to_owned()];
-    chain.extend(fonts.families[&egui::FontFamily::Proportional].iter().cloned());
+    chain.extend(
+        fonts.families[&egui::FontFamily::Proportional]
+            .iter()
+            .cloned(),
+    );
     fonts.families.insert(family.clone(), chain);
     ctx.set_fonts(fonts);
     family
@@ -591,5 +631,95 @@ mod tests {
         assert_eq!(heading_markdown("1. Intro"), "**1\\. Intro**");
         assert_eq!(heading_markdown("- dash"), "**\\- dash**");
         assert_eq!(heading_markdown("##"), "");
+    }
+}
+
+#[cfg(test)]
+mod ui_tests {
+    use super::*;
+
+    const DOC: &str = "# A\n## A1\n## A2\n## A3\n# B\n";
+
+    fn frame(
+        ctx: &egui::Context,
+        app: &mut MarkdownEditor,
+        events: Vec<egui::Event>,
+        modifiers: egui::Modifiers,
+    ) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            events: std::iter::once(egui::Event::ModifiersChanged(modifiers))
+                .chain(events)
+                .collect(),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| app.draw(ui));
+        output.textures_delta.clear();
+    }
+
+    fn click(
+        ctx: &egui::Context,
+        app: &mut MarkdownEditor,
+        pos: egui::Pos2,
+        modifiers: egui::Modifiers,
+    ) {
+        let button = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers,
+        };
+        frame(
+            ctx,
+            app,
+            vec![egui::Event::PointerMoved(pos), button(true)],
+            modifiers,
+        );
+        frame(ctx, app, vec![button(false)], modifiers);
+        for _ in 0..3 {
+            frame(ctx, app, vec![], egui::Modifiers::NONE);
+        }
+    }
+
+    #[test]
+    fn shift_click_in_the_outline_selects_a_range() {
+        let ctx = egui::Context::default();
+        let mut app = MarkdownEditor::default();
+        *app.document.text_mut() = DOC.to_owned();
+        frame(&ctx, &mut app, vec![], egui::Modifiers::NONE);
+        let mut rows = Vec::new();
+        // Start below the toolbar so the probe never clicks Open or Save.
+        for y in (60..300).step_by(3) {
+            click(
+                &ctx,
+                &mut app,
+                egui::pos2(120.0, y as f32),
+                egui::Modifiers::NONE,
+            );
+            if let Some(sel) = app.outline.selected_rows().first().copied()
+                && rows.last().map(|&(i, _)| i) != Some(sel)
+            {
+                rows.push((sel, y as f32));
+            }
+        }
+        eprintln!("rows: {rows:?}");
+        let y_of = |i: usize| rows.iter().find(|r| r.0 == i).unwrap().1;
+        click(
+            &ctx,
+            &mut app,
+            egui::pos2(120.0, y_of(1)),
+            egui::Modifiers::NONE,
+        );
+        assert_eq!(app.outline.selected_rows(), vec![1]);
+        click(
+            &ctx,
+            &mut app,
+            egui::pos2(120.0, y_of(3)),
+            egui::Modifiers::SHIFT,
+        );
+        assert_eq!(app.outline.selected_rows(), vec![1, 2, 3]);
     }
 }

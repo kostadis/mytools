@@ -87,6 +87,11 @@ impl OutlinePanel {
         self.scroll_to_selected = true;
     }
 
+    #[cfg(test)]
+    pub fn selected_rows(&self) -> Vec<usize> {
+        self.selection.iter().copied().collect()
+    }
+
     pub fn heading_count(&self) -> usize {
         self.blocks.iter().filter(|b| b.level > 0).count()
     }
@@ -210,7 +215,10 @@ impl OutlinePanel {
             let from = visible.iter().position(|&i| i == anchor);
             let to = visible.iter().position(|&i| i == idx);
             if let (Some(from), Some(to)) = (from, to) {
-                self.selection = visible[from.min(to)..=from.max(to)].iter().copied().collect();
+                self.selection = visible[from.min(to)..=from.max(to)]
+                    .iter()
+                    .copied()
+                    .collect();
                 self.selected = Some(idx);
                 return;
             }
@@ -242,7 +250,9 @@ impl OutlinePanel {
                 if roots.len() == 1 {
                     self.select(idx);
                 }
-                self.apply(text, Some(idx), |b| outline::shift_sections(b, &roots, delta));
+                self.apply(text, Some(idx), |b| {
+                    outline::shift_sections(b, &roots, delta)
+                });
             }
             Action::MoveUp(idx) => {
                 self.select(idx);
@@ -270,13 +280,17 @@ impl OutlinePanel {
                 {
                     self.select(rename.idx);
                     let subject = Some(rename.idx);
-                    self.apply(text, subject, |b| outline::rename(b, rename.idx, &rename.value));
+                    self.apply(text, subject, |b| {
+                        outline::rename(b, rename.idx, &rename.value)
+                    });
                 }
             }
             Action::LevelSelected(delta) => {
                 let selection = self.selection.clone();
                 let subject = self.selected.or(selection.first().copied());
-                self.apply(text, subject, |b| outline::shift_sections(b, &selection, delta));
+                self.apply(text, subject, |b| {
+                    outline::shift_sections(b, &selection, delta)
+                });
             }
             Action::DeleteSelected => {
                 let selection = std::mem::take(&mut self.selection);
@@ -331,7 +345,9 @@ impl OutlinePanel {
             if i.consume_key(egui::Modifiers::NONE, egui::Key::Escape) {
                 actions.push(Action::ClearSelection);
             }
-            let Some(sel) = self.selected.filter(|&s| self.blocks.get(s).is_some_and(|b| b.level > 0))
+            let Some(sel) = self
+                .selected
+                .filter(|&s| self.blocks.get(s).is_some_and(|b| b.level > 0))
             else {
                 return;
             };
@@ -403,7 +419,11 @@ impl OutlinePanel {
                 {
                     actions.push(Action::LevelSelected(1));
                 }
-                if ui.small_button("✖ Delete").on_hover_text("Delete").clicked() {
+                if ui
+                    .small_button("✖ Delete")
+                    .on_hover_text("Delete")
+                    .clicked()
+                {
                     actions.push(Action::DeleteSelected);
                 }
                 if ui.small_button("Clear").on_hover_text("Esc").clicked() {
@@ -419,12 +439,17 @@ impl OutlinePanel {
         let visible = self.visible();
         let row_height = ui.spacing().interact_size.y;
         let row_pitch = row_height + ui.spacing().item_spacing.y;
-        let mut scroll = egui::ScrollArea::vertical().id_salt("outline").auto_shrink(false);
+        let mut scroll = egui::ScrollArea::vertical()
+            .id_salt("outline")
+            .auto_shrink(false);
         if let Some(offset) = self.pending_offset.take() {
             scroll = scroll.vertical_scroll_offset(offset);
         }
         let target = std::mem::take(&mut self.scroll_to_selected)
-            .then(|| self.selected.and_then(|s| visible.iter().position(|&i| i == s)))
+            .then(|| {
+                self.selected
+                    .and_then(|s| visible.iter().position(|&i| i == s))
+            })
             .flatten();
         scroll.show_rows(ui, row_height, visible.len(), |ui, range| {
             // Only drawn rows can scroll themselves into view; jump to an
@@ -457,12 +482,16 @@ impl OutlinePanel {
     ) -> egui::Response {
         let blocks = &self.blocks;
         let block = &blocks[idx];
-        let (rect, response) =
-            ui.allocate_exact_size(egui::vec2(ui.available_width(), height), egui::Sense::click());
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), height),
+            egui::Sense::click(),
+        );
         if self.selection.contains(&idx) {
-            ui.painter().rect_filled(rect, 2.0, ui.visuals().selection.bg_fill);
+            ui.painter()
+                .rect_filled(rect, 2.0, ui.visuals().selection.bg_fill);
         } else if response.hovered() {
-            ui.painter().rect_filled(rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
+            ui.painter()
+                .rect_filled(rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
         }
         if response.clicked() {
             let modifiers = ui.input(|i| i.modifiers);
@@ -484,7 +513,11 @@ impl OutlinePanel {
         ui.add_space(block.level.saturating_sub(1) as f32 * 14.0 + 2.0);
         let toggle_width = 18.0;
         if outline::has_children(blocks, idx) {
-            let icon = if self.collapsed.contains(&idx) { "⏵" } else { "⏷" };
+            let icon = if self.collapsed.contains(&idx) {
+                "⏵"
+            } else {
+                "⏷"
+            };
             if ui
                 .add_sized([toggle_width, height], egui::Button::new(icon).frame(false))
                 .clicked()
@@ -528,8 +561,9 @@ impl OutlinePanel {
                 button(ui, "⏵", demote, can_demote, Action::Level(idx, 1));
                 button(ui, "⏴", promote, can_promote, Action::Level(idx, -1));
             }
-            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                match &mut self.rename {
+            ui.with_layout(
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| match &mut self.rename {
                     Some(rename) if rename.idx == idx => {
                         let edit = ui.add(
                             egui::TextEdit::singleline(&mut rename.value)
@@ -553,8 +587,8 @@ impl OutlinePanel {
                         ui.add(egui::Label::new(label).truncate().selectable(false))
                             .on_hover_text(&block.text);
                     }
-                }
-            });
+                },
+            );
         });
         response
     }
