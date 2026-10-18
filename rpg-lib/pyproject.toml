@@ -11,7 +11,7 @@ dependencies = [
   "fastapi",
   "uvicorn",
   "pydantic",
-  "claudelib",   # first-party (installed by mneme before rpg_lib; not on PyPI)
+  "claudelib",   # first-party (~/src/mytools/claudelib; not on PyPI). NOT installed by mneme — rpg-lib owns it (mneme GH #9)
 ]
 
 [project.scripts]
