@@ -8,6 +8,7 @@ LOG_DIR="$SCRIPT_DIR/logs"
 LOG_FILE="$LOG_DIR/library.log"
 DB_PATH="${DB:-$SCRIPT_DIR/rpg_library.db}"
 PORT="${PORT:-8000}"
+PYTHON="${PYTHON:-$HOME/.venv/bin/python}"
 
 mkdir -p "$LOG_DIR"
 
@@ -21,7 +22,7 @@ cmd_start() {
         return 1
     fi
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting library server on port $PORT" >> "$LOG_FILE"
-    nohup python3 "$SCRIPT_DIR/library_server.py" \
+    nohup "$PYTHON" "$SCRIPT_DIR/library_server.py" \
         --db "$DB_PATH" \
         --port "$PORT" \
         >> "$LOG_FILE" 2>&1 &
@@ -102,7 +103,7 @@ case "${1:-}" in
         echo "  logs [N] — print last N lines of log (default 50)"
         echo "  tail     — follow log output live"
         echo ""
-        echo "Env vars: DB=<path> (default: rpg_library.db), PORT=<num> (default: 8000)"
+        echo "Env vars: DB=<path> (default: rpg_library.db), PORT=<num> (default: 8000), PYTHON=<interpreter> (default: ~/.venv/bin/python)"
         exit 1
         ;;
 esac

@@ -25,10 +25,11 @@ A full-stack RPG PDF library: Python scripts index PDFs from disk into SQLite, t
 
 ### Backend
 ```bash
-# Start/stop server (from rpg-lib/)
-python library_server.py --db rpg_library.db --port 8000
+# Start/stop server (from rpg-lib/) — runs under ~/.venv/bin/python by default
 ./service.sh start|stop|restart|status|logs|tail  # service manager
 DB=rpg_library.db PORT=8000 ./service.sh start    # with env overrides
+PYTHON=/path/to/python ./service.sh start         # override the interpreter
+~/.venv/bin/python library_server.py --db rpg_library.db --port 8000  # foreground
 
 # Index PDFs
 ./index_rpgs.sh /path/to/pdfs rpg_library.db drivethrurpg
@@ -98,7 +99,7 @@ frontend/src/
 
 **Store actions vs. direct assignment:** Always use store actions (`setFilter`, `setQuery`, `toggleGroup`) to mutate state — direct assignment to store properties from components can silently fail to update the ref inside the closure.
 
-**`lib/claudelib.py`** lives in the parent `mytools/lib/` directory (shared across projects). `pdf_enricher.py` adds `..` to `sys.path` to import it.
+**`claudelib`** is a first-party package at `~/src/mytools/claudelib/` (not on PyPI; its only dependency is `anthropic`). There is no `sys.path` shim — it must be *installed* into the interpreter that runs rpg-lib: `uv pip install --python ~/.venv/bin/python -e ~/src/mytools/claudelib`. mneme does **not** install it (mneme GH #9: rpg-lib and claudelib are external to mneme). `service.sh` and `start_library.sh` default to `~/.venv/bin/python` for this reason — system `python3` has neither `claudelib` nor `anthropic`, and `nlq.py` imports `claudelib` at module load, so `POST /nlq` returns 500 (the import error escapes the keyword fallback). Without `ANTHROPIC_API_KEY`, NLQ degrades to keyword-only search rather than failing.
 
 ### Obsidian vault (`generate_obsidian.py`)
 
