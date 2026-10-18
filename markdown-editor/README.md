@@ -36,7 +36,7 @@ The editor reads and writes UTF-8 text files. Opening a different file preserves
 
 ## Outline panel
 
-The left panel lists the document's headings as a collapsible tree. Each row can promote or demote its heading, move the whole section up or down among its siblings, or delete the section; double-click a heading to rename it. Ctrl/Cmd-click and Shift-click select several rows for bulk promote, demote or delete. Headings inside fenced code blocks are ignored.
+The left panel lists the document's headings as a collapsible tree. Each row can promote or demote its heading, move the whole section up or down among its siblings, or delete the section; double-click a heading to rename it. Ctrl/Cmd-click and Shift-click select several rows for bulk promote, demote or delete; the ⏴ ⏵ buttons on a selected row act on the whole selection. Promote and demote always carry a section's subsections along, and are all-or-nothing: if any affected heading would go past H1 or H6, nothing moves. Headings inside fenced code blocks are ignored.
 
 When the text editor does not have focus: `u`/`d` move, `[`/`]` promote/demote, Delete deletes, Esc clears the selection, Ctrl/Cmd+A selects all visible rows, and Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z undo and redo outline changes.
 
