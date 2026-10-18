@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CODE_PLUGIN_DIRS": "~/src/mytools/dotfiles/claude/mods/ship:~/src/mytools/dotfiles/claude/mods/jobs:~/src/mytools/dotfiles/claude/mods/git-band:~/src/mytools/dotfiles/claude/mods/backend-guard:~/src/mytools/dotfiles/claude/mods/meter"
+  },
   "permissions": {
     "allow": [
       "mcp__zvec_grep__*",
@@ -6,6 +9,7 @@
     ],
     "defaultMode": "auto"
   },
+  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {
@@ -94,13 +98,21 @@
   },
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
-    "typesafe@typesafe-ai": true
+    "typesafe@typesafe-ai": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "runpod@runpod": true
   },
   "extraKnownMarketplaces": {
     "typesafe-ai": {
       "source": {
         "source": "github",
         "repo": "typesafe-ai/skills"
+      }
+    },
+    "runpod": {
+      "source": {
+        "source": "github",
+        "repo": "runpod/runpod-plugins-official"
       }
     }
   },
@@ -137,9 +149,5 @@
       "**Trusted repo**: kostadis/campaigns (github.com), the repo the agent started in at /home/kostadis/phandalin/Phandalin/summaries/20260902 — PUBLIC, so only this repo's own work belongs here; confidential material, secrets, and personal data are never cleared into it by visibility alone",
       "**Org-specific CLIs**: None configured"
     ]
-  },
-  "model": "opus",
-  "env": {
-    "CLAUDE_CODE_PLUGIN_DIRS": "~/src/mytools/dotfiles/claude/mods/ship:~/src/mytools/dotfiles/claude/mods/jobs:~/src/mytools/dotfiles/claude/mods/git-band:~/src/mytools/dotfiles/claude/mods/backend-guard:~/src/mytools/dotfiles/claude/mods/meter"
   }
 }
