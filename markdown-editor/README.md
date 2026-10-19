@@ -21,7 +21,9 @@ The first build downloads Rust crates from crates.io. Use `cargo test` to run th
 
 ## macOS
 
-Install Rust with rustup and Xcode Command Line Tools (`xcode-select --install`), then run `cargo run --release` in this directory. The app uses the same Rust source on both platforms; macOS runtime testing remains to be done.
+Install Rust with rustup and Xcode Command Line Tools (`xcode-select --install`), then run `cargo run --release` in this directory. The app uses the same Rust source on both platforms.
+
+Command Line Tools 26.6 ships a linker that cannot read the MacOSX 27 SDK (`unknown architecture arm64e.x1-macos`). `.cargo/config.toml` points `SDKROOT` at the MacOSX 26.5 SDK so `cargo run` links. Set `SDKROOT` yourself if you want a different SDK.
 
 ## Keyboard shortcuts
 

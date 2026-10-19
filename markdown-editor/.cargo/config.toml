@@ -1,0 +1,7 @@
+# ld from Command Line Tools 26.6 rejects the MacOSX 27 SDK
+# (`arm64e.x1-macos` in the .tbd files). xcrun still picks that SDK.
+# 26.5 is the newest SDK this linker can read. An SDKROOT already set
+# in the environment is left alone. On Linux the path does not exist,
+# and both rustc and cc-rs ignore it.
+[env]
+SDKROOT = "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
