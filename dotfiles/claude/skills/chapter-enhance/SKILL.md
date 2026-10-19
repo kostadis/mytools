@@ -136,7 +136,11 @@ When given several chapters:
 3. Review the finished set together — cross-chapter contradictions only become
    visible here.
 4. Present **one** artifact at the end containing every question, grouped by
-   kind and not by chapter, each with the evidence and a recommendation.
+   kind and not by chapter, each with the evidence and a recommendation. Build
+   it with `~/.claude/skills/_shared/review-artifact/build_review.py`, never
+   hand-written HTML, and follow its CONTRACT's **Card standard**: the exact
+   before → after in `edit` (shown first, in bold), the recommendation in
+   `guess`/`guessWhy`, and a keep-verbatim reject.
 
 Typos found in the chapter are reported, never fixed in place, unless the GM
 asks. When they do ask, fix them in `docs/NeverwinterExpansionismandtheNorth.md`

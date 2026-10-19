@@ -176,6 +176,7 @@ def review_page(payload, review_id):
         permitted = edit["scope"] != "out-of-scope" and edit["support"] == "supported"
         items.append({
             "id": edit["id"],
+            "edit": f"<i>{escape(edit['before'])}</i> &rarr; <i>{escape(edit['after'])}</i>",
             "t": f"{escape(edit['id'])}: {escape(edit['reason'])}",
             "y": ("Include this exact replacement in a new derived revision; keep the original."
                   if permitted else "This proposal cannot be applied as recorded; discuss and revise its scope/evidence first.")
@@ -186,6 +187,8 @@ def review_page(payload, review_id):
                   f"<p>Before</p><pre>{escape(edit['before'])}</pre>"
                   f"<p>After</p><pre>{escape(edit['after'])}</pre>"
                   f"<p>Surrounding draft</p><pre>{escape(edit['context'])}</pre>{evidence}",
+            **({} if permitted else {"guess": "discuss",
+                                     "guessWhy": "Out of scope or unsupported as recorded, so it needs revising before it can be approved."}),
         })
     return {"title": payload["scene"], "reviewId": review_id,
             "outputName": "dialogue_edit_decisions.json",

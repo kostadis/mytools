@@ -122,18 +122,29 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .item-head{display:flex;gap:12px;align-items:baseline}
 .num{font-family:var(--mono);font-size:12px;color:var(--ink-3);flex:none;padding-top:4px;font-variant-numeric:tabular-nums}
 .item h2{font-family:var(--serif);font-size:1.24rem;font-weight:600;line-height:1.28;margin:0;text-wrap:balance}
+.edit{flex:1 1 auto;min-width:0;font-size:1.06rem;font-weight:700;line-height:1.5;color:var(--ink);overflow-wrap:anywhere}
+.edit .lbl,.why .lbl,.guess .lbl{display:block;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--accent);margin-bottom:4px}
+.edit i{font-style:normal}
+.edit i:nth-of-type(odd){font-weight:500;color:var(--ink-2)}
+.edit code{font-family:var(--mono);font-size:.95rem}
+.why{font-size:15px;line-height:1.55;color:var(--ink-2)}
+.why .lbl{color:var(--ink-3)}
+.guess{background:var(--talk-bg);border-radius:3px;padding:10px 13px;font-size:15px;line-height:1.5;color:var(--ink)}
+.guess .lbl{color:var(--talk)}
+.ch .mine{display:block;font-size:10px;letter-spacing:.06em;margin-top:2px;color:var(--talk)}
 
 .outcomes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
-.outcome{background:var(--surface-2);border-radius:3px;padding:11px 13px;font-size:13.4px;line-height:1.5;color:var(--ink-2)}
+.outcome{background:var(--surface-2);border-radius:3px;padding:11px 13px;font-size:15px;line-height:1.55;color:var(--ink-2)}
 .outcome b{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;
   text-transform:uppercase;margin-bottom:4px}
 .outcome.y b{color:var(--ok)}
 .outcome.n b{color:var(--no)}
 .outcome.x b{color:var(--x)}
-.outcome code{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere;color:var(--ink)}
+.outcome code{font-family:var(--mono);font-size:13.5px;overflow-wrap:anywhere;color:var(--ink)}
 
-.ev{font-size:13px;color:var(--ink-3);line-height:1.55;margin:0;padding-left:12px;border-left:2px solid var(--rule-soft)}
-.ev code{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+.ev{font-size:15px;color:var(--ink-2);line-height:1.6;margin:0;padding-left:12px;border-left:2px solid var(--rule-soft)}
+.ev code{font-family:var(--mono);font-size:13.5px;overflow-wrap:anywhere}
 .ev em{color:var(--ink-2);font-style:italic}
 
 .choices{display:flex;gap:8px;flex-wrap:wrap}
@@ -147,12 +158,12 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ch[aria-pressed="true"][data-x="1"]{background:var(--x-bg);border-color:var(--x);color:var(--x)}
 
 .note{width:100%;background:var(--ground);border:1px solid var(--rule);border-radius:3px;color:var(--ink);
-  font-family:var(--sans);font-size:13.5px;padding:9px 12px}
+  font-family:var(--sans);font-size:15px;padding:9px 12px}
 .note::placeholder{color:var(--ink-3)}
 .note:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
 .note[hidden]{display:none}
 
-.foot{margin-top:56px;padding-top:26px;border-top:2px solid var(--ink);font-size:13.4px;color:var(--ink-2);line-height:1.6}
+.foot{margin-top:56px;padding-top:26px;border-top:2px solid var(--ink);font-size:15px;color:var(--ink-2);line-height:1.6}
 .foot code{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
 .foot .applied{margin:0 0 14px}
 
@@ -216,7 +227,7 @@ function render(){
   var visible = ITEMS.filter(function(it){
     var choice = state.decisions[it.id] || '';
     var filterMatch = ui.filter === 'all' || (ui.filter === 'unmarked' ? !choice : choice === ui.filter);
-    var searchMatch = !query || [it.id, it.t, it.y, it.n, it.ev || ''].join(' ').toLowerCase().indexOf(query) !== -1;
+    var searchMatch = !query || [it.id, it.edit || '', it.t, it.y, it.n, it.ev || ''].join(' ').toLowerCase().indexOf(query) !== -1;
     return filterMatch && searchMatch;
   });
   var h = '';
@@ -258,7 +269,13 @@ function render(){
     var d = state.decisions[it.id] || '';
     h += '<div class="item"' + (d ? ' data-choice="' + d + '"' + (ISX[d] ? ' data-x="1"' : '') : '') + '>';
     h += '<div class="item-head"><span class="num">' + (i+1 < 10 ? '0' : '') + (i+1) + '</span>';
-    h += '<h2>' + it.t + '</h2></div>';
+    if(it.edit){
+      h += '<div class="edit"><span class="lbl">Proposed edit</span>' + it.edit + '</div></div>';
+      h += '<div class="why"><span class="lbl">Why</span>' + it.t + '</div>';
+    } else {
+      h += '<h2>' + it.t + '</h2></div>';
+    }
+    if(it.guess) h += '<div class="guess"><span class="lbl">My guess: ' + esc(LABEL[it.guess] || it.guess) + '</span>' + (it.guessWhy || '') + '</div>';
     h += '<div class="outcomes">';
     h += '<div class="outcome y"><b>If approved</b>' + it.y + '</div>';
     h += '<div class="outcome n"><b>If rejected</b>' + it.n + '</div>';
@@ -270,7 +287,7 @@ function render(){
     h += '<div class="choices">';
     KEYS.forEach(function(k){
       h += '<button class="ch" data-item="' + it.id + '" data-choice="' + k + '"' + (ISX[k] ? ' data-x="1"' : '') + ' aria-pressed="' +
-           (d === k ? 'true' : 'false') + '">' + LABEL[k] + '</button>';
+           (d === k ? 'true' : 'false') + '">' + LABEL[k] + (it.guess === k ? '<span class="mine">my guess</span>' : '') + '</button>';
     });
     h += '</div>';
     h += '<input class="note" data-note="' + it.id + '" placeholder="Add a note for this one (optional)" value="' +
@@ -447,6 +464,10 @@ def validate(spec: dict) -> list[str]:
             if iid in seen:
                 errs.append(f"duplicate item id {iid!r} - decisions are keyed by id, so ids must be unique")
             seen.add(iid)
+    keys = {"approve", "reject", "discuss"} | {e.get("key") for e in (spec.get("extraVerdicts") or []) if isinstance(e, dict)}
+    for i, it in enumerate(items):
+        if isinstance(it, dict) and it.get("guess") and it["guess"] not in keys:
+            errs.append(f"items[{i}] ({it.get('id', '?')}) guess {it['guess']!r} is not a verdict on this page")
     extra = spec.get("extraVerdicts") or []
     if not isinstance(extra, list):
         errs.append("'extraVerdicts' must be a list")
@@ -464,11 +485,31 @@ def validate(spec: dict) -> list[str]:
     pre = spec.get("state") or {}
     if pre.get("decisions") or pre.get("notes") or pre.get("savedAt"):
         errs.append("'state' must not pre-fill decisions, notes or savedAt - a page always "
-                    "starts unmarked and unsaved; put a recommendation in the card's y/ev text")
+                    "starts unmarked and unsaved; put a recommendation in the card's guess/guessWhy")
     return errs
 
 
+EXACT = re.compile(r"(?:<br>\s*)*<b>Exact edits:</b>(?:\s*<br>)*", re.I)
+
+
+def lift_edits(items: list[dict]) -> list[dict]:
+    """Give each card a top-line `edit`. A card that sets none gets the
+    'Exact edits:' tail of its `y`, so the before -> after text is what the
+    GM reads first, in full size, and `y` keeps only the where/what prose."""
+    out = []
+    for it in items:
+        it = dict(it)
+        if not it.get("edit"):
+            parts = EXACT.split(it.get("y", ""), maxsplit=1)
+            if len(parts) == 2 and parts[1].strip():
+                it["edit"] = parts[1].strip()
+                it["y"] = parts[0].strip() or "Apply the proposed edit."
+        out.append(it)
+    return out
+
+
 def build(spec: dict) -> str:
+    spec = dict(spec, items=lift_edits(spec["items"]))
     src = (SRC
            .replace("__FONTS__", js(FONTS))
            .replace("__TITLE__", js(spec["title"]))

@@ -262,6 +262,8 @@ python ~/.claude/skills/_shared/review-artifact/build_review.py \
     --in  <session-dir>/staged_review/review_items_stage<N>.json --out <session-dir>/staged_review/review.html
 ```
 
+Every card follows the review-artifact **Card standard** (`_shared/review-artifact/CONTRACT.md`): the exact before → after goes in `edit`, which renders first in bold, and every card you are not confident about carries your pick in `guess`/`guessWhy`.
+
 Read back to `<session-dir>/staged_review/decisions_stage<N>.json` the same way. Only `--out` is
 shared, and it has to be: the artifact URL follows the `file_path`, so a
 per-stage html name would claim a second URL. Everything else is per stage.

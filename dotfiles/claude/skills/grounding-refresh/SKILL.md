@@ -114,7 +114,9 @@ note lands in `reference/threads_unratified.md`. Offer the GM a choice:
 
 - **Ratify first:** `summary_native thread-propose`, then rule on each group (`/grounding/threads`,
   or `thread_registry rule/ratify`). Hundreds of notes means an Approve/Reject/Discuss
-  artifact, per the campaign's long-review-queue rule. Then re-synth planning and
+  artifact, per the campaign's long-review-queue rule, built with
+  `_shared/review-artifact/build_review.py` to its CONTRACT's **Card standard**
+  (exact wording first in `edit`, your pick in `guess`/`guessWhy`). Then re-synth planning and
   campaign_state with `--force`.
 - **Publish now, ratify later:** fine. The drafts state that plots are unratified.
 

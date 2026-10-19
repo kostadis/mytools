@@ -232,6 +232,8 @@ python ~/.claude/skills/_shared/review-artifact/build_review.py \
     --in  <session-dir>/voice_review/review_items_<round>.json --out <session-dir>/voice_review/review.html
 ```
 
+Every card follows the review-artifact **Card standard** (`_shared/review-artifact/CONTRACT.md`): the exact before → after goes in `edit`, which renders first in bold, and every card you are not confident about carries your pick in `guess`/`guessWhy`.
+
 - **One card per garble candidate**, id `s<NN>-g<NN>` (scene, candidate index) so the apply step can find the line, grouped by scene in scene order. Calibration pairs (step 4) use `cal-<NN>`, grouped by decision class.
 - **Each card carries exactly what a 1x1 chat question would**, in `ev`: every transcript's reading named, the corroboration found, the voice-file rationale (name the voice file), and the full-sentence verbatim → smoothed preview, **verbatim first**. The GM is judging a rewrite; a card that shows only the result is unreviewable. `y` applies the repair; `n` keeps the verbatim text.
 - Name each round's items file (`review_items_<round>.json`) and keep `--out` on one path for the whole run, so the page keeps one URL while each round's card text survives.

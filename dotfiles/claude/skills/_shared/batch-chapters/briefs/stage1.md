@@ -63,6 +63,8 @@ Every card has four fields, and the reject option always keeps the text verbatim
 - **y** — what approving writes and where. Say whether <STAGE0> carries the same text.
 - **n** — what rejecting keeps.
 - **ev** — verbatim tape cues with timestamps, HTML-escaped.
+- **edit:** the exact before → after text, shown first on the card in bold. (Or end `y` with `<b>Exact edits:</b>` and the bullets; the builder lifts them.)
+- **guess / guessWhy:** the verdict you would pick and one sentence of why. Required on every card you are not confident about; never leave a card as a bare question. See `_shared/review-artifact/CONTRACT.md`, "Card standard".
 
 ## Build
 

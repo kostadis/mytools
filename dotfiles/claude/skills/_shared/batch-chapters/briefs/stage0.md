@@ -70,6 +70,8 @@ Every card has four fields:
 - **y:** what approving writes, and in which file.
 - **n:** what rejecting keeps. Always offer a keep-verbatim option.
 - **ev:** verbatim cues with timestamps, HTML-escaped.
+- **edit:** the exact before → after text, shown first on the card in bold. (Or end `y` with `<b>Exact edits:</b>` and the bullets; the builder lifts them.)
+- **guess / guessWhy:** the verdict you would pick and one sentence of why. Required on every card you are not confident about; never leave a card as a bare question. See `_shared/review-artifact/CONTRACT.md`, "Card standard".
 
 ## Build
 
