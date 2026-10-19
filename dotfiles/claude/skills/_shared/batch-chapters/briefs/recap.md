@@ -79,6 +79,7 @@ Make one card per decision:
 
 Rules for every card:
 - Offer "leave it / keep verbatim" as the reject option.
+- Put the exact cut or rescue wording in `edit` (shown first, in bold), and your pick in `guess`/`guessWhy` on every card you are not sure of (review-artifact CONTRACT, "Card standard").
 - If there is no recap at all, make one card: "Mark #N as the start of play, cut nothing".
 - Put no literal "\n" in card text, and HTML-escape the evidence.
 - Do NOT publish. Do NOT edit any campaign file.

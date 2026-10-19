@@ -232,7 +232,8 @@ at a time; never default to the page. For the page, follow
 round-trip, such as `map-SPEAKER_00` or `cue-<index>` with a sidecar map to the
 cue), each card's `y`/`n` naming what is written
 where, the quotes and timestamps (HTML-escaped) in `ev`. Never pre-fill a
-verdict; a recommendation goes in the card text. Publish with
+verdict; a recommendation goes in `guess`/`guessWhy` and the relabel itself in
+`edit` (see the review-artifact CONTRACT's "Card standard"). Publish with
 `capabilities: {"artifact": {}}`, stop, and read the decisions back with
 `read_decisions.py --items`. An unmarked card stays unresolved; Discuss comes
 back to chat as one grouped pass.

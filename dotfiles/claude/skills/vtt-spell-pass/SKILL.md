@@ -1144,7 +1144,9 @@ python ~/.claude/skills/_shared/review-artifact/build_review.py \
 ```
 
 Give the page a `reviewId` such as `vtt-spell-pass:<session>`, and never put a
-verdict in `state` — a recommendation goes in the card's `y` or `ev` text.
+verdict in `state`. Your recommendation goes in the card's `guess`/`guessWhy`
+(required on every card you are not sure of), and the correction itself in `edit`
+so it shows first; see `_shared/review-artifact/CONTRACT.md`, "Card standard".
 
 ### The consent unit is the PAIR, never the cluster
 

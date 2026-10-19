@@ -114,6 +114,8 @@ python3 "$REVIEW_ARTIFACT/build_review.py" \
   --out /campaign/summaries/session/dialogue_edit/session-r1/review.html
 ```
 
+Every card follows the review-artifact **Card standard** (`_shared/review-artifact/CONTRACT.md`): the exact before → after goes in `edit`, which renders first in bold, and every card you are not confident about carries your pick in `guess`/`guessWhy`.
+
 `session-page` re-verifies every run before collecting it. Item ids are
 prefixed by scene (`s01:<id>`), and the page's `reviewId` is derived from the
 runs' own review ids. It writes nothing it would overwrite, so each review

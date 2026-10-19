@@ -55,7 +55,7 @@ Placeholders:
 - **benign:** checked and fine. Give a one-line reason that cites the tape.
 - **note:** worth knowing, no edit.
 
-Every card has four fields: `t` (the decision), `y` (what approving writes, and where), `n` (what rejecting keeps; always keep-verbatim), `ev` (verbatim tape cues with timestamps, HTML-escaped).
+Every card has four fields: `t` (the decision), `y` (what approving writes, and where), `n` (what rejecting keeps; always keep-verbatim), `ev` (verbatim tape cues with timestamps, HTML-escaped). Add `edit` (the exact before → after, shown first in bold; or end `y` with `<b>Exact edits:</b>`) and `guess`/`guessWhy` (your pick and why) on every card you are not confident about; see `_shared/review-artifact/CONTRACT.md`, "Card standard".
 
 ## Build
 

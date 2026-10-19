@@ -181,6 +181,8 @@ python ~/.claude/skills/_shared/review-artifact/build_review.py \
     --out <session-dir>/quote_review/review.html
 ```
 
+Every card follows the review-artifact **Card standard** (`_shared/review-artifact/CONTRACT.md`): the exact before → after goes in `edit`, which renders first in bold, and every card you are not confident about carries your pick in `guess`/`guessWhy`.
+
 The plain `review_items.json` is correct here: this skill publishes **one** page
 per run, so there is no second build to overwrite it. `/staged-consistency`
 publishes one per stage over the same URL and must suffix the name

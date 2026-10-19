@@ -359,6 +359,8 @@ python3 ~/.claude/skills/_shared/review-artifact/build_review.py \
     --out <session>/voice_critic_review/review.html
 ```
 
+Every card follows the review-artifact **Card standard** (`_shared/review-artifact/CONTRACT.md`): the exact before → after goes in `edit`, which renders first in bold, and every card you are not confident about carries your pick in `guess`/`guessWhy`.
+
 Publish `review.html` with the `Artifact` tool and **`capabilities: {"artifact": {}}`**, a stable favicon, a noun-phrase `title` and a `reviewId` naming the session and round (`vc:<session>:r1`). Then **stop** — the save comes back as an `artifact-changed` notification or the GM's word, never a poll. Read it back with the `Artifact` tool (CONTRACT step 5), then:
 
 ```bash

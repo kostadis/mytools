@@ -220,6 +220,10 @@ chapter. The check for one chapter and the adjudication of another overlap.
 - Card text (`t`, `y`, `n`) holds no literal `\n`. `ev` is HTML-escaped. `y`
   says what approving writes **and where**, including whether the Stage 0
   source carries the same text. `n` is always a keep-verbatim option.
+- **Card standard** (`_shared/review-artifact/CONTRACT.md`): the exact edit goes
+  first, in bold (`edit`, or the `<b>Exact edits:</b>` tail of `y`, which the
+  builder lifts), and every card the agent is not confident about carries
+  `guess`/`guessWhy`. A card that arrives as a bare question is not done.
 - **Tape cards have one schema:**
 
   ```json

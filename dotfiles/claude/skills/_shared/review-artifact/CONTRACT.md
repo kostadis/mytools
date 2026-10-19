@@ -150,13 +150,17 @@ re-apply a stage you have already applied.
 | `items[].y` | yes | **What happens if approved. Name the files.** |
 | `items[].n` | yes | **What happens if rejected. Name the files.** |
 | `items[].ev` | no | The evidence. Cite `file:line`. |
+| `items[].edit` | no | **The proposed edit, shown first on the card in bold at reading size**: the exact before → after text. When absent, the builder lifts the `<b>Exact edits:</b>` tail out of `y` into it. `t` then shows below it as the rationale ("Why"). GM feedback 2026-10-19: the edit was the hardest thing to read when it sat in small type under a large headline. |
+| `items[].guess` | no | Your best guess at the verdict (`approve`, `reject`, `discuss` or an extra verdict key). Shown in a highlighted box above the buttons and marked "my guess" on its button. **Give one on every card where you are not confident** (GM 2026-10-19: "if there is non confidence in a choice, I want your guess as an option"). It is display only: it is never a pre-filled verdict and is never exported. |
+| `items[].guessWhy` | no | One or two sentences of why, shown with the guess. |
 | `extraVerdicts` | no | Extra buttons beyond Approve / Reject / Discuss, for a skill whose natural verdicts are more than two, e.g. `[{"key":"chatter","label":"Table chatter","outcome":"Saved as ignored in <code>…state.json</code>."}]`. `key` is 1-24 chars `[a-z_]`; `outcome` is the default text of the card's extra outcome box. Declare only verdicts the skill's apply step maps to an action. |
 | `items[].x` | no | Per-card override of an extra verdict's outcome text: `{"chatter": "…"}`. |
 
 **Never pre-fill a verdict.** A page always starts unmarked and unsaved: the
 builder rejects a spec whose `state` carries `decisions`, `notes` or `savedAt`.
 A pre-set verdict would be exported as the GM's ruling on a single Save. Put
-your recommendation in the card's `y` or `ev` text instead.
+your recommendation in the card's `guess` and `guessWhy` instead: they show as
+a marked option and are never saved as a verdict.
 
 `title` is **plain text**: it is escaped both when the page is built and every
 time it re-renders itself on save. `eyebrow`, `lede`, `footer` and
@@ -164,6 +168,29 @@ time it re-renders itself on save. `eyebrow`, `lede`, `footer` and
 yours to use. That also means any literal `<` or `&` in quoted transcript text
 must be escaped by the caller. The builder refuses to emit a page containing
 an unescaped `</script`.
+
+### Card standard (GM, 2026-10-19; mytools #85)
+
+The GM is dyslexic and rules on dozens of cards per stage. Every card a skill
+builds follows this standard, and the builder lays it out:
+
+1. **The proposed edit comes first, in bold at reading size.** Put the exact
+   before → after text in `edit` (`<i>old</i> &rarr; <i>new</i>`, one bullet per
+   edit, a `(&times;N)` count where it repeats). A card that keeps the older
+   `<b>Exact edits:</b>` tail in `y` gets it lifted into `edit` automatically.
+   `t` follows as the rationale ("Why"). Never leave the edit in small type
+   under a large headline.
+2. **Your guess is an option on every card where you are not confident.**
+   Set `guess` to the verdict you would pick and `guessWhy` to one sentence of
+   why. It is shown in a highlighted box and marked on its button, but it is
+   never pre-selected and never exported. A card that arrives as a bare
+   question, with no guess, makes the GM do the reviewer's work.
+3. **Reject is always keep-verbatim**, and `n` says so.
+4. **Body text is 15px or more.** Nothing the GM must read in order to rule is
+   set smaller.
+
+A card with no edit (a ruling that changes no text, such as "is this one
+troll or two?") leads with `t` as its headline and still carries a guess.
 
 ### Why `y` and `n` are mandatory
 
