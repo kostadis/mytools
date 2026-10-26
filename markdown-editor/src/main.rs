@@ -1,11 +1,16 @@
+mod chooser_mode;
+mod cli;
 mod document;
+mod file_chooser;
 mod html_table;
 mod outline;
 mod outline_panel;
 
+use chooser_mode::{ChooserPreference, DisplayEnv};
 use document::Document;
 use eframe::egui;
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
+use file_chooser::{AfterSave, ChooserRequest, Outcome, PendingAction, Purpose};
 use outline_panel::OutlinePanel;
 use std::path::PathBuf;
 
@@ -26,18 +31,20 @@ const HEADING_FONT_PATHS: &[&str] = &[
     "/Library/Fonts/Arial Bold.ttf",
 ];
 
+/// How a Save ended: written, failed, or waiting on a chooser that will
+/// finish it on a later frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum SaveStatus {
+    Saved,
+    Failed,
+    Choosing,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Pane {
     Outline,
     Source,
     Preview,
-}
-
-#[derive(Clone, Copy)]
-enum PendingAction {
-    New,
-    Open,
-    Quit,
 }
 
 struct MarkdownEditor {
@@ -52,6 +59,11 @@ struct MarkdownEditor {
     /// Block and fraction of its height the preview should scroll to.
     preview_target: Option<(usize, f32)>,
     pending: Option<PendingAction>,
+    /// The Open or Save As in progress, if any. Only one runs at a time.
+    chooser: Option<ChooserRequest>,
+    next_generation: u64,
+    /// The `--chooser` option, applied to every Open and Save As.
+    chooser_pref: ChooserPreference,
     error: Option<String>,
     show_preview: bool,
     allow_close: bool,
@@ -68,6 +80,9 @@ impl Default for MarkdownEditor {
             source_target: None,
             preview_target: None,
             pending: None,
+            chooser: None,
+            next_generation: 0,
+            chooser_pref: ChooserPreference::Auto,
             error: None,
             show_preview: true,
             allow_close: false,
@@ -90,11 +105,7 @@ impl MarkdownEditor {
                 self.document.new_file();
                 self.outline.reset();
             }
-            PendingAction::Open => {
-                if let Some(path) = Self::open_dialog() {
-                    self.open_path(path);
-                }
-            }
+            PendingAction::Open => self.start_chooser(Purpose::Open, ctx),
             PendingAction::Quit => {
                 self.allow_close = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -102,11 +113,60 @@ impl MarkdownEditor {
         }
     }
 
-    fn open_dialog() -> Option<PathBuf> {
-        rfd::FileDialog::new()
-            .add_filter("Markdown", &["md", "markdown", "mdown"])
-            .add_filter("All files", &["*"])
-            .pick_file()
+    /// True while a confirmation or a chooser is open, so file actions and
+    /// editing wait for it.
+    fn busy(&self) -> bool {
+        self.pending.is_some() || self.chooser.is_some()
+    }
+
+    fn start_chooser(&mut self, purpose: Purpose, ctx: &egui::Context) {
+        if self.chooser.is_some() {
+            return;
+        }
+        // Keys typed into the chooser must not reach a text field behind it.
+        if let Some(id) = ctx.memory(|m| m.focused()) {
+            ctx.memory_mut(|m| m.surrender_focus(id));
+        }
+        self.next_generation += 1;
+        // Decided fresh for each request (FR-010).
+        let decision = chooser_mode::decide(&DisplayEnv::from_env(), self.chooser_pref);
+        self.chooser = Some(ChooserRequest::start(
+            purpose,
+            decision,
+            self.next_generation,
+            self.document.path(),
+            ctx,
+        ));
+    }
+
+    fn chooser_ui(&mut self, ctx: &egui::Context) {
+        let Some(request) = &mut self.chooser else {
+            return;
+        };
+        if let Some(outcome) = request.poll(ctx) {
+            self.finish_chooser(outcome, ctx);
+        }
+    }
+
+    fn finish_chooser(&mut self, outcome: Outcome, ctx: &egui::Context) {
+        let Some(request) = self.chooser.take() else {
+            return;
+        };
+        let Outcome::Chosen(path) = outcome else {
+            return;
+        };
+        match request.purpose {
+            Purpose::Open => self.open_path(path),
+            Purpose::SaveAs { after } => match self.document.save_as(path) {
+                Ok(()) => {
+                    self.error = None;
+                    if let AfterSave::Continue(action) = after {
+                        self.perform(action, ctx);
+                    }
+                }
+                Err(error) => self.error = Some(format!("Could not save file: {error}")),
+            },
+        }
     }
 
     fn open_path(&mut self, path: PathBuf) {
@@ -119,47 +179,25 @@ impl MarkdownEditor {
         }
     }
 
-    fn save(&mut self) -> bool {
+    fn save(&mut self, after: AfterSave, ctx: &egui::Context) -> SaveStatus {
         if self.document.path().is_none() {
-            return self.save_as();
+            self.save_as(after, ctx);
+            return SaveStatus::Choosing;
         }
         match self.document.save() {
             Ok(()) => {
                 self.error = None;
-                true
+                SaveStatus::Saved
             }
             Err(error) => {
                 self.error = Some(format!("Could not save file: {error}"));
-                false
+                SaveStatus::Failed
             }
         }
     }
 
-    fn save_as(&mut self) -> bool {
-        let mut dialog = rfd::FileDialog::new().add_filter("Markdown", &["md"]);
-        if let Some(path) = self.document.path() {
-            if let Some(parent) = path.parent() {
-                dialog = dialog.set_directory(parent);
-            }
-            if let Some(name) = path.file_name() {
-                dialog = dialog.set_file_name(name.to_string_lossy());
-            }
-        } else {
-            dialog = dialog.set_file_name("Untitled.md");
-        }
-        let Some(path) = dialog.save_file() else {
-            return false;
-        };
-        match self.document.save_as(path) {
-            Ok(()) => {
-                self.error = None;
-                true
-            }
-            Err(error) => {
-                self.error = Some(format!("Could not save file: {error}"));
-                false
-            }
-        }
+    fn save_as(&mut self, after: AfterSave, ctx: &egui::Context) {
+        self.start_chooser(Purpose::SaveAs { after }, ctx);
     }
 
     /// Bring the panes other than `from` to `fraction` of the way through block
@@ -199,7 +237,7 @@ impl MarkdownEditor {
 
     fn source_editor(&mut self, ui: &mut egui::Ui) {
         let output = ui
-            .add_enabled_ui(self.pending.is_none(), |ui| {
+            .add_enabled_ui(!self.busy(), |ui| {
                 egui::TextEdit::multiline(self.document.text_mut())
                     .code_editor()
                     .desired_width(f32::INFINITY)
@@ -347,16 +385,16 @@ impl MarkdownEditor {
             self.request(PendingAction::Open, ctx);
         } else if shortcut(egui::Key::S) {
             if ctx.input(|i| i.modifiers.shift) {
-                self.save_as();
+                self.save_as(AfterSave::Nothing, ctx);
             } else {
-                self.save();
+                self.save(AfterSave::Nothing, ctx);
             }
         }
     }
 
     fn toolbar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.horizontal(|ui| {
-            ui.add_enabled_ui(self.pending.is_none(), |ui| {
+            ui.add_enabled_ui(!self.busy(), |ui| {
                 if ui.button("New").on_hover_text("Ctrl/Cmd+N").clicked() {
                     self.request(PendingAction::New, ctx);
                 }
@@ -364,14 +402,14 @@ impl MarkdownEditor {
                     self.request(PendingAction::Open, ctx);
                 }
                 if ui.button("Save").on_hover_text("Ctrl/Cmd+S").clicked() {
-                    self.save();
+                    self.save(AfterSave::Nothing, ctx);
                 }
                 if ui
                     .button("Save As…")
                     .on_hover_text("Ctrl/Cmd+Shift+S")
                     .clicked()
                 {
-                    self.save_as();
+                    self.save_as(AfterSave::Nothing, ctx);
                 }
             });
             ui.separator();
@@ -399,9 +437,12 @@ impl MarkdownEditor {
             .show(ctx, |ui| {
                 ui.label("Save your changes before continuing?");
                 ui.horizontal(|ui| {
-                    if ui.button("Save").clicked() && self.save() {
+                    if ui.button("Save").clicked() {
                         self.pending = None;
-                        self.perform(action, ctx);
+                        // A chooser runs the action itself once it has saved.
+                        if self.save(AfterSave::Continue(action), ctx) == SaveStatus::Saved {
+                            self.perform(action, ctx);
+                        }
                     }
                     if ui.button("Discard").clicked() {
                         self.pending = None;
@@ -423,10 +464,13 @@ impl MarkdownEditor {
             && self.document.is_dirty()
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.request(PendingAction::Quit, &ctx);
+            // While a chooser is open, finish or cancel it before quitting.
+            if self.chooser.is_none() {
+                self.request(PendingAction::Quit, &ctx);
+            }
         }
         self.outline.sync(self.document.text());
-        if self.pending.is_none() {
+        if !self.busy() {
             self.shortcuts(&ctx);
             if self.show_outline {
                 self.outline.shortcuts(&ctx, self.document.text_mut());
@@ -447,7 +491,7 @@ impl MarkdownEditor {
                         .resizable(true)
                         .default_size(280.0)
                         .show(ui, |ui| {
-                            ui.add_enabled_ui(self.pending.is_none(), |ui| {
+                            ui.add_enabled_ui(!self.busy(), |ui| {
                                 self.outline.ui(ui, self.document.text_mut());
                             });
                         });
@@ -492,6 +536,7 @@ impl MarkdownEditor {
             }
         });
         self.confirmation(&ctx);
+        self.chooser_ui(&ctx);
     }
 }
 
@@ -599,11 +644,26 @@ fn use_software_gl_on_vmware() {
 }
 
 fn main() -> eframe::Result {
+    file_chooser::install_logger();
+    let args = match cli::parse(std::env::args_os().skip(1)) {
+        Ok(cli::CliCommand::Run(args)) => args,
+        Ok(cli::CliCommand::Help) => {
+            print!("{}", cli::USAGE);
+            return Ok(());
+        }
+        Err(cli::UsageError(message)) => {
+            eprint!("error: {message}\n\n{}", cli::USAGE);
+            std::process::exit(2);
+        }
+    };
     #[cfg(target_os = "linux")]
     use_software_gl_on_vmware();
-    let mut app = MarkdownEditor::default();
-    if let Some(path) = std::env::args_os().nth(1) {
-        app.open_path(PathBuf::from(path));
+    let mut app = MarkdownEditor {
+        chooser_pref: args.chooser,
+        ..MarkdownEditor::default()
+    };
+    if let Some(path) = args.file {
+        app.open_path(path);
     }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1200.0, 800.0]),
@@ -639,6 +699,15 @@ mod ui_tests {
     use super::*;
 
     const DOC: &str = "# A\n## A1\n## A2\n## A3\n# B\n";
+
+    /// An editor that always uses the built-in chooser, so no test opens a
+    /// real system dialog whatever display it runs on.
+    fn editor() -> MarkdownEditor {
+        MarkdownEditor {
+            chooser_pref: ChooserPreference::Window,
+            ..MarkdownEditor::default()
+        }
+    }
 
     fn frame(
         ctx: &egui::Context,
@@ -687,7 +756,7 @@ mod ui_tests {
     #[test]
     fn shift_click_in_the_outline_selects_a_range() {
         let ctx = egui::Context::default();
-        let mut app = MarkdownEditor::default();
+        let mut app = editor();
         *app.document.text_mut() = DOC.to_owned();
         frame(&ctx, &mut app, vec![], egui::Modifiers::NONE);
         let mut rows = Vec::new();
@@ -721,5 +790,212 @@ mod ui_tests {
             egui::Modifiers::SHIFT,
         );
         assert_eq!(app.outline.selected_rows(), vec![1, 2, 3]);
+    }
+
+    /// A fresh, empty folder under the system temp folder for one test.
+    fn scratch(test: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "markdown-editor-test-{}-{test}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn ctrl(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        }
+    }
+
+    fn open_file(app: &mut MarkdownEditor, path: &std::path::Path, text: &str) {
+        std::fs::write(path, text).unwrap();
+        app.open_path(path.to_path_buf());
+        assert_eq!(app.document.text(), text);
+    }
+
+    #[test]
+    fn file_shortcuts_wait_while_a_chooser_is_open() {
+        let ctx = egui::Context::default();
+        let mut app = editor();
+        *app.document.text_mut() = DOC.to_owned();
+        app.start_chooser(Purpose::Open, &ctx);
+        frame(
+            &ctx,
+            &mut app,
+            vec![ctrl(egui::Key::N)],
+            egui::Modifiers::COMMAND,
+        );
+        assert_eq!(app.document.text(), DOC);
+        assert!(app.pending.is_none());
+        assert!(app.chooser.is_some());
+    }
+
+    #[test]
+    fn only_one_chooser_runs_at_a_time() {
+        let ctx = egui::Context::default();
+        let mut app = editor();
+        app.start_chooser(Purpose::Open, &ctx);
+        let first = app.chooser.as_ref().unwrap().generation;
+        app.start_chooser(Purpose::Open, &ctx);
+        assert_eq!(app.chooser.as_ref().unwrap().generation, first);
+    }
+
+    #[test]
+    fn cancelling_open_keeps_the_document() {
+        let ctx = egui::Context::default();
+        let dir = scratch("cancel-open");
+        let mut app = editor();
+        open_file(&mut app, &dir.join("a.md"), "# A\n");
+        app.start_chooser(Purpose::Open, &ctx);
+        app.finish_chooser(Outcome::Cancelled, &ctx);
+        assert!(app.chooser.is_none());
+        assert_eq!(app.document.text(), "# A\n");
+        assert_eq!(app.document.path(), Some(dir.join("a.md").as_path()));
+    }
+
+    #[test]
+    fn choosing_a_file_opens_it() {
+        let ctx = egui::Context::default();
+        let dir = scratch("choose-open");
+        let path = dir.join("plan.md");
+        std::fs::write(&path, "# Plan\n").unwrap();
+        let mut app = editor();
+        app.start_chooser(Purpose::Open, &ctx);
+        app.finish_chooser(Outcome::Chosen(path.clone()), &ctx);
+        assert_eq!(app.document.text(), "# Plan\n");
+        assert_eq!(app.document.path(), Some(path.as_path()));
+        assert!(!app.document.is_dirty());
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_opened_keeps_the_document() {
+        let ctx = egui::Context::default();
+        let dir = scratch("bad-open");
+        std::fs::write(dir.join("latin1.md"), b"caf\xe9\n").unwrap();
+        let mut app = editor();
+        open_file(&mut app, &dir.join("a.md"), "# A\n");
+        for bad in ["missing.md", "latin1.md"] {
+            app.start_chooser(Purpose::Open, &ctx);
+            app.finish_chooser(Outcome::Chosen(dir.join(bad)), &ctx);
+            assert_eq!(app.document.text(), "# A\n");
+            assert!(
+                app.error
+                    .as_deref()
+                    .unwrap()
+                    .starts_with("Could not open file"),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn open_over_unsaved_changes_asks_first() {
+        let ctx = egui::Context::default();
+        let mut app = editor();
+        *app.document.text_mut() = DOC.to_owned();
+        app.request(PendingAction::Open, &ctx);
+        assert_eq!(app.pending, Some(PendingAction::Open));
+        assert!(app.chooser.is_none());
+        // What "Discard" does once the user agrees.
+        app.pending = None;
+        app.perform(PendingAction::Open, &ctx);
+        assert_eq!(app.chooser.as_ref().unwrap().purpose, Purpose::Open);
+    }
+
+    fn save_as_new(app: &mut MarkdownEditor, ctx: &egui::Context, after: AfterSave) {
+        *app.document.text_mut() = "hello\n".to_owned();
+        assert_eq!(app.save(after, ctx), SaveStatus::Choosing);
+        assert_eq!(
+            app.chooser.as_ref().unwrap().purpose,
+            Purpose::SaveAs { after }
+        );
+    }
+
+    #[test]
+    fn saving_a_new_document_writes_the_chosen_file() {
+        let ctx = egui::Context::default();
+        let path = scratch("save-new").join("new.md");
+        let mut app = editor();
+        save_as_new(&mut app, &ctx, AfterSave::Nothing);
+        app.finish_chooser(Outcome::Chosen(path.clone()), &ctx);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello\n");
+        assert_eq!(app.document.path(), Some(path.as_path()));
+        assert!(!app.document.is_dirty());
+    }
+
+    #[test]
+    fn cancelling_save_first_cancels_the_action() {
+        let ctx = egui::Context::default();
+        let dir = scratch("cancel-save");
+        for action in [PendingAction::Quit, PendingAction::New, PendingAction::Open] {
+            let mut app = editor();
+            save_as_new(&mut app, &ctx, AfterSave::Continue(action));
+            app.finish_chooser(Outcome::Cancelled, &ctx);
+            assert!(!app.allow_close, "{action:?}");
+            assert!(app.chooser.is_none(), "{action:?}");
+            assert_eq!(app.document.text(), "hello\n", "{action:?}");
+            assert!(app.document.is_dirty(), "{action:?}");
+            assert_eq!(app.document.path(), None, "{action:?}");
+        }
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn a_failed_save_keeps_the_document_and_drops_the_action() {
+        let ctx = egui::Context::default();
+        let path = scratch("failed-save").join("no-such-folder").join("new.md");
+        let mut app = editor();
+        save_as_new(&mut app, &ctx, AfterSave::Continue(PendingAction::Quit));
+        app.finish_chooser(Outcome::Chosen(path), &ctx);
+        assert!(
+            app.error
+                .as_deref()
+                .unwrap()
+                .starts_with("Could not save file")
+        );
+        assert!(app.document.is_dirty());
+        assert!(!app.allow_close);
+    }
+
+    #[test]
+    fn save_as_over_a_file_keeps_a_backup() {
+        let ctx = egui::Context::default();
+        let dir = scratch("save-backup");
+        let path = dir.join("old.md");
+        std::fs::write(&path, "old\n").unwrap();
+        let mut app = editor();
+        save_as_new(&mut app, &ctx, AfterSave::Nothing);
+        app.finish_chooser(Outcome::Chosen(path.clone()), &ctx);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello\n");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("old.md.bak")).unwrap(),
+            "old\n"
+        );
+    }
+
+    #[test]
+    fn a_successful_save_first_runs_the_action() {
+        let ctx = egui::Context::default();
+        let path = scratch("save-then-new").join("kept.md");
+        let mut app = editor();
+        save_as_new(&mut app, &ctx, AfterSave::Continue(PendingAction::New));
+        app.finish_chooser(Outcome::Chosen(path.clone()), &ctx);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello\n");
+        assert_eq!(app.document.text(), "");
+        assert_eq!(app.document.path(), None);
+    }
+
+    #[test]
+    fn a_file_named_on_the_command_line_still_opens() {
+        let dir = scratch("cli-open");
+        let mut app = editor();
+        open_file(&mut app, &dir.join("notes.md"), "notes\n");
+        assert!(app.chooser.is_none());
     }
 }
