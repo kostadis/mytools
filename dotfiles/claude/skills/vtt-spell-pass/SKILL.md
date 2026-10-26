@@ -58,6 +58,38 @@ Two consequences to keep in mind from Phase 0 onward:
 - **`apply_replacements.py --output` is required and has no default**, and it
   refuses to write a file an existing record claims. There is no `--in-place`.
 
+## The goal is accuracy, not faithfulness to the slip
+
+**Correct a name to its canonical spelling even when the speaker fumbled it**:
+a false start, a stumble, a half-remembered name, or the GM's own slip of the
+tongue. The exception is a speaker who is **deliberately vague** or wrong in
+character: a PC who can't remember a name, an NPC lying, a joke mangling.
+Those stay as spoken.
+
+The reason is what the tape is for. The cleaned VTT is the evidence the rest
+of the pipeline uses to work out *what happened in the game*: who was met,
+which place, which item. A stumble like *"the Element of — the Elemental
+Evil"* or *"Gooding — Gundigoot"* is noise about the recording, not a fact
+about the game. Kept, it gets read later as a second name or a different
+entity. (GM, 2026-10-24: *"if there is a false start, it's better to have the
+correct spelling. Unless the speaker is being deliberately vague … the vtt is
+being used to figure out what happened in the game, and having precise
+wording matters."*)
+
+What this changes in practice:
+
+- **Card guesses** (`guess`/`guessWhy`) lean to Approve on a slip. Never
+  propose "keep as spoken" just because the speaker said it that way.
+  Propose it only with the in-fiction reason the vagueness is deliberate,
+  quoted from the surrounding cues.
+- **A false start is corrected, not deleted.** Fix the spelling of the words
+  that were said. Don't collapse a repeated phrase into one: if approving the
+  substitution would put the same phrase twice in a row, say so on the card.
+  The per-cue `was`/`now` text must stay a recognisable reading of the audio.
+- **Still one ruling per pair.** This principle sets the direction of the
+  default. It doesn't let you apply a correction the GM hasn't ruled on, and
+  it doesn't settle a spelling that isn't in the canon chain.
+
 ## Required inputs
 
 Detect or ask:
