@@ -25,6 +25,7 @@ Options:
 | `-- --chooser=window` | Opens a file literally named `--chooser=window` | — |
 | `--help` / `-h` | Prints usage to stdout | 0 |
 | `--chooser=bogus` | `error: unknown chooser 'bogus' (expected auto, system or window)` and usage, to stderr | 2 |
+| `--chooser` (no value) | `error: --chooser needs a value` and usage, to stderr | 2 |
 | `--frobnicate` | `error: unknown option '--frobnicate'` and usage, to stderr | 2 |
 | `a.md b.md` | `error: expected at most one file` and usage, to stderr | 2 |
 

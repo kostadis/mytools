@@ -9,3 +9,6 @@ description = "A small desktop Markdown editor for Linux and macOS"
 eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
 egui_commonmark = { version = "0.25.0", default-features = false }
 rfd = "0.17.2"
+egui-file-dialog = { version = "0.15.0", default-features = false, features = ["default_fonts"] }
+log = "0.4"
+pollster = "0.4"

@@ -32,6 +32,43 @@ Install Rust with rustup and Xcode Command Line Tools (`xcode-select --install`)
 | Save | Ctrl+S | Cmd+S |
 | Save As | Ctrl+Shift+S | Cmd+Shift+S |
 
+## Open and Save over SSH
+
+Open and Save As work when the editor runs on a Linux box and its window is shown on another machine with `ssh -X` or `ssh -Y`. They use one of two choosers:
+
+- **The system file dialog**, with its bookmarks and recent places. It is used only when the editor is confident its display is local: no `SSH_CONNECTION`, `SSH_CLIENT` or `SSH_TTY` in the environment, and either `WAYLAND_DISPLAY` is set or `DISPLAY` names a local socket such as `:0` or `unix:0`. On macOS, any session without those SSH variables counts as local.
+- **The built-in chooser**, drawn inside the editor's own window, in every other case: over SSH, when `DISPLAY` is a network address such as `localhost:10.0`, or when the editor can't tell.
+
+The chooser's title says which one is in use and why, for example *Built-in chooser — SSH session detected*. To force a choice for the whole run:
+
+```bash
+cargo run --release -- --chooser=window    # always the built-in chooser
+cargo run --release -- --chooser=system    # always try the system dialog first
+cargo run --release -- --help
+```
+
+While the system dialog is open, the editor keeps drawing and shows a *Waiting for the system file dialog…* panel. If the dialog appeared somewhere you can't see it, click **Use built-in chooser instead**. If the system dialog can't be opened at all, the editor switches to the built-in chooser and says so. The system dialog still needs `xdg-desktop-portal-gtk` or `zenity` from the package list above. The built-in chooser needs nothing extra.
+
+In the built-in chooser:
+
+| Action | Key |
+| --- | --- |
+| Go to your home folder and start typing a path | `~` |
+| Up one folder | Backspace or Alt+↑ (when no text field has focus) |
+| Move the selection | ↑ / ↓ |
+| Open a folder, or confirm | Enter |
+| Cancel | Esc |
+
+It lists Markdown files (`.md`, `.markdown`, `.mdown`) by default, with an *All Files* filter, and hides hidden files until you turn on *Show hidden* in its menu. Saving over an existing file asks first.
+
+Known limitations:
+
+- Typing or pasting a path that starts with `~/` doesn't work, because `~` isn't expanded in the path field. Press `~` first, then type the rest of the path ([#90](https://github.com/kostadis/mytools/issues/90)).
+- The sidebar doesn't list disks or mounts, because listing them can hang on a stalled network mount. Type the path instead.
+- Warnings and errors from the editor's libraries are now printed to stderr.
+
+Tested so far: the automated tests on Ubuntu. Checks by hand on the local desktop and over `ssh -X`/`ssh -Y` are still to be done. macOS is written for but not yet tested.
+
 The editor reads and writes UTF-8 text files. Opening a different file preserves the current document if the new file cannot be read.
 
 ## Outline panel
