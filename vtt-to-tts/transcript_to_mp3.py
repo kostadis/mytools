@@ -24,6 +24,7 @@ VOICE_MAP = {
     "Nicholas Roussos":       "en-US-RogerNeural",
     "Thomas Kolivakis":       "en-US-EricNeural",
     "george":                 "en-US-AndrewNeural",
+    "George Kolivakis":       "en-US-AndrewNeural",
     "Nikhil Reddy Mettupally": "en-US-BrianNeural",
 }
 DEFAULT_VOICE = "en-US-GuyNeural"
