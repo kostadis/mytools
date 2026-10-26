@@ -36,6 +36,7 @@ are disabled. The source, preview and outline still draw (FR-003).
 While the system dialog is open, the editor shows a small modal panel:
 
 > **Waiting for the system file dialog…**
+> *System file dialog — local display* (or *— set with --chooser*; FR-010g)
 > If it didn't appear on this screen, use the built-in chooser.
 > [ Use built-in chooser instead ]   [ Cancel ]
 

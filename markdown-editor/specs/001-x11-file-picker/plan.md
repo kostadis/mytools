@@ -80,7 +80,7 @@ Constitution version **1.1.0**.
 | V.2 Merge gate | fmt, clippy -D warnings, test; record platforms and SSH | ✅ | The quickstart's last section |
 | V.3 No panics | No `unwrap` on user input | ✅ | Paths and env values are handled as `Option`/`OsString` |
 | VI.1 Native conventions | Ctrl/Cmd, focus rules | ✅ | Existing shortcuts are kept. The chooser's own bindings apply only while it is open |
-| VI.2 Large documents | Per-frame work scales with what's visible | ✅ | Folder listing is threaded and virtualised by the crate. No per-frame whole-document work is added |
+| VI.2 Large documents | Per-frame work scales with what's visible | ✅ | Folder listing is threaded and virtualised by the crate. The crate's synchronous disk listing is turned off (R2). No per-frame whole-document work is added |
 | VI.3 Limitations documented | README | ✅ | The R2 `~/` gap is accepted (FR-008 relaxed) and documented in the README; fix tracked in mytools#90 |
 | VII.1 README | Behaviour, shortcuts, limits | ✅ | FR-014 |
 | VII.3 Commits | `markdown-editor:` prefix | ✅ | — |
@@ -96,7 +96,7 @@ above.
 
 | Crate | Why | Licence | Linux/macOS | Over X11 forwarding |
 |-------|-----|---------|-------------|---------------------|
-| `egui-file-dialog` 0.15.0 | The in-window chooser. A hand-built one would be about 600–900 new lines, with a high complexity risk (R2) | MIT | Yes (`directories`, `dunce`, `sysinfo`) | Yes: it draws with egui inside the editor window |
+| `egui-file-dialog` 0.15.0 | The in-window chooser. A hand-built one would be about 600–900 new lines, with a high complexity risk (R2). Its disk sidebar is turned off (`show_devices = false`) because it lists mounts on the UI thread, which a hung network mount would freeze | MIT | Yes (`directories`, `dunce`, `sysinfo`) | Yes: it draws with egui inside the editor window |
 | `pollster` 0.4 | Runs `rfd::AsyncFileDialog` on a worker thread (R4) | MIT/Apache-2.0 | Yes, no dependencies | n/a (no UI) |
 | `log` 0.4 | Spots `rfd` failures, since `rfd` returns `None` for errors too (R5) | MIT/Apache-2.0 | Yes | n/a |
 

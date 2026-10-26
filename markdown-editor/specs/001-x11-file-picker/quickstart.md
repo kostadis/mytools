@@ -79,6 +79,24 @@ Repeat steps 1–2 with `ssh -Y`, and inside `tmux` started after you SSH in
    and scroll smoothly.
 4. Type a path that doesn't exist. **Expect**: a message, and the chooser
    stays open.
+5. Edge cases. Set up once on the host:
+   ```bash
+   mkdir -p ~/mdtest/edge/locked ~/mdtest/edge/real
+   chmod 000 ~/mdtest/edge/locked
+   printf '# Linked\n' > ~/mdtest/edge/real/target.md
+   ln -s real ~/mdtest/edge/dirlink
+   ln -s real/target.md ~/mdtest/edge/filelink.md
+   ln -s nowhere.md ~/mdtest/edge/broken.md
+   touch "$HOME/mdtest/edge/$(printf 'caf\xe9.md')"
+   ```
+   - Enter `locked`. **Expect**: a readable message; you can go back up.
+   - Enter `dirlink`. **Expect**: it lists `target.md`. Open `filelink.md`.
+     **Expect**: `# Linked`. `broken.md` is listed but can't be opened.
+   - `caf?.md` (non-UTF-8 name) is listed in a readable form and can be
+     chosen. It is empty, so it opens.
+   - Resize the editor window while the chooser is open. **Expect**: the
+     chooser stays fully visible and usable.
+   - Afterwards: `chmod 755 ~/mdtest/edge/locked`.
 
 ## Scenario 4: Local desktop and overrides (US4, SC-008)
 

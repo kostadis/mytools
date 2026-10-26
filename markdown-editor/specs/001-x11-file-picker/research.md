@@ -54,7 +54,12 @@ except `default_fonts`.
   - **`allow_path_edit_to_save_file_without_extension`**: set to true so
     Save writes exactly the name typed (spec Assumption).
 - Its new transitive dependencies are `directories`, `dunce` and `sysinfo`
-  (disk listing for the sidebar). All are pure Rust or system-library
+  (disk listing for the sidebar). **Caveat (found in /speckit-analyze)**:
+  the disk list is built synchronously in `FileDialog::refresh()` each time
+  the dialog opens, with `sysinfo::Disks::new_with_refreshed_list()` and a
+  canonicalise per mount. A hung NFS or SSHFS mount would block the UI
+  thread (FR-003). The editor sets `show_devices = false`; home and the
+  user folders in the sidebar are still shown. All are pure Rust or system-library
   wrappers that support Linux and macOS.
 
 **Alternatives considered**
@@ -160,9 +165,16 @@ where `NSOpenPanel` must run on the main thread). Rejected.
 
 ## R5. Detecting a failed system dialog (FR-010d)
 
-**Decision**: install a small `log::Log` implementation at startup. It
-writes `warn` and higher to stderr, and counts `error`-level records whose
-target starts with `rfd`. Each system-dialog request remembers the count
+**Decision**: install a small `log::Log` implementation at startup and set
+`log::set_max_level(Warn)` (the `log` crate drops every record until a max
+level is set). It writes `warn` and higher to stderr, and counts only the
+`error` record `rfd` logs when its zenity fallback fails (`target ==
+"rfd::backend::xdg_desktop_portal"`, message `"Failed to … with zenity:
+…"`). In `rfd` 0.17.2 every failure that leaves no dialog on screen ends
+with that record: a portal that can't be reached logs its own error and
+then always tries zenity. Counting the earlier portal errors as well would
+class "portal failed, zenity opened, user cancelled" as a failure and
+open the built-in chooser after a cancel. Each system-dialog request remembers the count
 when it starts. If the reply is `None` **and** the count has gone up, the
 request failed. The editor shows "The system file dialog could not be
 opened; using the built-in chooser" and opens the in-window chooser for the
