@@ -112,8 +112,8 @@ T016 and T022–T024 passing.
 
 ### Tests for User Story 2 (write first, must fail)
 
-- [ ] T015 [P] [US2] Move `enum Pane { Outline, Source, Preview }` from `src/main.rs` into `src/panes.rs` as `pub enum Pane`, and import it in `main.rs`. No behaviour change; `cargo test` stays green.
-- [ ] T016 [P] [US2] Write unit tests in `#[cfg(test)] mod tests` of `src/panes.rs` for `Panes` (data-model.md). They should fail until T017:
+- [X] T015 [P] [US2] Move `enum Pane { Outline, Source, Preview }` from `src/main.rs` into `src/panes.rs` as `pub enum Pane`, and import it in `main.rs`. No behaviour change; `cargo test` stays green.
+- [X] T016 [P] [US2] Write unit tests in `#[cfg(test)] mod tests` of `src/panes.rs` for `Panes` (data-model.md). They should fail until T017:
   - the default shows all three panes;
   - `set(Source, false)` returns true and hides it;
   - with only Preview shown, `set(Preview, false)` returns false and changes nothing, and `can_hide(Preview)` is false;
@@ -121,30 +121,30 @@ T016 and T022–T024 passing.
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] Implement `#[derive(Clone, Copy, PartialEq, Debug)] pub struct Panes { outline: bool, editor: bool, preview: bool }` in `src/panes.rs`, with `Default` (all true), `is_shown(Pane)`, `can_hide(Pane)`, `set(Pane, bool) -> bool`, and a `shown_count()` helper. Fields are private, so the invariant can only change through `set`. T016 must pass.
-- [ ] T018 [US2] Replace `show_outline` and `show_preview` with `panes: Panes` in `MarkdownEditor` in `src/main.rs`, and update every read (`draw`, outline shortcuts gating) to `self.panes.is_shown(…)`. No behaviour change yet.
-- [ ] T019 [US2] Rewrite the pane checkboxes in `fn toolbar` in `src/main.rs`: three checkboxes, in the order Outline, Editor, Preview (contracts/ui.md). Each one reads `is_shown` into a local bool, is drawn with `ui.add_enabled(self.panes.can_hide(p) || !shown, egui::Checkbox::new(…))` and `.on_disabled_hover_text("At least one pane must stay visible")`, and on change calls a new `fn set_pane(&mut self, pane, shown, ctx)`.
-- [ ] T020 [US2] Implement `fn set_pane` in `src/main.rs`. It calls `self.panes.set`. Hiding the editor runs `ctx.memory_mut(|m| m.surrender_focus(SOURCE_EDIT_ID))` and sets `self.source_target = None`. Hiding the preview sets `self.preview_target = None`, which moves today's `else` branch here. In `fn navigate`, only set `source_target` when the editor is shown and `preview_target` when the preview is shown (research R6), so showing a pane again restores its position rather than jumping.
-- [ ] T021 [US2] Give the editor's widgets stable Ids in `src/main.rs`:
+- [X] T017 [US2] Implement `#[derive(Clone, Copy, PartialEq, Debug)] pub struct Panes { outline: bool, editor: bool, preview: bool }` in `src/panes.rs`, with `Default` (all true), `is_shown(Pane)`, `can_hide(Pane)`, `set(Pane, bool) -> bool`, and a `shown_count()` helper. Fields are private, so the invariant can only change through `set`. T016 must pass.
+- [X] T018 [US2] Replace `show_outline` and `show_preview` with `panes: Panes` in `MarkdownEditor` in `src/main.rs`, and update every read (`draw`, outline shortcuts gating) to `self.panes.is_shown(…)`. No behaviour change yet.
+- [X] T019 [US2] Rewrite the pane checkboxes in `fn toolbar` in `src/main.rs`: three checkboxes, in the order Outline, Editor, Preview (contracts/ui.md). Each one reads `is_shown` into a local bool, is drawn with `ui.add_enabled(self.panes.can_hide(p) || !shown, egui::Checkbox::new(…))` and `.on_disabled_hover_text("At least one pane must stay visible")`, and on change calls a new `fn set_pane(&mut self, pane, shown, ctx)`.
+- [X] T020 [US2] Implement `fn set_pane` in `src/main.rs`. It calls `self.panes.set`. Hiding the editor runs `ctx.memory_mut(|m| m.surrender_focus(SOURCE_EDIT_ID))` and sets `self.source_target = None`. Hiding the preview sets `self.preview_target = None`, which moves today's `else` branch here. In `fn navigate`, only set `source_target` when the editor is shown and `preview_target` when the preview is shown (research R6), so showing a pane again restores its position rather than jumping.
+- [X] T021 [US2] Give the editor's widgets stable Ids in `src/main.rs`:
   - Add `const SOURCE_EDIT_ID: &str = "source_text";` and use `.id(egui::Id::new(SOURCE_EDIT_ID))` on the `TextEdit` in `fn source_editor`.
   - Use one `id_salt("source")` for the source `ScrollArea` in every layout, which removes `"source_only"`.
   - Use one `id_salt("preview")` for the preview `ScrollArea` in every layout.
 
   Comment that egui keys the persisted cursor and scroll state by these Ids (research R6).
-- [ ] T022 [US2] Extract the content-area layout from `fn draw` into `fn panes_ui(&mut self, ui, ctx)` in `src/main.rs`, implementing the research R7 table:
+- [X] T022 [US2] Extract the content-area layout from `fn draw` into `fn panes_ui(&mut self, ui, ctx)` in `src/main.rs`, implementing the research R7 table:
   - The outline is a left `Panel` when it is shown and anything else is shown. When it is the only pane, `self.outline.ui` fills the area directly.
   - Editor and preview: `ui.columns(2)` as today. Editor only: the source scroll area fills. Preview only: the preview scroll area fills, with its "Preview" heading kept.
 
   Keep the `take_focus` and `navigate` call between the outline and the other panes. `draw` calls `panes_ui` inside the existing `allocate_ui_with_layout`. Keep the function under cognitive complexity ~25 (IV.4).
-- [ ] T023 [US2] Headless test `hiding_editor_keeps_text_dirty_and_cursor` in `mod ui_tests`, `src/main.rs`:
+- [X] T023 [US2] Headless test `hiding_editor_keeps_text_dirty_and_cursor` in `mod ui_tests`, `src/main.rs`:
   - Load a 300-line document and mark it dirty.
   - Put the cursor on line 150 by storing a `TextEditState` with a `CCursorRange` through `TextEditState::store` with `SOURCE_EDIT_ID`, and set the source `ScrollArea` offset by clicking or wheeling.
   - Hide the editor with `set_pane(Source, false)` and run 3 frames. Assert that the text, dirty flag and file path are unchanged and that no widget has focus (`ctx.memory(|m| m.focused())` is `None`).
   - Click an outline row while the editor is hidden (it must not move the editor later).
   - Show the editor again and run 3 frames. Assert that `TextEditState::load` returns the same cursor and that the source scroll offset is unchanged (FR-003, FR-004, SC-003).
-- [ ] T024 [US2] Headless test `last_visible_pane_cannot_be_hidden` in `src/main.rs`. Hide the outline and the editor, then try to hide the preview through `set_pane`: the preview stays shown. Run one frame and assert the toolbar's Preview checkbox is disabled, by clicking it with the existing `click()` helper and checking that `panes` is unchanged (FR-007).
-- [ ] T025 [US2] Headless test `outline_edit_with_editor_hidden_updates_text` in `src/main.rs`. Hide the editor, then trigger an outline promote with the existing outline shortcut `]` on a selected row (as in the shift-click test's setup), and assert that the source text changed accordingly. Also assert that `Ctrl+S` with the editor hidden goes through the same save path, using the built-in chooser test pattern from the existing save tests (FR-005).
-- [ ] T026 [US2] Update `README.md` (VII.1): the "Synced panes" or a new "Panes" paragraph names the three toolbar toggles, says one must stay on (the last one is greyed out, with a hover reason), says the editor keeps its cursor and scroll position while hidden, and says visibility is not remembered between runs.
+- [X] T024 [US2] Headless test `last_visible_pane_cannot_be_hidden` in `src/main.rs`. Hide the outline and the editor, then try to hide the preview through `set_pane`: the preview stays shown. Run one frame and assert the toolbar's Preview checkbox is disabled, by clicking it with the existing `click()` helper and checking that `panes` is unchanged (FR-007).
+- [X] T025 [US2] Headless test `outline_edit_with_editor_hidden_updates_text` in `src/main.rs`. Hide the editor, then trigger an outline promote with the existing outline shortcut `]` on a selected row (as in the shift-click test's setup), and assert that the source text changed accordingly. Also assert that `Ctrl+S` with the editor hidden goes through the same save path, using the built-in chooser test pattern from the existing save tests (FR-005).
+- [X] T026 [US2] Update `README.md` (VII.1): the "Synced panes" or a new "Panes" paragraph names the three toolbar toggles, says one must stay on (the last one is greyed out, with a hover reason), says the editor keeps its cursor and scroll position while hidden, and says visibility is not remembered between runs.
 
 **Checkpoint**: US2 is complete. `cargo test` passes and quickstart steps 3 to 5 work.
 

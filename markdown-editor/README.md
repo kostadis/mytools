@@ -85,6 +85,10 @@ Saving over an existing file first copies it to `<name>.bak`.
 
 Clicking in any pane brings the other two to the same place: an outline row scrolls the source and preview to that heading, and a click in the source or preview selects the enclosing section in the outline and scrolls the remaining pane to match. Clicks on a heading line up exactly; clicks inside a section map proportionally within it. The preview is rendered one section at a time to make this possible, so footnotes defined in a different section do not resolve (reference-style links do).
 
+## Panes
+
+The **Outline**, **Editor** and **Preview** checkboxes in the toolbar show and hide the three panes, and the panes still shown fill the window. Hide the editor for a reading layout (preview alone, or outline and preview); the outline still edits the document, the preview still follows outline clicks, and New, Open, Save and the unsaved-changes prompts work as usual. When the editor comes back, its cursor and scroll position are where you left them. At least one pane always stays visible: the last one's checkbox is greyed out. Which panes are shown is not remembered between runs.
+
 ## Preview layout
 
 Paragraphs, lists, quotes and headings in the preview wrap to the pane's width, and a URL or word wider than the pane is broken across lines. Tables and code blocks keep their lines whole: one wider than the pane gets its own horizontal scroll bar (drag it, or Shift+scroll), and the text after it still wraps at the pane's edge. Code blocks have no copy button; select the text and press Ctrl/Cmd+C.

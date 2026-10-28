@@ -14,7 +14,13 @@ use eframe::egui;
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use file_chooser::{AfterSave, ChooserRequest, Outcome, PendingAction, Purpose};
 use outline_panel::OutlinePanel;
+use panes::{Pane, Panes};
 use std::path::PathBuf;
+
+/// The source editor's egui id. Fixed, not derived from its parent, because
+/// egui keys the editor's saved cursor by id and the layout around it changes
+/// as panes are shown and hidden.
+const SOURCE_EDIT_ID: &str = "source_text";
 
 /// Preview font sizes for `#` through `######`, proportioned on a reference
 /// rendering whose cap heights ran 43, 35, 32, 28 and 26 px for H1–H5 (H6
@@ -42,20 +48,14 @@ enum SaveStatus {
     Choosing,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum Pane {
-    Outline,
-    Source,
-    Preview,
-}
-
 struct MarkdownEditor {
     document: Document,
     preview_cache: CommonMarkCache,
     /// Each outline block's preview body, split into chunks once per edit.
     preview_sections: PreviewSections,
     outline: OutlinePanel,
-    show_outline: bool,
+    /// Which of the outline, source and preview panes are shown.
+    panes: Panes,
     /// Font family for preview headings: a loaded bold font, or Proportional.
     heading_family: egui::FontFamily,
     /// Byte offset the source pane should scroll to on its next draw.
@@ -69,12 +69,14 @@ struct MarkdownEditor {
     /// The `--chooser` option, applied to every Open and Save As.
     chooser_pref: ChooserPreference,
     error: Option<String>,
-    show_preview: bool,
     allow_close: bool,
     /// The preview scroll area's viewport and content width on the last
     /// frame, for tests that check nothing runs past the pane's edge.
     #[cfg(test)]
     last_preview_extent: (egui::Rect, f32),
+    /// The source scroll area's vertical offset on the last frame it was drawn.
+    #[cfg(test)]
+    last_source_offset: f32,
 }
 
 impl Default for MarkdownEditor {
@@ -84,7 +86,7 @@ impl Default for MarkdownEditor {
             preview_cache: CommonMarkCache::default(),
             preview_sections: PreviewSections::default(),
             outline: OutlinePanel::default(),
-            show_outline: true,
+            panes: Panes::default(),
             heading_family: egui::FontFamily::Proportional,
             source_target: None,
             preview_target: None,
@@ -93,10 +95,11 @@ impl Default for MarkdownEditor {
             next_generation: 0,
             chooser_pref: ChooserPreference::Auto,
             error: None,
-            show_preview: true,
             allow_close: false,
             #[cfg(test)]
             last_preview_extent: (egui::Rect::NOTHING, 0.0),
+            #[cfg(test)]
+            last_source_offset: 0.0,
         }
     }
 }
@@ -213,6 +216,24 @@ impl MarkdownEditor {
 
     /// Bring the panes other than `from` to `fraction` of the way through block
     /// `block`, where 0 means its heading line.
+    /// Show or hide a pane. A hidden pane drops any scroll it was about to
+    /// make, so when it comes back it is where it was rather than at the last
+    /// place another pane navigated to. A hidden editor also gives up keyboard
+    /// focus at once, so no keystroke reaches a text field nobody can see.
+    fn set_pane(&mut self, pane: Pane, shown: bool, ctx: &egui::Context) {
+        if !self.panes.set(pane, shown) || shown {
+            return;
+        }
+        match pane {
+            Pane::Source => {
+                self.source_target = None;
+                ctx.memory_mut(|m| m.surrender_focus(egui::Id::new(SOURCE_EDIT_ID)));
+            }
+            Pane::Preview => self.preview_target = None,
+            Pane::Outline => {}
+        }
+    }
+
     fn navigate(&mut self, from: Pane, block: usize, fraction: f32, ctx: &egui::Context) {
         let text = self.document.text();
         let blocks = self.outline.blocks();
@@ -220,7 +241,7 @@ impl MarkdownEditor {
             return;
         }
         let span = outline::block_span(blocks, block, text.len());
-        if from != Pane::Source {
+        if from != Pane::Source && self.panes.is_shown(Pane::Source) {
             let mut pos = span.start;
             if fraction > 0.0 {
                 let guess = span.start + (span.len() as f32 * fraction) as usize;
@@ -237,7 +258,7 @@ impl MarkdownEditor {
             };
             self.source_target = Some((pos, align));
         }
-        if from != Pane::Preview {
+        if from != Pane::Preview && self.panes.is_shown(Pane::Preview) {
             self.preview_target = Some((block, fraction));
         }
         if from != Pane::Outline {
@@ -250,6 +271,7 @@ impl MarkdownEditor {
         let output = ui
             .add_enabled_ui(!self.busy(), |ui| {
                 egui::TextEdit::multiline(self.document.text_mut())
+                    .id(egui::Id::new(SOURCE_EDIT_ID))
                     .code_editor()
                     .desired_width(f32::INFINITY)
                     .desired_rows(40)
@@ -290,12 +312,78 @@ impl MarkdownEditor {
         }
     }
 
-    /// The preview pane: its heading and its scrolling rendered document.
+    /// Lay out whichever panes are shown: the outline as a left side panel
+    /// next to the others, or filling the area when it is the only one; the
+    /// editor and preview side by side, or whichever one is shown alone.
+    fn panes_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let editor = self.panes.is_shown(Pane::Source);
+        let preview = self.panes.is_shown(Pane::Preview);
+        if self.panes.is_shown(Pane::Outline) {
+            if editor || preview {
+                egui::Panel::left("outline")
+                    .resizable(true)
+                    .default_size(280.0)
+                    .show(ui, |ui| self.outline_pane(ui));
+            } else {
+                self.outline_pane(ui);
+            }
+        }
+        if let Some(block) = self.outline.take_focus() {
+            self.navigate(Pane::Outline, block, 0.0, ctx);
+        }
+        match (editor, preview) {
+            (true, true) => ui.columns(2, |columns| {
+                self.source_pane(&mut columns[0]);
+                self.preview_pane(&mut columns[1]);
+            }),
+            (true, false) => self.source_pane(ui),
+            (false, true) => self.preview_pane(ui),
+            (false, false) => {}
+        }
+    }
+
+    fn outline_pane(&mut self, ui: &mut egui::Ui) {
+        ui.add_enabled_ui(!self.busy(), |ui| {
+            self.outline.ui(ui, self.document.text_mut());
+        });
+    }
+
+    /// The source pane: its heading and its scrolling text editor. Drawn in a
+    /// scope with a fixed id so its scroll area has the same id in every
+    /// layout: egui derives that id from the parent, keys the saved scroll
+    /// offset by it, and the editor must come back where it was (FR-004).
+    fn source_pane(&mut self, ui: &mut egui::Ui) {
+        ui.scope_builder(
+            egui::UiBuilder::new().id(egui::Id::new("source_pane")),
+            |ui| {
+                ui.heading("Markdown");
+                let output = egui::ScrollArea::vertical()
+                    .id_salt("source")
+                    .show(ui, |ui| self.source_editor(ui));
+                #[cfg(test)]
+                {
+                    self.last_source_offset = output.state.offset.y;
+                }
+                #[cfg(not(test))]
+                let _ = output;
+            },
+        );
+    }
+
+    /// The preview pane: its heading and its scrolling rendered document, in a
+    /// fixed-id scope for the same reason as `source_pane`.
     fn preview_pane(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Preview");
-        let output = egui::ScrollArea::vertical()
-            .id_salt("preview")
-            .show(ui, |ui| self.preview(ui));
+        let output = ui
+            .scope_builder(
+                egui::UiBuilder::new().id(egui::Id::new("preview_pane")),
+                |ui| {
+                    ui.heading("Preview");
+                    egui::ScrollArea::vertical()
+                        .id_salt("preview")
+                        .show(ui, |ui| self.preview(ui))
+                },
+            )
+            .inner;
         #[cfg(test)]
         {
             self.last_preview_extent = (output.inner_rect, output.content_size.x);
@@ -433,8 +521,22 @@ impl MarkdownEditor {
                 }
             });
             ui.separator();
-            ui.checkbox(&mut self.show_outline, "Outline");
-            ui.checkbox(&mut self.show_preview, "Preview");
+            for (pane, label) in [
+                (Pane::Outline, "Outline"),
+                (Pane::Source, "Editor"),
+                (Pane::Preview, "Preview"),
+            ] {
+                let mut shown = self.panes.is_shown(pane);
+                let toggle = ui
+                    .add_enabled(
+                        self.panes.can_hide(pane),
+                        egui::Checkbox::new(&mut shown, label),
+                    )
+                    .on_disabled_hover_text("At least one pane must stay visible");
+                if toggle.changed() {
+                    self.set_pane(pane, shown, ctx);
+                }
+            }
             ui.separator();
             ui.label(
                 self.document
@@ -492,7 +594,7 @@ impl MarkdownEditor {
         self.outline.sync(self.document.text());
         if !self.busy() {
             self.shortcuts(&ctx);
-            if self.show_outline {
+            if self.panes.is_shown(Pane::Outline) {
                 self.outline.shortcuts(&ctx, self.document.text_mut());
             }
         }
@@ -505,35 +607,7 @@ impl MarkdownEditor {
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), content_height),
             egui::Layout::top_down(egui::Align::Min),
-            |ui| {
-                if self.show_outline {
-                    egui::Panel::left("outline")
-                        .resizable(true)
-                        .default_size(280.0)
-                        .show(ui, |ui| {
-                            ui.add_enabled_ui(!self.busy(), |ui| {
-                                self.outline.ui(ui, self.document.text_mut());
-                            });
-                        });
-                }
-                if let Some(block) = self.outline.take_focus() {
-                    self.navigate(Pane::Outline, block, 0.0, &ctx);
-                }
-                if self.show_preview {
-                    ui.columns(2, |columns| {
-                        columns[0].heading("Markdown");
-                        egui::ScrollArea::vertical()
-                            .id_salt("source")
-                            .show(&mut columns[0], |ui| self.source_editor(ui));
-                        self.preview_pane(&mut columns[1]);
-                    });
-                } else {
-                    self.preview_target = None;
-                    egui::ScrollArea::vertical()
-                        .id_salt("source_only")
-                        .show(ui, |ui| self.source_editor(ui));
-                }
-            },
+            |ui| self.panes_ui(ui, &ctx),
         );
 
         ui.separator();
@@ -1229,6 +1303,163 @@ mod ui_tests {
         let third_row = egui::pos2(rect.left() + 10.0, rect.top() + row_height * 2.5);
         click(&ctx, &mut app, third_row, egui::Modifiers::NONE);
         assert_eq!(app.outline.selected_rows(), vec![1]);
+    }
+
+    fn source_cursor(ctx: &egui::Context) -> Option<usize> {
+        egui::text_edit::TextEditState::load(ctx, egui::Id::new(SOURCE_EDIT_ID))
+            .and_then(|state| state.cursor.char_range())
+            .map(|range| range.primary.index.into())
+    }
+
+    #[test]
+    fn hiding_editor_keeps_text_dirty_and_cursor() {
+        let ctx = egui::Context::default();
+        let mut app = editor();
+        let text: String = (0..300).map(|n| format!("line {n}\n")).collect();
+        *app.document.text_mut() = format!("# Doc\n{text}");
+        frame(&ctx, &mut app, vec![], egui::Modifiers::NONE);
+
+        // Put the cursor on line 150, give the editor focus, and scroll it.
+        let id = egui::Id::new(SOURCE_EDIT_ID);
+        let mut state = egui::text_edit::TextEditState::load(&ctx, id).unwrap_or_default();
+        let cursor = app.document.text().find("line 150").unwrap();
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::one(
+                egui::text::CCursor::new(cursor),
+            )));
+        state.store(&ctx, id);
+        ctx.memory_mut(|m| m.request_focus(id));
+        let over_source = egui::pos2(500.0, 400.0);
+        for _ in 0..5 {
+            let wheel = egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -400.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: egui::Modifiers::NONE,
+            };
+            frame(
+                &ctx,
+                &mut app,
+                vec![egui::Event::PointerMoved(over_source), wheel],
+                egui::Modifiers::NONE,
+            );
+        }
+        // egui animates wheel scrolling over about 20 frames; let it finish.
+        for _ in 0..30 {
+            frame(&ctx, &mut app, vec![], egui::Modifiers::NONE);
+        }
+        let offset = app.last_source_offset;
+        assert!(offset > 100.0, "the editor did not scroll: {offset}");
+        assert!(
+            ctx.memory(|m| m.has_focus(id)),
+            "the editor never had focus"
+        );
+        let before = app.document.text().to_owned();
+        assert!(app.document.is_dirty());
+
+        app.set_pane(Pane::Source, false, &ctx);
+        assert!(
+            !ctx.memory(|m| m.has_focus(id)),
+            "hiding kept the editor focused"
+        );
+        for _ in 0..3 {
+            frame(&ctx, &mut app, vec![], egui::Modifiers::NONE);
+        }
+        assert_eq!(ctx.memory(|m| m.focused()), None);
+        assert_eq!(app.document.text(), before);
+        assert!(app.document.is_dirty());
+        assert_eq!(app.document.path(), None);
+
+        // An outline click while hidden must not move the editor later.
+        app.outline.reveal(0);
+        app.navigate(Pane::Outline, 0, 0.0, &ctx);
+        assert!(app.source_target.is_none());
+
+        app.set_pane(Pane::Source, true, &ctx);
+        for _ in 0..3 {
+            frame(&ctx, &mut app, vec![], egui::Modifiers::NONE);
+        }
+        assert_eq!(source_cursor(&ctx), Some(cursor));
+        assert!(
+            (app.last_source_offset - offset).abs() < 1.0,
+            "scroll moved from {offset} to {}",
+            app.last_source_offset
+        );
+
+        // Hiding the preview moves the editor into another layout; it still
+        // keeps its place, which it did not before the panes had fixed ids.
+        app.set_pane(Pane::Preview, false, &ctx);
+        for _ in 0..3 {
+            frame(&ctx, &mut app, vec![], egui::Modifiers::NONE);
+        }
+        assert_eq!(source_cursor(&ctx), Some(cursor));
+        assert!(
+            (app.last_source_offset - offset).abs() < 1.0,
+            "hiding the preview moved the editor's scroll from {offset} to {}",
+            app.last_source_offset
+        );
+    }
+
+    #[test]
+    fn last_visible_pane_cannot_be_hidden() {
+        let ctx = egui::Context::default();
+        let mut app = editor();
+        *app.document.text_mut() = DOC.to_owned();
+        app.set_pane(Pane::Outline, false, &ctx);
+        app.set_pane(Pane::Source, false, &ctx);
+        app.set_pane(Pane::Preview, false, &ctx);
+        assert!(app.panes.is_shown(Pane::Preview));
+
+        // Clicking the greyed-out Preview toggle changes nothing either.
+        let shapes = render(&ctx, &mut app, 1200.0);
+        let label = shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.text() == "Preview" => {
+                    Some(text.galley.rect.translate(text.pos.to_vec2()))
+                }
+                _ => None,
+            })
+            .expect("Preview toggle not drawn");
+        let before = app.panes;
+        click(&ctx, &mut app, label.center(), egui::Modifiers::NONE);
+        assert_eq!(app.panes, before);
+        assert!(app.panes.is_shown(Pane::Preview));
+    }
+
+    #[test]
+    fn outline_edit_with_editor_hidden_updates_text_and_saves() {
+        let dir = scratch("outline-edit-editor-hidden");
+        let path = dir.join("doc.md");
+        let ctx = egui::Context::default();
+        let mut app = editor();
+        open_file(&mut app, &path, DOC);
+        app.set_pane(Pane::Source, false, &ctx);
+        frame(&ctx, &mut app, vec![], egui::Modifiers::NONE);
+
+        // Demote "## A2" (block 2) to H3 with the outline's `]` key.
+        app.outline.reveal(2);
+        frame(
+            &ctx,
+            &mut app,
+            vec![egui::Event::Text("]".to_owned())],
+            egui::Modifiers::NONE,
+        );
+        assert_eq!(app.document.text(), "# A\n## A1\n### A2\n## A3\n# B\n");
+
+        frame(
+            &ctx,
+            &mut app,
+            vec![ctrl(egui::Key::S)],
+            egui::Modifiers::COMMAND,
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "# A\n## A1\n### A2\n## A3\n# B\n"
+        );
+        assert!(!app.document.is_dirty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
