@@ -523,7 +523,7 @@ impl MarkdownEditor {
             ui.separator();
             for (pane, label) in [
                 (Pane::Outline, "Outline"),
-                (Pane::Source, "Editor"),
+                (Pane::Source, "Markdown"),
                 (Pane::Preview, "Preview"),
             ] {
                 let mut shown = self.panes.is_shown(pane);

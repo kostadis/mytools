@@ -6,10 +6,10 @@ headless egui tests and by the hand checks in [quickstart.md](../quickstart.md).
 ## Toolbar toggles
 
 ```
-[New] [Open…] [Save] [Save As…] | [x] Outline  [x] Editor  [x] Preview | <file name>
+[New] [Open…] [Save] [Save As…] | [x] Outline  [x] Markdown  [x] Preview | <file name>
 ```
 
-- Three checkboxes in this order. **Editor** is new and sits between the existing two.
+- Three checkboxes in this order. **Markdown** (the editor, labelled like its pane heading) is new and sits between the existing two.
 - A checkbox that is the only one ticked is drawn **disabled**, and hovering over
   it shows: *"At least one pane must stay visible"*.
 - Toggles are mouse-only, as today. No new keyboard shortcut.

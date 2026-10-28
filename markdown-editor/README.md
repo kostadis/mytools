@@ -87,7 +87,7 @@ Clicking in any pane brings the other two to the same place: an outline row scro
 
 ## Panes
 
-The **Outline**, **Editor** and **Preview** checkboxes in the toolbar show and hide the three panes, and the panes still shown fill the window. Hide the editor for a reading layout (preview alone, or outline and preview); the outline still edits the document, the preview still follows outline clicks, and New, Open, Save and the unsaved-changes prompts work as usual. When the editor comes back, its cursor and scroll position are where you left them. At least one pane always stays visible: the last one's checkbox is greyed out. Which panes are shown is not remembered between runs.
+The **Outline**, **Markdown** (the editor) and **Preview** checkboxes in the toolbar show and hide the three panes, and the panes still shown fill the window. Hide the editor for a reading layout (preview alone, or outline and preview); the outline still edits the document, the preview still follows outline clicks, and New, Open, Save and the unsaved-changes prompts work as usual. When the editor comes back, its cursor and scroll position are where you left them. At least one pane always stays visible: the last one's checkbox is greyed out. Which panes are shown is not remembered between runs.
 
 ## Preview layout
 

@@ -60,16 +60,16 @@ Text after the code block wraps too.
    - Resize the window: everything wraps again to the new width.
 2. Click "Second section" in the preview. The outline selects it and the editor
    scrolls to it.
-3. Put the cursor mid-way down the editor and scroll a little. Untick **Editor**.
+3. Put the cursor mid-way down the editor and scroll a little. Untick **Markdown**.
    The outline and preview fill the window.
    - Promote a heading in the outline. The preview updates.
    - Click an outline row. The preview follows.
    - Untick **Outline**. The preview fills the window, and **Preview** is now
      greyed out and its hover text says why.
    - Ctrl+S saves. Closing with unsaved changes asks first.
-4. Tick **Editor** again. The cursor and scroll position are where you left them,
+4. Tick **Markdown** again. The cursor and scroll position are where you left them,
    and the earlier promote shows in the text.
-5. Untick **Editor** and **Preview** with **Outline** ticked. The outline fills
+5. Untick **Markdown** and **Preview** with **Outline** ticked. The outline fills
    the whole area.
 6. Save the file and compare it with `git diff --no-index` against a copy saved
    without any toggling. There should be no difference (SC-005).
