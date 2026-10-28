@@ -5,6 +5,8 @@ mod file_chooser;
 mod html_table;
 mod outline;
 mod outline_panel;
+mod panes;
+mod preview_blocks;
 
 use chooser_mode::{ChooserPreference, DisplayEnv};
 use document::Document;
@@ -817,6 +819,163 @@ mod ui_tests {
         std::fs::write(path, text).unwrap();
         app.open_path(path.to_path_buf());
         assert_eq!(app.document.text(), text);
+    }
+
+    /// The constitution's VI.2 baseline document: at least 40,000 lines shaped
+    /// like a long legal text. It has numbered headings nested down to H6, long
+    /// paragraphs with cross-references and reference links, pipe tables with a
+    /// long cell, HTML tables and fenced code blocks with a long line. It is
+    /// built by arithmetic, not randomness, so every run times the same text.
+    fn legal_fixture() -> String {
+        const WORDS: [&str; 16] = [
+            "the",
+            "party",
+            "shall",
+            "notwithstanding",
+            "provided",
+            "agreement",
+            "herein",
+            "obligation",
+            "pursuant",
+            "to",
+            "any",
+            "clause",
+            "of",
+            "such",
+            "termination",
+            "licensee",
+        ];
+        const LEVELS: [usize; 17] = [1, 2, 3, 4, 5, 6, 6, 5, 4, 5, 6, 3, 4, 2, 3, 4, 5];
+        let mut out = String::new();
+        let mut lines = 0;
+        let mut numbers = [0usize; 6];
+        let mut k = 0usize;
+        let (mut tables, mut html, mut code) = (0, 0, 0);
+        while lines < 40_000 {
+            let level = LEVELS[k % LEVELS.len()];
+            numbers[level - 1] += 1;
+            numbers[level..].iter_mut().for_each(|n| *n = 0);
+            let number: Vec<String> = numbers[..level]
+                .iter()
+                .map(|n| n.max(&1).to_string())
+                .collect();
+            out.push_str(&format!(
+                "{} {} Clause {k}\n\n",
+                "#".repeat(level),
+                number.join(".")
+            ));
+            lines += 2;
+            for p in 0..1 + k % 2 {
+                let len = 300 + (k * 37 + p * 101) % 500;
+                let mut para = String::new();
+                let mut w = k + p;
+                while para.len() < len {
+                    para.push_str(WORDS[w % WORDS.len()]);
+                    para.push(' ');
+                    w = w * 5 + 3;
+                }
+                out.push_str(&format!(
+                    "{para}as set out in [the Act][ref{}]; see Section {}.{}.{}.\n\n",
+                    k % 50,
+                    1 + k % 9,
+                    1 + k % 7,
+                    1 + k % 5
+                ));
+                lines += 2;
+            }
+            if lines / 200 > tables {
+                tables = lines / 200;
+                out.push_str(&format!(
+                    "| Clause | Effect |\n|---|---|\n| {k} | {}|\n| {} | short |\n\n",
+                    "the licensee shall indemnify ".repeat(10),
+                    k + 1
+                ));
+                lines += 5;
+            }
+            if lines / 500 > html {
+                html = lines / 500;
+                out.push_str("<table>\n<tr><th>Term</th><th>Meaning</th></tr>\n");
+                out.push_str(&format!(
+                    "<tr><td>T{k}</td><td>{}</td></tr>\n</table>\n\n",
+                    "defined term ".repeat(12)
+                ));
+                lines += 5;
+            }
+            if lines / 300 > code {
+                code = lines / 300;
+                out.push_str(&format!(
+                    "```\nlet clause_{k} = \"{}\";\n```\n\n",
+                    "x".repeat(200)
+                ));
+                lines += 4;
+            }
+            k += 1;
+        }
+        for r in 0..50 {
+            out.push_str(&format!("[ref{r}]: https://example.com/statute/{r}\n"));
+        }
+        out
+    }
+
+    fn median(mut times: Vec<f64>) -> f64 {
+        times.sort_by(f64::total_cmp);
+        times[times.len() / 2]
+    }
+
+    /// VI.2 timing check: the cold first frame, steady frames and frames that
+    /// scroll the preview, on `legal_fixture`. Run with
+    /// `cargo test --release -- --ignored preview_timing --nocapture`.
+    #[test]
+    #[ignore]
+    fn preview_timing() {
+        let ctx = egui::Context::default();
+        let mut app = editor();
+        let text = legal_fixture();
+        eprintln!(
+            "fixture: {} lines, {} bytes",
+            text.lines().count(),
+            text.len()
+        );
+        *app.document.text_mut() = text;
+        let ms = |since: std::time::Instant| since.elapsed().as_secs_f64() * 1000.0;
+
+        let start = std::time::Instant::now();
+        frame(&ctx, &mut app, vec![], egui::Modifiers::NONE);
+        let cold = ms(start);
+
+        let warm = median(
+            (0..30)
+                .map(|_| {
+                    let start = std::time::Instant::now();
+                    frame(&ctx, &mut app, vec![], egui::Modifiers::NONE);
+                    ms(start)
+                })
+                .collect(),
+        );
+
+        // Over the preview column, right of the outline and the source pane.
+        let over_preview = egui::pos2(1000.0, 400.0);
+        let scroll = median(
+            (0..30)
+                .map(|_| {
+                    let wheel = egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: egui::vec2(0.0, -200.0),
+                        phase: egui::TouchPhase::Move,
+                        modifiers: egui::Modifiers::NONE,
+                    };
+                    let start = std::time::Instant::now();
+                    frame(
+                        &ctx,
+                        &mut app,
+                        vec![egui::Event::PointerMoved(over_preview), wheel],
+                        egui::Modifiers::NONE,
+                    );
+                    ms(start)
+                })
+                .collect(),
+        );
+        eprintln!("preview_timing: cold {cold:.1} ms, warm {warm:.1} ms, scroll {scroll:.1} ms");
     }
 
     #[test]
