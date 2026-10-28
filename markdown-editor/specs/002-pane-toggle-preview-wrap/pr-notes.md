@@ -41,3 +41,53 @@ unit-tested). That more than pays for (B), so warm frames end about 10–15%
 Deviation from tasks.md T009: the cache field is `preview_sections` (the name
 `preview_blocks` is taken by the module), and it stores each chunk's drawable
 Markdown rather than a body plus a shared `links` string.
+
+### Timing — after (US1 + US2, `a11e42c`)
+
+| Run | Cold | Warm | Scrolling |
+|---|---|---|---|
+| 1 | 3450 ms | 281 ms | 282 ms |
+| 2 | 3399 ms | 281 ms | 283 ms |
+
+**No regression:** steady and scrolling frames are about 15% faster than the
+baseline (330–336 ms → 281 ms). The cold first frame is unchanged, within noise. This
+is still nowhere near interactive at 40k lines. Getting there needs a
+virtualised preview and source pane (VI.2), which this feature does not attempt.
+
+## Merge gate (V.2)
+
+- `cargo fmt --check`: pass
+- `cargo clippy --all-targets -- -D warnings`: pass
+- `cargo test`: 82 passed, 1 ignored (`preview_timing`)
+- V.3 audit: every `unwrap`/`expect` added by this branch is in test code. Preview
+  slicing uses pulldown-cmark offsets, which fall on character boundaries. A unit
+  test covers multi-byte text at chunk edges.
+
+## Tests that guard the fixes
+
+- `preview_wraps_after_wide_table`, `preview_code_and_url_stay_in_pane` and
+  `preview_click_on_wrapped_line_selects_section` all fail with the old
+  rendering restored. Checked by temporarily reverting `preview_chunk`.
+- `hiding_editor_keeps_text_dirty_and_cursor` fails without the fixed-id pane
+  scopes: hiding the preview reset the editor's scroll position from 2000 to 0.
+
+## Behaviour differences a reader might not expect
+
+- With the preview hidden, the source pane now shows its "Markdown" heading,
+  as it does in the two-column layout. Before, it had none.
+- Code blocks in the preview have no copy icon. Select the text and press Ctrl/Cmd+C.
+- Toggling the preview no longer resets the editor's scroll position, and
+  vice versa.
+
+## Manual checks — NOT YET RUN (maintainer)
+
+- [ ] quickstart.md steps 1–6 on the local Ubuntu desktop (T029)
+- [ ] quickstart.md step 7, all steps over `ssh -X` from another machine (T030, II.5)
+
+## Platforms (II.4)
+
+- Ubuntu, local: automated tests and the headless timing run only. The by-hand
+  run is pending (above).
+- Ubuntu over `ssh -X`: pending (above).
+- macOS: written for, **unverified**. There is no platform-specific code; everything
+  is shared egui code.
