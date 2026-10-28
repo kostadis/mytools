@@ -84,3 +84,9 @@ Saving over an existing file first copies it to `<name>.bak`.
 ## Synced panes
 
 Clicking in any pane brings the other two to the same place: an outline row scrolls the source and preview to that heading, and a click in the source or preview selects the enclosing section in the outline and scrolls the remaining pane to match. Clicks on a heading line up exactly; clicks inside a section map proportionally within it. The preview is rendered one section at a time to make this possible, so footnotes defined in a different section do not resolve (reference-style links do).
+
+## Preview layout
+
+Paragraphs, lists, quotes and headings in the preview wrap to the pane's width, and a URL or word wider than the pane is broken across lines. Tables and code blocks keep their lines whole: one wider than the pane gets its own horizontal scroll bar (drag it, or Shift+scroll), and the text after it still wraps at the pane's edge. Code blocks have no copy button; select the text and press Ctrl/Cmd+C.
+
+Known limitation: a code block or table *inside* a list item or block quote is drawn inline with the surrounding text, so its code lines wrap and the table's columns are squeezed narrow. Nothing is cut off.

@@ -52,6 +52,8 @@ enum Pane {
 struct MarkdownEditor {
     document: Document,
     preview_cache: CommonMarkCache,
+    /// Each outline block's preview body, split into chunks once per edit.
+    preview_sections: PreviewSections,
     outline: OutlinePanel,
     show_outline: bool,
     /// Font family for preview headings: a loaded bold font, or Proportional.
@@ -69,6 +71,10 @@ struct MarkdownEditor {
     error: Option<String>,
     show_preview: bool,
     allow_close: bool,
+    /// The preview scroll area's viewport and content width on the last
+    /// frame, for tests that check nothing runs past the pane's edge.
+    #[cfg(test)]
+    last_preview_extent: (egui::Rect, f32),
 }
 
 impl Default for MarkdownEditor {
@@ -76,6 +82,7 @@ impl Default for MarkdownEditor {
         Self {
             document: Document::default(),
             preview_cache: CommonMarkCache::default(),
+            preview_sections: PreviewSections::default(),
             outline: OutlinePanel::default(),
             show_outline: true,
             heading_family: egui::FontFamily::Proportional,
@@ -88,6 +95,8 @@ impl Default for MarkdownEditor {
             error: None,
             show_preview: true,
             allow_close: false,
+            #[cfg(test)]
+            last_preview_extent: (egui::Rect::NOTHING, 0.0),
         }
     }
 }
@@ -281,6 +290,20 @@ impl MarkdownEditor {
         }
     }
 
+    /// The preview pane: its heading and its scrolling rendered document.
+    fn preview_pane(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Preview");
+        let output = egui::ScrollArea::vertical()
+            .id_salt("preview")
+            .show(ui, |ui| self.preview(ui));
+        #[cfg(test)]
+        {
+            self.last_preview_extent = (output.inner_rect, output.content_size.x);
+        }
+        #[cfg(not(test))]
+        let _ = output;
+    }
+
     /// Render the preview one outline block at a time, so each block's place on
     /// screen is known for scrolling to it and for mapping clicks back to it.
     fn preview(&mut self, ui: &mut egui::Ui) {
@@ -297,7 +320,7 @@ impl MarkdownEditor {
         }
         self.outline.sync(text);
         let blocks = self.outline.blocks();
-        let links = outline::link_definitions(text);
+        self.preview_sections.sync(text, blocks);
         let target = self.preview_target.take();
         let click = ui.input(|i| {
             i.pointer
@@ -318,9 +341,8 @@ impl MarkdownEditor {
         let mut clicked = None;
 
         for (i, block) in blocks.iter().enumerate() {
-            let section = &text[outline::block_span(blocks, i, text.len())];
+            let chunks = &self.preview_sections.sections[i];
             let section = ui.push_id(i, |ui| {
-                let mut body = section;
                 let mut heading_bottom = None;
                 if block.level > 0 {
                     if i > 0 {
@@ -333,15 +355,11 @@ impl MarkdownEditor {
                         block.level,
                         &block.text,
                     ));
-                    body = section.split_once('\n').map_or("", |(_, rest)| rest);
                 }
-                if !body.trim().is_empty() {
-                    let mut source = html_table::tables_to_markdown(body).into_owned();
-                    if !links.is_empty() {
-                        source.push_str("\n\n");
-                        source.push_str(&links);
-                    }
-                    CommonMarkViewer::new().show(ui, &mut self.preview_cache, &source);
+                for (j, (chunk, source)) in chunks.iter().enumerate() {
+                    ui.push_id(j, |ui| {
+                        preview_chunk(ui, &mut self.preview_cache, chunk, source);
+                    });
                 }
                 heading_bottom
             });
@@ -507,10 +525,7 @@ impl MarkdownEditor {
                         egui::ScrollArea::vertical()
                             .id_salt("source")
                             .show(&mut columns[0], |ui| self.source_editor(ui));
-                        columns[1].heading("Preview");
-                        egui::ScrollArea::vertical()
-                            .id_salt("preview")
-                            .show(&mut columns[1], |ui| self.preview(ui));
+                        self.preview_pane(&mut columns[1]);
                     });
                 } else {
                     self.preview_target = None;
@@ -546,6 +561,113 @@ impl eframe::App for MarkdownEditor {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.draw(ui);
     }
+}
+
+/// The preview's per-section bodies and their chunks, derived from the text
+/// and rebuilt only when it changes, so no whole-document work runs per frame.
+#[derive(Default)]
+struct PreviewSections {
+    /// The text the sections were built from.
+    text: String,
+    /// For each outline block, the drawable chunks of its body (after the
+    /// heading line, with HTML tables rewritten as pipe tables). Each prose
+    /// or table chunk carries its Markdown plus the reference link
+    /// definitions it uses, so links defined in another section resolve.
+    /// Chunks that are only whitespace are dropped.
+    sections: Vec<Vec<(preview_blocks::PreviewChunk, String)>>,
+}
+
+impl PreviewSections {
+    fn sync(&mut self, text: &str, blocks: &[outline::Block]) {
+        if self.text == text && self.sections.len() == blocks.len() {
+            return;
+        }
+        self.text = text.to_owned();
+        let links = outline::link_definitions(text);
+        self.sections = (0..blocks.len())
+            .map(|i| {
+                let section = &text[outline::block_span(blocks, i, text.len())];
+                let body = if blocks[i].level > 0 {
+                    section.split_once('\n').map_or("", |(_, rest)| rest)
+                } else {
+                    section
+                };
+                let body = html_table::tables_to_markdown(body);
+                preview_blocks::split(&body)
+                    .into_iter()
+                    .filter(|chunk| !body[chunk.range().clone()].trim().is_empty())
+                    .map(|chunk| {
+                        let source = match chunk {
+                            preview_blocks::PreviewChunk::Code { .. } => String::new(),
+                            _ => preview_blocks::with_used_links(
+                                &body[chunk.range().clone()],
+                                &links,
+                            ),
+                        };
+                        (chunk, source)
+                    })
+                    .collect()
+            })
+            .collect();
+    }
+}
+
+/// Draw one chunk of a section body. Prose wraps to the pane; a top-level
+/// table or code block keeps its lines whole and scrolls sideways inside its
+/// own area, so it never widens the pane for the sections after it.
+fn preview_chunk(
+    ui: &mut egui::Ui,
+    cache: &mut CommonMarkCache,
+    chunk: &preview_blocks::PreviewChunk,
+    source: &str,
+) {
+    use preview_blocks::PreviewChunk;
+    match chunk {
+        PreviewChunk::Prose(_) => {
+            ui.scope(|ui| {
+                // egui_commonmark lays table cells out without wrapping, so a
+                // table nested in a list or quote would otherwise grow the
+                // pane and every later line would wrap past its edge.
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                CommonMarkViewer::new().show(ui, cache, source);
+            });
+        }
+        PreviewChunk::Table(_) => {
+            egui::ScrollArea::horizontal()
+                .id_salt("table")
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    CommonMarkViewer::new().show(ui, cache, source);
+                });
+        }
+        PreviewChunk::Code { content, .. } => preview_code_block(ui, content),
+    }
+}
+
+/// A code block whose lines never wrap: monospace and selectable, framed like
+/// egui_commonmark's code blocks, and scrolling sideways when wider than the
+/// pane.
+fn preview_code_block(ui: &mut egui::Ui, content: &str) {
+    let content = content.strip_suffix('\n').unwrap_or(content);
+    let visuals = ui.visuals();
+    egui::Frame::new()
+        .fill(visuals.extreme_bg_color)
+        .stroke(visuals.widgets.noninteractive.bg_stroke)
+        .corner_radius(visuals.widgets.noninteractive.corner_radius)
+        .inner_margin(egui::Margin::same(6))
+        .show(ui, |ui| {
+            egui::ScrollArea::horizontal()
+                .id_salt("code")
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(content).monospace())
+                            .extend()
+                            .selectable(true),
+                    );
+                });
+        });
+    ui.add_space(ui.spacing().item_spacing.y);
 }
 
 /// Draw one heading for the preview at its level's size, keeping inline
@@ -976,6 +1098,137 @@ mod ui_tests {
                 .collect(),
         );
         eprintln!("preview_timing: cold {cold:.1} ms, warm {warm:.1} ms, scroll {scroll:.1} ms");
+    }
+
+    /// Draw a few frames at `width`×800 so layout settles, and return the last
+    /// frame's shapes.
+    fn render(
+        ctx: &egui::Context,
+        app: &mut MarkdownEditor,
+        width: f32,
+    ) -> Vec<egui::epaint::ClippedShape> {
+        let mut shapes = Vec::new();
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(width, 800.0),
+                )),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| app.draw(ui));
+            output.textures_delta.clear();
+            shapes = output.shapes;
+        }
+        shapes
+    }
+
+    /// The screen rect and row count of every text containing `needle` that
+    /// the preview drew, which starts inside its viewport. The source pane
+    /// holds the same text, so it has to be told apart by position.
+    fn preview_texts(
+        app: &MarkdownEditor,
+        shapes: &[egui::epaint::ClippedShape],
+        needle: &str,
+    ) -> Vec<(egui::Rect, usize)> {
+        let viewport = app.last_preview_extent.0;
+        shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.text().contains(needle) => Some((
+                    text.galley.rect.translate(text.pos.to_vec2()),
+                    text.galley.rows.len(),
+                )),
+                _ => None,
+            })
+            .filter(|(rect, _)| viewport.x_range().contains(rect.left()))
+            .collect()
+    }
+
+    /// Asserts the preview's content is no wider than its viewport, so
+    /// nothing outside a table or code scroller is cut off at the right edge.
+    fn assert_preview_fits(app: &MarkdownEditor, width: f32) {
+        let (viewport, content) = app.last_preview_extent;
+        assert!(
+            content <= viewport.width() + 1.0,
+            "at window width {width}, preview content {content} is wider than its viewport {}",
+            viewport.width()
+        );
+    }
+
+    fn wide_table() -> String {
+        format!(
+            "| clause | text |\n|---|---|\n| 1.1 | {}|\n",
+            "the licensee shall indemnify ".repeat(10)
+        )
+    }
+
+    const AFTER: &str = "after the table ";
+
+    #[test]
+    fn preview_wraps_after_wide_table() {
+        let ctx = egui::Context::default();
+        let mut app = editor();
+        *app.document.text_mut() = format!(
+            "# Doc\n\nIntro.\n\n{}\n{}\n",
+            wide_table(),
+            AFTER.repeat(30)
+        );
+        let shapes = render(&ctx, &mut app, 900.0);
+        assert_preview_fits(&app, 900.0);
+        let viewport = app.last_preview_extent.0;
+        let after = preview_texts(&app, &shapes, AFTER);
+        assert!(!after.is_empty(), "paragraph after the table was not drawn");
+        for (rect, rows) in after {
+            assert!(
+                rect.right() <= viewport.right() + 1.0,
+                "paragraph after the table runs to {} past the pane edge {}",
+                rect.right(),
+                viewport.right()
+            );
+            assert!(rows > 1, "paragraph after the table did not wrap");
+        }
+    }
+
+    #[test]
+    fn preview_code_and_url_stay_in_pane() {
+        let code = "x".repeat(200);
+        let url = format!("https://example.com/{}", "a".repeat(200));
+        for width in [600.0, 900.0, 1200.0] {
+            let ctx = egui::Context::default();
+            let mut app = editor();
+            *app.document.text_mut() = format!("# Doc\n\n```\n{code}\n```\n\n{url}\n");
+            let shapes = render(&ctx, &mut app, width);
+            assert_preview_fits(&app, width);
+            let urls = preview_texts(&app, &shapes, "https://example.com/");
+            assert!(
+                !urls.is_empty() && urls.iter().all(|&(_, rows)| rows > 1),
+                "at width {width} the long URL did not wrap: {urls:?}"
+            );
+            let blocks = preview_texts(&app, &shapes, &code);
+            assert!(
+                !blocks.is_empty() && blocks.iter().all(|&(_, rows)| rows == 1),
+                "at width {width} the code line wrapped: {blocks:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn preview_click_on_wrapped_line_selects_section() {
+        let ctx = egui::Context::default();
+        let mut app = editor();
+        *app.document.text_mut() = format!(
+            "# One\n\nShort.\n\n# Two\n\n{}\n{}\n",
+            wide_table(),
+            AFTER.repeat(30)
+        );
+        let shapes = render(&ctx, &mut app, 1200.0);
+        let (rect, rows) = preview_texts(&app, &shapes, AFTER)[0];
+        assert!(rows >= 3, "need at least three wrapped rows, got {rows}");
+        let row_height = rect.height() / rows as f32;
+        let third_row = egui::pos2(rect.left() + 10.0, rect.top() + row_height * 2.5);
+        click(&ctx, &mut app, third_row, egui::Modifiers::NONE);
+        assert_eq!(app.outline.selected_rows(), vec![1]);
     }
 
     #[test]
