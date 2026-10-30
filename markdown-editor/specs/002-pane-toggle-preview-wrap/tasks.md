@@ -154,8 +154,8 @@ T016 and T022–T024 passing.
 
 - [X] T027 Run `cargo test --release -- --ignored preview_timing --nocapture` on the finished branch and add a "Timing — after" table to `specs/002-pane-toggle-preview-wrap/pr-notes.md`, next to T005's numbers. If warm or scroll time regressed, stop and report it. Do not tune silently (VI.2, SC-004).
 - [X] T028 Run the merge gate: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` (V.2). Fix all findings. Then check every `unwrap` or `expect` added outside tests either is gone or has a comment naming its invariant (V.3).
-- [ ] T029 Run quickstart.md by-hand steps 1 to 6 on the local Ubuntu desktop, and record the result in `specs/002-pane-toggle-preview-wrap/pr-notes.md`. **Needs the maintainer**: this is a by-hand check.
-- [ ] T030 Run quickstart.md step 7 (all steps over `ssh -X` from another machine) and record it in `pr-notes.md` (II.5). **Needs the maintainer.**
+- [X] T029 Run quickstart.md by-hand steps 1 to 6 on the local Ubuntu desktop, and record the result in `specs/002-pane-toggle-preview-wrap/pr-notes.md`. **Needs the maintainer**: this is a by-hand check.
+- [X] T030 Run quickstart.md step 7 (all steps over `ssh -X` from another machine) and record it in `pr-notes.md` (II.5). **Needs the maintainer.**
 - [X] T031 Add a "Platforms" section to `specs/002-pane-toggle-preview-wrap/pr-notes.md`: Ubuntu local and `ssh -X` as actually run, and macOS "written for, unverified" (II.4).
 
 ---

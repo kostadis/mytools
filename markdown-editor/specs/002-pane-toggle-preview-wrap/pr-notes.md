@@ -79,15 +79,14 @@ virtualised preview and source pane (VI.2), which this feature does not attempt.
 - Toggling the preview no longer resets the editor's scroll position, and
   vice versa.
 
-## Manual checks — NOT YET RUN (maintainer)
+## Manual checks (maintainer, 2026-10-30)
 
-- [ ] quickstart.md steps 1–6 on the local Ubuntu desktop (T029)
-- [ ] quickstart.md step 7, all steps over `ssh -X` from another machine (T030, II.5)
+- [x] quickstart.md steps 1–6 on the local Ubuntu desktop (T029): pass
+- [x] quickstart.md step 7, all steps over `ssh -X` from another machine (T030, II.5): pass
 
 ## Platforms (II.4)
 
-- Ubuntu, local: automated tests and the headless timing run only. The by-hand
-  run is pending (above).
-- Ubuntu over `ssh -X`: pending (above).
+- Ubuntu, local: automated tests, headless timing run and the by-hand run.
+- Ubuntu over `ssh -X`: by-hand run passed.
 - macOS: written for, **unverified**. There is no platform-specific code; everything
   is shared egui code.
