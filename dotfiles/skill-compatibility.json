@@ -36,6 +36,7 @@
     {"name": "speaker-attribution-text", "status": "ported", "reason": "A maintained Codex adapter exists and shares its deterministic implementation."},
     {"name": "staged-consistency", "status": "ported", "reason": "A maintained Codex adapter exists and shares its quote verifier."},
     {"name": "style-examples", "status": "candidate", "reason": "Campaign style extraction is useful, but its agent delegation and write flow are Claude-specific.", "missing_codex_equivalent": "Codex agent instructions and artifact validation."},
+    {"name": "summary-native-npc-delta", "status": "candidate", "reason": "Ported from a live Codex skill that exists outside this repository; the Claude copy adds Artifact review pages and AskUserQuestion checkpoints.", "missing_codex_equivalent": "Track the live Codex original under dotfiles/codex/skills and reconcile it with this source."},
     {"name": "transcript-rebuild", "status": "candidate", "reason": "The deterministic transcript reconstruction workflow is useful but has not been tested or documented for Codex.", "missing_codex_equivalent": "Codex command workflow, decision checkpoints, and validation adapter."},
     {"name": "voice-critic", "status": "ported", "reason": "A maintained Codex adapter exists under dotfiles/codex/skills."},
     {"name": "voice-examples", "status": "candidate", "reason": "Per-character example extraction is useful, but the skill assumes Claude agents.", "missing_codex_equivalent": "Codex agent orchestration and output review."},

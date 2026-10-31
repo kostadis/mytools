@@ -104,6 +104,7 @@ How that repo works:
 - `ensemble-alias-review` — resolves undecided alias groups with campaign-lore context, one at a time.
 - `ensemble-type-merge` — merges dossiers for one entity extracted under multiple `(type, subject)` keys.
 - `dossier-merge` — dedupes NPC dossiers in `docs/npcs/`.
+- `summary-native-npc-delta` — updates summary-native NPC dossiers from one newly reviewed chapter instead of rescanning the campaign: carries published history forward byte-for-byte, appends only material new facts, drafts dossiers for newly established NPCs, and publishes through native verification, a GM review and exact-draft signoffs. Ported from a Codex original.
 - `module-inventory` — extracts a proper-noun inventory from a module's source (prose bible or 5etools JSON).
 - `mempalace-campaign` — sets up MemPalace semantic search over a campaign workspace.
 - `campaign-recall` — answers a question from the session summaries via zvec-grep, returning verbatim source with provenance instead of paraphrase. Supplies the two things vector search structurally cannot: chronological order (from the `NNN[a]-` filename prefix, which is not in the embeddings) and the ability to report that something is *not recorded* — the absence check is verified against a positive control, because a broken one fails toward a confident false negative.
