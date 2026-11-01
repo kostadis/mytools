@@ -377,3 +377,93 @@ def test_flask_routes_smoke(table):
     resp = client.get("/rules")
     assert resp.status_code == 200
     assert b"Social Encounters" in resp.data
+
+
+# ---------------------------------------------------------------------------
+# check_data_dir / --check (#101)
+# ---------------------------------------------------------------------------
+
+
+def _fresh_data_dir(tmp_path: Path) -> Path:
+    d = tmp_path / "data"
+    build_fixtures(d)
+    return d
+
+
+def test_check_data_dir_usable(tmp_path):
+    assert fs.check_data_dir(_fresh_data_dir(tmp_path)) == []
+
+
+def test_check_data_dir_reports_each_missing_workbook(tmp_path):
+    assert fs.check_data_dir(tmp_path / "nowhere") == [
+        f"missing: {fs.MAIN_WORKBOOK_NAME}",
+        f"missing: {fs.DCS_WORKBOOK_NAME}",
+    ]
+
+
+def test_check_data_dir_requires_dcs_workbook(tmp_path):
+    # Startup tolerates a missing DCs workbook; --check does not.
+    d = _fresh_data_dir(tmp_path)
+    (d / fs.DCS_WORKBOOK_NAME).unlink()
+    assert fs.check_data_dir(d) == [f"missing: {fs.DCS_WORKBOOK_NAME}"]
+
+
+def test_check_data_dir_corrupt_workbook(tmp_path):
+    d = _fresh_data_dir(tmp_path)
+    (d / fs.MAIN_WORKBOOK_NAME).write_bytes(b"not an xlsx")
+    problems = fs.check_data_dir(d)
+    assert len(problems) == 1
+    assert problems[0].startswith(f"unreadable: {fs.MAIN_WORKBOOK_NAME}: ")
+
+
+def test_check_data_dir_workbook_without_flexai_sheets(tmp_path):
+    from openpyxl import Workbook
+
+    d = _fresh_data_dir(tmp_path)
+    wb = Workbook()
+    wb.active.title = "Something Else"
+    wb.save(d / fs.DCS_WORKBOOK_NAME)
+    problems = fs.check_data_dir(d)
+    assert len(problems) == 1
+    assert problems[0].startswith(
+        f"unreadable: {fs.DCS_WORKBOOK_NAME}: no FlexAI sheets found"
+    )
+
+
+def _run_check(*args, env_extra=None):
+    import os
+    import subprocess
+
+    env = {k: v for k, v in os.environ.items() if k != "FLEXAI_DATA_DIR"}
+    env.update(env_extra or {})
+    return subprocess.run(
+        [sys.executable, str(HERE / "app.py"), "--check", *args],
+        capture_output=True, text=True, timeout=30, env=env,
+    )
+
+
+def test_cli_check_usable_exits_0_silently(tmp_path):
+    r = _run_check("--data-dir", str(_fresh_data_dir(tmp_path)))
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == ""
+
+
+def test_cli_check_missing_exits_1_with_lines(tmp_path):
+    r = _run_check("--data-dir", str(tmp_path / "nowhere"))
+    assert r.returncode == 1
+    assert r.stdout.splitlines() == [
+        f"missing: {fs.MAIN_WORKBOOK_NAME}",
+        f"missing: {fs.DCS_WORKBOOK_NAME}",
+    ]
+
+
+def test_cli_check_reads_env_data_dir(tmp_path):
+    r = _run_check(env_extra={"FLEXAI_DATA_DIR": str(_fresh_data_dir(tmp_path))})
+    assert r.returncode == 0, r.stderr
+
+
+def test_cli_check_never_serves(tmp_path):
+    # It returns on its own (no server loop) and never prints the listening line.
+    r = _run_check("--data-dir", str(_fresh_data_dir(tmp_path)), "--port", "1")
+    assert r.returncode == 0, r.stderr
+    assert "listening" not in r.stdout

@@ -436,3 +436,79 @@ def test_data_dir_precedence(monkeypatch, tmp_path):
     monkeypatch.setenv("FLEXAI_COMBAT_DATA_DIR", str(combat))   # combat-specific name wins
     assert app_module.resolve_data_dir(None) == combat
     assert app_module.resolve_data_dir("~/x") == Path("~/x").expanduser()   # CLI wins over both
+
+
+# ---------------------------------------------------------------------------
+# check_data_dir / --check (#101)
+# ---------------------------------------------------------------------------
+
+
+def _fresh_data_dir(tmp_path: Path) -> Path:
+    d = tmp_path / "data"
+    build_fixtures(d)
+    return d
+
+
+def test_check_data_dir_usable(tmp_path):
+    assert fc.check_data_dir(_fresh_data_dir(tmp_path)) == []
+
+
+def test_check_data_dir_missing(tmp_path):
+    assert fc.check_data_dir(tmp_path / "nowhere") == [f"missing: {fc.WORKBOOK_NAME}"]
+
+
+def test_check_data_dir_corrupt_workbook(tmp_path):
+    d = _fresh_data_dir(tmp_path)
+    (d / fc.WORKBOOK_NAME).write_bytes(b"not an xlsx")
+    problems = fc.check_data_dir(d)
+    assert len(problems) == 1
+    assert problems[0].startswith(f"unreadable: {fc.WORKBOOK_NAME}: ")
+
+
+def test_check_data_dir_workbook_without_flexai_sheets(tmp_path):
+    from openpyxl import Workbook
+
+    d = tmp_path / "data"
+    d.mkdir()
+    wb = Workbook()
+    wb.active.title = "Something Else"
+    wb.save(d / fc.WORKBOOK_NAME)
+    problems = fc.check_data_dir(d)
+    assert len(problems) == 1
+    assert problems[0].startswith(f"unreadable: {fc.WORKBOOK_NAME}: no FlexAI sheets found")
+
+
+def _run_check(*args, env_extra=None):
+    import os
+    import subprocess
+
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("FLEXAI_DATA_DIR", "FLEXAI_COMBAT_DATA_DIR")}
+    env.update(env_extra or {})
+    return subprocess.run(
+        [sys.executable, str(HERE / "app.py"), "--check", *args],
+        capture_output=True, text=True, timeout=30, env=env,
+    )
+
+
+def test_cli_check_usable_exits_0_silently(tmp_path):
+    r = _run_check("--data-dir", str(_fresh_data_dir(tmp_path)))
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == ""
+
+
+def test_cli_check_missing_exits_1_with_line(tmp_path):
+    r = _run_check("--data-dir", str(tmp_path / "nowhere"))
+    assert r.returncode == 1
+    assert r.stdout.splitlines() == [f"missing: {fc.WORKBOOK_NAME}"]
+
+
+def test_cli_check_reads_combat_env_data_dir(tmp_path):
+    r = _run_check(env_extra={"FLEXAI_COMBAT_DATA_DIR": str(_fresh_data_dir(tmp_path))})
+    assert r.returncode == 0, r.stderr
+
+
+def test_cli_check_never_serves(tmp_path):
+    r = _run_check("--data-dir", str(_fresh_data_dir(tmp_path)), "--port", "1")
+    assert r.returncode == 0, r.stderr
+    assert "listening" not in r.stdout

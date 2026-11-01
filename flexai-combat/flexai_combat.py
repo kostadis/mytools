@@ -399,6 +399,39 @@ def load_tables(data_dir: Path) -> FlexTable:
     return table
 
 
+def check_data_dir(data_dir: Path) -> List[str]:
+    """Report what would make `data_dir` unusable, one line per problem; [] if usable.
+
+    Lines are `missing: <file>` or `unreadable: <file>: <reason>`. A workbook that
+    opens but holds none of the expected sheets is reported too, since `load_tables`
+    would silently produce an empty table from it.
+    """
+    data_dir = Path(data_dir)
+    path = data_dir / WORKBOOK_NAME
+    sheets = [display(r) for r in ROLES] + [display(r) + "Tgt" for r in ROLES]
+    if not path.is_file():
+        return [f"missing: {WORKBOOK_NAME}"]
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True)
+    except Exception as e:  # noqa: BLE001 - not a readable xlsx, whatever the cause
+        return [f"unreadable: {WORKBOOK_NAME}: {e}"]
+    try:
+        if not any(s in wb.sheetnames for s in sheets):
+            return [
+                f"unreadable: {WORKBOOK_NAME}: no FlexAI sheets found "
+                f"(expected e.g. {', '.join(repr(s) for s in sheets[:2])})"
+            ]
+    finally:
+        wb.close()
+    try:
+        table = load_tables(data_dir)  # the same path startup takes
+    except Exception as e:  # noqa: BLE001 - any load failure makes the data unusable
+        return [f"unreadable: {WORKBOOK_NAME}: {e}"]
+    if not table:
+        return [f"unreadable: {WORKBOOK_NAME}: no FlexAI data loaded"]
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Query API
 # ---------------------------------------------------------------------------
