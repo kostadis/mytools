@@ -13,9 +13,11 @@ see the situation. This module reads the situation instead:
 
 Nothing here decides anything for the GM: it returns a suggestion to read.
 
-Endpoints (env vars, defaults are the DGX Spark LAN addresses):
-    CLEF_URL     http://192.168.1.121:8005     CLEF_MODEL  Decision-2.0-Nox-4B
-    CHAT_URL     http://192.168.1.147:8001/v1  CHAT_MODEL  qwen3.8-flash-next
+Endpoints (env vars). The URLs have no default: they name a particular machine,
+so they come from the environment or this feature reports itself not configured
+(the dice tables keep working either way).
+    CLEF_URL     (required)  CLEF_MODEL  Decision-2.0-Nox-4B (default)
+    CHAT_URL     (required)  CHAT_MODEL  qwen3.8-flash-next  (default)
     CAMPAIGN_DIR (unset)  -- a campaign root; enables voice/dossier lookup
 """
 
@@ -62,6 +64,10 @@ class BackendError(RuntimeError):
     """A model endpoint could not be reached or answered badly."""
 
 
+class NotConfiguredError(BackendError):
+    """A required endpoint variable is unset, so the feature is disabled."""
+
+
 def _post(url: str, body: dict, timeout: float) -> dict:
     req = urllib.request.Request(url, json.dumps(body).encode(), {"content-type": "application/json"})
     try:
@@ -71,13 +77,25 @@ def _post(url: str, body: dict, timeout: float) -> dict:
         raise BackendError(f"{url}: {e}") from e
 
 
-def endpoints() -> Dict[str, str]:
+URL_VARS = {"clef_url": "CLEF_URL", "chat_url": "CHAT_URL"}
+
+
+def endpoints() -> Dict[str, Optional[str]]:
+    """The configured endpoints. An unset or blank URL is None, never a guess."""
+    urls = {k: (os.environ.get(v) or "").strip().rstrip("/") or None for k, v in URL_VARS.items()}
     return {
-        "clef_url": os.environ.get("CLEF_URL", "http://192.168.1.121:8005").rstrip("/"),
+        "clef_url": urls["clef_url"],
         "clef_model": os.environ.get("CLEF_MODEL", "Decision-2.0-Nox-4B"),
-        "chat_url": os.environ.get("CHAT_URL", "http://192.168.1.147:8001/v1").rstrip("/"),
+        "chat_url": urls["chat_url"],
         "chat_model": os.environ.get("CHAT_MODEL", "qwen3.8-flash-next"),
     }
+
+
+def require_url(ep: Dict[str, Optional[str]], key: str) -> str:
+    url = ep[key]
+    if not url:
+        raise NotConfiguredError(f"{URL_VARS[key]} is not set; set it to enable this feature")
+    return url
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +157,7 @@ def suggest(npc: str, notes: str, situation: str, post: Poster = _post) -> dict:
         }},
     }
     t = time.monotonic()
-    resp = post(f"{ep['clef_url']}/v1/systemone", body, 60.0)
+    resp = post(f"{require_url(ep, 'clef_url')}/v1/systemone", body, 60.0)
     try:
         probs = resp["answers"]["stance"]["probabilities"]
     except (KeyError, TypeError) as e:
@@ -183,7 +201,7 @@ def voice_line(npc: str, notes: str, situation: str, stance: str, post: Poster =
         "chat_template_kwargs": {"enable_thinking": False},
     }
     t = time.monotonic()
-    resp = post(f"{ep['chat_url']}/chat/completions", body, 60.0)
+    resp = post(f"{require_url(ep, 'chat_url')}/chat/completions", body, 60.0)
     try:
         line = (resp["choices"][0]["message"]["content"] or "").strip()
     except (KeyError, IndexError, TypeError) as e:
