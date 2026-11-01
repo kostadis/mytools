@@ -64,7 +64,7 @@ python3 fixtures/build_fixtures.py
 ## CLI reference
 
 ```bash
-python3 app.py [--data-dir PATH] [--host HOST] [--port 5106] [--debug]
+python3 app.py [--data-dir PATH] [--host HOST] [--port 5106] [--debug] [--check]
 ```
 
 | Flag           | Default                                           |
@@ -73,6 +73,7 @@ python3 app.py [--data-dir PATH] [--host HOST] [--port 5106] [--debug]
 | `--host`       | `127.0.0.1`                                       |
 | `--port`       | `5106`                                            |
 | `--debug`      | off                                               |
+| `--check`      | off. Validate the workbook and exit without serving: exit 0 if usable, else 1 with a `missing: <file>` or `unreadable: <file>: <reason>` line. |
 
 ## Architecture
 

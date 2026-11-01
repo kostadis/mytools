@@ -2,6 +2,7 @@
 
     python3 app.py --data-dir ~/foo     # the workbook directory (required)
     FLEXAI_DATA_DIR=... python3 app.py  # same via env var
+    python3 app.py --data-dir ~/foo --check  # validate the workbooks, don't serve
 
 The server binds to :5105 by default; pick a different port with --port.
 """
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -636,12 +638,22 @@ def _cli() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5105)
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument(
+        "--check", action="store_true",
+        help="Validate the workbooks in the data dir and exit (0 = usable); "
+             "prints one 'missing:'/'unreadable:' line per problem. Never serves.",
+    )
     args = parser.parse_args()
 
     try:
         data_dir = resolve_data_dir(args.data_dir)
     except DataDirNotConfigured as e:
         parser.error(str(e))
+    if args.check:
+        problems = fs.check_data_dir(data_dir)
+        for line in problems:
+            print(line)
+        sys.exit(1 if problems else 0)
     print(f"[flexai-social] data_dir = {data_dir}")
     print(f"[flexai-social] main     = {fs.MAIN_WORKBOOK_NAME}")
     print(f"[flexai-social] dcs      = {fs.DCS_WORKBOOK_NAME}")

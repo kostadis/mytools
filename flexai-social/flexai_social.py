@@ -498,6 +498,56 @@ def load_tables(data_dir: Path) -> FlexTable:
     return table
 
 
+def check_data_dir(data_dir: Path) -> List[str]:
+    """Report what would make `data_dir` unusable, one line per problem; [] if usable.
+
+    Lines are `missing: <file>` or `unreadable: <file>: <reason>`. Every problem is
+    reported, not just the first, so a caller can restore exactly the missing files.
+
+    Stricter than `load_tables`: the Choice DCs workbook is required here. Startup
+    tolerates its absence, but then no choice has a DC to roll against. A workbook
+    that opens but holds none of the expected sheets is reported too, since
+    `load_tables` would silently produce an empty table from it.
+    """
+    data_dir = Path(data_dir)
+    main_sheets = [display(r) for r in ROLES] + [display(r) + "Result" for r in ROLES]
+    expected = {
+        MAIN_WORKBOOK_NAME: main_sheets,
+        DCS_WORKBOOK_NAME: ["Social Choice DCs"],
+    }
+    problems: List[str] = []
+    for name, sheets in expected.items():
+        problems.extend(_check_workbook(data_dir / name, sheets))
+    if problems:
+        return problems
+    try:
+        table = load_tables(data_dir)  # the same path startup takes
+    except Exception as e:  # noqa: BLE001 - any load failure makes the data unusable
+        return [f"unreadable: {data_dir}: {e}"]
+    if not table:
+        return [f"unreadable: {MAIN_WORKBOOK_NAME}: no FlexAI data loaded"]
+    return []
+
+
+def _check_workbook(path: Path, sheets: List[str]) -> List[str]:
+    """`missing:`/`unreadable:` lines for one workbook that must hold one of `sheets`."""
+    if not path.is_file():
+        return [f"missing: {path.name}"]
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True)
+    except Exception as e:  # noqa: BLE001 - not a readable xlsx, whatever the cause
+        return [f"unreadable: {path.name}: {e}"]
+    try:
+        if not any(s in wb.sheetnames for s in sheets):
+            return [
+                f"unreadable: {path.name}: no FlexAI sheets found "
+                f"(expected e.g. {', '.join(repr(s) for s in sheets[:2])})"
+            ]
+    finally:
+        wb.close()
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Query API
 # ---------------------------------------------------------------------------

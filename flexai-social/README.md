@@ -96,7 +96,7 @@ python3 fixtures/build_fixtures.py
 ## CLI reference
 
 ```bash
-python3 app.py [--data-dir PATH] [--host HOST] [--port 5105] [--debug]
+python3 app.py [--data-dir PATH] [--host HOST] [--port 5105] [--debug] [--check]
 ```
 
 | Flag           | Default                                  |
@@ -105,6 +105,7 @@ python3 app.py [--data-dir PATH] [--host HOST] [--port 5105] [--debug]
 | `--host`       | `127.0.0.1`                              |
 | `--port`       | `5105`                                   |
 | `--debug`      | off                                      |
+| `--check`      | off. Validate the workbooks and exit without serving: exit 0 if usable, else 1 with one `missing: <file>` or `unreadable: <file>: <reason>` line per problem. Unlike startup, it requires the Choice DCs workbook too. |
 
 ## Architecture
 
