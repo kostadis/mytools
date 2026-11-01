@@ -16,6 +16,15 @@ import situational as sit  # noqa: E402
 from fixtures.build_fixtures import build_fixtures  # noqa: E402
 
 CLEF_PROBS = {"bargains": 0.6, "questions_motives": 0.25, "hostile": 0.1, "helps": 0.05}
+CLEF_TEST_URL = "http://clef.test:1"
+CHAT_TEST_URL = "http://chat.test:2/v1"
+
+
+@pytest.fixture(autouse=True)
+def configured_endpoints(monkeypatch):
+    """Endpoints have no default (GH #96); every test starts configured unless it unsets them."""
+    monkeypatch.setenv("CLEF_URL", CLEF_TEST_URL)
+    monkeypatch.setenv("CHAT_URL", CHAT_TEST_URL)
 
 
 def fake_post(calls):
@@ -107,3 +116,61 @@ def test_backend_down_is_a_502(client):
     client.application.config["SIT_POST"] = down
     r = client.post("/api/situational/suggest", json={"npc": "G", "situation": "x"})
     assert r.status_code == 502 and "Decision model unavailable" in r.get_json()["error"]
+
+
+# --- GH #96: no machine-specific defaults ------------------------------------
+
+
+def test_source_has_no_lan_addresses():
+    for name in ("situational.py", "app.py", "flexai_social.py"):
+        assert "192.168." not in (HERE / name).read_text(), name
+
+
+def test_configured_urls_are_used_exactly(monkeypatch):
+    monkeypatch.setenv("CLEF_URL", "http://decide.example:9/")    # trailing slash tolerated
+    calls = []
+    sit.suggest("G", "", "x", post=fake_post(calls))
+    sit.voice_line("G", "", "x", "helps", post=fake_post(calls))
+    assert calls[0][0] == "http://decide.example:9/v1/systemone"
+    assert calls[1][0] == CHAT_TEST_URL + "/chat/completions"
+
+
+@pytest.mark.parametrize("var", ["CLEF_URL", "CHAT_URL"])
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_unset_url_is_not_configured_and_never_posts(monkeypatch, var, value):
+    if value is None:
+        monkeypatch.delenv(var)
+    else:
+        monkeypatch.setenv(var, value)
+    calls = []
+    call = (lambda: sit.suggest("G", "", "x", post=fake_post(calls))) if var == "CLEF_URL" \
+        else (lambda: sit.voice_line("G", "", "x", "helps", post=fake_post(calls)))
+    with pytest.raises(sit.NotConfiguredError, match=var):
+        call()
+    assert calls == []
+
+
+def test_unconfigured_route_is_a_503_naming_the_variable(client, monkeypatch):
+    monkeypatch.delenv("CLEF_URL")
+    r = client.post("/api/situational/suggest", json={"npc": "G", "situation": "x"})
+    assert r.status_code == 503
+    assert "not configured" in r.get_json()["error"] and "CLEF_URL" in r.get_json()["error"]
+    monkeypatch.delenv("CHAT_URL")
+    r = client.post("/api/situational/line", json={"npc": "G", "situation": "x", "stance": "helps"})
+    assert r.status_code == 503 and "CHAT_URL" in r.get_json()["error"]
+
+
+def test_dice_tables_work_without_endpoints(client, monkeypatch):
+    monkeypatch.delenv("CLEF_URL")
+    monkeypatch.delenv("CHAT_URL")
+    assert client.get("/api/cell").status_code == 200
+
+
+def test_data_dir_has_no_default(monkeypatch, tmp_path):
+    import app as app_module
+    monkeypatch.delenv("FLEXAI_DATA_DIR", raising=False)
+    with pytest.raises(app_module.DataDirNotConfigured, match="FLEXAI_DATA_DIR"):
+        app_module.resolve_data_dir(None)
+    monkeypatch.setenv("FLEXAI_DATA_DIR", str(tmp_path))
+    assert app_module.resolve_data_dir(None) == tmp_path
+    assert app_module.resolve_data_dir("~/x") == Path("~/x").expanduser()

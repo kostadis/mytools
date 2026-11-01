@@ -376,16 +376,6 @@ def _ensure_cell(table: FlexTable, role: str, size: str, context: str, rank: str
 MAIN_WORKBOOK_NAME = "FlexAI_Social_2021_01_04.xlsx"
 DCS_WORKBOOK_NAME = "FlexAI_Social_Choice_DCs_2021_01_04.xlsx"
 
-_DEFAULT_DATA_DIR = Path(
-    "/mnt/g/My Drive/DriveThru/Infinium Game Studios/"
-    "FlexAI Digital Resource Companion (unisystem_5E_Pathfinder_P2E_OSR)"
-)
-
-
-def default_data_dir() -> Path:
-    return _DEFAULT_DATA_DIR
-
-
 def _row_headers(ws, cols: int) -> Tuple[List, List, List]:
     """Read the (RoleSize, Context, Rank) header rows (rows 2, 3, 4)."""
     sizes = [ws.cell(2, c).value for c in range(1, cols + 1)]

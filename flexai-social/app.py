@@ -1,7 +1,6 @@
 """Flask web UI for FlexAI Social Encounter resolution.
 
-    python3 app.py                      # loads workbooks from the default dir
-    python3 app.py --data-dir ~/foo     # override the workbook directory
+    python3 app.py --data-dir ~/foo     # the workbook directory (required)
     FLEXAI_DATA_DIR=... python3 app.py  # same via env var
 
 The server binds to :5105 by default; pick a different port with --port.
@@ -25,14 +24,20 @@ import situational as sit
 # ---------------------------------------------------------------------------
 
 
+class DataDirNotConfigured(RuntimeError):
+    """Neither --data-dir nor $FLEXAI_DATA_DIR was given."""
+
+
 def resolve_data_dir(cli_value: Optional[str] = None) -> Path:
-    """Pick a data directory in precedence order: CLI > env > default."""
+    """Pick a data directory: CLI, then env. There is no default (it names one machine)."""
     if cli_value:
         return Path(cli_value).expanduser()
     env_value = os.environ.get("FLEXAI_DATA_DIR")
     if env_value:
         return Path(env_value).expanduser()
-    return fs.default_data_dir()
+    raise DataDirNotConfigured(
+        "no workbook directory: pass --data-dir PATH or set FLEXAI_DATA_DIR"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +128,8 @@ def _register_routes(app: Flask) -> None:
             res = sit.suggest(npc, notes, situation, post=app.config.get("SIT_POST", sit._post))
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        except sit.NotConfiguredError as e:
+            return jsonify({"error": f"Decision model not configured: {e}"}), 503
         except sit.BackendError as e:
             return jsonify({"error": f"Decision model unavailable: {e}"}), 502
         return jsonify({
@@ -141,6 +148,8 @@ def _register_routes(app: Flask) -> None:
                                  post=app.config.get("SIT_POST", sit._post))
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        except sit.NotConfiguredError as e:
+            return jsonify({"error": f"Chat model not configured: {e}"}), 503
         except sit.BackendError as e:
             return jsonify({"error": f"Chat model unavailable: {e}"}), 502
         return jsonify({"line": res["line"], "ms": round(res["ms"])})
@@ -622,17 +631,27 @@ def _cli() -> None:
     parser.add_argument(
         "--data-dir",
         help="Directory containing the two FlexAI_Social_*.xlsx workbooks. "
-             "Defaults to $FLEXAI_DATA_DIR or the hard-coded DriveThru path.",
+             "Required unless $FLEXAI_DATA_DIR is set.",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5105)
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
-    data_dir = resolve_data_dir(args.data_dir)
+    try:
+        data_dir = resolve_data_dir(args.data_dir)
+    except DataDirNotConfigured as e:
+        parser.error(str(e))
     print(f"[flexai-social] data_dir = {data_dir}")
     print(f"[flexai-social] main     = {fs.MAIN_WORKBOOK_NAME}")
     print(f"[flexai-social] dcs      = {fs.DCS_WORKBOOK_NAME}")
+
+    ep = sit.endpoints()
+    off = {"clef_url": "stance suggestions", "chat_url": "voiced lines"}
+    for key, var in sit.URL_VARS.items():
+        model = ep[key.replace("_url", "_model")]
+        where = ep[key] or f"NOT CONFIGURED (set {var}); {off[key]} disabled"
+        print(f"[flexai-social] {var:<8} = {where}  model={model}")
 
     app = create_app(data_dir=data_dir)
     print(f"[flexai-social] listening on http://{args.host}:{args.port}")

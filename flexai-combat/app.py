@@ -1,8 +1,7 @@
 """Flask web UI for FlexAI Combat Encounter resolution.
 
-    python3 app.py                      # loads workbook from the default dir
-    python3 app.py --data-dir ~/foo     # override the workbook directory
-    FLEXAI_COMBAT_DATA_DIR=... python3 app.py
+    python3 app.py --data-dir ~/foo     # the workbook directory (required)
+    FLEXAI_DATA_DIR=... python3 app.py  # same via env var (shared with flexai-social)
 
 Binds to :5106 by default so it can run alongside flexai-social (:5105).
 """
@@ -24,13 +23,26 @@ import flexai_combat as fc
 # ---------------------------------------------------------------------------
 
 
+DATA_DIR_VARS = ("FLEXAI_COMBAT_DATA_DIR", "FLEXAI_DATA_DIR")
+
+
+class DataDirNotConfigured(RuntimeError):
+    """Neither --data-dir nor a data-dir environment variable was given."""
+
+
 def resolve_data_dir(cli_value: Optional[str] = None) -> Path:
+    """Pick a data directory: CLI, then $FLEXAI_COMBAT_DATA_DIR, then $FLEXAI_DATA_DIR
+    (the name flexai-social uses, so one setting covers both). There is no default,
+    because the location is specific to each machine."""
     if cli_value:
         return Path(cli_value).expanduser()
-    env_value = os.environ.get("FLEXAI_COMBAT_DATA_DIR")
-    if env_value:
-        return Path(env_value).expanduser()
-    return fc.default_data_dir()
+    for var in DATA_DIR_VARS:
+        env_value = os.environ.get(var)
+        if env_value:
+            return Path(env_value).expanduser()
+    raise DataDirNotConfigured(
+        "no workbook directory: pass --data-dir PATH or set FLEXAI_DATA_DIR"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -395,14 +407,17 @@ def _cli() -> None:
     parser.add_argument(
         "--data-dir",
         help="Directory containing FlexAI_Combat_2021_01_04.xlsx. "
-             "Defaults to $FLEXAI_COMBAT_DATA_DIR or the hard-coded default.",
+             "Required unless $FLEXAI_COMBAT_DATA_DIR or $FLEXAI_DATA_DIR is set.",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5106)
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
-    data_dir = resolve_data_dir(args.data_dir)
+    try:
+        data_dir = resolve_data_dir(args.data_dir)
+    except DataDirNotConfigured as e:
+        parser.error(str(e))
     print(f"[flexai-combat] data_dir = {data_dir}")
     print(f"[flexai-combat] workbook = {fc.WORKBOOK_NAME}")
 

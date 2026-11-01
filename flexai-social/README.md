@@ -33,9 +33,11 @@ weights, and writes a line of dialogue in that stance. **Reroll** samples again;
 - Stances come from a decision model behind the Jev/SystemOne API — by default
   vLLM Semantic Router's **Decision-2.0-Nox-4B**; Cloudflare's **Clef** speaks the
   same API. The line comes from an OpenAI-compatible chat model. Both are on the
-  DGX Spark by default — see `situational.py` for the `CLEF_URL` / `CLEF_MODEL` /
-  `CHAT_URL` / `CHAT_MODEL` env vars. If the decision model is not running the card
-  says so; the dice tables below still work.
+  DGX Spark in practice. Set `CLEF_URL` and `CHAT_URL` to their addresses; they
+  have no default, because an address names one machine (`CLEF_MODEL` / `CHAT_MODEL`
+  keep defaults). The server prints the resolved endpoints at startup. If a URL is
+  unset the card says which variable to set; if the model is unreachable it says
+  that instead. The dice tables below work either way.
 - Set `CAMPAIGN_DIR` to a campaign root and leave *What they're like* blank to
   use the NPC's voice file (`voice/<name>_voice.md`) or dossier
   (`docs/npcs/`, `docs/distill/npcs/`). The card names the file it used.
@@ -61,8 +63,9 @@ The data directory is resolved in this order:
 
 1. `--data-dir PATH` on the `app.py` command line.
 2. `FLEXAI_DATA_DIR` environment variable.
-3. Hard-coded default:
-   `/mnt/g/My Drive/DriveThru/Infinium Game Studios/FlexAI Digital Resource Companion (unisystem_5E_Pathfinder_P2E_OSR)/`
+
+There is no default: the location is specific to each machine, so the server
+refuses to start (naming both options) when neither is given.
 
 The server prints the resolved path at startup so a wrong location is obvious.
 
@@ -98,7 +101,7 @@ python3 app.py [--data-dir PATH] [--host HOST] [--port 5105] [--debug]
 
 | Flag           | Default                                  |
 |----------------|------------------------------------------|
-| `--data-dir`   | `$FLEXAI_DATA_DIR` or hard-coded default |
+| `--data-dir`   | `$FLEXAI_DATA_DIR`; required if that is unset |
 | `--host`       | `127.0.0.1`                              |
 | `--port`       | `5105`                                   |
 | `--debug`      | off                                      |
