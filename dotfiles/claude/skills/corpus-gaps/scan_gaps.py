@@ -19,6 +19,15 @@ Each candidate gets one signal, strongest first:
   sibling    in a directory whose other files a kind lists under `files:`
              (a `files:` list never picks up a new file by itself)
   backlog    older, never ruled on
+
+It also reads git history over the same window (since corpus.yaml was last
+committed, or --since), to catch what the disk-side scan cannot see:
+  - recent additions that landed under an out-ruling, so the GM can confirm
+    the old ruling still fits what is arriving there (a subtree ruling
+    silently swallows every new file);
+  - declared files deleted or renamed away, whose drawers may still sit in
+    the palace (mp status shows them as UNDECLARED-DRAWERS).
+A rename counts as an addition of its new path.
 """
 
 from __future__ import annotations
@@ -91,16 +100,52 @@ def ruled_out(path: str, rulings: list[dict]) -> dict | None:
     return None
 
 
-def new_paths(campaign: Path, since: str | None) -> tuple[set[str], str | None]:
-    """Paths added in git after ``since`` (default: the last commit to corpus.yaml)."""
+def history(campaign: Path, since: str | None
+            ) -> tuple[set[str], list[tuple[str, str | None]], str | None]:
+    """Git history after ``since`` (default: the last commit to corpus.yaml).
+
+    Returns (added, removed, short-rev). ``added`` holds paths added or renamed
+    INTO; ``removed`` holds (old_path, new_path_or_None) for deletions and
+    renames. Paths are relative to the campaign directory.
+    """
     since = since or git(campaign, "log", "-1", "--format=%H", "--", CORPUS).strip()
     if not since:
-        return set(), None
+        return set(), [], None
     prefix = git(campaign, "rev-parse", "--show-prefix").strip()
-    out = git(campaign, "log", "--diff-filter=A", "--name-only", "--format=",
+    out = git(campaign, "log", "-M", "--name-status", "--format=",
               f"{since}..HEAD", "--", ".")
-    added = {line[len(prefix):] for line in out.splitlines() if line.startswith(prefix)}
-    return added, since[:8]
+
+    def rel(path: str) -> str | None:
+        return path[len(prefix):] if path.startswith(prefix) else None
+
+    added: set[str] = set()
+    removed: list[tuple[str, str | None]] = []
+    for line in out.splitlines():
+        cols = line.split("\t")
+        status = cols[0][:1]
+        if status == "A" and (a := rel(cols[1])):
+            added.add(a)
+        elif status == "D" and (d := rel(cols[1])):
+            removed.append((d, None))
+        elif status == "R":
+            old, new = rel(cols[1]), rel(cols[2])
+            if new:
+                added.add(new)
+            if old:
+                removed.append((old, new))
+    return added, removed, since[:8]
+
+
+def declared_raw(path: str, corpus: dict) -> str | None:
+    """The kind whose corpus.yaml entry covers ``path``, whether or not it exists now."""
+    for section in ("kinds", "campaign_kinds"):
+        for kind, body in (corpus.get(section) or {}).items():
+            body = body or {}
+            if path in (body.get("files") or []):
+                return kind
+            if any(path.startswith(d.rstrip("/") + "/") for d in body.get("dirs") or []):
+                return kind
+    return None
 
 
 def main() -> int:
@@ -139,7 +184,7 @@ def main() -> int:
                 listed_dirs[str(PurePosixPath(f).parent)].add(kind)
 
     rulings = load_rulings(campaign)
-    added, since = new_paths(campaign, args.since)
+    added, removed, since = history(campaign, args.since)
     untracked = set(git(campaign, "ls-files", "-o", "--exclude-standard").splitlines())
     seen = git(campaign, "ls-files", "-co", "--exclude-standard").splitlines()
 
@@ -176,6 +221,45 @@ def main() -> int:
     conflicts = [{"path": p, "kind": k, "ruling": r} for p, k in declared.items()
                  if (r := ruled_out(p, rulings))]
 
+    # History: recent arrivals under an out-ruling, grouped by ruling + two
+    # path levels below it, and declared files that left the disk.
+    exists = set(seen)
+    under: dict[tuple[str, str], int] = defaultdict(int)
+    for path in sorted((added | untracked) & exists):
+        p = PurePosixPath(path)
+        if path in declared or p.suffix.lower() not in exts:
+            continue
+        if baseline_excluded(path, rec.mechanical.baseline_exclusions):
+            continue
+        r = ruled_out(path, rulings)
+        if not r:
+            continue
+        rp = r["path"]
+        rest = PurePosixPath(path[len(rp):]).parent.parts if rp.endswith("/") else ()
+        under[(rp, "/".join(rest[:2]))] += 1
+    recent_under_rulings = [{"ruling": rp, "subpath": sub, "files": n}
+                            for (rp, sub), n in sorted(under.items())]
+
+    gone: dict[str, dict] = {}
+    for old, new in removed:  # newest first: keep the latest event per path
+        if old in gone or old in exists:
+            continue
+        kind = declared_raw(old, corpus)
+        if not kind:
+            continue
+        if new is None:
+            now = None
+        elif new in declared:
+            now = f"declared ({declared[new]})"
+        elif new not in exists:
+            now = "gone"
+        elif r := ruled_out(new, rulings):
+            now = f"ruled out ({r['path']})"
+        else:
+            now = "candidate"
+        gone[old] = {"path": old, "kind": kind, "renamed_to": new, "new_path_status": now}
+    declared_gone = list(gone.values())
+
     # Collapse a large new/backlog subtree into one row: rule a pipeline tree once.
     # Siblings are never collapsed; each one is a file a `files:` list could take.
     def key(c: dict) -> tuple[str, str]:
@@ -203,6 +287,8 @@ def main() -> int:
         "candidates": rows,
         "stale_rulings": stale,
         "conflicts": conflicts,
+        "recent_under_rulings": recent_under_rulings,
+        "declared_gone": declared_gone,
     }
     if args.json:
         json.dump(report, sys.stdout, indent=2)
@@ -226,6 +312,20 @@ def main() -> int:
     for c in conflicts:
         print(f"CONFLICT: {c['path']} is declared in {c['kind']} but ruled out "
               f"({c['ruling']['path']})")
+
+    window = f"since {since}" if since else "(no corpus commit: history skipped)"
+    total = sum(r["files"] for r in recent_under_rulings)
+    print(f"\nhistory {window}: {total} new file(s) under out-rulings "
+          "(check each ruling still fits)")
+    for r in recent_under_rulings:
+        sub = f" :: {r['subpath']}/" if r["subpath"] else ""
+        print(f"  {r['files']:4}  {r['ruling']}{sub}")
+    print(f"\nhistory {window}: {len(declared_gone)} declared file(s) deleted or renamed away")
+    for g in declared_gone:
+        if g["renamed_to"]:
+            print(f"  {g['path']}  ({g['kind']})  -> {g['renamed_to']}  [{g['new_path_status']}]")
+        else:
+            print(f"  {g['path']}  ({g['kind']})  deleted")
     return 0
 
 
