@@ -1,11 +1,10 @@
 #!/bin/bash
-# Restore rpg_library.db from the newest Google Drive backup (only if missing),
+# Restore rpg_library.db from the newest backup in $RPG_LIB_BACKUP_DIR (only if missing),
 # install fastmcp, and register library_mcp.py with Claude Code as "rpg-library".
 set -euo pipefail
 
 cd "$(dirname "$0")"
 LIB_DIR="$(pwd)"
-BACKUP_DIR="/mnt/g/My Drive/Kickstarter"
 PY="$HOME/.venv/bin/python"
 DB="$LIB_DIR/rpg_library.db"
 
@@ -13,7 +12,9 @@ DB="$LIB_DIR/rpg_library.db"
 if [ -f "$DB" ]; then
     echo "DB already present: $DB (leaving it alone)"
 else
-    LATEST=$(ls -1 "$BACKUP_DIR"/rpg_library-*.db 2>/dev/null | sort | tail -1)
+    BACKUP_DIR="${RPG_LIB_BACKUP_DIR:-}"
+    [ -n "$BACKUP_DIR" ] || { echo "error: $DB is missing and RPG_LIB_BACKUP_DIR is not set"; exit 1; }
+    LATEST=$(ls -1 "$BACKUP_DIR"/rpg_library-*.db 2>/dev/null | sort | tail -1 || true)
     [ -n "$LATEST" ] || { echo "No rpg_library-*.db backup in $BACKUP_DIR"; exit 1; }
     echo "Restoring $LATEST -> $DB"
     cp "$LATEST" "$DB"

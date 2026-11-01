@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Database backup rule (ALWAYS)
 
-Whenever you merge/push this repo to origin (e.g. merging a PR or pushing `main`), first back up the SQLite databases to Google Drive by running:
+Whenever you merge/push this repo to origin (e.g. merging a PR or pushing `main`), first back up the SQLite databases to the backup folder by running:
 
 ```bash
 ./backup_db.sh
 ```
 
-This backs up both `rpg_library.db` and `user_data.db` to `/mnt/g/My Drive/Kickstarter/` via `sqlite3 .backup` (consistent snapshot, not `cp`). Dated filenames keep one backup per day; same-day runs overwrite that day's files. Run it before the push completes, not after. The script also takes an optional destination dir: `./backup_db.sh /some/other/dir`.
+This backs up both `rpg_library.db` and `user_data.db` to the folder named by `$RPG_LIB_BACKUP_DIR` (e.g. `/mnt/g/My Drive/hypostasis/backups/rpg-lib`) via `sqlite3 .backup` (consistent snapshot, not `cp`). There is no built-in default: if the variable is unset and no destination is passed, the script exits with an error. Dated filenames keep one backup per day; same-day runs overwrite that day's files. Run it before the push completes, not after. An explicit destination overrides the variable: `./backup_db.sh /some/other/dir`. `setup_library_mcp.sh` restores from the same folder, and `refresh_library.sh` refuses to start without it.
 
 ## What This Is
 

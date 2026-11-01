@@ -1,5 +1,7 @@
 # Enrichment Backup & Restore
 
+(The SQLite database snapshots themselves are made by `backup_db.sh` into `$RPG_LIB_BACKUP_DIR`; see CLAUDE.md. This page covers the enrichment export.)
+
 The SQLite database (`rpg_library.db`) is not checked into git. The raw PDF metadata can be re-indexed from disk for free, but the Claude API enrichment (game_system, product_type, tags, description, display_title, series, level ranges) is expensive to regenerate.
 
 These scripts export the enrichment data to a git-tracked JSON file so it survives a database loss.

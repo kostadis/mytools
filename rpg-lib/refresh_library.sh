@@ -7,6 +7,7 @@
 # (the freshly-updated state).
 #
 # Usage: ./refresh_library.sh [db_path]
+#   Needs RPG_LIB_BACKUP_DIR (the backup folder backup_db.sh writes to).
 #   Pass extra enricher flags after the db path is NOT supported here;
 #   edit the ENRICH_ARGS line below if you need --limit, --force, etc.
 set -euo pipefail
@@ -14,6 +15,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 DB_PATH="${1:-./rpg_library.db}"
+
+# Fail before a long index/enrich run, not at the final backup.
+if [[ -z "${RPG_LIB_BACKUP_DIR:-}" ]]; then
+  echo "error: RPG_LIB_BACKUP_DIR is not set (the folder backup_db.sh writes to)" >&2
+  exit 1
+fi
 
 # (scan_dir, source) pairs for the two libraries.
 DRIVETHRU_DIR="/mnt/g/My Drive/DriveThru"
