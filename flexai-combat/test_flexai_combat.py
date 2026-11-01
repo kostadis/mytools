@@ -408,3 +408,31 @@ def test_flask_routes_smoke(table):
     resp = client.get("/rules")
     assert resp.status_code == 200
     assert b"Combat" in resp.data
+
+
+# --- No machine-specific default data dir (same rule as flexai-social, GH #96) ---
+
+
+def test_source_has_no_machine_paths():
+    for name in ("app.py", "flexai_combat.py", "service.sh"):
+        text = (HERE / name).read_text()
+        assert "kroussos" not in text and "OneDrive" not in text, name
+
+
+def test_data_dir_has_no_default(monkeypatch):
+    import app as app_module
+    for var in app_module.DATA_DIR_VARS:
+        monkeypatch.delenv(var, raising=False)
+    with pytest.raises(app_module.DataDirNotConfigured, match="FLEXAI_DATA_DIR"):
+        app_module.resolve_data_dir(None)
+
+
+def test_data_dir_precedence(monkeypatch, tmp_path):
+    import app as app_module
+    shared, combat = tmp_path / "shared", tmp_path / "combat"
+    monkeypatch.delenv("FLEXAI_COMBAT_DATA_DIR", raising=False)
+    monkeypatch.setenv("FLEXAI_DATA_DIR", str(shared))          # social's name works here too
+    assert app_module.resolve_data_dir(None) == shared
+    monkeypatch.setenv("FLEXAI_COMBAT_DATA_DIR", str(combat))   # combat-specific name wins
+    assert app_module.resolve_data_dir(None) == combat
+    assert app_module.resolve_data_dir("~/x") == Path("~/x").expanduser()   # CLI wins over both

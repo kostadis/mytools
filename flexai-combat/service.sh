@@ -24,7 +24,12 @@ cmd_start() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting flexai-combat on $URL" >> "$LOG_FILE"
 
     local args=(--host "$HOST" --port "$PORT")
-    [[ -n "$FLEXAI_COMBAT_DATA_DIR" ]] && args+=(--data-dir "$FLEXAI_COMBAT_DATA_DIR")
+    local data_dir="${FLEXAI_COMBAT_DATA_DIR:-$FLEXAI_DATA_DIR}"
+    if [[ -z "$data_dir" ]]; then
+        echo "No workbook directory: set FLEXAI_DATA_DIR (or FLEXAI_COMBAT_DATA_DIR)"
+        return 1
+    fi
+    args+=(--data-dir "$data_dir")
 
     nohup python3 "$SCRIPT_DIR/app.py" "${args[@]}" >> "$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"
@@ -108,7 +113,8 @@ case "${1:-}" in
         echo "Env vars:"
         echo "  PORT                    (default: 5106)"
         echo "  HOST                    (default: 127.0.0.1)"
-        echo "  FLEXAI_COMBAT_DATA_DIR  (default: hard-coded OneDrive path)"
+        echo "  FLEXAI_DATA_DIR         (required unless FLEXAI_COMBAT_DATA_DIR is set)"
+        echo "  FLEXAI_COMBAT_DATA_DIR  (overrides FLEXAI_DATA_DIR for combat only)"
         exit 1
         ;;
 esac

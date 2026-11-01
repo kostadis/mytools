@@ -37,8 +37,11 @@ The data directory is resolved in this order:
 
 1. `--data-dir PATH` on the `app.py` command line.
 2. `FLEXAI_COMBAT_DATA_DIR` environment variable.
-3. Hard-coded default:
-   `/home/kroussos/kosta/OneDrive/Dungeons and Dragons/Tools`
+3. `FLEXAI_DATA_DIR` environment variable. flexai-social uses the same name, so
+   one setting covers both tools when the workbooks share a directory.
+
+There is no default: the location is specific to each machine, so the server
+refuses to start (naming the options) when none is given.
 
 The server prints the resolved path at startup so a wrong location is obvious.
 
@@ -66,7 +69,7 @@ python3 app.py [--data-dir PATH] [--host HOST] [--port 5106] [--debug]
 
 | Flag           | Default                                           |
 |----------------|---------------------------------------------------|
-| `--data-dir`   | `$FLEXAI_COMBAT_DATA_DIR` or hard-coded default   |
+| `--data-dir`   | env var (above); required if none is set          |
 | `--host`       | `127.0.0.1`                                       |
 | `--port`       | `5106`                                            |
 | `--debug`      | off                                               |

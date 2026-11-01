@@ -334,15 +334,6 @@ def _ensure_cell(
 
 WORKBOOK_NAME = "FlexAI_Combat_2021_01_04.xlsx"
 
-_DEFAULT_DATA_DIR = Path(
-    "/home/kroussos/kosta/OneDrive/Dungeons and Dragons/Tools"
-)
-
-
-def default_data_dir() -> Path:
-    return _DEFAULT_DATA_DIR
-
-
 def _row_headers(ws, cols: int) -> Tuple[List, List, List]:
     """Read the (RoleSize, Stance, Rank) header rows (rows 2, 3, 4)."""
     sizes = [ws.cell(2, c).value for c in range(1, cols + 1)]
