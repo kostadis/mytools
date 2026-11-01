@@ -71,6 +71,11 @@ not infer outs.
   `--dir`.** Name lookup fails on hosts whose `data_roots` do not list the campaign,
   and on foreign-owned copies.
 - Note `git status`. Untracked files are scanned too, and flagged.
+- **Know what a `dirs:` entry already covers.** If the GM's question is "is my new
+  work in the corpus?", check first: a new file under a directory a kind lists in
+  `dirs:` (e.g. `notes/session_prep/`, `notes/statblocks/`) is already declared, and
+  is mined on the next `mp refresh` with no ruling. Say so, and only ask about what
+  the scanner actually reports. Images and other non-readable files are never mined.
 
 ### 2. Scan
 
@@ -99,6 +104,23 @@ The scanner also prints **STALE** rulings (the path no longer exists) and
 **CONFLICT**s (a path is both declared and ruled out). Bring both to the GM. Do not
 delete or resolve them yourself.
 
+The last line, `N other minable file(s) not shown`, counts files in other formats
+(JSON, YAML, PDF). They are not mined unless declared. Mention the count; don't put
+them in front of the GM unless one is plainly a document.
+
+**A folded row hides its contents.** `docs/background/ [11 files]` can hold real
+reference material next to the pipeline output that triggered the fold. Before you
+describe any folded row to the GM as one thing, expand it and look:
+
+```bash
+"$PY" ~/.claude/skills/corpus-gaps/scan_gaps.py <campaign-dir> --collapse 100000 --depth 9 --json
+```
+
+*Failure this fixes (toee, 2026-11-01): `docs/background/` was presented inside a
+bulk "pipeline output" row. Expanding it after the GM approved that row turned up
+three module proper-noun inventories, which the GM then chose to add. They were
+nearly ruled out without the GM ever seeing them.*
+
 ### 3. Prepare each ruling
 
 For every candidate (or folded subtree), give the GM:
@@ -116,6 +138,37 @@ For every candidate (or folded subtree), give the GM:
 Group related files into one ruling where the GM would rule them together (a whole
 new directory, a family of strategy docs). Never split a ruling just to make the
 queue look longer, and never merge unrelated files to make it shorter.
+
+#### A large backlog: triage into families, not cards
+
+A first run on an established campaign can report thousands of files (toee: about
+5,900). **No GM can review that, and a 6,000-card page is not a checkpoint.** Do the
+sorting yourself, then put a short list of decisions in front of the GM:
+
+1. **Group every candidate into families** by path (strip the per-session directory
+   from `summaries/<session>/…` so all sessions' `staged_review/` become one family).
+   Count each family and read one example's head.
+2. **Separate the judgment calls from the pipeline.** A judgment call is a family a
+   GM might plausibly want searchable: source material (supplement text, module
+   inventories), canon-adjacent records (the spelling glossary, staged names), old
+   narrative documents (a bible, chapter splits), a wiki. Pipeline is everything a
+   tool wrote for another tool: extractions, staged-review manifests, narration
+   passes, per-run state, batch scratch, LLM response files, drafts, generated
+   projections, empty stubs.
+3. **Present one table**, one row per judgment call plus **one bulk row for all
+   pipeline output**, each with what it is and your recommendation. In toee this was
+   six rows for 5,900 files.
+4. **The bulk row lists every subtree it covers, by path.** The GM's approval covers
+   exactly that list. Anything you find afterwards that is not on it (see "A folded
+   row hides its contents") goes back to the GM as its own question. It is never
+   swept in.
+5. **Look for replicas before calling something canon.** A family that is the
+   origin or a copy of a declared kind (e.g. `summaries/<session>/session-summary.md`
+   when `docs/summaries/` is declared) is normally ruled out, with the declared copy
+   named. A bible plus its chapter splits is one ruling, not two.
+
+Below roughly six judgment calls, ask in chat (step 4). The review-page rule there is
+for many *individual* rulings, not for a big file count that triage has reduced.
 
 Name collisions to check before you propose a new kind name:
 
@@ -147,10 +200,35 @@ Read the answers back strictly:
    - A whole new directory goes under `dirs:`, which is recursive and picks up future
      files.
    - A file joining a kind that lists files goes under that kind's `files:`.
-   - A new kind goes under `campaign_kinds:`, with the GM's `trust:`.
+   - A new kind goes under `campaign_kinds:` **as a whole definition**: its `trust:`
+     and its `dirs:`/`files:` together, at the top level of the file. Do not put
+     its files under `kinds:`. `corpus check` rejects that with `unknown-kind` and
+     `empty-declaration`. Shape:
+     ```yaml
+     campaign_kinds:
+       background:
+         trust: reference
+         files:
+         - docs/background/x-inventory.md
+     ```
+   - **A directory holding both source and pipeline files** (e.g. a converter's
+     `chunk-*-input.txt` next to `chunk-*-response.txt` and `*-parse-error.txt`):
+     declare the source files under `files:`, generated by a glob so none are
+     missed, and rule out the others one file at a time. Declaring the directory
+     would mine the LLM responses as well.
    - If a file is now reachable from two kinds, exactly one of them needs
      `mined_as: true`. `corpus check` says so.
 2. **Outs:** append to `.mneme/corpus.rulings.yaml`, with today's date and the GM's reason.
+   - Prefer one subtree entry (trailing `/`) per family over hundreds of file
+     entries. A subtree out-ruling also covers future files there, which is right for
+     pipeline directories.
+   - **Before ruling out a subtree, check that nothing declared lives inside it:**
+     `grep -n "<subtree>" .mneme/corpus.yaml`. If something does, rule out its
+     siblings instead. The scanner reports a CONFLICT otherwise.
+   - Put the GM's ruling in the reason (`"GM ruling 6: pipeline/process output"`), so
+     the file explains itself later.
+   - For more than a handful of entries, generate the file with a short script from
+     the agreed list rather than by hand.
 3. Validate and rebuild, all with `--dir`:
    ```bash
    mneme corpus check   <campaign> --dir <campaign-dir>   # must say valid
@@ -160,9 +238,21 @@ Read the answers back strictly:
    mneme mp status      <campaign> --dir <campaign-dir>   # want: corpus conformant, index built
    mneme mp backup      <campaign> --dir <campaign-dir>
    ```
-4. Spot-check that a newly added file is searchable:
+4. **If `mp status` reports `UNDECLARED-DRAWERS`** after the refresh: the palace
+   still holds drawers for files the corpus no longer declares. Usually that means
+   files were renamed or removed (toee: 42 renamed `docs/summaries/` files, 2,449
+   drawers, so every summary came back twice in search). `refresh` never deletes, so
+   this was there before your change. Name it and ask the GM. Deleting drawers is the
+   GM's call, even though no file on disk is touched. On a yes:
+   ```bash
+   mneme mp prune <campaign> --dir <campaign-dir>                          # preview: the list and the count
+   mneme mp prune <campaign> --dir <campaign-dir> --confirm --expect <N>   # N from the preview; backs up first
+   ```
+   Then re-run `mp status` and take a backup.
+5. Spot-check that a newly added file is searchable:
    `mneme mp search <campaign> --dir <campaign-dir> -- "<phrase from it>"`.
-5. Re-run the scanner. The ruled files are gone, and only deferred ones remain.
+   Check one file from each new kind.
+6. Re-run the scanner. The ruled files are gone, and only deferred ones remain.
 
 ### 6. Report and commit
 
@@ -170,7 +260,9 @@ Report: candidates found per signal, rulings by type (add / new kind / out / def
 any still undecided, stale rulings and conflicts, and the final `mp status`.
 
 Commit `.mneme/corpus.yaml`, `.mneme/corpus.rulings.yaml` and the re-rendered
-`config/config.yaml` together, on a branch. One campaign per commit. Commit only when
+`config/config.yaml` and root `mempalace.yaml` together, on a branch. (They are
+replicas, but they're tracked, and they must match the corpus they were rendered
+from.) One campaign per commit. Commit only when
 the user asks.
 
 ## Hard rules
