@@ -96,13 +96,31 @@ The report has three signals, strongest first:
 
 | Signal | Meaning | Usual ruling |
 |---|---|---|
-| `new` | Added after corpus.yaml was last committed, or untracked | Most real gaps are here: a new document type, or a new file a `files:` list missed |
+| `new` | Added (or renamed into place) after corpus.yaml was last committed, or untracked | Most real gaps are here: a new document type, or a new file a `files:` list missed |
 | `sibling` | In a directory where a kind lists files one by one; `-> kinds` names them | Add it to that kind's `files:`, or rule it out |
 | `backlog` | Older, never ruled on; big subtrees folded into one `dir/ [N files]` row | Usually pipeline output. Rule out the whole subtree in one ruling. |
 
 The scanner also prints **STALE** rulings (the path no longer exists) and
 **CONFLICT**s (a path is both declared and ruled out). Bring both to the GM. Do not
 delete or resolve them yourself.
+
+**History.** Over the same window (since `corpus.yaml` was last committed, or
+`--since`), the scanner reads git history for what the disk-side scan cannot see. A
+rename counts as an addition of its new path.
+
+- **New files under out-rulings**, grouped by ruling plus two path levels. A subtree
+  ruling silently swallows every file that lands there, including a new kind of
+  document. Read the families and check that each still fits its ruling's reason.
+  Show the GM the table in one line per family. Bring any family that doesn't fit
+  as its own question. Never quietly accept it, and never edit the ruling yourself.
+- **Declared files deleted or renamed away**, with where a rename went and that
+  path's status now (declared, candidate, ruled out). Their drawers can still sit
+  in the palace, so expect `UNDECLARED-DRAWERS` after the refresh (step 5.4). A
+  rename whose new path is a candidate is a ruling to bring like any other.
+
+*Why (obelisk, 2026-11-01): the GM asked that the scan look at recent git history.
+The first run showed 198 recent arrivals under subtree rulings that the disk scan
+never mentioned.*
 
 The last line, `N other minable file(s) not shown`, counts files in other formats
 (JSON, YAML, PDF). They are not mined unless declared. Mention the count; don't put
