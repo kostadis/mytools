@@ -154,6 +154,8 @@ re-apply a stage you have already applied.
 | `items[].guess` | no | Your best guess at the verdict (`approve`, `reject`, `discuss` or an extra verdict key). Shown in a highlighted box above the buttons and marked "my guess" on its button. **Give one on every card where you are not confident** (GM 2026-10-19: "if there is non confidence in a choice, I want your guess as an option"). It is display only: it is never a pre-filled verdict and is never exported. |
 | `items[].guessWhy` | no | One or two sentences of why, shown with the guess. |
 | `extraVerdicts` | no | Extra buttons beyond Approve / Reject / Discuss, for a skill whose natural verdicts are more than two, e.g. `[{"key":"chatter","label":"Table chatter","outcome":"Saved as ignored in <code>…state.json</code>."}]`. `key` is 1-24 chars `[a-z_]`; `outcome` is the default text of the card's extra outcome box. Declare only verdicts the skill's apply step maps to an action. |
+| `items[].picks` | no | 1-12 distinct words or phrases shown as **clickable buttons** under "Or change to" (label override: `items[].picksLabel`). Use it whenever the GM is choosing a replacement — dictionary suggestions, spelling variants — so they click the word and never type it (GM 2026-11-06). A click saves verdict `pick`, and `read_decisions.py` exports the word in `picks[id]`, refusing any word the card did not offer. Approve still means the card's own proposed `edit`. |
+| `items[].guessPick` | no | Which of `picks` you would choose; marked "my guess" on that button. Display only, like `guess`. |
 | `items[].x` | no | Per-card override of an extra verdict's outcome text: `{"chatter": "…"}`. |
 
 **Never pre-fill a verdict.** A page always starts unmarked and unsaved: the

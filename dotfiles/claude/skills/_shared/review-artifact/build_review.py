@@ -157,6 +157,13 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ch[aria-pressed="true"][data-choice="discuss"]{background:var(--talk-bg);border-color:var(--talk);color:var(--talk)}
 .ch[aria-pressed="true"][data-x="1"]{background:var(--x-bg);border-color:var(--x);color:var(--x)}
 
+.picks{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.picks .lbl{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-right:4px}
+.pk{background:transparent;border:1px solid var(--rule);color:var(--ink);border-radius:3px;padding:9px 14px;
+  font-family:var(--sans);font-size:17px;font-weight:500;transition:background .12s,border-color .12s,color .12s}
+.pk:hover{border-color:var(--ink-3)}
+.pk[aria-pressed="true"]{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}
+.pk .mine{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.06em;margin-top:2px;color:var(--talk)}
 .note{width:100%;background:var(--ground);border:1px solid var(--rule);border-radius:3px;color:var(--ink);
   font-family:var(--sans);font-size:15px;padding:9px 12px}
 .note::placeholder{color:var(--ink-3)}
@@ -207,6 +214,8 @@ function readState(){
 var state = readState();
 if(!state.decisions) state.decisions = {};
 if(!state.notes) state.notes = {};
+if(!state.picks) state.picks = {};
+var HASPICKS = ITEMS.some(function(it){ return it.picks && it.picks.length; });
 
 var dirty = false;
 var readOnly = false;
@@ -216,6 +225,7 @@ var ui = {filter: 'all', search: ''};
 function counts(){
   var c = {};
   KEYS.forEach(function(k){ c[k] = 0; });
+  c.pick = 0;
   ITEMS.forEach(function(it){ var d = state.decisions[it.id]; if(d && d in c) c[d]++; });
   return c;
 }
@@ -223,6 +233,7 @@ function counts(){
 function render(){
   var c = counts(), done = 0;
   KEYS.forEach(function(k){ done += c[k]; });
+  done += c.pick;
   var query = ui.search.toLowerCase();
   var visible = ITEMS.filter(function(it){
     var choice = state.decisions[it.id] || '';
@@ -245,12 +256,13 @@ function render(){
   if(c.approve) h += '<span class="chip a">' + c.approve + ' approve</span>';
   if(c.reject)  h += '<span class="chip r">' + c.reject + ' reject</span>';
   if(c.discuss) h += '<span class="chip d">' + c.discuss + ' discuss</span>';
+  if(c.pick) h += '<span class="chip a">' + c.pick + ' word picked</span>';
   EXTRA.forEach(function(e){ if(c[e.key]) h += '<span class="chip x">' + c[e.key] + ' ' + esc(e.label.toLowerCase()) + '</span>'; });
   h += '</span>';
   h += '<span class="spacer"></span>';
   h += '<input class="search" id="search" type="search" placeholder="Search" value="' + esc(ui.search) + '">';
   h += '<span class="filters">';
-  [['all','All'],['unmarked','Unmarked'],['approve','Approved'],['reject','Rejected'],['discuss','Discuss']].concat(
+  [['all','All'],['unmarked','Unmarked'],['approve','Approved'],['reject','Rejected'],['discuss','Discuss']].concat(HASPICKS ? [['pick','Picked']] : [], 
     EXTRA.map(function(e){ return [e.key, esc(e.label)]; })).forEach(function(pair){
     h += '<button class="filter" data-filter="' + pair[0] + '" aria-pressed="' + (ui.filter === pair[0]) + '">' + pair[1] + '</button>';
   });
@@ -284,6 +296,15 @@ function render(){
     });
     h += '</div>';
     if(it.ev) h += '<p class="ev">' + it.ev + '</p>';
+    if(it.picks && it.picks.length){
+      h += '<div class="picks"><span class="lbl">' + esc(it.picksLabel || 'Or change to') + '</span>';
+      it.picks.forEach(function(w){
+        var on = d === 'pick' && state.picks[it.id] === w;
+        h += '<button class="pk" data-item="' + it.id + '" data-pick="' + esc(w) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
+             esc(w) + (it.guessPick === w ? '<span class="mine">my guess</span>' : '') + '</button>';
+      });
+      h += '</div>';
+    }
     h += '<div class="choices">';
     KEYS.forEach(function(k){
       h += '<button class="ch" data-item="' + it.id + '" data-choice="' + k + '"' + (ISX[k] ? ' data-x="1"' : '') + ' aria-pressed="' +
@@ -331,6 +352,17 @@ function wire(){
       var id = b.getAttribute('data-item'), k = b.getAttribute('data-choice');
       state.decisions[id] = (state.decisions[id] === k) ? undefined : k;
       if(!state.decisions[id]) delete state.decisions[id];
+      delete state.picks[id];
+      dirty = true;
+      render();
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.pk'), function(b){
+    b.addEventListener('click', function(){
+      var id = b.getAttribute('data-item'), w = b.getAttribute('data-pick');
+      if(state.decisions[id] === 'pick' && state.picks[id] === w){ delete state.decisions[id]; delete state.picks[id]; }
+      else { state.decisions[id] = 'pick'; state.picks[id] = w; }
       dirty = true;
       render();
     });
@@ -348,7 +380,7 @@ function wire(){
 
   var all = document.getElementById('allDiscuss');
   if(all) all.addEventListener('click', function(){
-    ITEMS.forEach(function(it){ state.decisions[it.id] = 'discuss'; });
+    ITEMS.forEach(function(it){ state.decisions[it.id] = 'discuss'; delete state.picks[it.id]; });
     dirty = true;
     render();
   });
@@ -464,6 +496,15 @@ def validate(spec: dict) -> list[str]:
             if iid in seen:
                 errs.append(f"duplicate item id {iid!r} - decisions are keyed by id, so ids must be unique")
             seen.add(iid)
+    for i, it in enumerate(items):
+        if not isinstance(it, dict) or "picks" not in it:
+            continue
+        pk = it["picks"]
+        if (not isinstance(pk, list) or not 1 <= len(pk) <= 12
+                or not all(isinstance(w, str) and w.strip() for w in pk) or len(set(pk)) != len(pk)):
+            errs.append(f"items[{i}] ({it.get('id', '?')}) 'picks' must be 1-12 distinct non-empty strings")
+        elif it.get("guessPick") and it["guessPick"] not in pk:
+            errs.append(f"items[{i}] ({it.get('id', '?')}) guessPick {it['guessPick']!r} is not one of its picks")
     keys = {"approve", "reject", "discuss"} | {e.get("key") for e in (spec.get("extraVerdicts") or []) if isinstance(e, dict)}
     for i, it in enumerate(items):
         if isinstance(it, dict) and it.get("guess") and it["guess"] not in keys:
@@ -483,7 +524,7 @@ def validate(spec: dict) -> list[str]:
     if spec.get("reviewId") and not re.fullmatch(r"[A-Za-z0-9_.:@-]{1,128}", str(spec["reviewId"])):
         errs.append("'reviewId' must be 1-128 chars of [A-Za-z0-9_.:@-]")
     pre = spec.get("state") or {}
-    if pre.get("decisions") or pre.get("notes") or pre.get("savedAt"):
+    if pre.get("decisions") or pre.get("notes") or pre.get("picks") or pre.get("savedAt"):
         errs.append("'state' must not pre-fill decisions, notes or savedAt - a page always "
                     "starts unmarked and unsaved; put a recommendation in the card's guess/guessWhy")
     return errs
@@ -528,7 +569,7 @@ def build(spec: dict) -> str:
     review_id = spec.get("reviewId") or "{}@{}".format(
         re.sub(r"[^A-Za-z0-9_.:-]+", "-", spec["title"]).strip("-")[:80],
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
-    state = {"decisions": {}, "notes": {}, "savedAt": None, "reviewId": review_id}
+    state = {"decisions": {}, "notes": {}, "picks": {}, "savedAt": None, "reviewId": review_id}
     return (PAGE
             .replace("__TITLE_TEXT__", html.escape(spec["title"]))
             .replace("__FONTS_TEXT__", FONTS)

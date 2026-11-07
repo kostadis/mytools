@@ -90,6 +90,13 @@ def page_item_ids(html: str) -> list[str]:
     return [it["id"] for it in items]
 
 
+def page_picks(html: str) -> dict[str, list[str]]:
+    """Per-card clickable word choices (items[].picks); empty on older pages."""
+    m = ITEMS_RE.search(html)
+    items = json.loads(m.group(1).replace("\\u003c", "<")) if m else []
+    return {it["id"]: it["picks"] for it in items if it.get("picks")}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--html", required=True, type=Path, help="saved artifact HTML")
@@ -113,11 +120,20 @@ def main() -> int:
         print("       The GM has not pressed Save yet — do NOT treat this as 'no decisions'.", file=sys.stderr)
         raise SystemExit(1)
 
-    valid = VALID | page_extra_keys(html)
+    picks = state.get("picks") or {}
+    offered = page_picks(html)
+    valid = VALID | page_extra_keys(html) | ({"pick"} if offered else set())
     bad = {k: v for k, v in decisions.items() if v not in valid}
     if bad:
         print(f"error: unrecognised verdicts: {bad}", file=sys.stderr)
         raise SystemExit(2)
+
+    for iid, v in decisions.items():
+        if v == "pick" and picks.get(iid) not in offered.get(iid, []):
+            print(f"error: {iid} is marked 'pick' but its picked word {picks.get(iid)!r} "
+                  f"is not one the card offered {offered.get(iid)}", file=sys.stderr)
+            raise SystemExit(2)
+    picks = {k: w for k, w in picks.items() if decisions.get(k) == "pick"}
 
     known = set(ids)
     unknown = sorted((set(decisions) | set(notes)) - known)
@@ -146,6 +162,7 @@ def main() -> int:
         "tally": tally,
         "decisions": decisions,
         "notes": notes,
+        "picks": picks,
         "discuss": sorted(k for k, v in decisions.items() if v == "discuss"),
         "unmarked": [i for i in ids if i not in decisions],
     }
