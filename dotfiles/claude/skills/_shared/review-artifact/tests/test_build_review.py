@@ -101,6 +101,46 @@ class GuessTests(unittest.TestCase):
         self.assertNotIn("guess", json.dumps(got))
 
 
+class PickTests(unittest.TestCase):
+    """Per-card clickable word choices (GM 2026-11-06: click a dictionary word, never type it)."""
+
+    def _read(self, state: dict, items: list[dict]):
+        html = br.build({"title": "T", "reviewId": "t:1", "items": items})
+        saved = re.sub(r'(id="state">)(.*?)(</script>)',
+                       lambda m: m.group(1) + json.dumps(dict(state, savedAt="now", reviewId="t:1")) + m.group(3),
+                       html, count=1, flags=re.S)
+        with tempfile.TemporaryDirectory() as d:
+            page, out = Path(d) / "index.html", Path(d) / "decisions.json"
+            page.write_text(saved, encoding="utf-8")
+            r = subprocess.run([sys.executable, str(READ), "--html", str(page), "--out", str(out)],
+                               capture_output=True, text=True)
+            return r.returncode, (json.loads(out.read_text()) if r.returncode == 0 else r.stderr)
+
+    def test_picks_must_be_distinct_strings(self) -> None:
+        self.assertTrue(br.validate({"title": "T", "items": [card(picks=["a", "a"])]}))
+        self.assertTrue(br.validate({"title": "T", "items": [card(picks=[])]}))
+        self.assertFalse(br.validate({"title": "T", "items": [card(picks=["the", "tech"])]}))
+
+    def test_guess_pick_must_be_offered(self) -> None:
+        self.assertTrue(br.validate({"title": "T", "items": [card(picks=["the"], guessPick="tea")]}))
+
+    def test_picked_word_is_exported(self) -> None:
+        rc, got = self._read({"decisions": {"s1-01": "pick"}, "notes": {}, "picks": {"s1-01": "tech"}},
+                             [card(picks=["the", "tech"])])
+        self.assertEqual(rc, 0, got)
+        self.assertEqual(got["picks"], {"s1-01": "tech"})
+        self.assertEqual(got["tally"]["pick"], 1)
+
+    def test_word_not_offered_is_refused(self) -> None:
+        rc, _ = self._read({"decisions": {"s1-01": "pick"}, "notes": {}, "picks": {"s1-01": "teh"}},
+                           [card(picks=["the", "tech"])])
+        self.assertEqual(rc, 2)
+
+    def test_pick_verdict_refused_on_a_page_without_picks(self) -> None:
+        rc, _ = self._read({"decisions": {"s1-01": "pick"}, "notes": {}, "picks": {"s1-01": "x"}}, [card()])
+        self.assertEqual(rc, 2)
+
+
 class LayoutTests(unittest.TestCase):
     def test_page_carries_the_lifted_edit(self) -> None:
         [it] = page_items(br.build({"title": "T", "items": [card()]}))
