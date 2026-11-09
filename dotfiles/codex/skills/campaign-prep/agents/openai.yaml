@@ -1,0 +1,4 @@
+interface:
+  display_name: "Campaign Prep"
+  short_description: "Load campaign grounding docs before session prep"
+  default_prompt: "Use $campaign-prep to load the current campaign context and get ready for prep."
