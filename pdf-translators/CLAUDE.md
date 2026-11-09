@@ -18,7 +18,7 @@ pdf-translators/
 │                   check_5etools_load)
 ├── converters/     conversion entry points (pdf_to_5etools_v2, convert_1e_to_5e,
 │                   extract_monsters, extract_images, extract_markdown, mistral_ocr,
-│                   patch_5e_chapters, merge_patch)
+│                   patch_5e_chapters, merge_patch, layout_table_merge)
 ├── batch/          batch drivers + their working data (batch_convert, batch_marker,
 │                   batch_mistral_ocr, ocr_three, dmsguild-state.db, dmsguild-logs/, ...)
 ├── editors/        Flask UIs (app, toc_editor, toc_fixer, monster_editor,
@@ -289,6 +289,17 @@ python3 converters/merge_patch.py adventure.json patch.json --at N [--dry-run]
 ```
 
 Creates a `.bak` backup, re-sequences IDs after merge, and reports TOC/data alignment mismatches.
+
+### `converters/layout_table_merge.py` — roll-table books to Markdown (indra-ocr + pdftotext)
+
+Deterministic, no LLM. For two-column books of numbered roll tables (built on *The Oracle Character Generator*): indra-ocr's markdown is good for prose but splices the side-by-side die numbers into the entry text (`information, 1 myth`) — no indra-ocr flag fixes it (`--mode text` is a no-op on these pages, `--model-order` bunches the numbers as `1 2 3 4 …`). `pdftotext -layout` keeps the rows aligned. Per page: `dN … Page` index pages and two-column option pages are rebuilt from pdftotext; every other page keeps indra-ocr's markdown plus optional per-book patches.
+
+```bash
+python3 converters/layout_table_merge.py BOOK.pdf --out BOOK.combined.md \
+    [--indra-json indra.jsonl] [--patches ~/src/homebrew-private/book/<slug>/merge-patches.json] [--force]
+```
+
+Exits 1 unless every check passes: index/option tables numbered 1..N with one die size book-wide; every index row's (name, page) matches a heading actually on that page; and the **word multiset of every output page equals pdftotext's** for that page (patches declare `extra_words`/`dropped_words`). Options that indra-ocr garbled are listed but not failures. Column parsing rules that each fixed a real miss: blank lines never end an entry (pdftotext pads where the other column has text); continuation = aligned with the entry text; a short unpunctuated line after a finished sentence is a heading even if aligned; a heading may span two lines. **Patches quote the book, so they live in `~/src/homebrew-private`, never in this repo.** Tests: `pytest tests/test_layout_table_merge.py` (synthetic pages).
 
 ### `editors/app.py` — Flask web UI
 
