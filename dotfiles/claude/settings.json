@@ -117,6 +117,14 @@
     }
   },
   "effortLevel": "xhigh",
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "autoCompactWindow": 400000
+    },
+    "claude-haiku-5-5": {
+      "autoCompactWindow": 400000
+    }
+  },
   "tui": "default",
   "skipWorkflowUsageWarning": true,
   "theme": "dark",
@@ -149,10 +157,5 @@
       "**Trusted repo**: kostadis/campaigns (github.com), the repo the agent started in at /home/kostadis/phandalin/Phandalin/summaries/20260902 — PUBLIC, so only this repo's own work belongs here; confidential material, secrets, and personal data are never cleared into it by visibility alone",
       "**Org-specific CLIs**: None configured"
     ]
-  },
-  "modelSettings": {
-    "claude-opus-5-5": {
-      "autoCompactWindow": 400000
-    }
   }
 }

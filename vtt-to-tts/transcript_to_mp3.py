@@ -43,7 +43,10 @@ _OTTER_PATTERN = re.compile(
     re.DOTALL,
 )
 # WebVTT cue timestamp: HH:MM:SS.mmm --> HH:MM:SS.mmm
-_VTT_TIMESTAMP = re.compile(r"\d{2}:\d{2}:\d{2}\.\d{3}\s*-->")
+# Zoom's .txt transcript export uses the same cues without milliseconds,
+# header, or cue numbers: HH:MM:SS --> HH:MM:SS
+_VTT_TIMESTAMP = re.compile(r"\d{2}:\d{2}:\d{2}(?:\.\d{3})?\s*-->")
+_VTT_CUE_LINE = re.compile(r"^\d{2}:\d{2}:\d{2}(?:\.\d{3})?\s*-->", re.MULTILINE)
 # Speaker prefix inside a cue body: "Speaker Name: what they said"
 _VTT_SPEAKER = re.compile(r"^([^:\n]+?):\s*(.*)$", re.DOTALL)
 
@@ -90,7 +93,11 @@ def parse_transcript(path: Path) -> list[tuple[str, str]]:
     text = path.read_text(encoding="utf-8", errors="replace")
     # WebVTT (.vtt) has its speaker prefix inside the cue body, so it needs a
     # dedicated parser rather than a single regex.
-    if path.suffix.lower() == ".vtt" or text.lstrip().startswith("WEBVTT"):
+    if (
+        path.suffix.lower() == ".vtt"
+        or text.lstrip().startswith("WEBVTT")
+        or _VTT_CUE_LINE.search(text)
+    ):
         utterances = parse_webvtt(text)
         if utterances:
             return utterances

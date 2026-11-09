@@ -41,6 +41,16 @@ Other Speaker: What they said.
 
 Cue bodies without a `Speaker:` prefix (wrapped continuations) are attributed to the previous speaker. Timestamps are ignored — utterances play back in document order with a fixed gap between them.
 
+**Zoom transcript `.txt`** (the same cues with no `WEBVTT` header, no cue numbers, and no milliseconds) is detected by its `-->` lines and parsed the same way:
+
+```
+08:02:55 --> 08:02:57
+Speaker Name: What they said.
+
+08:03:16 --> 08:03:21
+Other Speaker: What they said.
+```
+
 **Otter** (markdown export):
 
 ```

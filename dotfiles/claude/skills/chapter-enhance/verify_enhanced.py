@@ -52,6 +52,7 @@ def tokens_ci(text):
         w = w.lower()
         toks.add(w)
         toks.add(re.sub(r"'s$", "", w))   # possessive stem
+        toks.add(w.rstrip("'"))           # plural possessive: lords' -> lords
     return toks
 
 def body_only(md):
