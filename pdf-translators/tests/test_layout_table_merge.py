@@ -5,7 +5,7 @@ from collections import Counter
 import pytest
 
 from converters.layout_table_merge import (
-    apply_patches, build_index_page, build_option_page, find_gutter,
+    apply_patches, body_lines, build_index_page, build_option_page, find_gutter,
     join_lines, parse_column, render_entry, words,
 )
 
@@ -83,6 +83,45 @@ def test_apply_patches():
     assert out == "## Contents\n\n| a |\n\nkeep"
     with pytest.raises(ValueError):
         apply_patches(1, "a a", {"replace": [["a", "b"]]})  # must match exactly once
+
+
+def test_known_titles_ignores_ragged_indent_and_wrapped_clause_headings():
+    lines = [
+        "    but the hero is",          # a heading wrapped over three lines
+        "  protected by a",
+        "      power.",
+        " Some blurb.",
+        "  1     Sun. Bright and",
+        "            warm, ragged",       # continuation NOT aligned with the entry text
+        "     indent.",
+        "  2     Moon. Pale.",
+        "        Mayhem",                 # known heading, no period
+        "  1     Rain. A line that ends",
+        "        mayhem.",                # body word equal to a heading: period must agree
+    ]
+    subs = parse_column(lines, known_titles=["but the hero is protected by a power.", "Mayhem"])
+    assert [s["title"] for s in subs] == ["but the hero is protected by a power.", "Mayhem"]
+    assert join_lines(subs[0]["entries"][0][1]) == "Sun. Bright and warm, ragged indent."
+    assert join_lines(subs[1]["entries"][0][1]) == "Rain. A line that ends mayhem."
+
+
+def test_known_titles_matches_ellipsis_variants():
+    subs = parse_column(["   A leader…", "  1     Mayor. Runs a town."], known_titles=["A leader..."])
+    assert [s["title"] for s in subs] == ["A leader…"]
+
+
+def test_index_row_wrapped_onto_next_line():
+    lines = ["d12      Development      Page",
+             " 1    but the hero is protected by a    22",
+             "              higher power.",
+             " 2    but it rains.                     22"]
+    _, _, rows, _ = build_index_page(lines)
+    assert rows == [(1, "but the hero is protected by a higher power.", 22), (2, "but it rains.", 22)]
+
+
+def test_body_lines_drops_footer_and_purchase_watermark():
+    text = "real text\n      -5-\nsomeone (Order #12345)\nmore\f"
+    assert body_lines(text) == ["real text", "more"]
 
 
 def test_words_ignores_markup():

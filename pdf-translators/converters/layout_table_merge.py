@@ -61,6 +61,7 @@ INDEX_HEAD = re.compile(r"^\s*d(\d{1,3})\s{2,}(\S.*?)\s{2,}Page\s*$")
 INDEX_ROW = re.compile(r"^\s*(\d{1,3})\s{2,}(\S.*?)\s{2,}(\d{1,3})\s*$")
 OPTION_PAGE = re.compile(r"^\s{0,6}\d{1,2}\s{3,}[A-Z]")
 FOOTER = re.compile(r"^\s*-\d+-\s*$")
+WATERMARK = re.compile(r"\(Order #\d+\)\s*$")  # DriveThruRPG per-purchaser stamp
 NON_LATIN_JUNK = re.compile(r"[ऀ-ॿ]")  # Devanagari: seen as OCR junk on Latin pages
 
 
@@ -74,7 +75,14 @@ def pdftotext_page(pdf: str, p: int) -> str:
 
 
 def body_lines(text: str) -> list[str]:
-    return [l.rstrip() for l in text.replace("\f", "").split("\n") if not FOOTER.match(l)]
+    return [l.rstrip() for l in text.replace("\f", "").split("\n")
+            if not FOOTER.match(l) and not WATERMARK.search(l)]
+
+
+def title_key(s: str) -> str:
+    """Heading identity for matching index rows to printed headings: letters and
+    digits only, so 'A leader...' == 'A leader…' and line wraps don't matter."""
+    return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
 def words(s: str) -> Counter:
@@ -124,8 +132,56 @@ def find_gutter(lines: list[str]) -> int | None:
     return best if best_len >= 2 else None
 
 
-def parse_column(lines: list[str]) -> list[dict]:
+def parse_column_known(lines: list[str], known_titles: list[str]) -> list[dict]:
+    """parse_column when the headings are known in advance (from the dN index page).
+
+    A heading is the longest run of 1-5 consecutive non-entry lines whose text
+    matches a known title (title_key); every other line belongs to the current
+    description or entry regardless of indentation. Needed where pdftotext lays
+    justified text out raggedly, so continuation lines don't align, and where
+    headings are whole clauses wrapped over several lines."""
+    def ends_sentence(s: str) -> bool:
+        return s.replace("…", "...").rstrip().endswith(".")
+
+    # a body line that is just a heading word ('mayhem.') must not match the heading
+    # 'Mayhem': the trailing period has to agree with the known title's
+    targets = {(title_key(t), ends_sentence(t)) for t in known_titles}
+    rows = [l for l in lines if l.strip()]
+    subs: list[dict] = []
+    cur = entry = None
+    i = 0
+    while i < len(rows):
+        raw = rows[i]
+        m = ENTRY.match(raw)
+        if m and cur is not None:
+            entry = [int(m.group(2)), [m.group(4)]]
+            cur["entries"].append(entry)
+            i += 1
+            continue
+        for k in range(min(5, len(rows) - i), 0, -1):
+            seg = rows[i:i + k]
+            text = " ".join(seg)
+            if not any(ENTRY.match(x) for x in seg) and (title_key(text), ends_sentence(text)) in targets:
+                cur = {"title": join_lines(seg), "desc": [], "entries": []}
+                subs.append(cur)
+                entry = None
+                i += k
+                break
+        else:
+            if entry is not None:
+                entry[1].append(raw)
+            elif cur is not None:
+                cur["desc"].append(raw)
+            else:
+                raise ValueError(f"text before any known heading: {raw.strip()[:60]!r}")
+            i += 1
+    return subs
+
+
+def parse_column(lines: list[str], known_titles: list[str] | None = None) -> list[dict]:
     """One column -> [{title, desc:[lines], entries:[[n, [lines]]]}]."""
+    if known_titles is not None:
+        return parse_column_known(lines, known_titles)
     subs: list[dict] = []
     cur = entry = None
     entry_indent = 0
@@ -171,11 +227,13 @@ def render_entry(text: str) -> str:
     return body.replace("|", "\\|")
 
 
-def build_option_page(lines: list[str]) -> tuple[list[dict], str]:
+def build_option_page(lines: list[str], known_titles: list[str] | None = None
+                      ) -> tuple[list[dict], str]:
     g = find_gutter(lines)
     if g is None:
         raise ValueError("no column gutter found")
-    subs = parse_column([l[:g] for l in lines]) + parse_column([l[g:] for l in lines])
+    subs = (parse_column([l[:g] for l in lines], known_titles)
+            + parse_column([l[g:] for l in lines], known_titles))
     die = max((len(s["entries"]) for s in subs), default=0)
     md = []
     for s in subs:
@@ -198,9 +256,13 @@ def build_index_page(lines: list[str]) -> tuple[int, str, list[tuple[int, str, i
             die, col = int(h.group(1)), h.group(2).strip()
             continue
         r = INDEX_ROW.match(l)
-        if not r:
+        if r:
+            rows.append((int(r.group(1)), r.group(2).strip(), int(r.group(3))))
+        elif rows and col is not None:
+            n, name, pg = rows[-1]  # a long result wrapped onto the next line
+            rows[-1] = (n, f"{name} {l.strip()}", pg)
+        else:
             raise ValueError(f"unparsed index line: {l.strip()!r}")
-        rows.append((int(r.group(1)), r.group(2).strip(), int(r.group(3))))
     md = [f"## {col}\n", f"| d{die} | {col} | Page |", "|---|---|---|"]
     md += [f"| {n} | {name} | {pg} |" for n, name, pg in rows]
     return die, col, rows, "\n".join(md) + "\n"
