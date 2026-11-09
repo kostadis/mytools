@@ -1,11 +1,13 @@
 {
   "shared_skills": [
     "dialogue-edit",
+    "grounding-refresh",
     "no-mech",
     "remove-recap",
     "speaker-attribution",
     "speaker-attribution-text",
     "staged-consistency",
+    "summary-native-npc-delta",
     "vtt-spell-pass"
   ],
   "intentional_adapters": {
@@ -21,13 +23,15 @@
       "dialogue-edit/references/review-and-apply.md",
       "dialogue-edit/tests/test_review_edits.py",
       "enhance-summary/SKILL.md",
+      "grounding-refresh/SKILL.md",
       "no-mech/SKILL.md",
       "remove-recap/SKILL.md",
       "scene-extract/SKILL.md",
       "session-summary-consistency/SKILL.md",
-      "speaker-attribution/SKILL.md",
       "speaker-attribution-text/SKILL.md",
+      "speaker-attribution/SKILL.md",
       "staged-consistency/SKILL.md",
+      "summary-native-npc-delta/SKILL.md",
       "voice-critic/SKILL.md",
       "voice-smooth/SKILL.md",
       "vtt-spell-pass/SKILL.md"
@@ -40,8 +44,11 @@
       "_shared/batch-chapters/tests/test_batch.py",
       "_shared/review-page",
       "dialogue-edit/agents/openai.yaml",
-      "speaker-attribution/agents/openai.yaml",
+      "grounding-refresh/agents/openai.yaml",
+      "grounding-refresh/references/port-review.md",
       "speaker-attribution-text/agents/openai.yaml",
+      "speaker-attribution/agents/openai.yaml",
+      "summary-native-npc-delta/agents/openai.yaml",
       "voice-critic/agents/openai.yaml",
       "voice-critic/references/checks-and-report.md",
       "vtt-spell-pass/render_review.py"

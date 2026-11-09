@@ -1,0 +1,4 @@
+interface:
+  display_name: "Grounding Refresh"
+  short_description: "Refresh grounding from a full range or new chapters"
+  default_prompt: "Use $grounding-refresh to update the existing campaign grounding documents using only the latest reviewed chapter, preserving earlier content and showing the delta for review."
