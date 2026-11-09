@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""Roll on the Nord Games Oracle generators: NPCs, monsters and stories.
+
+Reads tables extracted by extract.py from YOUR copies of the PDFs. The data
+lives outside this repo (~/src/homebrew-private/book/<slug>/tables.json;
+$ORACLE_DATA_DIR overrides the base directory).
+
+Each book works the same way: pick a theme (an environment, for monsters),
+roll d12 on each of its five sections and combine the titles; for detail,
+roll d4 on each result's option table.
+
+    oracle npc       Role · Personality · Motivation · Flaw · Intrigue
+    oracle monster   Monster Type · Behavior · Archetype · Special Ability · Intrigue
+    oracle story     Actor · Action · Subject · Intent · Development  (one sentence)
+
+Examples:
+    oracle npc --theme villains -n 3
+    oracle npc --theme heroes --role paladin/devotion --flaw brash
+    oracle monster --env swamp --type dragon
+    oracle monster --mix --brief -n 5
+    oracle story --theme sidequests --brief
+    oracle story --list epic
+    oracle npc --json --seed 7
+
+Run `oracle <cmd> -h` for each command's flags.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import random
+import re
+import sys
+import textwrap
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from books import BOOKS, tables_path  # noqa: E402
+
+# per-command flag spellings beyond the slug of each section name
+ALIASES = {
+    "monster": {"Monster Type": ["--type"], "Special Ability": ["--ability"]},
+}
+THEME_ALIASES = {"monster": ["--env", "--environment"]}
+COMMAND_HELP = {
+    "npc": "roll an NPC (The Oracle Character Generator)",
+    "monster": "roll a monster (The Oracle Monster Generator)",
+    "story": "roll a story hook (The Oracle Story Generator)",
+}
+
+
+def slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+
+
+def key(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def load(book: str, path: Path | None) -> dict:
+    path = path or tables_path(book)
+    if not path.exists():
+        sys.exit(f"no {book} tables at {path}\nrun: python3 extract.py {book}   (or set $ORACLE_DATA_DIR)")
+    return json.loads(path.read_text())
+
+
+def find_theme(data: dict, want: str) -> dict:
+    """By any case-insensitive word prefix: 'villains', 'scoun', 'swamp', 'side'."""
+    w = want.lower()
+    hits = [t for t in data["themes"]
+            if t["name"].lower().startswith(w) or any(x.startswith(w) for x in t["name"].lower().split())]
+    if len(hits) != 1:
+        sys.exit(f"{data['theme_label']} {want!r} matches {len(hits)}; choose one of: "
+                 + ", ".join(t["name"] for t in data["themes"]))
+    return hits[0]
+
+
+def find_by_name(items: list[dict], want: str, what: str) -> dict:
+    """Exact, then prefix (also ignoring the first word: 'celestial' for 'A celestial…',
+    'dominate' for 'will dominate…'), then unique substring ('undermined')."""
+    k = key(want)
+    rest = lambda n: key(n.split(" ", 1)[1]) if " " in n else ""
+    hits = ([i for i in items if key(i["name"]) == k]
+            or [i for i in items if key(i["name"]).startswith(k) or rest(i["name"]).startswith(k)]
+            or [i for i in items if k in key(i["name"])])
+    if len(hits) != 1:
+        sys.exit(f"{what} {want!r} matches {len(hits)}; choose one of: "
+                 + ", ".join(i["name"] for i in items))
+    return hits[0]
+
+
+def roll_section(rng, theme: dict, section: str, fixed: str | None, detail: bool) -> dict:
+    results = theme["sections"][section]
+    want_opt = None
+    if fixed:
+        name, _, want_opt = fixed.partition("/")
+        res = find_by_name(results, name, f"{theme['name']} {section}")
+    else:
+        res = rng.choice(results)
+    out = {"section": section, "theme": theme["name"], "roll": res["roll"],
+           "result": res["name"], "description": res["description"]}
+    if detail or want_opt:
+        opt = (find_by_name(res["options"], want_opt, f"{res['name']} option")
+               if want_opt else rng.choice(res["options"]))
+        out.update(option_roll=opt["roll"], option=opt["name"], option_text=opt["text"])
+    return out
+
+
+def sentence(rolls: list[dict]) -> str:
+    """Story titles chain into one sentence: 'A leader… will hire you to kill…' etc."""
+    parts = [re.sub(r"(…|\.\.\.)$", "", r["result"]).strip() for r in rolls]
+    s = " ".join(p if not p.startswith("but ") else f", {p}" for p in parts).replace(" ,", ",")
+    s = s[0].upper() + s[1:]
+    return s if s.endswith(".") else s + "."
+
+
+def make(book: str, data: dict, rng, args) -> dict:
+    base = find_theme(data, args.theme) if args.theme else rng.choice(data["themes"])
+    rolls = []
+    for section in data["sections"]:
+        theme = rng.choice(data["themes"]) if args.mix else base
+        rolls.append(roll_section(rng, theme, section, getattr(args, "fix_" + slug(section)),
+                                  detail=not args.no_detail))
+    summary = sentence(rolls) if book == "story" else " · ".join(r["result"] for r in rolls)
+    return {"kind": book, data["theme_label"]: "mixed" if args.mix else base["name"],
+            "summary": summary, "rolls": rolls}
+
+
+def render(book: str, data: dict, x: dict, brief: bool, width: int) -> str:
+    theme = x[data["theme_label"]]
+    if book == "story":
+        head = f"[{theme}] {x['summary']}"
+    else:
+        head = f"[{theme}] " + " · ".join(
+            f"{r['result']} ({r['option']})" if "option" in r else r["result"] for r in x["rolls"])
+    if brief:
+        return head
+    wrap = lambda s, ind, sub=None: textwrap.fill(s, width, initial_indent=ind,
+                                                  subsequent_indent=sub or ind)
+    out = [wrap(head, "", "  "), "=" * min(len(head), width)]
+    for r in x["rolls"]:
+        src = f"  [{r['theme']}]" if theme == "mixed" else ""
+        out.append(f"{r['section']}: {r['result']}  (d12={r['roll']}){src}")
+        out.append(wrap(r["description"], "    "))
+        if "option" in r:
+            out.append(wrap(f"{r['option']} (d4={r['option_roll']}): {r['option_text']}",
+                            "    → ", "      "))
+        out.append("")
+    return "\n".join(out).rstrip()
+
+
+def list_tables(data: dict, which: str | None, width: int) -> str:
+    themes = [find_theme(data, which)] if which else data["themes"]
+    out = []
+    for t in themes:
+        out.append(f"## {t['name']}")
+        for section, results in t["sections"].items():
+            if which:
+                out.append(f"  {section}")
+                out += [f"    {r['roll']:>2} {r['name']}: " + ", ".join(o["name"] for o in r["options"])
+                        for r in results]
+            else:
+                out.append(textwrap.fill(", ".join(r["name"] for r in results), width,
+                                         initial_indent=f"  {section:<16}", subsequent_indent=" " * 18))
+        out.append("")
+    return "\n".join(out).rstrip()
+
+
+def add_book_command(sub, book: str) -> None:
+    spec = BOOKS[book]
+    themes_hint = {"npc": "heroes, merchants, nobles, townsfolk, villains",
+                   "monster": "desert, forest, mountain, swamp, tundra, underground, waterways",
+                   "story": "contracts, epic, political, relics, sidequests"}[book]
+    p = sub.add_parser(book, help=COMMAND_HELP[book], description=f"{COMMAND_HELP[book]}. "
+                       f"Sections: {', '.join(spec['sections'])}.")
+    p.add_argument("-n", type=int, default=1, help="how many to roll")
+    p.add_argument("--theme", *THEME_ALIASES.get(book, []), dest="theme",
+                   help=f"{spec['theme_label']} by any word prefix: {themes_hint}")
+    p.add_argument("--mix", action="store_true",
+                   help=f"roll each section on a random {spec['theme_label']}")
+    for section in spec["sections"]:
+        p.add_argument(f"--{slug(section)}", *ALIASES.get(book, {}).get(section, []),
+                       dest="fix_" + slug(section), metavar="NAME[/OPTION]",
+                       help=f"fix the {section} result (and optionally its d4 option) instead of rolling")
+    p.add_argument("--no-detail", action="store_true", help="skip the d4 option rolls")
+    p.add_argument("--brief", action="store_true", help="one summary line each")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--seed", type=int)
+    p.add_argument("--width", type=int, default=100)
+    p.add_argument("--list", nargs="?", const="", metavar=spec["theme_label"].upper(),
+                   help=f"list d12 results (every {spec['theme_label']}), or every option for one")
+    p.add_argument("--data", type=Path, help=f"tables.json (default {tables_path(book)})")
+    p.set_defaults(book=book)
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="oracle", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="command", metavar="{npc,monster,story}", required=True)
+    for book in BOOKS:
+        add_book_command(sub, book)
+    a = ap.parse_args(argv)
+
+    book = a.book
+    data = load(book, a.data)
+    if a.list is not None:
+        print(list_tables(data, a.list or None, a.width))
+        return 0
+    fixed = [s for s in data["sections"] if getattr(a, "fix_" + slug(s))]
+    if a.mix and (a.theme or fixed):
+        ap.error(f"--mix rolls a random {data['theme_label']} per section; "
+                 "it can't be combined with --theme or fixed results")
+
+    rng = random.Random(a.seed)
+    xs = [make(book, data, rng, a) for _ in range(a.n)]
+    if a.json:
+        print(json.dumps(xs if a.n > 1 else xs[0], indent=1, ensure_ascii=False))
+    else:
+        print(("\n" if a.brief else "\n\n").join(render(book, data, x, a.brief, a.width) for x in xs))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
