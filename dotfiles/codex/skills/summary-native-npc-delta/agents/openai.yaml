@@ -1,0 +1,4 @@
+interface:
+  display_name: "Incremental NPC Update"
+  short_description: "Update NPC dossiers from new chapters only"
+  default_prompt: "Use $summary-native-npc-delta to update the changed NPC dossiers from the latest reviewed chapter, preserving prior reviewed history."

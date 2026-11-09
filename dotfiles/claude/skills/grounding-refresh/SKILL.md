@@ -1,22 +1,28 @@
 ---
 name: grounding-refresh
-description: Rebuild and officially publish a campaign's four grounding documents (world_state, campaign_state, party, planning) from its structured session summaries with CampaignGenerator's summary_native pipeline — extract on the DGX Spark, synth through claude-code, GM review, the one-time grounding-bundle migration, the claims check, the GM's four document sign-offs, managed promotion, and post-promotion patches. Every precision decision (coverage, threads, sign-offs, canon wording, patches) stays with the GM. Use when the user asks to regenerate or refresh the grounding docs after new sessions, to "do the summary-native world_state flow", to make new drafts the official documents, or to patch a published grounding line between builds. Invoke as /grounding-refresh [campaign-dir] [until-chapter].
+description: Refresh a campaign's four grounding documents from reviewed session summaries using full regeneration or a bounded incremental update. Review exact changes and apply through the supported native path or an explicitly permitted local correction. Use for grounding refreshes, latest-chapter grounding updates and corrections to published prose. Invoke as /grounding-refresh [campaign-dir] [until-chapter].
 tools: Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion, Skill, Artifact
 ---
 
 # Grounding refresh (summary_native → managed promotion)
 
-The four grounding documents are an **index** over the structured summaries in
-`docs/summaries/`. This skill rebuilds them for a chapter range and publishes them as
-one managed generation under `docs/grounding/`. It runs the CampaignGenerator CLIs;
-it never hand-writes a grounding document, and generation never writes `docs/` —
-only `promote` does.
+The four grounding documents are an **index** over reviewed structured summaries.
+Full regeneration builds a chapter range and publishes one managed generation
+under `docs/grounding/`; generation itself writes drafts only. Incremental requests
+follow the bounded workflow below, including any explicitly permitted local
+correction. A local correction is not native promotion.
 
 The operator's manual is `~/src/CampaignGenerator/docs/cli/summary_native_howto.md`
 (Steps 0–8), plus `grounding_bundle_migration.md` and `grounding_bundle_promotion.md`
 in the same folder. **Read the relevant section before each phase**: flags change
 between CampaignGenerator releases (for example, `--config` moved from
 `config/grounding.yaml` to `config/config.yaml` in October 2026).
+
+## Incremental requests
+
+For incremental updates or “only the latest chapter,” read [the chapter-delta workflow](references/chapter-delta.md) and [review through application](references/review-and-apply.md), then follow that bounded mode instead of the full-refresh phases below. A one-chapter synthesis is not a merge into the existing baseline. Reuse the session’s selected backend/model/effort, privacy choices, review transport and valid permissions. The Spark/Sonnet/Opus defaults below belong to the full-refresh adapter and do not override an incremental run’s explicit choices.
+
+Prepare the exact permitted application plan before the final review, show what approval will apply, and use one final content/application handoff where possible. After validating saved approvals that already cover that plan, apply and verify without asking again. An explicit draft-only request, unresolved precision decision or changed binding still requires its own appropriate stop.
 
 ## Who decides what
 

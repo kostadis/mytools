@@ -11,11 +11,7 @@ chapter as the delta. Preserve prior history; update only NPCs with material
 new facts and create dossiers for newly established NPCs. A passing mention
 does not automatically require a rewritten dossier.
 
-**What this removes from the GM:** nothing. The model proposes which NPCs
-changed and drafts the appended prose; the GM rules on every selection and
-every draft before a native writer publishes it. Selection (which NPCs are
-touched) is a scope decision, and contextual links (a pronoun or title tied to
-a named NPC) are attribution decisions. Both are reviewed, never inferred.
+Read [review through application](references/review-and-apply.md) before preparing the final handoff. Reuse established session choices and settled selections. New selection/contextual-attribution rulings still need the GM before dependent drafting; the review format should avoid repeating those decisions. Prepare the exact selected native publication effect with the content so a final review can cover both within the requested scope.
 
 ## Establish the bounded inputs
 
@@ -97,17 +93,14 @@ Prepare a concrete delta review: prose diffs for existing dossiers, full prose
 for new ones, the supporting evidence and the exact draft hashes. Explain the
 unchanged baseline advisories without turning them into a new editing pass.
 
-- **A handful of NPCs:** ask in chat with `AskUserQuestion`, one dossier at a
-  time, each with its diff and evidence.
-- **More than about a dozen rulings:** publish one Approve / Reject / Discuss
-  review page with the `Artifact` tool, one card per dossier, each with a
-  keep-baseline option, and a Markdown export the decisions can be parsed back
-  from.
+Honor the user's chosen review transport rather than forcing a separate chat question per dossier. Use a grouped Approve / Reject / Discuss artifact for a queue, with a keep-baseline choice, evidence and exact candidates. When publication is requested and ready, include its exact selected effect and explicit application authorization in this final handoff. Keep earlier required selection/identity rulings separate only where dependent drafting cannot proceed without them.
 
 Read the saved decisions back before acting. An unmarked card is not a verdict:
 re-ask it. A Discuss note is an instruction to talk: state your reading and
 confirm it before applying. Bind only explicit approvals to the native
 exact-draft signoffs. The GM signs; you never sign on their behalf.
+
+If the saved approval already covers the exact selected publication, compose, publish and verify directly without another “may I apply?” prompt. A draft-only review does not authorize publication; obtain only the missing application authorization with its concrete plan, without repeating unchanged content review.
 
 Compose and publish through the native writers with an explicit NPC selection.
 Do not hand-edit published replicas, use `--force`, override a signoff checker
