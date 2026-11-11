@@ -38,7 +38,7 @@ real file or directory.
 
 - `claude/CLAUDE.md` — the user's **global** Claude Code instructions, loaded into every session's context. This is distinct from the repo-root `CLAUDE.md` you are reading right now, which describes the dotfiles repo itself. Its last line is `@RTK.md`, an import of a file that **does not exist** in this repo or in `~/.claude/` — a dangling import inherited from an older machine. Either add `claude/RTK.md` or drop the line.
 - `claude/settings.json` — a **reference baseline, not linked** (settings are per-machine on purpose; see the link set above) of the user-level settings: `model: sonnet`, `advisorModel: opus`, `effortLevel: xhigh`, `theme: dark`, `tui: fullscreen`, `permissions.defaultMode: auto`, the `frontend-design` plugin, and two independent hook families (below).
-- `claude/skills/<name>/SKILL.md` — 40 user-invocable skills. See the catalogue below.
+- `claude/skills/<name>/SKILL.md` — 42 user-invocable skills. See the catalogue below.
 - `claude/agents/<name>.md` — custom subagent definitions (`kostadis-architect`, `ux-reviewer`).
 - `claude/plugins/blocklist.json` — plugin blocklist, linked. `claude/plugins/known_marketplaces.json` is a reference copy only and is **not linked**: it embeds per-user absolute paths and Claude Code refreshes its timestamps, so linking it would flip `installLocation` between home directories and dirty the working tree on every refresh.
 
@@ -68,7 +68,7 @@ How that repo works:
 
 ## Skills catalogue (`claude/skills/`)
 
-40 skills, all named below. Most support the D&D campaign pipeline in the user's `CampaignGenerator` and `campaigns` projects; a few are infrastructure. They are independent of each other except where noted — there is no shared runner or layered pipeline.
+42 skills, all named below. Most support the D&D campaign pipeline in the user's `CampaignGenerator` and `campaigns` projects; a few are infrastructure. They are independent of each other except where noted — there is no shared runner or layered pipeline.
 
 **Session pipeline, in rough order of use** (gm-assist → session summary → scene extractions → narration, with a human gate between stages):
 
@@ -108,6 +108,11 @@ How that repo works:
 - `module-inventory` — extracts a proper-noun inventory from a module's source (prose bible or 5etools JSON).
 - `mempalace-campaign` — sets up MemPalace semantic search over a campaign workspace.
 - `campaign-recall` — answers a question from the session summaries via zvec-grep, returning verbatim source with provenance instead of paraphrase. Supplies the two things vector search structurally cannot: chronological order (from the `NNN[a]-` filename prefix, which is not in the embeddings) and the ability to report that something is *not recorded* — the absence check is verified against a positive control, because a broken one fails toward a confident false negative.
+
+**RPG book tooling:**
+
+- `pdf-table-markdown` — converts an rpg-lib PDF to Markdown with indra-ocr, and for roll-table books merges in `pdftotext -layout` via `pdf-translators/converters/layout_table_merge.py` so die numbers stay on their entries. Checks the library for duplicate copies first; deterministic, gated on word-for-word checks; per-book patches live in `~/src/homebrew-private`.
+- `table-book-cli` — turns a random-table book into a mytools CLI generator the way `dde-npc/` and `oracle/` were built: deterministic `extract.py` → `tables.json` in `~/src/homebrew-private` (never the public repo), structure from the book's own index, errata recorded not matched around, the book's worked example as the acceptance test.
 
 **Transcripts:**
 
