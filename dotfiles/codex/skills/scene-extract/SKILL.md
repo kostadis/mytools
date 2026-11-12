@@ -192,7 +192,7 @@ chosen, match the UI's resolved setting: a pinned `extract.batch_scenes` in
 `claude-code` and per-scene otherwise. `--batch` is the distinct Anthropic
 Message Batches feature, not bundle mode; it is incompatible with
 `codex-cli` and with `--batch-scenes`, and the UI renders
-`--no-batch-scenes` when it is selected. A batch review-page preference alone
+`--no-batch-scenes` when it is selected. A batch review preference alone
 does not select a generation mode.
 
 Briefly state the resolved inputs, output directory, and model settings,

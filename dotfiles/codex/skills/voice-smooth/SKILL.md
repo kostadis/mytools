@@ -44,7 +44,7 @@ while a glossary row changes every future transcript.
 - Ask the GM questions in chat. Do not refer to Claude `AskUserQuestion`.
 - Codex does not have Claude's Artifact review callback. Use chat for a small
   queue. For a long queue, build the shared review page
-  (`../_shared/review-page/CONTRACT.md`) and read the GM's exported decisions
+  (`../_shared/review-artifact/CONTRACT.md`) and read the GM's exported decisions
   back with `read_decisions.py --items`. Prefer the shared Tailscale server so
   the GM's explicit save writes the file on the VM (step 4).
 - Use `apply_patch` for manual file edits. Preserve unrelated user changes.
@@ -300,14 +300,14 @@ in full.
 
 Below the batch threshold, ask in chat. For a long run (a full session with
 dozens of rulings), build the shared review page instead of walking the queue
-in chat. Read `../_shared/review-page/CONTRACT.md` relative to this skill
+in chat. Read `../_shared/review-artifact/CONTRACT.md` relative to this skill
 directory first. Put every review file in a per-run scratch directory, not in
 the session directory:
 
 ```bash
-REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-page"
+REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-artifact"
 review_dir=<session-dir>/voice_review; mkdir -p "$review_dir"
-python "$REVIEW_PAGE/build_review.py" \
+python "$REVIEW_PAGE/build_review.py" --save local \
   --in "$review_dir/review_items_<round>.json" \
   --out "$review_dir/review_<round>.html"
 python "$REVIEW_PAGE/serve_review.py" \

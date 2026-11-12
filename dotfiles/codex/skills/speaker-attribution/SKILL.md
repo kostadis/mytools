@@ -224,7 +224,7 @@ check every profile name against the roster first.
 before writing real names. Ask in Codex chat; use an available clarification
 tool where appropriate. Do not reference Claude question tools, Artifacts,
 callbacks, or Claude task APIs. If the user requests batch review, read
-`${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-page/CONTRACT.md` and use the
+`${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-artifact/CONTRACT.md` and use the
 shared review page: one card per mapping or cue decision, never pre-filled.
 Accept only explicit returned decisions as approval; an unmarked card stays
 unresolved.

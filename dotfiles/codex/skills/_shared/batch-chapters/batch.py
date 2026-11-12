@@ -43,7 +43,7 @@ rulings.json (chat rulings; the GM's own words go in "said"):
 """
 import argparse, json, os, pathlib, subprocess, sys
 
-RP = pathlib.Path(os.environ.get("CODEX_HOME", pathlib.Path.home() / ".codex")) / "skills/_shared/review-page"
+RP = pathlib.Path(os.environ.get("CODEX_HOME", pathlib.Path.home() / ".codex")) / "skills/_shared/review-artifact"
 
 
 CARD = ("card", "tape")  # "tape": a transcript garble; its writes go to transcript_corrections.yaml, not the target
@@ -96,7 +96,7 @@ def cmd_validate(a):
         if lit: print("   literal \\n in card text:", lit)
         if items["items"]:
             r = subprocess.run([sys.executable, str(RP / "build_review.py"), "--in", str(R / f"review_items_{a.stage}.json"),
-                                "--out", str(R / f"review_{a.stage}.html")], capture_output=True, text=True)
+                                "--out", str(R / f"review_{a.stage}.html"), "--save", "local"], capture_output=True, text=True)
             if r.returncode: bad += 1; print("   build failed:", r.stderr.strip()[-300:])
     sys.exit(1 if bad else 0)
 

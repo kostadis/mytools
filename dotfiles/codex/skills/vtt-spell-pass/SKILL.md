@@ -1031,7 +1031,7 @@ input changes, e.g. after a late cue ruling in either skill.
 
 This replaces Phase 3 only. Phases 0–2.5 and 4–7 are unchanged, and the
 interactive path stays exactly as documented. Read the shared contract at
-`~/.codex/skills/_shared/review-page/CONTRACT.md`.
+`~/.codex/skills/_shared/review-artifact/CONTRACT.md`.
 
 **Where the review files live.** This skill keeps its review record in the
 session directory, under `<session-dir>/spell_review/`: the queue
@@ -1048,7 +1048,7 @@ python "$SKILL_DIR/render_review.py" \
   --output "$REVIEW/review.html"
 ```
 
-`render_review.py` is a VTT-specific adapter over the shared Codex review-page
+`render_review.py` is a VTT-specific adapter over the shared review-artifact
 renderer. The HTML is standalone, keeps no browser storage (a reload loses
 unsaved marks), always opens unmarked, and exports the shared decision schema
 through Copy output or Save output. Prefer serving it with the shared
@@ -1135,7 +1135,7 @@ the exported decisions or points to the saved decisions file. Validate it
 against the queue the page was built from:
 
 ```bash
-REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-page"
+REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-artifact"
 python "$REVIEW_PAGE/read_decisions.py" \
   --in "$REVIEW/decisions.json" --items "$REVIEW/review_items.json"
 ```

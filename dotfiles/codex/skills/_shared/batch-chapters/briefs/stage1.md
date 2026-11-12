@@ -75,7 +75,7 @@ Write a builder at <TMP>/<CH>_s1_write.py that writes:
   - reviewId "stage1:<CH>"
   - a footer listing every auto and every false positive
 
-Then check the edit counts and build the page (batch.py validate does both, or run build_review.py directly).
+Then check the edit counts and build the page (batch.py validate does both, or run build_review.py --save local directly).
 
 - No literal "\n" in card text.
 - Do NOT hand off the review page. Do NOT edit any campaign file.

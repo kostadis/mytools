@@ -66,7 +66,7 @@ Write a builder at `<TMP>/<CH>_enh_write.py`. It writes:
   - reviewId "enhance:<CH>"
   - a footer listing every benign flag and every note
 
-Then build `staged_review/review_enhance.html`, either by running `batch.py validate --stage enhance` or with `build_review.py`.
+Then build `staged_review/review_enhance.html`, either by running `batch.py validate --stage enhance` or with `build_review.py --save local`.
 
 Do NOT hand off the review page, and do NOT edit any campaign file.
 

@@ -161,7 +161,7 @@ Never manufacture an approval to satisfy the helper.
 For page mode, prepare every selected scene first, then build **one session
 page** from all of their frozen runs (`review_edits.py session-page`, see
 [review-and-apply.md](references/review-and-apply.md)) with the sibling
-[shared review contract](../_shared/review-page/CONTRACT.md)'s builder. Escape
+[shared review contract](../_shared/review-artifact/CONTRACT.md)'s builder. Escape
 all transcript text (the helper does this). Prefer serving it over Tailscale so
 the GM's explicit **Save to VM** action writes the session decision file; give
 the page path and accept pasted or downloaded output as fallbacks.

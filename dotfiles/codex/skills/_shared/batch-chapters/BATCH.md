@@ -7,7 +7,7 @@ Each stage skill still owns its method and verification. The skill's run ledger
 tracks the full requested range so a completed review loop cannot hide a
 missing preceding or following stage.
 
-The review page itself is defined in `../review-page/CONTRACT.md` (the builder,
+The review page itself is defined in `../review-artifact/CONTRACT.md` (the builder,
 `savedAt`, unmarked cards, never pre-fill). Read that first; this file does not
 restate it.
 
@@ -244,7 +244,7 @@ Every item below reached a GM approval on the 2026-09-28 batch:
 
 ## Steps 6–8 — reading back without rubber-stamping
 
-- Prefer `../review-page/serve_review.py` when the Codex VM is reachable over
+- Prefer `../review-artifact/serve_review.py` when the Codex VM is reachable over
   Tailscale. Its **Save to VM** button validates and atomically writes the JSON
   to the configured `--out` path. If the page is opened directly, **Save
   output** downloads a JSON export; put it in the same review directory as the

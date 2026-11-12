@@ -15,7 +15,7 @@ def escaped(value: object) -> str:
 
 
 def load_shared_builder():
-    shared = Path(__file__).resolve().parents[1] / "_shared" / "review-page" / "build_review.py"
+    shared = Path(__file__).resolve().parents[1] / "_shared" / "review-artifact" / "build_review.py"
     spec = importlib.util.spec_from_file_location("codex_review_page", shared)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load shared review renderer: {shared}")
@@ -166,7 +166,7 @@ def main() -> int:
     errors = builder.validate(spec)
     if errors:
         raise ValueError("invalid shared review data: " + "; ".join(errors))
-    output.write_text(builder.build(spec), encoding="utf-8")
+    output.write_text(builder.build(spec, save="local"), encoding="utf-8")
     print(f"Wrote {output} with {len(items)} review items")
     return 0
 
