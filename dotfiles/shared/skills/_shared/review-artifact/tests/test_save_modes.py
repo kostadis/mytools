@@ -80,6 +80,17 @@ class SaveModeTests(unittest.TestCase):
                             "--out", str(self.tmp / "o.html"), "--save", "vm"], capture_output=True, text=True)
         self.assertNotEqual(r.returncode, 0)
 
+    def test_local_default_review_id_matches_what_read_decisions_expects(self):
+        sys.path.insert(0, str(HERE))
+        from read_decisions import expected_review_id
+        spec = json.loads((FIX / "golden_items.json").read_text())
+        del spec["reviewId"]
+        p = self.tmp / "noid.json"
+        p.write_text(json.dumps(spec))
+        state = re.search(r'<script type="application/json" id="state">(.*?)</script>',
+                          build(self.tmp, "--save", "local", items=p), re.S).group(1)
+        self.assertEqual(json.loads(state)["reviewId"], expected_review_id(spec))
+
     @unittest.skipUnless(shutil.which("node"), "node not installed")
     def test_local_export_shape_runs_in_a_stub_dom(self):
         src = page_src(build(self.tmp, "--save", "local"))
