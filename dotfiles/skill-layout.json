@@ -1,5 +1,6 @@
 {
   "shared_skills": [
+    "_shared",
     "dialogue-edit",
     "grounding-refresh",
     "no-mech",
@@ -37,12 +38,10 @@
       "vtt-spell-pass/SKILL.md"
     ],
     "claude_only": [
-      "_shared/review-artifact",
       "vtt-spell-pass/batch"
     ],
     "codex_only": [
       "_shared/batch-chapters/tests/test_batch.py",
-      "_shared/review-page",
       "dialogue-edit/agents/openai.yaml",
       "grounding-refresh/agents/openai.yaml",
       "grounding-refresh/references/port-review.md",
