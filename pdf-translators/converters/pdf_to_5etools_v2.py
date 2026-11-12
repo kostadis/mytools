@@ -1150,6 +1150,85 @@ def _fast_structure(pdf_path: Path, profile: "InputProfile", *,
     return toc_roots, units
 
 
+def _title_key(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
+def split_shared_pages(
+    toc_roots: list[TocNode], pages: list[str], *, verbose: bool = False,
+) -> tuple[list[TocNode], list[str]] | None:
+    """Re-anchor bookmarks at line granularity when several share a page.
+
+    Page units give every bookmark that starts on page N the *whole* of page N,
+    so a book with several bookmarks per page (Location 1, Location 3, ... all
+    on p4) sends the same text to several chunks and the LLM duplicates it
+    across sections. When any two nodes share a start page, flatten the pages
+    into lines (keeping the ``=== page N ===`` markers) and start each node at
+    the first line, at or after its page and after the previous node, whose
+    text begins with the bookmark title. A title that can't be found falls back
+    to the top of its page. End lines follow parse_toc_tree's rule: a node runs
+    until the next node at the same or a shallower level. Returns
+    ``(roots, lines)`` for ``kind="lines"``, or None to keep page units.
+    """
+    flat = [n for r in toc_roots for n in r.walk()]
+    starts = [n.start_page for n in flat]
+    if len(set(starts)) == len(starts):
+        return None
+
+    lines: list[str] = []
+    page_first: dict[int, int] = {}
+    page_end: dict[int, int] = {}
+    for p, text in enumerate(pages, start=1):
+        page_first[p] = len(lines)
+        lines.append(f"=== page {p} ===")
+        lines.extend(text.splitlines())
+        page_end[p] = len(lines)
+
+    found_at: list[int] = []
+    missed: list[str] = []
+    prev = -1
+    for node in flat:
+        key = _title_key(node.title)
+        p = min(max(1, node.start_page), len(pages))
+        lo = max(page_first[p], prev + 1)
+        hit = None
+        if key:
+            for i in range(lo, page_end[p]):
+                lk = _title_key(lines[i])
+                if not lk:
+                    continue
+                if lk.startswith(key):
+                    hit = i
+                    break
+                # Title wrapped over two lines.
+                if (key.startswith(lk) and len(lk) >= 6 and i + 1 < len(lines)
+                        and (lk + _title_key(lines[i + 1])).startswith(key)):
+                    hit = i
+                    break
+        if hit is None:
+            missed.append(f"{node.title!r} (p{node.start_page})")
+            hit = lo if lo < page_end[p] else page_first[p]
+        found_at.append(hit)
+        prev = hit
+
+    for node, at in zip(flat, found_at):
+        node.start_page = at + 1  # 1-based line number, as on the Marker path
+    for i, node in enumerate(flat):
+        node.end_page = len(lines)
+        for nxt in flat[i + 1:]:
+            if nxt.level <= node.level:
+                node.end_page = max(node.start_page, nxt.start_page - 1)
+                break
+
+    print(f"[structure] {len(starts) - len(set(starts))} bookmark(s) share a page "
+          f"with another -> split at title lines "
+          f"({len(flat) - len(missed)}/{len(flat)} titles located)")
+    for m in missed:
+        print(f"  [warn] bookmark title not found on its page, starts at page top "
+              f"or after previous: {m}")
+    return toc_roots, lines
+
+
 def _marker_structure(pdf_path: Path, *, verbose: bool):
     """Marker structural extraction. Returns ``(roots, units)`` with ``units`` =
     the markdown lines. GPU/ML-heavy; ``batch_marker.py`` drives this as a
@@ -1254,6 +1333,10 @@ def extract_structure(
         toc_roots, units = _fast_structure(
             pdf_path, profile, use_printed_toc=use_printed_toc, verbose=verbose)
         kind = "pages"
+        split = split_shared_pages(toc_roots, units, verbose=verbose)
+        if split is not None:
+            toc_roots, units = split
+            kind = "lines"
         source_kind = "printed-toc" if use_printed_toc else "fast"
     else:
         if not allow_marker:

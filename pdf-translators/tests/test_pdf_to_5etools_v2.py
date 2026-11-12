@@ -1332,3 +1332,44 @@ class TestMonsterBlockMerge:
             {"name": "Guard Drake", "text": "=== Guard Drake ===\nAC 16"},
         ]
         assert len(_merge_detector_blocks(blocks)) == 2
+
+
+# ---------------------------------------------------------------------------
+# split_shared_pages — several bookmarks on one page
+# ---------------------------------------------------------------------------
+
+def _shared_page_fixture():
+    pages = [
+        "Cover",
+        "Summary\nsummary text\nBackground\nbackground text",
+        "Location 1: The\nApproach\napproach text\nLocation 2\nroom two",
+    ]
+    raw = [[1, "Summary", 2], [1, "Background", 2],
+           [1, "Location 1: The Approach", 3], [1, "Location 2", 3]]
+    return parse_toc_tree(raw, total_pages=len(pages)), pages
+
+
+def test_split_shared_pages_gives_each_bookmark_only_its_own_text():
+    roots, pages = _shared_page_fixture()
+    roots, lines = v2.split_shared_pages(roots, pages)
+    bodies = {n.title: v2._body_from_units(n, lines, "lines") for n in roots}
+    assert "background text" not in bodies["Summary"]
+    assert "summary text" not in bodies["Background"]
+    assert bodies["Location 1: The Approach"].startswith("Location 1: The\nApproach")
+    assert "room two" not in bodies["Location 1: The Approach"]
+    assert bodies["Location 2"] == "Location 2\nroom two"
+
+
+def test_split_shared_pages_leaves_one_bookmark_per_page_alone():
+    raw = [[1, "A", 1], [1, "B", 2]]
+    roots = parse_toc_tree(raw, total_pages=2)
+    assert v2.split_shared_pages(roots, ["A\na", "B\nb"]) is None
+
+
+def test_split_shared_pages_falls_back_when_title_missing():
+    pages = ["Alpha\nalpha text\nzzz\nmore"]
+    roots = parse_toc_tree([[1, "Alpha", 1], [1, "Missing Title", 1]], total_pages=1)
+    roots, lines = v2.split_shared_pages(roots, pages)
+    # Missing title starts right after the previous node, never before it.
+    assert roots[1].start_page > roots[0].start_page
+    assert roots[0].end_page < roots[1].start_page

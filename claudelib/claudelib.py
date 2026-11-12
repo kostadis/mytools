@@ -92,7 +92,7 @@ def call_api_full(client, system: str, content, model: str = DEFAULT_MODEL,
                 system=system,
                 messages=messages,
             )
-            return response.content[0].text, _norm_stop_reason(response.stop_reason)
+            return "".join(b.text for b in response.content if b.type == "text"), _norm_stop_reason(response.stop_reason)
         except Exception as e:
             if _is_retryable(e) and attempt < len(delays):
                 continue
