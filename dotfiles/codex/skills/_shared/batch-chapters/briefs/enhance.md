@@ -63,7 +63,7 @@ Write a builder at `<TMP>/<CH>_enh_write.py`. It writes:
 - `staged_review/findings_enhance.json`
 - `staged_review/review_items_enhance.json`, with:
   - title "Chapter <N> Enhancement"
-  - reviewId "enhance:<CH>"
+  - reviewId "enhance:<CH>" (an id is 1-128 chars of [A-Za-z0-9_.:@-]; `batch.py validate` rewrites a chapter name with spaces or slashes to a valid one)
   - a footer listing every benign flag and every note
 
 Then build `staged_review/review_enhance.html`, either by running `batch.py validate --stage enhance` or with `build_review.py --save local`.

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import html
 import importlib.util
+import functools
 import json
 from pathlib import Path
 
@@ -14,6 +15,7 @@ def escaped(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
+@functools.lru_cache(maxsize=None)
 def load_shared_builder():
     shared = Path(__file__).resolve().parents[1] / "_shared" / "review-artifact" / "build_review.py"
     spec = importlib.util.spec_from_file_location("codex_review_page", shared)
@@ -134,7 +136,9 @@ def shared_spec(queue: dict) -> dict:
             footer.append(f"<b>{label}, {len(entries)}:</b> {listed}")
     return {
         "title": "VTT Spell Pass Review",
-        "reviewId": f"vtt-spell-pass:{target_vtt}",
+        # target_vtt is a path; a reviewId is [A-Za-z0-9_.:@-]{1,128}, so the shared kit derives a
+        # valid, deterministic id (the text itself when valid, else slug + short hash of the path).
+        "reviewId": load_shared_builder().derive_review_id(f"vtt-spell-pass:{target_vtt}"),
         "outputName": "decisions.json",
         "eyebrow": f"{session} / VTT spell pass",
         "lede": (

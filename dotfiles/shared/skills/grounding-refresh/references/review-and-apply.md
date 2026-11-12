@@ -37,26 +37,16 @@ Recheck native previews/preconditions immediately before application. Reuse exis
 
 ## The NPC verification review loop (card contract)
 
-When the delta's review is a summary_native `npc_verification` review, the page goes through CampaignGenerator's card contract. You never translate page verdicts into `review decide` or `review npc sign` calls, and you never build a decision batch by hand. The kit is `~/.claude/skills/_shared/review-artifact/` (build the page with `--save local` where there is no Artifact tool). Its contract is `CONTRACT.md` there, section "NPC reviews".
+When the delta's review is a summary_native `npc_verification` review, the page goes through CampaignGenerator's card contract. You never translate page verdicts into `review decide` or `review npc sign` calls, and you never build a decision batch by hand. The kit is `_shared/review-artifact/` under the runtime's skills directory (`~/.claude/skills/` for Claude, `${CODEX_HOME:-~/.codex}/skills/` for Codex). Its contract is `CONTRACT.md` there, section "NPC reviews". Where the runtime has no Artifact tool (Codex) the page is built with `--save local`, which never writes state into the page; the GM's export is a `decisions.json` instead.
 
 1. `npc_review_items.py REVIEW_DIR --out items.json`: a shim over `summary_native review cards export`. It lists only items with no current approve or reject and never shows a card the GM cannot validly approve.
-2. `build_review.py --in items.json --out page.html`: the page.
+2. `build_review.py --in items.json --out page.html` (Claude: publish it as an Artifact) or `build_review.py --in items.json --out page.html --save local` (Codex: serve it with `serve_review.py --items items.json`, or hand over the file).
 3. The GM marks cards and saves. An unmarked card stays unmarked.
-4. `read_decisions.py --npc --html saved.html --review REVIEW_ID --out decisions-cards.json`: writes the CampaignGenerator decisions file from the saved page. The `members` and `draftSha256` echoes come from the page, and CampaignGenerator refuses the whole file if they differ from its stored packet.
-5. `summary_native review cards decide REVIEW_ID --decisions decisions-cards.json --reviewer GM`: prints the **plan** and records nothing.
-6. Show the plan to the GM and get their confirmation. A Discuss note is an instruction to talk, not a verdict.
-7. Re-run with `--write --plan-sha256 HASH`. The hash binds the write to the plan the GM saw; a changed plan is refused.
+4. Write the CampaignGenerator decisions file:
+   - Claude, from the saved artifact page: `read_decisions.py --npc --html saved.html --review REVIEW_ID --out decisions-cards.json`. The `members` and `draftSha256` echoes come from the page.
+   - Codex, from the exported `decisions.json`: `read_decisions.py --npc --in decisions.json --items items.json --review REVIEW_ID --out decisions-cards.json`. The export is validated against `items.json` (item set and reviewId = the packet id), and `members` and `draftSha256` come from `items.json`, never from the export.
 
-Then compose and publish through the native writers as above.
-
-## The NPC verification review loop (card contract)
-
-When the delta's review is a summary_native `npc_verification` review, the page goes through CampaignGenerator's card contract. You never translate page verdicts into `review decide` or `review npc sign` calls, and you never build a decision batch by hand. The kit is `~/.codex/skills/_shared/review-artifact/` (build the page with `--save local` where there is no Artifact tool). Its contract is `CONTRACT.md` there, section "NPC reviews".
-
-1. `npc_review_items.py REVIEW_DIR --out items.json`: a shim over `summary_native review cards export`. It lists only items with no current approve or reject and never shows a card the GM cannot validly approve.
-2. `build_review.py --in items.json --out page.html`: the page.
-3. The GM marks cards and saves. An unmarked card stays unmarked.
-4. `read_decisions.py --npc --html saved.html --review REVIEW_ID --out decisions-cards.json`: writes the CampaignGenerator decisions file from the saved page. The `members` and `draftSha256` echoes come from the page, and CampaignGenerator refuses the whole file if they differ from its stored packet.
+   Either way CampaignGenerator refuses the whole file if the echoes differ from its stored packet. A note written on a card the GM left unmarked cannot be recorded; the command prints each one under "UNMARKED CARDS WITH A NOTE". Ask the GM what it means.
 5. `summary_native review cards decide REVIEW_ID --decisions decisions-cards.json --reviewer GM`: prints the **plan** and records nothing.
 6. Show the plan to the GM and get their confirmation. A Discuss note is an instruction to talk, not a verdict.
 7. Re-run with `--write --plan-sha256 HASH`. The hash binds the write to the plan the GM saw; a changed plan is refused.

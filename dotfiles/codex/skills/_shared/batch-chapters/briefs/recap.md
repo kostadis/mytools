@@ -64,7 +64,7 @@ Quote each one verbatim, with its cue number.
 3. The builder writes `staged_review/review_items_recap.json`, with:
    - title: "Chapter <N> Recap"
    - eyebrow: "<campaign> · ch<N> · remove-recap — session-summary.md"
-   - reviewId: "recap:<CH>"
+   - reviewId: "recap:<CH>" (an id is 1-128 chars of [A-Za-z0-9_.:@-]; `batch.py validate` rewrites a chapter name with spaces or slashes to a valid one)
    - footer: the detection evidence and any notes
 4. Check the counts and build `staged_review/review_recap.html`. `batch.py validate` does both.
 

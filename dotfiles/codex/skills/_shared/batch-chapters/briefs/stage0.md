@@ -79,7 +79,7 @@ Write a builder at `<TMP>/<CH>_s0_write.py`. It writes:
 - `staged_review/review_items_stage0.json`, with:
   - title "Chapter <N> Stage 0"
   - eyebrow "<campaign> · ch<N> · stage 0 — <STAGE0>"
-  - reviewId "stage0:<CH>"
+  - reviewId "stage0:<CH>" (an id is 1-128 chars of [A-Za-z0-9_.:@-]; `batch.py validate` rewrites a chapter name with spaces or slashes to a valid one)
   - a footer listing every auto and every false positive, plus the prior rulings you relied on
 
 Then run `batch.py validate`, or check the counts and build `review_stage0.html` with `build_review.py --save local`.
