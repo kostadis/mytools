@@ -83,6 +83,8 @@ baseline advisories without turning them into a new editing pass. Honor the
 GM's review preferences. Use Tailscale only with authorization for the payload
 and destination, following its skill when available. Include the exact selected publication effect and explicit application scope in the final review when publication is requested; do not default an update request to draft-only cards.
 
+For an `npc_verification` review, build and read the page through the shared kit's card loop: `npc_review_items.py`, then the page, then `read_decisions.py --npc`, then `summary_native review cards decide` (a plan), then the GM's confirmation of that plan, then `--write --plan-sha256`. Never translate page verdicts into `review decide` or `review npc sign` by hand. See [review through application](references/review-and-apply.md).
+
 Validate actual saved decisions and resolve Discuss/unmarked items. Bind only
 explicit approvals to native exact-draft signoffs. When the saved decisions already authorize selected publication, continue directly to that publication and verification; do not create a second approval solely to apply the reviewed drafts. Compose and publish through
 the native writers with an explicit NPC selection. Do not hand-edit published

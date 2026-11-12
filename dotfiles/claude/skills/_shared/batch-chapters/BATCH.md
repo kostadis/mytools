@@ -597,8 +597,8 @@ own tools afterwards. It does **not** replace `transcript_corrections.yaml` plus
 `sd_corrections apply`/`check` for tape fixes.
 
 **Scripts you write twice belong in `_shared/`, not the session scratchpad.**
-If a session needs the same throwaway twice (a bulk replacer, a review-page
+If a session needs the same throwaway twice (a bulk replacer, a review page
 builder), add it here with a test instead. `apply-edits` and
 `../review-artifact/npc_review_items.py` began as copies of scratchpad scripts.
 
-Tests: `python3 -m pytest batch-chapters/tests review-artifact/tests` from `_shared/`.
+Tests: `python3 -m pytest batch-chapters/tests review-artifact/tests` from `_shared/`. `review-artifact` is a link to the canonical kit in `dotfiles/shared/skills/_shared/review-artifact/`, where its tests live.

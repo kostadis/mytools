@@ -35,9 +35,9 @@ through repository-relative symbolic links, removing 318,825 duplicated bytes.
 adapters, while `check-skill-sync.sh` validates every canonical link and rejects
 new byte-identical copies outside the shared tree. `SKILL.md` files are intentionally outside the
 shared contract because their tool names, question flows, backend selection,
-and review UI differ by harness. The two review implementations are also
-intentionally different: Claude uses `_shared/review-artifact`, while Codex uses
-`_shared/review-page` plus local HTML handoff. Batch chapter orchestration is
+and review UI differ by harness. Both agents use one review kit,
+`_shared/review-artifact`: Claude builds pages with its default `--save artifact`,
+and Codex builds them with `--save local` (local HTML handoff). Batch chapter orchestration is
 implemented on both sides as a paired adapter. Its deterministic validation
 and all-or-nothing apply semantics match, while each adapter uses its own
 review transport.

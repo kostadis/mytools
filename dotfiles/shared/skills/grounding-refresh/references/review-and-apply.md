@@ -35,6 +35,34 @@ If the saved approval already authorizes the exact application, proceed through 
 
 Recheck native previews/preconditions immediately before application. Reuse existing explicit authorization when intent, reviewed content, destinations and effects remain the same; a changed proposal needs renewed affected review. A changed source or live baseline must not be overwritten to keep the handoff short.
 
+## The NPC verification review loop (card contract)
+
+When the delta's review is a summary_native `npc_verification` review, the page goes through CampaignGenerator's card contract. You never translate page verdicts into `review decide` or `review npc sign` calls, and you never build a decision batch by hand. The kit is `~/.claude/skills/_shared/review-artifact/` (build the page with `--save local` where there is no Artifact tool). Its contract is `CONTRACT.md` there, section "NPC reviews".
+
+1. `npc_review_items.py REVIEW_DIR --out items.json`: a shim over `summary_native review cards export`. It lists only items with no current approve or reject and never shows a card the GM cannot validly approve.
+2. `build_review.py --in items.json --out page.html`: the page.
+3. The GM marks cards and saves. An unmarked card stays unmarked.
+4. `read_decisions.py --npc --html saved.html --review REVIEW_ID --out decisions-cards.json`: writes the CampaignGenerator decisions file from the saved page. The `members` and `draftSha256` echoes come from the page, and CampaignGenerator refuses the whole file if they differ from its stored packet.
+5. `summary_native review cards decide REVIEW_ID --decisions decisions-cards.json --reviewer GM`: prints the **plan** and records nothing.
+6. Show the plan to the GM and get their confirmation. A Discuss note is an instruction to talk, not a verdict.
+7. Re-run with `--write --plan-sha256 HASH`. The hash binds the write to the plan the GM saw; a changed plan is refused.
+
+Then compose and publish through the native writers as above.
+
+## The NPC verification review loop (card contract)
+
+When the delta's review is a summary_native `npc_verification` review, the page goes through CampaignGenerator's card contract. You never translate page verdicts into `review decide` or `review npc sign` calls, and you never build a decision batch by hand. The kit is `~/.codex/skills/_shared/review-artifact/` (build the page with `--save local` where there is no Artifact tool). Its contract is `CONTRACT.md` there, section "NPC reviews".
+
+1. `npc_review_items.py REVIEW_DIR --out items.json`: a shim over `summary_native review cards export`. It lists only items with no current approve or reject and never shows a card the GM cannot validly approve.
+2. `build_review.py --in items.json --out page.html`: the page.
+3. The GM marks cards and saves. An unmarked card stays unmarked.
+4. `read_decisions.py --npc --html saved.html --review REVIEW_ID --out decisions-cards.json`: writes the CampaignGenerator decisions file from the saved page. The `members` and `draftSha256` echoes come from the page, and CampaignGenerator refuses the whole file if they differ from its stored packet.
+5. `summary_native review cards decide REVIEW_ID --decisions decisions-cards.json --reviewer GM`: prints the **plan** and records nothing.
+6. Show the plan to the GM and get their confirmation. A Discuss note is an instruction to talk, not a verdict.
+7. Re-run with `--write --plan-sha256 HASH`. The hash binds the write to the plan the GM saw; a changed plan is refused.
+
+Then compose and publish through the native writers as above.
+
 ## Review availability and status
 
 Verify the Tailscale URL and decision-saving capability before sharing it. Keep the task's server in a persistent session while review is pending and retain its identity. If the user reports a dead endpoint, check it, restart only that task's server when needed, verify the new URL and provide it without another permission question within the existing hosting authorization. Preserve the review ID, candidate revision and decision destination; restarting serving must not rerun generation, reset saved choices or imply approval.

@@ -185,7 +185,7 @@ sorting yourself, then put a short list of decisions in front of the GM:
    when `docs/summaries/` is declared) is normally ruled out, with the declared copy
    named. A bible plus its chapter splits is one ruling, not two.
 
-Below roughly six judgment calls, ask in chat (step 4). The review-page rule there is
+Below roughly six judgment calls, ask in chat (step 4). The review page rule there is
 for many *individual* rulings, not for a big file count that triage has reduced.
 
 Name collisions to check before you propose a new kind name:
