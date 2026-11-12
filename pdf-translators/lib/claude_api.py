@@ -315,6 +315,20 @@ def _parse_claude_response(raw: str, verbose: bool,
         debug_dir.mkdir(parents=True, exist_ok=True)
         (debug_dir / f"{chunk_id}-response.txt").write_text(raw, encoding="utf-8")
 
+    # Some models (seen on Sonnet 5.5) emit a stray preamble such as an empty
+    # `<invoke name="none"></invoke>` before a fenced JSON block. If the text
+    # does not open with JSON, take the fenced block wherever it sits.
+    if not raw.startswith(("[", "{", "```")):
+        fenced = re.search(r"```(?:json)?\s*\n(.*?)\n\s*```", raw, re.DOTALL)
+        if fenced:
+            raw = fenced.group(1).strip()
+        else:
+            # Unfenced, or wrapped in fake tool-call tags: take the outermost
+            # JSON-looking span.
+            opens = [i for i in (raw.find("["), raw.find("{")) if i >= 0]
+            close = max(raw.rfind("]"), raw.rfind("}"))
+            if opens and close > min(opens):
+                raw = raw[min(opens):close + 1]
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
     try:
@@ -639,7 +653,7 @@ def fetch_claude_batch_results(
                 print(f"    [WARN] {cid} hit max_tokens — response may be truncated.",
                       flush=True)
             results_map[cid], _ = _parse_claude_response(
-                msg.content[0].text, verbose, debug_dir=debug_dir, chunk_id=cid
+                "".join(b.text for b in msg.content if b.type == "text"), verbose, debug_dir=debug_dir, chunk_id=cid
             )
         else:
             print(f"    [WARN] {cid} failed: {result.result.type}", flush=True)
@@ -722,7 +736,7 @@ def call_claude_batch(
                 print(f"    [WARN] {cid} hit max_tokens — response may be truncated. "
                       f"Try --pages-per-chunk with a smaller value.", flush=True)
             results_map[cid], _ = _parse_claude_response(
-                msg.content[0].text, verbose, debug_dir=debug_dir, chunk_id=cid
+                "".join(b.text for b in msg.content if b.type == "text"), verbose, debug_dir=debug_dir, chunk_id=cid
             )
         else:
             print(f"    [WARN] {cid} failed: {result.result.type}", flush=True)

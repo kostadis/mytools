@@ -211,3 +211,26 @@ class TestStaleCacheWarning:
         out = capsys.readouterr().out
         assert "[REPAIR]" in out
         assert "[STALE-CACHE]" in out
+
+
+# ---------------------------------------------------------------------------
+# Stray preambles before the JSON (seen on Sonnet 5.5)
+# ---------------------------------------------------------------------------
+
+
+
+@pytest.mark.parametrize("raw", [
+    '<invoke name="none">\n</invoke>\n```json\n["a", "b"]\n```',
+    '<invoke name="json">\n<parameter name="content">["a", "b"]</parameter>\n</invoke>',
+    '<invoke name="json">\n["a", "b"]\n```',
+    'Here is the JSON:\n["a", "b"]',
+])
+def test_parse_tolerates_preamble_before_json(raw):
+    entries, ok = _api._parse_claude_response(raw, verbose=False)
+    assert ok
+    assert entries == ["a", "b"]
+
+
+def test_parse_plain_json_unchanged():
+    entries, ok = _api._parse_claude_response('```json\n[{"type": "entries", "entries": []}]\n```', False)
+    assert ok and entries == [{"type": "entries", "entries": []}]
