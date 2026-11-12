@@ -35,6 +35,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from review_ids import REVIEW_ID_RE, derive_review_id, slug_review_id  # noqa: E402,F401  (derive_review_id: for callers)
+
 FONTS = ("https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,800;1,400"
          "&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap")
 
@@ -499,6 +502,7 @@ function output(){
     unmarked: unmarked
   };
   if(HASPICKS) out.picks = picks;
+  if(EXTRA.length) out.extraVerdicts = EXTRA.map(function(e){ return e.key; });
   return out;
 }
 
@@ -598,6 +602,23 @@ LOCAL_PAGE_STRIP = (
 )
 
 
+# An item that stands for several review items says so. Spliced in only for a page that has such an
+# item, so every other page stays byte-identical to what it was before.
+GROUP_CSS = (".group{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;"
+             "color:var(--talk);background:var(--talk-bg);border-radius:2px;padding:4px 9px;align-self:flex-start}\n")
+GROUP_ANCHOR = """    h += '<div class="outcomes">';
+"""
+GROUP_JS = """    var gm = [];
+    if(it.group) gm.push(esc(it.group));
+    if(it.members && it.members.length > 1) gm.push('Applies to ' + it.members.length + ' items');
+    if(gm.length) h += '<div class="group">' + gm.join(' &middot; ') + '</div>';
+"""
+
+
+def has_group(items: list[dict]) -> bool:
+    return any(it.get("group") or len(it.get("members") or []) > 1 for it in items)
+
+
 def localize_src(src: str) -> str:
     """Swap the artifact save surface in `src` for the standalone one."""
     for old, new in LOCAL_EDITS:
@@ -666,7 +687,7 @@ def validate(spec: dict) -> list[str]:
             errs.append(f"extraVerdicts[{j}] ({key}) needs 'label' and 'outcome' - the outcome says what the verdict does")
     if len({e.get("key") for e in extra if isinstance(e, dict)}) != len(extra):
         errs.append("extraVerdicts keys must be unique")
-    if spec.get("reviewId") and not re.fullmatch(r"[A-Za-z0-9_.:@-]{1,128}", str(spec["reviewId"])):
+    if spec.get("reviewId") and not REVIEW_ID_RE.fullmatch(str(spec["reviewId"])):
         errs.append("'reviewId' must be 1-128 chars of [A-Za-z0-9_.:@-]")
     if "outputName" in spec and not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", str(spec["outputName"])):
         errs.append("'outputName' must be 1-128 chars of [A-Za-z0-9_.-]")
@@ -696,6 +717,15 @@ def lift_edits(items: list[dict]) -> list[dict]:
     return out
 
 
+_TOKEN = re.compile(r"__([A-Z_]+)__")
+
+
+def fill(template: str, values: dict[str, str]) -> str:
+    """Substitute __NAME__ tokens in one pass. Only names in `values` are touched, and a value is
+    inserted verbatim, never re-scanned, so user text that happens to contain a token stays as written."""
+    return _TOKEN.sub(lambda m: values[m.group(1)] if m.group(1) in values else m.group(0), template)
+
+
 def build(spec: dict, save: str = "artifact") -> str:
     if save not in ("artifact", "local"):
         raise ValueError(f"save must be 'artifact' or 'local', not {save!r}")
@@ -706,19 +736,28 @@ def build(spec: dict, save: str = "artifact") -> str:
         page = PAGE.replace(LOCAL_PAGE_STRIP, "")
         assert page != PAGE, "LOCAL_PAGE_STRIP no longer matches PAGE"
     # The page inserts eyebrow/lede/footer as HTML. The artifact page has always done so; the retired Codex
-    # builder escaped them as text, so --save local keeps that and no Codex caller changes behaviour.
+    # builder escaped them as text (esc() in its page script), so --save local keeps that and no Codex caller
+    # changes behaviour.
     chrome = {k: spec.get(k, "") for k in ("eyebrow", "lede", "footer")}
     if save == "local":
         chrome = {k: html.escape(v) for k, v in chrome.items()}
-    src = (base
-           .replace("__FONTS__", js(FONTS))
-           .replace("__TITLE__", js(spec["title"]))
-           .replace("__EYEBROW__", js(chrome["eyebrow"]))
-           .replace("__LEDE__", js(chrome["lede"]))
-           .replace("__FOOTER__", js(chrome["footer"]))
-           .replace("__ITEMS__", js(spec["items"]))
-           .replace("__EXTRA__", js(spec.get("extraVerdicts") or []))
-           .replace("__OUTPUT_NAME__", js(spec.get("outputName", "decisions.json"))))
+    css = CSS
+    if has_group(spec["items"]):
+        if base.count(GROUP_ANCHOR) != 1:
+            raise SystemExit("internal error: group marker anchor not found exactly once")
+        base = base.replace(GROUP_ANCHOR, GROUP_JS + GROUP_ANCHOR)
+        css = CSS + GROUP_CSS
+    # One pass over each template: a token inside a value (an item's text, a title) is never re-scanned.
+    src = fill(base, {
+        "FONTS": js(FONTS),
+        "TITLE": js(spec["title"]),
+        "EYEBROW": js(chrome["eyebrow"]),
+        "LEDE": js(chrome["lede"]),
+        "FOOTER": js(chrome["footer"]),
+        "ITEMS": js(spec["items"]),
+        "EXTRA": js(spec.get("extraVerdicts") or []),
+        "OUTPUT_NAME": js(spec.get("outputName", "decisions.json")),
+    })
 
     if re.search(r"</script", src, re.I):
         raise SystemExit(
@@ -726,7 +765,7 @@ def build(spec: dict, save: str = "artifact") -> str:
             "Check the item text for a literal closing script tag."
         )
 
-    slug = re.sub(r"[^A-Za-z0-9_.:-]+", "-", spec["title"]).strip("-")
+    slug = slug_review_id(spec["title"])
     if save == "local":
         # read_decisions --in --items derives the expected id from the title, so
         # the default must be reproducible (no timestamp) for the check to hold.
@@ -735,12 +774,13 @@ def build(spec: dict, save: str = "artifact") -> str:
         review_id = spec.get("reviewId") or "{}@{}".format(
             slug[:80], datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     state = {"decisions": {}, "notes": {}, "picks": {}, "savedAt": None, "reviewId": review_id}
-    return (page
-            .replace("__TITLE_TEXT__", html.escape(spec["title"]))
-            .replace("__FONTS_TEXT__", FONTS)
-            .replace("__CSS__", CSS)
-            .replace("__STATE__", json.dumps(state, ensure_ascii=False).replace("<", "\\u003c"))
-            .replace("__SRC__", src))
+    return fill(page, {
+        "TITLE_TEXT": html.escape(spec["title"]),
+        "FONTS_TEXT": FONTS,
+        "CSS": css,
+        "STATE": json.dumps(state, ensure_ascii=False).replace("<", "\\u003c"),
+        "SRC": src,
+    })
 
 
 def main() -> int:

@@ -9,6 +9,7 @@ reports — then point this at that file.
 
 Usage:
     read_decisions.py --npc --html saved.html --review REVIEW --out card-decisions.json
+    read_decisions.py --npc --in decisions.json --items items.json --review REVIEW --out card-decisions.json
     read_decisions.py --html saved-artifact.html [--items review_items.json] [--out decisions.json]
     read_decisions.py --in decisions.json [--items review_items.json] [--out normalized.json]
 
@@ -19,6 +20,13 @@ comes from the state, and each marked card carries the `members` (and, for a
 sign-off, `draftSha256`) the page was built with, read from its ITEMS. Unmarked
 cards are omitted; `pick` and extra verdicts are refused. Apply the file with
 `summary_native review cards decide`.
+
+--npc --in is the same for a page built with `--save local` (no state is ever
+written into that page): the export is validated by `normalize()` against --items,
+and `members`/`draftSha256` come from the ITEMS FILE the page was built from, never
+from the export. A note on a card with no verdict cannot go in the decisions file
+(unmarked cards are omitted), so each is printed to stdout under "UNMARKED CARDS
+WITH A NOTE" and counted in the summary line; raise it with the GM.
 
 --html reads a page saved with `build_review.py --save artifact` (the page
 republished itself). --in validates the decisions.json export of a page built
@@ -51,6 +59,9 @@ import json
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from review_ids import slug_review_id  # noqa: E402
 
 STATE_RE = re.compile(
     r'<script[^>]*type=["\']application/json["\'][^>]*id=["\']state["\'][^>]*>(.*?)</script>',
@@ -95,30 +106,11 @@ def extract(html: str) -> dict:
         raise SystemExit(2)
 
 
-def page_item_ids(html: str) -> list[str]:
+def page_items(html: str) -> list[dict]:
+    """The page's embedded ITEMS list, parsed once."""
     m = ITEMS_RE.search(html)
     if not m:
         print("error: no ITEMS list found in the page source; cannot check decision ids.", file=sys.stderr)
-        raise SystemExit(2)
-    try:
-        items = json.loads(m.group(1).replace("\\u003c", "<"))
-    except json.JSONDecodeError as e:
-        print(f"error: the page's ITEMS list is not valid JSON: {e}", file=sys.stderr)
-        raise SystemExit(2)
-    return [it["id"] for it in items]
-
-
-def page_picks(html: str) -> dict[str, list[str]]:
-    """Per-card clickable word choices (items[].picks); empty on older pages."""
-    m = ITEMS_RE.search(html)
-    items = json.loads(m.group(1).replace("\\u003c", "<")) if m else []
-    return {it["id"]: it["picks"] for it in items if it.get("picks")}
-
-
-def page_items(html: str) -> list[dict]:
-    m = ITEMS_RE.search(html)
-    if not m:
-        print("error: no ITEMS list found in the page source.", file=sys.stderr)
         raise SystemExit(2)
     try:
         return json.loads(m.group(1).replace("\\u003c", "<"))
@@ -144,7 +136,7 @@ def expected_review_id(spec: dict) -> str:
     title = spec.get("title")
     if not isinstance(title, str) or not title:
         raise DecisionError("items file has no title or reviewId")
-    return re.sub(r"[^A-Za-z0-9_.:-]+", "-", title).strip("-")
+    return slug_review_id(title)
 
 
 def expected_item_ids(spec: object) -> set[str]:
@@ -158,6 +150,39 @@ def expected_item_ids(spec: object) -> set[str]:
     if not ids or len(ids) != len(set(ids)):
         raise DecisionError("items file must contain unique item ids")
     return set(ids)
+
+
+def declared_verdicts(payload: dict, spec: dict | None) -> tuple[set[str], dict[str, list[str]] | None]:
+    """(extra verdict keys, per-card pick words or None when the page offered no picks)."""
+    if spec is not None:
+        extra = {e["key"] for e in (spec.get("extraVerdicts") or []) if isinstance(e, dict) and e.get("key")}
+        offered = {it["id"]: it["picks"] for it in spec.get("items", [])
+                   if isinstance(it, dict) and isinstance(it.get("id"), str) and it.get("picks")}
+        return extra, (offered or None)
+    keys = payload.get("extraVerdicts", [])
+    if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys):
+        raise DecisionError("'extraVerdicts' must be a list of verdict keys")
+    return set(keys), ({} if "picks" in payload else None)
+
+
+def check_picks(payload: dict, decisions: dict, offered: dict[str, list[str]] | None) -> dict[str, str]:
+    """The word picked on each card marked `pick`; it must be one the card offered (any non-empty
+    string when there is no items file to say what was offered)."""
+    picks = payload.get("picks", {})
+    if offered is None:
+        return {}
+    if not isinstance(picks, dict):
+        raise DecisionError("'picks' is not an object")
+    for cid, verdict in decisions.items():
+        if verdict != "pick":
+            continue
+        word = picks.get(cid)
+        if not isinstance(word, str) or not word.strip():
+            raise DecisionError(f"{cid} is marked 'pick' but carries no picked word")
+        if offered and word not in offered.get(cid, []):
+            raise DecisionError(f"{cid} is marked 'pick' but {word!r} is not one the card offered "
+                                f"{offered.get(cid, [])}")
+    return {cid: w for cid, w in picks.items() if decisions.get(cid) == "pick"}
 
 
 def normalize(payload: object, spec: dict | None = None) -> dict:
@@ -177,12 +202,17 @@ def normalize(payload: object, spec: dict | None = None) -> dict:
     if not isinstance(decisions, dict):
         raise DecisionError("input is not a saved review decision file", 1)
 
+    # The verdicts this page offered. With --items they are the items file's declared extraVerdicts (and
+    # `pick` where a card offers picks); without it the only source is what the export says it offered.
+    extra, offered = declared_verdicts(payload, spec)
+    valid = VALID | extra | ({"pick"} if offered is not None else set())
     bad = {
         key: value for key, value in decisions.items()
-        if not isinstance(value, str) or value not in VALID
+        if not isinstance(value, str) or value not in valid
     }
     if bad:
         raise DecisionError(f"unrecognised verdicts: {bad}")
+    picks = check_picks(payload, decisions, offered)
 
     notes = payload.get("notes", {})
     if not isinstance(notes, dict):
@@ -221,9 +251,9 @@ def normalize(payload: object, spec: dict | None = None) -> dict:
 
     tally = {
         value: sum(1 for choice in decisions.values() if choice == value)
-        for value in sorted(VALID)
+        for value in sorted(valid)
     }
-    return {
+    out = {
         "schemaVersion": payload.get("schemaVersion", 1),
         "reviewId": payload.get("reviewId"),
         "savedAt": payload["savedAt"],
@@ -234,15 +264,18 @@ def normalize(payload: object, spec: dict | None = None) -> dict:
         "discuss": sorted(key for key, value in decisions.items() if value == "discuss"),
         "unmarked": unmarked,
     }
+    if offered is not None:
+        out["picks"] = picks
+    return out
 
 
 def main_html(args: argparse.Namespace) -> int:
     html = args.html.read_text(encoding="utf-8", errors="replace")
     state = extract(html)
-    ids = page_item_ids(html)
+    page = page_items(html)
+    ids = [it["id"] for it in page]
 
     decisions = state.get("decisions") or {}
-    raw_decisions = dict(decisions)
     notes = state.get("notes") or {}
     saved_at = state.get("savedAt")
 
@@ -252,7 +285,7 @@ def main_html(args: argparse.Namespace) -> int:
         raise SystemExit(1)
 
     picks = state.get("picks") or {}
-    offered = page_picks(html)
+    offered = {it["id"]: it["picks"] for it in page if it.get("picks")}
     valid = VALID | page_extra_keys(html) | ({"pick"} if offered else set())
     bad = {k: v for k, v in decisions.items() if v not in valid}
     if bad:
@@ -295,7 +328,7 @@ def main_html(args: argparse.Namespace) -> int:
         "notes": notes,
         "picks": picks,
         "discuss": sorted(k for k, v in decisions.items() if v == "discuss"),
-        "unmarked": [i for i in ids if i not in decisions and i not in raw_decisions],
+        "unmarked": [i for i in ids if i not in decisions],
     }
 
     blob = json.dumps(out, indent=2, ensure_ascii=False)
@@ -310,50 +343,101 @@ def main_html(args: argparse.Namespace) -> int:
     return 0
 
 
-def main_npc(args: argparse.Namespace) -> int:
-    if not args.html or not args.review:
-        print("error: --npc needs --html SAVED and --review REVIEW", file=sys.stderr)
-        return 2
-    html = args.html.read_text(encoding="utf-8", errors="replace")
-    state = extract(html)
-    if not state.get("savedAt"):
-        print("error: this page has never been saved (savedAt is null). The GM has not pressed Save yet.",
-              file=sys.stderr)
-        return 1
-    items = {it["id"]: it for it in page_items(html)}
-    decisions = state.get("decisions") or {}
-    notes = state.get("notes") or {}
-    if page_extra_keys(html) or any(it.get("picks") for it in items.values()):
-        print("error: this page has pick or extra verdicts; an NPC review page has none.", file=sys.stderr)
-        return 2
-    bad = {k: v for k, v in decisions.items() if v not in VALID}
-    if bad:
-        print(f"error: unrecognised verdicts (an NPC page has approve/reject/discuss only): {bad}", file=sys.stderr)
-        return 2
-    unknown = sorted((set(decisions) | set(notes)) - set(items))
-    if unknown:
-        print(f"error: decisions or notes for ids this page never asked about: {unknown}", file=sys.stderr)
-        return 2
+def card_decisions(items: dict[str, dict], decisions: dict, notes: dict, packet_id, review: str, saved_at) -> tuple[dict, list]:
+    """The CampaignGenerator card decisions file, plus the unmarked cards that carry a note.
+
+    `members` and `draftSha256` come from `items` (the page's ITEMS, or the items file), never from a
+    GM-authored export. A note on a card with no verdict cannot be carried by the file (unmarked
+    cards are omitted), so the caller must show it."""
     cards = {}
     for cid, verdict in decisions.items():
         it = items[cid]
         if not it.get("members"):
-            print(f"error: card {cid} has no members on the page; was it built by npc_review_items.py?",
-                  file=sys.stderr)
-            return 2
+            raise DecisionError(f"card {cid} has no members; was it built by npc_review_items.py?")
         entry = {"verdict": verdict, "note": notes.get(cid) or "", "members": list(it["members"])}
         if it.get("draftSha256"):
             entry["draftSha256"] = it["draftSha256"]
         cards[cid] = entry
-    out = {"schemaVersion": 1, "packetId": state.get("reviewId"), "reviewId": args.review,
-           "savedAt": state["savedAt"], "cards": cards}
+    dropped = [(cid, notes[cid]) for cid in items if cid in notes and notes[cid] and cid not in decisions]
+    out = {"schemaVersion": 1, "packetId": packet_id, "reviewId": review, "savedAt": saved_at, "cards": cards}
+    return out, dropped
+
+
+def finish_npc(args, out: dict, dropped: list, total: int) -> int:
     blob = json.dumps(out, indent=2, ensure_ascii=False)
+    line = f"{len(out['cards'])} of {total} cards marked  saved {out['savedAt']}"
+    if dropped:
+        line += f"  {len(dropped)} unmarked card(s) carry a note that is NOT in the decisions file"
     if args.out:
         args.out.write_text(blob + "\n", encoding="utf-8")
-        print(f"{len(cards)} of {len(items)} cards marked  saved {state['savedAt']}  ->  {args.out}")
+        print(f"{line}  ->  {args.out}")
     else:
         print(blob)
+    if dropped:
+        print(f"\nUNMARKED CARDS WITH A NOTE ({len(dropped)}): not recorded, an unmarked card is omitted. "
+              "Ask the GM what each note means, or have them mark the card and save again.")
+        for cid, note in dropped:
+            print(f"  {cid}: {note}")
     return 0
+
+
+def main_npc(args: argparse.Namespace) -> int:
+    if not args.review or not (args.html or args.inp):
+        print("error: --npc needs --review REVIEW and either --html SAVED or --in DECISIONS --items ITEMS",
+              file=sys.stderr)
+        return 2
+    if args.html:
+        html = args.html.read_text(encoding="utf-8", errors="replace")
+        state = extract(html)
+        if not state.get("savedAt"):
+            print("error: this page has never been saved (savedAt is null). The GM has not pressed Save yet.",
+                  file=sys.stderr)
+            return 1
+        items = {it["id"]: it for it in page_items(html)}
+        decisions = state.get("decisions") or {}
+        notes = state.get("notes") or {}
+        if page_extra_keys(html) or any(it.get("picks") for it in items.values()):
+            print("error: this page has pick or extra verdicts; an NPC review page has none.", file=sys.stderr)
+            return 2
+        bad = {k: v for k, v in decisions.items() if v not in VALID}
+        if bad:
+            print(f"error: unrecognised verdicts (an NPC page has approve/reject/discuss only): {bad}",
+                  file=sys.stderr)
+            return 2
+        unknown = sorted((set(decisions) | set(notes)) - set(items))
+        if unknown:
+            print(f"error: decisions or notes for ids this page never asked about: {unknown}", file=sys.stderr)
+            return 2
+        packet_id, saved_at = state.get("reviewId"), state["savedAt"]
+    else:
+        if not args.items:
+            print("error: --npc --in needs --items: members and draftSha256 come from the items file, "
+                  "never from the export", file=sys.stderr)
+            return 2
+        try:
+            payload = json.loads(args.inp.read_text(encoding="utf-8"))
+            spec = json.loads(args.items.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"error: cannot read input: {exc}", file=sys.stderr)
+            return 2
+        if not isinstance(spec, dict) or spec.get("extraVerdicts") or any(
+                isinstance(i, dict) and i.get("picks") for i in spec.get("items", [])):
+            print("error: this items file has pick or extra verdicts; an NPC review has none.", file=sys.stderr)
+            return 2
+        try:
+            norm = normalize(payload, spec)
+        except DecisionError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return exc.exit_code
+        items = {it["id"]: it for it in spec["items"]}
+        decisions, notes = norm["decisions"], norm["notes"]
+        packet_id, saved_at = norm["reviewId"], norm["savedAt"]
+    try:
+        out, dropped = card_decisions(items, decisions, notes, packet_id, args.review, saved_at)
+    except DecisionError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return exc.exit_code
+    return finish_npc(args, out, dropped, len(items))
 
 
 def main_in(args: argparse.Namespace) -> int:
@@ -394,7 +478,7 @@ def main() -> int:
                     help="the review_items JSON the page was built from; its ids must match the page's")
     ap.add_argument("--out", type=Path, help="write decisions JSON here (default: stdout)")
     ap.add_argument("--npc", action="store_true",
-                    help="with --html: write a CampaignGenerator card decisions file (needs --review)")
+                    help="write a CampaignGenerator card decisions file (needs --review, and --html or --in --items)")
     ap.add_argument("--review", help="--npc only: the review id (e.g. npc-review-…) for the decisions file")
     ap.add_argument("--allow-unsaved", action="store_true",
                     help="--html only: do not fail when savedAt is null (inspecting a fresh page)")

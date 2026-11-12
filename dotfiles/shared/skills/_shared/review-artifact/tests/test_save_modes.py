@@ -128,7 +128,8 @@ class SaveModeTests(unittest.TestCase):
         self.assertEqual(out["decisions"], {"g-1": "approve", "g-2": "pick"})
         self.assertEqual(out["picks"], {"g-2": "beta"})
         self.assertEqual(out["notes"], {"g-1": "why"})
-        self.assertEqual(out["unmarked"], ["noise-class:label"])
+        self.assertEqual(out["unmarked"], [])
+        self.assertEqual(out["extraVerdicts"], ["defer"])
         self.assertEqual(out["decided"], 2)
         self.assertEqual(out["tally"]["approve"], 1)
 

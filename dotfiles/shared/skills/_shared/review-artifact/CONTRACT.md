@@ -124,16 +124,21 @@ test holds it to that.
   something, so an all-unmarked export cannot pass for a review.
 - The export always lists every item in `decisions` or `unmarked`, plus the
   `reviewId` and a `savedAt` stamped by the GM's own gesture. `picks` is added
-  when the page has any pick card.
+  when the page has any pick card, and `extraVerdicts` (the declared keys) when
+  it has any extra verdict.
 - The page keeps no browser storage: a reload loses unsaved marks and a
   re-review never opens with an earlier run's marks ticked.
-- The default `reviewId` is the slugged title (reproducible, so
+- The default `reviewId` is the slugged title, capped at 128 (reproducible, so
   `read_decisions.py --in --items` can check it). The artifact default also
-  appends the build time.
+  appends the build time. A `reviewId` is 1-128 chars of `[A-Za-z0-9_.:@-]`; to
+  put a path or a name with a space in one, derive it with `review_ids.py`
+  (`derive_review_id`): the text itself when valid, else a slug plus a short hash
+  of the original, so the same text always gives the same id.
 - `serve_review.py` validates a Save to VM payload with the same `normalize()`
-  as `read_decisions.py --in`, which accepts only approve, reject and discuss.
-  A page with `extraVerdicts` or `picks` should be saved by Copy/Save output
-  and read with `--in` only if the verdicts fit; otherwise use the artifact path.
+  as `read_decisions.py --in`. With the items file it accepts approve, reject,
+  discuss, the items file's declared `extraVerdicts` and, on a card that offered
+  picks, `pick` with one of the offered words (returned as `picks`). Without
+  `--items` it can only trust the export's own `extraVerdicts` / `picks`.
 
 The `--in` reader exits 1 on an export with no `savedAt` and 2 on a note for an
 id the page never asked about, an id both decided and unmarked, or an export
@@ -292,7 +297,8 @@ Pass `--allow-unsaved` only to inspect a freshly built page.
 **Class cards are not expanded here.** A card with a `members` list stands
 for those items, but the kit never turns one verdict into per-member records.
 `members` and `draftSha256` are passed through to the page's `ITEMS` so they can
-be echoed back; CampaignGenerator expands them from its own stored packet (see
+be echoed back, and a card with several members (or a `group`) shows an
+"Applies to N items" marker so the GM sees how far one verdict reaches; CampaignGenerator expands them from its own stored packet (see
 **NPC reviews**).
 
 Items the GM left unmarked do not appear in `decisions`; they are listed in
@@ -338,6 +344,8 @@ python $KIT/npc_review_items.py <campaign>/docs/reviews/<review-id> --campaign <
 python $KIT/build_review.py --in items.json --out page.html     # add --save local on Codex
 #   ... the GM marks and saves ...
 python $KIT/read_decisions.py --npc --html saved.html --review <review-id> --out decisions-cards.json
+#   Codex (--save local; the page holds no state, so read the exported decisions.json against the items file):
+python $KIT/read_decisions.py --npc --in decisions.json --items items.json --review <review-id> --out decisions-cards.json
 summary_native review cards decide <review-id> --decisions decisions-cards.json \
     --reviewer GM --campaign-dir <campaign>                       # prints the plan
 #   show the plan to the GM and get their confirmation, then:
@@ -352,10 +360,14 @@ summary_native review cards decide <review-id> --decisions decisions-cards.json 
   `reviewId` is the packet id. `--ids` and `--ids-file` map to `--item`. A card
   the GM cannot validly approve is never shown, and the packet already leaves
   out items with a current approve or reject.
-- `read_decisions.py --npc` writes a CampaignGenerator decisions file. It takes
-  `members` and `draftSha256` from the saved page's `ITEMS`, never from the
-  items file, copies notes, omits unmarked cards, and refuses `pick` and extra
-  verdicts. The echoes are compared with CampaignGenerator's stored packet, and
+- `read_decisions.py --npc` writes a CampaignGenerator decisions file. With
+  `--html` it takes `members` and `draftSha256` from the saved page's `ITEMS`;
+  with `--in --items` it takes them from the items file (validated against the
+  export by `normalize()`: item set and `reviewId` = the packet id), never from
+  the GM's export. It copies notes, omits unmarked cards, and refuses `pick` and
+  extra verdicts. A note on an unmarked card cannot be recorded, so every such
+  card id and note is printed to stdout under "UNMARKED CARDS WITH A NOTE" and
+  counted in the summary line. The echoes are compared with CampaignGenerator's stored packet, and
   the whole file is refused on any difference.
 - **The agent never builds a decision batch by hand** and never runs
   `review decide` or `review npc sign` for page verdicts. `review cards decide`

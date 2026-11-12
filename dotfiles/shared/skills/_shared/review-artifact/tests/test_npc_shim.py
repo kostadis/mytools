@@ -239,6 +239,41 @@ class NpcLoopTests(unittest.TestCase):
         self.assertEqual(marked, {sign["id"]: "applied", finding["id"]: "applied"})
         self.__class__.last_decisions = d  # for the report
 
+    def test_local_save_export_to_decide_plan_end_to_end(self):
+        """Codex: a --save local page writes no state, so the loop reads decisions.json against the items file."""
+        doc, items_path = self.items()
+        page = self.tmp / "local.html"
+        b = self.sh(sys.executable, BUILD, "--in", items_path, "--out", page, "--save", "local")
+        self.assertEqual(b.returncode, 0, b.stderr)
+        sign = next(i for i in doc["items"] if i.get("draftSha256"))
+        finding = next(i for i in doc["items"] if not i.get("draftSha256"))
+        ids = [i["id"] for i in doc["items"]]
+        # what the page's Save output / Save to VM writes (its shape is pinned in test_save_modes)
+        export = {"schemaVersion": 1, "reviewId": doc["reviewId"], "savedAt": "2026-11-12 21:04 UTC",
+                  "decided": 2, "decisions": {sign["id"]: "approve", finding["id"]: "reject"},
+                  "notes": {finding["id"]: "fix it"}, "discuss": [],
+                  "unmarked": [i for i in ids if i not in (sign["id"], finding["id"])]}
+        exp = self.tmp / "decisions.json"
+        exp.write_text(json.dumps(export), encoding="utf-8")
+        dfile = self.tmp / "d-local.json"
+        r = self.sh(sys.executable, READ, "--npc", "--in", exp, "--items", items_path,
+                    "--review", self.review_id, "--out", dfile)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(dfile.read_text(encoding="utf-8"))
+        self.assertEqual(d["packetId"], doc["reviewId"])
+        self.assertEqual(d["cards"][sign["id"]]["draftSha256"], sign["draftSha256"])
+
+        import jsonschema
+        schema = json.loads((CG / "pipelines/summary_native/review/schemas/card-decisions.v1.schema.json").read_text())
+        jsonschema.validate(d, schema)
+
+        r = self.sh("summary_native", "review", "cards", "decide", self.review_id, "--decisions", dfile,
+                    "--reviewer", "GM", "--campaign-dir", self.root, "--json")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        env = json.loads(r.stdout)
+        self.assertEqual(env["code"], "REVIEW_CARDS_PLAN")
+        self.assertEqual(env["data"]["counts"]["refused"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
