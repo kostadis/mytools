@@ -425,6 +425,11 @@ right before narration).
 
 ### Phase 2 — pre-classify candidates (LLM judgment, MINIMAL filtering)
 
+Use the prep for this session to identify misspellings and support proposed
+canonical spellings. For any low-confidence candidate, read the surrounding
+transcript context and propose a specific correction option for the GM to
+review; do not present only a fuzzy-match score or an unexplained unknown.
+
 Read the unknown list. Before asking the user, **only filter what is
 unambiguously not a campaign name**. When in doubt, surface — the user
 explicitly prefers being asked over silent dismissal.
