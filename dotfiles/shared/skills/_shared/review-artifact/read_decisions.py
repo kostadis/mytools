@@ -8,8 +8,17 @@ URLs, and for large pages also saves it to a local file whose path it
 reports — then point this at that file.
 
 Usage:
+    read_decisions.py --npc --html saved.html --review REVIEW --out card-decisions.json
     read_decisions.py --html saved-artifact.html [--items review_items.json] [--out decisions.json]
     read_decisions.py --in decisions.json [--items review_items.json] [--out normalized.json]
+
+--npc turns a page saved from an NPC review (npc_review_items.py) into the
+CampaignGenerator card decisions file (specs/043-review-card-contract/contracts/
+card-files.md): packetId is the page's reviewId, reviewId is --review, savedAt
+comes from the state, and each marked card carries the `members` (and, for a
+sign-off, `draftSha256`) the page was built with, read from its ITEMS. Unmarked
+cards are omitted; `pick` and extra verdicts are refused. Apply the file with
+`summary_native review cards decide`.
 
 --html reads a page saved with `build_review.py --save artifact` (the page
 republished itself). --in validates the decisions.json export of a page built
@@ -106,11 +115,16 @@ def page_picks(html: str) -> dict[str, list[str]]:
     return {it["id"]: it["picks"] for it in items if it.get("picks")}
 
 
-def page_members(html: str) -> dict[str, list[str]]:
-    """Per-card member item ids (items[].members): a card that stands for several items. Empty on older pages."""
+def page_items(html: str) -> list[dict]:
     m = ITEMS_RE.search(html)
-    items = json.loads(m.group(1).replace("\\u003c", "<")) if m else []
-    return {it["id"]: it["members"] for it in items if it.get("members")}
+    if not m:
+        print("error: no ITEMS list found in the page source.", file=sys.stderr)
+        raise SystemExit(2)
+    try:
+        return json.loads(m.group(1).replace("\\u003c", "<"))
+    except json.JSONDecodeError as e:
+        print(f"error: the page's ITEMS list is not valid JSON: {e}", file=sys.stderr)
+        raise SystemExit(2)
 
 
 class DecisionError(ValueError):
@@ -270,45 +284,6 @@ def main_html(args: argparse.Namespace) -> int:
                   "Is it a stale page from an earlier run?", file=sys.stderr)
             raise SystemExit(2)
 
-    # A card with `members` is a class card: one verdict stands for each member item. The members come from
-    # the items file (the page must agree with it), and only an explicit non-discuss verdict is expanded.
-    # Discuss and unmarked class cards yield no decision for any member.
-    page_mem = page_members(html)
-    members = page_mem
-    if args.items:
-        file_mem = {it["id"]: it["members"] for it in spec.get("items", []) if it.get("members")}
-        if file_mem != page_mem:
-            diff = sorted(k for k in set(file_mem) | set(page_mem) if file_mem.get(k) != page_mem.get(k))
-            print(f"error: class-card membership on the page differs from --items for {diff}. "
-                  "Is it a stale page from an earlier run?", file=sys.stderr)
-            raise SystemExit(2)
-        members = file_mem
-    classes: dict[str, dict] = {}
-    if members:
-        expanded: dict[str, str] = {}
-        enotes: dict[str, str] = {}
-        for k, v in decisions.items():
-            if k not in members:
-                expanded[k] = v
-                continue
-            if v == "discuss":
-                continue
-            classes[k] = {"verdict": v, "members": members[k]}
-            # Every member's note says it came from one class-card verdict, so the decision history
-            # downstream (CG `review decide`) shows provenance, not an apparently individual ruling.
-            provenance = f"GM class verdict on batch card [{k}] ({len(members[k])} occurrences)"
-            for mid in members[k]:
-                expanded[mid] = v
-                enotes[mid] = f"{provenance}: {notes[k]}" if notes.get(k) else provenance
-        for k, n in notes.items():
-            if k not in members:
-                enotes[k] = n
-        if set(expanded) & set(members):
-            print(f"error: a member item id collides with a class-card id: {sorted(set(expanded) & set(members))}",
-                  file=sys.stderr)
-            raise SystemExit(2)
-        decisions, notes = expanded, enotes
-
     tally = {v: sum(1 for x in decisions.values() if x == v) for v in sorted(valid)}
     out = {
         "schemaVersion": 1,
@@ -322,9 +297,6 @@ def main_html(args: argparse.Namespace) -> int:
         "discuss": sorted(k for k, v in decisions.items() if v == "discuss"),
         "unmarked": [i for i in ids if i not in decisions and i not in raw_decisions],
     }
-    if members:
-        out["classes"] = classes  # class card id -> {verdict, members}; absent for pages with no class card
-        out["discuss"] = sorted(set(out["discuss"]) | {k for k in members if raw_decisions.get(k) == "discuss"})
 
     blob = json.dumps(out, indent=2, ensure_ascii=False)
     if args.out:
@@ -333,6 +305,52 @@ def main_html(args: argparse.Namespace) -> int:
               f"({', '.join(f'{n} {v}' for v, n in tally.items())}, "
               f"{len(out['unmarked'])} unmarked)  "
               f"saved {saved_at}  ->  {args.out}")
+    else:
+        print(blob)
+    return 0
+
+
+def main_npc(args: argparse.Namespace) -> int:
+    if not args.html or not args.review:
+        print("error: --npc needs --html SAVED and --review REVIEW", file=sys.stderr)
+        return 2
+    html = args.html.read_text(encoding="utf-8", errors="replace")
+    state = extract(html)
+    if not state.get("savedAt"):
+        print("error: this page has never been saved (savedAt is null). The GM has not pressed Save yet.",
+              file=sys.stderr)
+        return 1
+    items = {it["id"]: it for it in page_items(html)}
+    decisions = state.get("decisions") or {}
+    notes = state.get("notes") or {}
+    if page_extra_keys(html) or any(it.get("picks") for it in items.values()):
+        print("error: this page has pick or extra verdicts; an NPC review page has none.", file=sys.stderr)
+        return 2
+    bad = {k: v for k, v in decisions.items() if v not in VALID}
+    if bad:
+        print(f"error: unrecognised verdicts (an NPC page has approve/reject/discuss only): {bad}", file=sys.stderr)
+        return 2
+    unknown = sorted((set(decisions) | set(notes)) - set(items))
+    if unknown:
+        print(f"error: decisions or notes for ids this page never asked about: {unknown}", file=sys.stderr)
+        return 2
+    cards = {}
+    for cid, verdict in decisions.items():
+        it = items[cid]
+        if not it.get("members"):
+            print(f"error: card {cid} has no members on the page; was it built by npc_review_items.py?",
+                  file=sys.stderr)
+            return 2
+        entry = {"verdict": verdict, "note": notes.get(cid) or "", "members": list(it["members"])}
+        if it.get("draftSha256"):
+            entry["draftSha256"] = it["draftSha256"]
+        cards[cid] = entry
+    out = {"schemaVersion": 1, "packetId": state.get("reviewId"), "reviewId": args.review,
+           "savedAt": state["savedAt"], "cards": cards}
+    blob = json.dumps(out, indent=2, ensure_ascii=False)
+    if args.out:
+        args.out.write_text(blob + "\n", encoding="utf-8")
+        print(f"{len(cards)} of {len(items)} cards marked  saved {state['savedAt']}  ->  {args.out}")
     else:
         print(blob)
     return 0
@@ -375,9 +393,14 @@ def main() -> int:
     ap.add_argument("--items", type=Path,
                     help="the review_items JSON the page was built from; its ids must match the page's")
     ap.add_argument("--out", type=Path, help="write decisions JSON here (default: stdout)")
+    ap.add_argument("--npc", action="store_true",
+                    help="with --html: write a CampaignGenerator card decisions file (needs --review)")
+    ap.add_argument("--review", help="--npc only: the review id (e.g. npc-review-…) for the decisions file")
     ap.add_argument("--allow-unsaved", action="store_true",
                     help="--html only: do not fail when savedAt is null (inspecting a fresh page)")
     args = ap.parse_args()
+    if args.npc:
+        return main_npc(args)
     return main_in(args) if args.inp else main_html(args)
 
 
