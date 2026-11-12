@@ -159,6 +159,55 @@ def card(item: dict, root: Path, decided: dict | None, stale: str = "") -> dict:
     }
 
 
+# Classified-noise items (spec 041): precedence order, and the public legacy codes GM policy keys on.
+NOISE_CODES = ("noise-label", "noise-idiom", "noise-negated-status",
+               "noise-spelled-number", "noise-synonym", "noise-other-citation")
+NOISE_GROUP = "Classified noise"
+CLASS_CARD_PREFIX = "noise-class:"
+CLASS_CARD_NOTE = "One verdict here applies to every listed occurrence; each gets its own decision record."
+
+
+def noise_code(item: dict) -> str | None:
+    """The item's noise-* legacy code, or None. Diagnostics first (precedence order), then the item details."""
+    codes = {d.get("legacy_code") for d in item.get("diagnostics", [])}
+    codes.add(item.get("proposed_action", {}).get("details", {}).get("legacy_code"))
+    return next((c for c in NOISE_CODES if c in codes), None)
+
+
+def noise_occurrence(item: dict) -> dict:
+    """Occurrence facts from the noise diagnostic's details (contracts/noise-diagnostic.md)."""
+    for d in item.get("diagnostics", []):
+        if d.get("legacy_code") in NOISE_CODES:
+            return d.get("details", {}) or {}
+    return {}
+
+
+def class_card(code: str, members: list[dict], root: Path) -> dict:
+    """One card for a noise class; `members` (the member item ids) is what read_decisions.py expands."""
+    cls = code[len("noise-"):]
+    rows = []
+    for it in members:
+        o = noise_occurrence(it)
+        scenes = ", ".join(str(x) for x in o.get("cited_scenes", [])) or "none"
+        line = o.get("line") or it.get("locator", {}).get("display_line")
+        rows.append(f"<li><b>{E(subject_name(it, root))}</b>{' L' + E(str(line)) if line else ''}: "
+                    f"token <code>{E(str(o.get('token', '')))}</code><br>"
+                    f"<i>{E(str(o.get('sentence') or it.get('claim_text', '')))}</i><br>"
+                    f"cited: {E(scenes)}; resolved by: <code>{E(str(o.get('resolved_by', '')))}</code></li>")
+    n = len(members)
+    return {
+        "id": CLASS_CARD_PREFIX + cls,
+        "group": NOISE_GROUP,
+        "members": [it["item_id"] for it in members],
+        "t": f"<b>Classified noise: {E(cls)}</b> ({n} occurrence{'s' if n != 1 else ''})",
+        "y": f"Keep as-is: every listed draft line stands as written (each records <code>accept_no_change</code>). "
+             f"No edit to any draft.",
+        "n": "These occurrences are not noise: each listed line needs a fix in its own draft "
+             "(the draft is the origin). Say what to fix in a note.",
+        "ev": f"{E(CLASS_CARD_NOTE)}<br><b>{n}</b> occurrence{'s' if n != 1 else ''}:<ul>{''.join(rows)}</ul>",
+    }
+
+
 def read_ids(a) -> list[str] | None:
     if a.ids:
         return [x.strip() for x in a.ids.split(",") if x.strip()]
@@ -223,16 +272,32 @@ def main(argv: list[str] | None = None) -> int:
         so = i.get("proposed_action", {}).get("action") == "signoff_npc_draft"
         return (draft_of(i), so, i.get("locator", {}).get("display_line") or 0, i["item_id"])
     items.sort(key=key)
-    cards = [card(i, root, decided.get(i["item_id"]), stale.get(i["item_id"], "")) for i in items]
+    # Noise items collapse into one card per class. A class with no undecided occurrence renders no card.
+    by_class: dict[str, list[dict]] = {}
+    plain = []
+    for i in items:
+        c = noise_code(i)
+        if c and i["item_id"] not in decided:
+            by_class.setdefault(c, []).append(i)
+        elif not c:
+            plain.append(i)
+    noise_cards = [class_card(c, by_class[c], root) for c in NOISE_CODES if c in by_class]
+    items = plain
+    if not items and not noise_cards:
+        print("error: no items left after filtering; nothing to review", file=sys.stderr); return 1
+    cards = noise_cards + [card(i, root, decided.get(i["item_id"]), stale.get(i["item_id"], "")) for i in items]
     n_sign = sum(i.get("proposed_action", {}).get("action") == "signoff_npc_draft" for i in items)
     n_subj = len({draft_of(i) for i in items})
-    digest = hashlib.sha256(",".join(sorted(c["id"] for c in cards)).encode()).hexdigest()[:8]
+    digest = hashlib.sha256(",".join(sorted(c["id"] + ("=" + "+".join(c["members"]) if "members" in c else "")
+                                            for c in cards)).encode()).hexdigest()[:8]
     doc = {
         "title": a.title or f"NPC review {rid}: {len(cards)} rulings",
         "reviewId": a.review_id or f"{rid}:{digest}",
         "eyebrow": a.eyebrow or f"{root.name} / summary-native NPC review / {rid}",
         "lede": a.lede or (f"{len(cards)} cards across {n_subj} NPCs: {n_sign} draft sign-offs and "
-                           f"{len(cards) - n_sign} checker findings, grouped by NPC. Each card says what Approve "
+                           f"{len(cards) - n_sign} checker findings, grouped by NPC"
+                           + (f" (the {len(noise_cards)} classified-noise class cards come first)" if noise_cards else "")
+                           + f". Each card says what Approve "
                            f"and Reject do; one of the two always keeps the text as it is. Nothing is pre-selected."),
         "footer": a.footer or ("This page records nothing in the review. Your rulings are entered with "
                                "<code>summary_native review decide</code> (findings) and <code>review npc sign</code> "
@@ -240,7 +305,8 @@ def main(argv: list[str] | None = None) -> int:
         "items": cards,
     }
     a.out.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"wrote {a.out}  ({len(cards)} cards: {n_sign} sign-offs, {len(cards) - n_sign} findings; "
+    print(f"wrote {a.out}  ({len(cards)} cards: {n_sign} sign-offs, {len(cards) - n_sign} findings "
+          f"incl. {len(noise_cards)} noise-class cards; "
           f"{sum(c['id'] in decided for c in cards)} already decided)")
     return 0
 
