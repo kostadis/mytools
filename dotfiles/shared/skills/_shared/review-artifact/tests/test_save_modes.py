@@ -91,6 +91,20 @@ class SaveModeTests(unittest.TestCase):
                           build(self.tmp, "--save", "local", items=p), re.S).group(1)
         self.assertEqual(json.loads(state)["reviewId"], expected_review_id(spec))
 
+    def test_local_escapes_eyebrow_lede_footer_as_text_artifact_keeps_html(self):
+        spec = json.loads((FIX / "golden_items.json").read_text())
+        spec.update(eyebrow="<i>E</i> & co", lede="<b>L</b>", footer="<code>F</code>")
+        p = self.tmp / "chrome.json"
+        p.write_text(json.dumps(spec))
+        local = page_src(build(self.tmp, "--save", "local", items=p))
+        for raw in ("<i>E</i>", "<b>L</b>", "<code>F</code>"):
+            self.assertNotIn(raw, local)
+        for esc in ("&lt;i&gt;E&lt;/i&gt; &amp; co", "&lt;b&gt;L&lt;/b&gt;", "&lt;code&gt;F&lt;/code&gt;"):
+            self.assertIn(esc, local)
+        art = page_src(build(self.tmp, "--save", "artifact", items=p))
+        for raw in ("<i>E</i>", "<b>L</b>", "<code>F</code>"):
+            self.assertIn(raw.replace("<", "\\u003c"), art.replace("<", "\\u003c"))
+
     @unittest.skipUnless(shutil.which("node"), "node not installed")
     def test_local_export_shape_runs_in_a_stub_dom(self):
         src = page_src(build(self.tmp, "--save", "local"))

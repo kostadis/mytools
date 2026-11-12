@@ -705,12 +705,17 @@ def build(spec: dict, save: str = "artifact") -> str:
         base = localize_src(SRC)
         page = PAGE.replace(LOCAL_PAGE_STRIP, "")
         assert page != PAGE, "LOCAL_PAGE_STRIP no longer matches PAGE"
+    # The page inserts eyebrow/lede/footer as HTML. The artifact page has always done so; the retired Codex
+    # builder escaped them as text, so --save local keeps that and no Codex caller changes behaviour.
+    chrome = {k: spec.get(k, "") for k in ("eyebrow", "lede", "footer")}
+    if save == "local":
+        chrome = {k: html.escape(v) for k, v in chrome.items()}
     src = (base
            .replace("__FONTS__", js(FONTS))
            .replace("__TITLE__", js(spec["title"]))
-           .replace("__EYEBROW__", js(spec.get("eyebrow", "")))
-           .replace("__LEDE__", js(spec.get("lede", "")))
-           .replace("__FOOTER__", js(spec.get("footer", "")))
+           .replace("__EYEBROW__", js(chrome["eyebrow"]))
+           .replace("__LEDE__", js(chrome["lede"]))
+           .replace("__FOOTER__", js(chrome["footer"]))
            .replace("__ITEMS__", js(spec["items"]))
            .replace("__EXTRA__", js(spec.get("extraVerdicts") or []))
            .replace("__OUTPUT_NAME__", js(spec.get("outputName", "decisions.json"))))
