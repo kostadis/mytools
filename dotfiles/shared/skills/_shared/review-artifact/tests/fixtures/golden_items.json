@@ -1,0 +1,13 @@
+{
+  "title": "Golden Review",
+  "eyebrow": "Golden",
+  "lede": "A <i>fixed</i> items file.",
+  "footer": "Applied already.",
+  "reviewId": "golden:1",
+  "extraVerdicts": [{"key": "defer", "label": "Defer", "outcome": "Decide later."}],
+  "items": [
+    {"id": "g-1", "t": "First card", "y": "Do <code>x</code>.<br><b>Exact edits:</b><br>a &rarr; b", "n": "Leave.", "ev": "Evidence 1", "guess": "approve", "guessWhy": "Looks right."},
+    {"id": "g-2", "t": "Second card", "y": "Keep.", "n": "Fix.", "picks": ["alpha", "beta"], "guessPick": "alpha"},
+    {"id": "noise-class:label", "group": "Classified noise", "members": ["n-1", "n-2"], "t": "Class card", "y": "Keep.", "n": "Fix.", "ev": "2 occurrences"}
+  ]
+}

@@ -12,7 +12,14 @@ ITSELF with the decisions embedded in <script type="application/json"
 id="state">. Claude then reads that block back with read_decisions.py.
 
 Usage:
-    build_review.py --in items.json --out page.html
+    build_review.py --in items.json --out page.html [--save artifact|local]
+
+--save artifact (default) writes the page above: Save republishes the page.
+--save local writes a standalone page for a runtime with no artifact store
+(Codex): Copy output, Save output (a download named by the spec's optional
+"outputName", default decisions.json) and, when a server injects
+<meta name="codex-review-save" content="enabled">, Save to VM via
+PUT ./decisions. The card standard is identical in both modes.
 
 Input schema: see CONTRACT.md. Required keys: title, items[].
 Each item requires id, t, y, n; ev is optional but strongly encouraged.
@@ -465,6 +472,144 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">\
 <script>new Function(document.getElementById("src").textContent)();</script>\
 </body></html>"""
 
+
+# --save local: the artifact page's source with its save surface swapped for
+# the standalone one. Each anchor must match exactly once, so an edit to SRC
+# that would silently leave a page half-localised fails the build instead.
+LOCAL_SAVE_JS = r"""
+function output(){
+  var c = counts(), decisions = {}, notes = {}, picks = {}, unmarked = [], tally = {}, decided = 0;
+  KEYS.forEach(function(k){ tally[k] = c[k]; decided += c[k]; });
+  if(HASPICKS){ tally.pick = c.pick; decided += c.pick; }
+  ITEMS.forEach(function(it){
+    var choice = state.decisions[it.id];
+    if(choice) decisions[it.id] = choice; else unmarked.push(it.id);
+    if(choice === 'pick' && state.picks[it.id]) picks[it.id] = state.picks[it.id];
+    if(state.notes[it.id]) notes[it.id] = state.notes[it.id];
+  });
+  var out = {
+    schemaVersion: 1,
+    reviewId: state.reviewId,
+    savedAt: new Date().toISOString().replace('T',' ').slice(0,16) + ' UTC',
+    decided: decided,
+    tally: tally,
+    decisions: decisions,
+    notes: notes,
+    discuss: ITEMS.filter(function(it){ return decisions[it.id] === 'discuss'; }).map(function(it){ return it.id; }),
+    unmarked: unmarked
+  };
+  if(HASPICKS) out.picks = picks;
+  return out;
+}
+
+function outputText(){ return JSON.stringify(output(), null, 2); }
+
+function copyOutput(){
+  var value = outputText();
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(value).then(function(){ flash('Decision output copied.'); }).catch(function(){ fallbackCopy(value); });
+  } else fallbackCopy(value);
+}
+
+function fallbackCopy(value){
+  var area = document.createElement('textarea');
+  area.value = value; area.style.position = 'fixed'; area.style.opacity = '0';
+  document.body.appendChild(area); area.select();
+  try {
+    if(document.execCommand('copy')) flash('Decision output copied.');
+    else window.prompt('Copy the decision output:', value);
+  } catch(e) { window.prompt('Copy the decision output:', value); }
+  area.remove();
+}
+
+async function doSave(){
+  if(HOSTED){
+    var button = document.getElementById('save');
+    if(button) button.disabled = true;
+    try {
+      var response = await fetch(new URL('decisions', window.location.href), {
+        method:'PUT', headers:{'Content-Type':'application/json'}, body:outputText()
+      });
+      var result = await response.json().catch(function(){ return {}; });
+      if(!response.ok) throw new Error(result.error || ('save failed (' + response.status + ')'));
+      flash('Saved on VM: ' + result.saved + '.');
+    } catch(e) {
+      flash('Could not save on VM: ' + e.message, true);
+    } finally {
+      if(button) button.disabled = false;
+    }
+    return;
+  }
+  var blob = new Blob([outputText()], {type:'application/json'});
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement('a');
+  link.href = url; link.download = OUTPUT_NAME;
+  document.body.appendChild(link); link.click(); link.remove();
+  URL.revokeObjectURL(url);
+  flash('Saved ' + OUTPUT_NAME + '.');
+}
+
+render();
+"""
+
+LOCAL_EDITS = [
+    ("var EXTRA = __EXTRA__;\n",
+     "var EXTRA = __EXTRA__;\nvar OUTPUT_NAME = __OUTPUT_NAME__;\n"
+     "var HOSTED = document.querySelector('meta[name=\"codex-review-save\"]') !== null;\n"),
+    ("""  h += '<button class="save" id="save"' + (dirty && !readOnly ? '' : ' disabled') + '>' +
+       (readOnly ? 'Read only' : 'Save decisions') + '</button>';
+""",
+     """  // Nothing to export until the GM has marked or noted something, so an
+  // all-unmarked file can never pass for a review.
+  var any = Object.keys(state.decisions).length || Object.keys(state.notes).length;
+  h += '<button class="bulk" id="copy"' + (any ? '' : ' disabled') + '>Copy output</button>';
+  h += '<button class="save" id="save"' + (any ? '' : ' disabled') + '>' +
+       (HOSTED ? 'Save to VM' : 'Save output') + '</button>';
+"""),
+    ("""      var s = document.getElementById('save');
+      if(s && !readOnly) s.disabled = false;
+""",
+     """      var any = Object.keys(state.decisions).length || Object.keys(state.notes).length;
+      ['copy', 'save'].forEach(function(bid){ var b = document.getElementById(bid); if(b) b.disabled = !any; });
+"""),
+    ("""  h += 'Saving writes your decisions into this page as a new version, so they reach me without anything to copy across. ' +
+       (state.savedAt ? 'Last saved <code>' + esc(state.savedAt) + '</code>.' : 'Nothing saved yet.');
+""",
+     """  h += (HOSTED
+       ? 'Save to VM writes <code>' + esc(OUTPUT_NAME) + '</code> in the active Codex workspace. '
+       : 'Use Copy output to paste the rulings into chat, or Save output to download <code>' + esc(OUTPUT_NAME) + '</code>. ') +
+       'Unmarked findings remain unresolved; they are never treated as rejected.';
+"""),
+    ("""  var save = document.getElementById('save');
+  if(save) save.addEventListener('click', doSave);
+""",
+     """  var copy = document.getElementById('copy');
+  if(copy) copy.addEventListener('click', copyOutput);
+  var save = document.getElementById('save');
+  if(save) save.addEventListener('click', doSave);
+"""),
+]
+
+# The standalone page loads no web fonts: it opens from file:// or a private VM.
+LOCAL_PAGE_STRIP = (
+    '<link rel="preconnect" href="https://fonts.googleapis.com">'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    '<link rel="stylesheet" href="__FONTS_TEXT__">'
+)
+
+
+def localize_src(src: str) -> str:
+    """Swap the artifact save surface in `src` for the standalone one."""
+    for old, new in LOCAL_EDITS:
+        if src.count(old) != 1:
+            raise SystemExit(f"internal error: --save local anchor not found exactly once: {old[:60]!r}")
+        src = src.replace(old, new)
+    cut_from, cut_to = src.find("function renderDoc(){"), src.rfind("render();")
+    if cut_from < 0 or cut_to < cut_from:
+        raise SystemExit("internal error: --save local cannot find renderDoc()..render()")
+    return src[:cut_from].rstrip("\n") + "\n" + LOCAL_SAVE_JS.lstrip("\n")
+
+
 REQUIRED_ITEM_KEYS = ("id", "t", "y", "n")
 
 
@@ -523,6 +668,8 @@ def validate(spec: dict) -> list[str]:
         errs.append("extraVerdicts keys must be unique")
     if spec.get("reviewId") and not re.fullmatch(r"[A-Za-z0-9_.:@-]{1,128}", str(spec["reviewId"])):
         errs.append("'reviewId' must be 1-128 chars of [A-Za-z0-9_.:@-]")
+    if "outputName" in spec and not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", str(spec["outputName"])):
+        errs.append("'outputName' must be 1-128 chars of [A-Za-z0-9_.-]")
     pre = spec.get("state") or {}
     if pre.get("decisions") or pre.get("notes") or pre.get("picks") or pre.get("savedAt"):
         errs.append("'state' must not pre-fill decisions, notes or savedAt - a page always "
@@ -549,16 +696,24 @@ def lift_edits(items: list[dict]) -> list[dict]:
     return out
 
 
-def build(spec: dict) -> str:
+def build(spec: dict, save: str = "artifact") -> str:
+    if save not in ("artifact", "local"):
+        raise ValueError(f"save must be 'artifact' or 'local', not {save!r}")
     spec = dict(spec, items=lift_edits(spec["items"]))
-    src = (SRC
+    page, base = PAGE, SRC
+    if save == "local":
+        base = localize_src(SRC)
+        page = PAGE.replace(LOCAL_PAGE_STRIP, "")
+        assert page != PAGE, "LOCAL_PAGE_STRIP no longer matches PAGE"
+    src = (base
            .replace("__FONTS__", js(FONTS))
            .replace("__TITLE__", js(spec["title"]))
            .replace("__EYEBROW__", js(spec.get("eyebrow", "")))
            .replace("__LEDE__", js(spec.get("lede", "")))
            .replace("__FOOTER__", js(spec.get("footer", "")))
            .replace("__ITEMS__", js(spec["items"]))
-           .replace("__EXTRA__", js(spec.get("extraVerdicts") or [])))
+           .replace("__EXTRA__", js(spec.get("extraVerdicts") or []))
+           .replace("__OUTPUT_NAME__", js(spec.get("outputName", "decisions.json"))))
 
     if re.search(r"</script", src, re.I):
         raise SystemExit(
@@ -566,11 +721,16 @@ def build(spec: dict) -> str:
             "Check the item text for a literal closing script tag."
         )
 
-    review_id = spec.get("reviewId") or "{}@{}".format(
-        re.sub(r"[^A-Za-z0-9_.:-]+", "-", spec["title"]).strip("-")[:80],
-        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    slug = re.sub(r"[^A-Za-z0-9_.:-]+", "-", spec["title"]).strip("-")
+    if save == "local":
+        # read_decisions --in --items derives the expected id from the title, so
+        # the default must be reproducible (no timestamp) for the check to hold.
+        review_id = spec.get("reviewId") or slug
+    else:
+        review_id = spec.get("reviewId") or "{}@{}".format(
+            slug[:80], datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     state = {"decisions": {}, "notes": {}, "picks": {}, "savedAt": None, "reviewId": review_id}
-    return (PAGE
+    return (page
             .replace("__TITLE_TEXT__", html.escape(spec["title"]))
             .replace("__FONTS_TEXT__", FONTS)
             .replace("__CSS__", CSS)
@@ -582,6 +742,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--in", dest="inp", required=True, type=Path, help="items JSON (see CONTRACT.md)")
     ap.add_argument("--out", required=True, type=Path, help="HTML page to write")
+    ap.add_argument("--save", choices=("artifact", "local"), default="artifact",
+                    help="save surface: artifact republishes the page (default); local is the "
+                         "standalone Copy output / Save output / Save to VM page")
     args = ap.parse_args()
 
     spec = json.loads(args.inp.read_text(encoding="utf-8"))
@@ -591,7 +754,7 @@ def main() -> int:
             print(f"error: {e}", file=sys.stderr)
         return 1
 
-    html = build(spec)
+    html = build(spec, args.save)
     args.out.write_text(html, encoding="utf-8")
     kb = len(html.encode("utf-8")) / 1024
     print(f"wrote {args.out}  ({len(spec['items'])} items, {kb:.1f} KB)")
