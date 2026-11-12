@@ -97,6 +97,13 @@ def page_picks(html: str) -> dict[str, list[str]]:
     return {it["id"]: it["picks"] for it in items if it.get("picks")}
 
 
+def page_members(html: str) -> dict[str, list[str]]:
+    """Per-card member item ids (items[].members): a card that stands for several items. Empty on older pages."""
+    m = ITEMS_RE.search(html)
+    items = json.loads(m.group(1).replace("\\u003c", "<")) if m else []
+    return {it["id"]: it["members"] for it in items if it.get("members")}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--html", required=True, type=Path, help="saved artifact HTML")
@@ -112,6 +119,7 @@ def main() -> int:
     ids = page_item_ids(html)
 
     decisions = state.get("decisions") or {}
+    raw_decisions = dict(decisions)
     notes = state.get("notes") or {}
     saved_at = state.get("savedAt")
 
@@ -153,6 +161,45 @@ def main() -> int:
                   "Is it a stale page from an earlier run?", file=sys.stderr)
             raise SystemExit(2)
 
+    # A card with `members` is a class card: one verdict stands for each member item. The members come from
+    # the items file (the page must agree with it), and only an explicit non-discuss verdict is expanded.
+    # Discuss and unmarked class cards yield no decision for any member.
+    page_mem = page_members(html)
+    members = page_mem
+    if args.items:
+        file_mem = {it["id"]: it["members"] for it in spec.get("items", []) if it.get("members")}
+        if file_mem != page_mem:
+            diff = sorted(k for k in set(file_mem) | set(page_mem) if file_mem.get(k) != page_mem.get(k))
+            print(f"error: class-card membership on the page differs from --items for {diff}. "
+                  "Is it a stale page from an earlier run?", file=sys.stderr)
+            raise SystemExit(2)
+        members = file_mem
+    classes: dict[str, dict] = {}
+    if members:
+        expanded: dict[str, str] = {}
+        enotes: dict[str, str] = {}
+        for k, v in decisions.items():
+            if k not in members:
+                expanded[k] = v
+                continue
+            if v == "discuss":
+                continue
+            classes[k] = {"verdict": v, "members": members[k]}
+            # Every member's note says it came from one class-card verdict, so the decision history
+            # downstream (CG `review decide`) shows provenance, not an apparently individual ruling.
+            provenance = f"GM class verdict on batch card [{k}] ({len(members[k])} occurrences)"
+            for mid in members[k]:
+                expanded[mid] = v
+                enotes[mid] = f"{provenance}: {notes[k]}" if notes.get(k) else provenance
+        for k, n in notes.items():
+            if k not in members:
+                enotes[k] = n
+        if set(expanded) & set(members):
+            print(f"error: a member item id collides with a class-card id: {sorted(set(expanded) & set(members))}",
+                  file=sys.stderr)
+            raise SystemExit(2)
+        decisions, notes = expanded, enotes
+
     tally = {v: sum(1 for x in decisions.values() if x == v) for v in sorted(valid)}
     out = {
         "schemaVersion": 1,
@@ -164,8 +211,11 @@ def main() -> int:
         "notes": notes,
         "picks": picks,
         "discuss": sorted(k for k, v in decisions.items() if v == "discuss"),
-        "unmarked": [i for i in ids if i not in decisions],
+        "unmarked": [i for i in ids if i not in decisions and i not in raw_decisions],
     }
+    if members:
+        out["classes"] = classes  # class card id -> {verdict, members}; absent for pages with no class card
+        out["discuss"] = sorted(set(out["discuss"]) | {k for k in members if raw_decisions.get(k) == "discuss"})
 
     blob = json.dumps(out, indent=2, ensure_ascii=False)
     if args.out:

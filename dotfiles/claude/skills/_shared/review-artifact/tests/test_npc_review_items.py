@@ -20,7 +20,7 @@ DRAFT = "docs/npcs/summary_native/ch1-2/draft/npc_rimardo.md"
 EVID = "docs/npcs/summary_native/ch1-2/evidence/npc_rimardo.md"
 
 
-class NpcReviewItemsTests(unittest.TestCase):
+class ReviewFixture(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.camp = Path(self.tmp.name) / "Camp"
@@ -80,6 +80,8 @@ class NpcReviewItemsTests(unittest.TestCase):
     def doc(self):
         return json.loads(self.out.read_text(encoding="utf-8"))
 
+
+class NpcReviewItemsTests(ReviewFixture):
     def test_all_items_contract_shaped_and_buildable(self):
         r = self.run_adapter()
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -138,6 +140,77 @@ class NpcReviewItemsTests(unittest.TestCase):
         r = self.run_adapter("--allow-stale")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("STALE", self.doc()["items"][2]["ev"])
+
+
+def noise_item(iid: str, cls: str, npc: str, token: str, line: int, rev: int = 1) -> dict:
+    """Hand-built in the shape of specs/041 contracts/noise-diagnostic.md."""
+    sent = f"{npc} has {token} of them [ch 085 / 085.07] [ch 085 / 085.08]."
+    return {"item_id": iid, "revision": rev, "rationale": f"classified noise: {cls}", "claim_text": sent,
+            "locator": {"display_line": line, "source_path": f"docs/npcs/summary_native/ch1-2/draft/npc_{npc.lower()}.md"},
+            "input_bindings": [], "evidence": [],
+            "diagnostics": [{"legacy_code": f"noise-{cls}", "blocking": False, "message": f"{token} is noise",
+                             "details": {"check": "number", "noise_class": cls, "token": token, "sentence": sent,
+                                         "cited_scenes": ["ch 085 / 085.07", "ch 085 / 085.08"],
+                                         "resolved_by": "ch 085 / 085.07", "line": line}}],
+            "proposed_action": {"action": "review_classified_noise",
+                                "details": {"npc": npc, "legacy_code": f"noise-{cls}"}}}
+
+
+class NoiseClassCardTests(ReviewFixture):
+    """Reuses the base review (3 ordinary items) and adds noise items to it."""
+
+    def add(self, *extra, events=None):
+        man = json.loads((self.rdir / "manifest.json").read_text())
+        for it in extra:
+            d = self.rdir / "items" / it["item_id"]; d.mkdir(parents=True)
+            (d / f"{it['revision']}.json").write_text(json.dumps(it), encoding="utf-8")
+            man["items"].append({"item_id": it["item_id"], "revision": it["revision"]})
+        (self.rdir / "manifest.json").write_text(json.dumps(man), encoding="utf-8")
+        for name, e in (events or {}).items():
+            (self.rdir / "events" / f"{name}.json").write_text(json.dumps(e), encoding="utf-8")
+
+    def setUp(self):
+        super().setUp()
+        self.add(noise_item("n-l1", "label", "Rimardo", "ch 12", 5), noise_item("n-l2", "label", "Brun", "ch 3", 9),
+                 noise_item("n-i1", "idiom", "Brun", "a hundred", 11))
+
+    def test_one_card_per_class_ahead_of_npc_cards(self):
+        self.assertEqual(self.run_adapter().returncode, 0)
+        ids = [c["id"] for c in self.doc()["items"]]
+        self.assertEqual(ids, ["noise-class:label", "noise-class:idiom", "npc-claim-1", "npc-pres-1", "npc-signoff-1"])
+        c = self.doc()["items"][0]
+        self.assertEqual(c["members"], ["n-l2", "n-l1"])  # draft order (Brun, Rimardo)
+        self.assertEqual(c["group"], "Classified noise")
+        self.assertIn("One verdict here applies to every listed occurrence; each gets its own decision record.", c["ev"])
+        for want in ("Rimardo", "Brun", "ch 12", "ch 3", "ch 085 / 085.07", "ch 085 / 085.08", "resolved by", "2</b> occurrences"):
+            self.assertIn(want, c["ev"])
+        self.assertNotIn("n-l1", [x["id"] for x in self.doc()["items"]])  # no per-occurrence cards
+
+    def test_fully_decided_class_renders_no_card(self):
+        dec = lambda i: {"item_id": i, "item_revision": 1, "decision_revision": 1, "verdict": "approve",
+                         "disposition": "accept_no_change", "reviewer": "GM"}
+        self.add(events={"d-n1": dec("n-l1"), "d-n2": dec("n-l2")})
+        self.assertEqual(self.run_adapter().returncode, 0)
+        self.assertEqual([c["id"] for c in self.doc()["items"]][:2], ["noise-class:idiom", "npc-claim-1"])
+
+    def test_partly_decided_class_lists_only_undecided(self):
+        self.add(events={"d-n1": {"item_id": "n-l1", "item_revision": 1, "decision_revision": 1,
+                                  "verdict": "reject", "disposition": "reject_action", "reviewer": "GM"}})
+        self.run_adapter()
+        self.assertEqual(self.doc()["items"][0]["members"], ["n-l2"])
+
+    def test_non_noise_cards_unchanged(self):
+        self.run_adapter()
+        with_noise = {c["id"]: c for c in self.doc()["items"] if not c["id"].startswith("noise-class:")}
+        # same review without the noise items
+        for i in ("n-l1", "n-l2", "n-i1"):
+            man = json.loads((self.rdir / "manifest.json").read_text())
+            man["items"] = [m for m in man["items"] if m["item_id"] != i]
+            (self.rdir / "manifest.json").write_text(json.dumps(man))
+        self.run_adapter()
+        plain = {c["id"]: c for c in self.doc()["items"]}
+        self.assertEqual(with_noise, plain)
+        self.assertTrue(all("members" not in c and "group" not in c for c in plain.values()))
 
 
 if __name__ == "__main__":

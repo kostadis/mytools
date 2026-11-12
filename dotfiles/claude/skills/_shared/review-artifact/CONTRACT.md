@@ -240,6 +240,19 @@ whole mechanism exists to avoid.
 page the GM has not saved yet must never be read as *"approved nothing."*
 Pass `--allow-unsaved` only to inspect a freshly built page.
 
+**Class cards expand on read-back.** A card with a `members` list stands for
+those items. `read_decisions.py` turns its approve/reject verdict into one
+entry per member id in `decisions` (the same per-item shape as any card), each
+member's note reading `GM class verdict on batch card [<card id>] (<k>
+occurrences): <card note>`, or just the part before the colon when the card has
+no note. That way the decision history shows the verdict was a class verdict,
+not an individual ruling. It also records `classes`
+(`{card id: {verdict, members}}`) when the page has any class card. The member
+ids come from `--items`; if the page's `members` differ from the items file's,
+it exits 2 (stale page). A class card left at discuss or unmarked yields no
+decision for any member: it is listed in `discuss` / `unmarked` under the card
+id. A verdict is never inferred for an item not on a decided card.
+
 Items the GM left unmarked do not appear in `decisions`; they are listed in
 `unmarked`. Treat them as undecided, not as rejected, and say so when you
 report back. A decision or note keyed to an id the page never asked about
@@ -294,6 +307,27 @@ python ~/.claude/skills/_shared/review-artifact/build_review.py --in <items>.jso
 - Cards are grouped by draft file: findings in line order, then the sign-off.
   Override `--title/--eyebrow/--lede/--footer/--review-id` as needed.
   A 427-item review builds a page of about 2.3 MB.
+
+- **Classified-noise class cards** (spec 041). An item whose diagnostic
+  `legacy_code` is `noise-label`, `noise-idiom`, `noise-negated-status`,
+  `noise-spelled-number`, `noise-synonym` or `noise-other-citation` is not
+  shown as its own card. The adapter emits ONE card per class, ahead of the
+  per-NPC cards:
+
+  ```json
+  { "id": "noise-class:label", "group": "Classified noise",
+    "members": ["<item id>", "<item id>"],
+    "t": "...", "y": "...", "n": "...", "ev": "..." }
+  ```
+
+  `ev` carries "One verdict here applies to every listed occurrence; each gets
+  its own decision record.", the count, and every occurrence (NPC, line, token,
+  sentence, cited scenes, resolved_by). `members` holds the member item ids
+  (draft order); it lists only occurrences with no current approve/reject, and
+  a class with none left renders no card. Approve = keep every line as written
+  (`accept_no_change`); Reject = each listed line needs a draft fix.
+  `build_review.py` is unchanged: `group` and `members` are extra card fields
+  it passes through to the page.
 
 Tests: `python3 -m pytest tests/` in this directory.
 
