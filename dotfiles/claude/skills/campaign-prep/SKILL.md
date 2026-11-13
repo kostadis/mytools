@@ -77,7 +77,8 @@ For the rest of the conversation:
 
 - Cite specifics from the brief or from a source you read, never from memory
 - If a fact is in neither, search (step 3) before saying it is unknown, and say so before fabricating
-- Voice files (`voice/`) and chapter splits (`docs/chapters/`) are authoritative over the grounding docs when they conflict
+- Session summaries are the authority: where a grounding doc and a summary disagree, the summary wins. Voice files (`voice/`) are authoritative for how a character speaks
+- Ignore `docs/chapters/`. The chapter splits were made to review the campaign bible and are not canon; never cite them
 
 ## Notes
 
