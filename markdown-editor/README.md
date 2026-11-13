@@ -25,9 +25,32 @@ Install Rust with rustup and Xcode Command Line Tools (`xcode-select --install`)
 
 Command Line Tools 26.6 ships a linker that cannot read the MacOSX 27 SDK (`unknown architecture arm64e.x1-macos`). `.cargo/config.toml` points `SDKROOT` at the MacOSX 26.5 SDK so `cargo run` links. Set `SDKROOT` yourself if you want a different SDK.
 
+## Windows
+
+Install Rust with rustup, then run `cargo run --release` in this directory. Open and Save As use the Windows file dialog.
+
+Rust's default Windows toolchain links with Microsoft's linker, so it needs the Visual Studio Build Tools ("Desktop development with C++"). Without them, the `stable-x86_64-pc-windows-gnullvm` toolchain can link with the LLD it bundles:
+
+```
+rustup toolchain install stable-x86_64-pc-windows-gnullvm --profile minimal
+rustup override set stable-x86_64-pc-windows-gnullvm
+```
+
+Then, in `%USERPROFILE%\.cargo\config.toml`, point that target at the bundled linker (replace `<toolchain>` with the toolchain's folder under `%USERPROFILE%\.rustup	oolchains`):
+
+```toml
+[target.x86_64-pc-windows-gnullvm]
+linker = "<toolchain>/lib/rustlib/x86_64-pc-windows-gnullvm/bin/gcc-ld/ld.lld.exe"
+rustflags = ["-Clinker-flavor=ld", "-Lnative=C:/Users/<you>/.cargo/win-implibs"]
+```
+
+The toolchain has no import libraries for `opengl32`, `shell32`, `gdi32` and `advapi32`. Copy those four DLLs from `C:\Windows\System32` into the `win-implibs` folder; LLD reads their export tables at link time.
+
+Tested so far on Windows 11: the build, the automated tests, and that the window opens with a file. The panes and dialogs have not been checked by hand.
+
 ## Keyboard shortcuts
 
-| Action | Linux | macOS |
+| Action | Linux and Windows | macOS |
 | --- | --- | --- |
 | New | Ctrl+N | Cmd+N |
 | Open | Ctrl+O | Cmd+O |
@@ -38,7 +61,7 @@ Command Line Tools 26.6 ships a linker that cannot read the MacOSX 27 SDK (`unkn
 
 Open and Save As work when the editor runs on a Linux box and its window is shown on another machine with `ssh -X` or `ssh -Y`. They use one of two choosers:
 
-- **The system file dialog**, with its bookmarks and recent places. It is used only when the editor is confident its display is local: no `SSH_CONNECTION`, `SSH_CLIENT` or `SSH_TTY` in the environment, and either `WAYLAND_DISPLAY` is set or `DISPLAY` names a local socket such as `:0` or `unix:0`. On macOS, any session without those SSH variables counts as local.
+- **The system file dialog**, with its bookmarks and recent places. It is used only when the editor is confident its display is local: no `SSH_CONNECTION`, `SSH_CLIENT` or `SSH_TTY` in the environment, and either `WAYLAND_DISPLAY` is set or `DISPLAY` names a local socket such as `:0` or `unix:0`. On macOS and Windows, any session without those SSH variables counts as local.
 - **The built-in chooser**, drawn inside the editor's own window, in every other case: over SSH, when `DISPLAY` is a network address such as `localhost:10.0`, or when the editor can't tell.
 
 The chooser's title says which one is in use and why, for example *Built-in chooser — SSH session detected*. To force a choice for the whole run:

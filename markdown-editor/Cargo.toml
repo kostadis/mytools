@@ -3,7 +3,7 @@ name = "markdown-editor"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
-description = "A small desktop Markdown editor for Linux and macOS"
+description = "A small desktop Markdown editor for Linux, macOS and Windows"
 
 [dependencies]
 eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }

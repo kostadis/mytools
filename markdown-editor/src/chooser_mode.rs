@@ -49,16 +49,21 @@ pub struct ChooserDecision {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Platform {
-    /// Linux, and any other non-macOS target: decided from `DISPLAY` and
+    /// Linux, and any other Unix target: decided from `DISPLAY` and
     /// `WAYLAND_DISPLAY`, and uncertain without them.
     Linux,
     MacOs,
+    /// A Windows window is always on the local desktop (or a remote-desktop
+    /// session that carries the system dialog along with it).
+    Windows,
 }
 
 impl Platform {
     pub fn current() -> Self {
         if cfg!(target_os = "macos") {
             Self::MacOs
+        } else if cfg!(windows) {
+            Self::Windows
         } else {
             Self::Linux
         }
@@ -112,7 +117,7 @@ fn detect(env: &DisplayEnv) -> (ChooserKind, ChooserReason) {
     if env.ssh {
         return (ChooserKind::Window, ChooserReason::SshSession);
     }
-    if env.platform == Platform::MacOs {
+    if env.platform != Platform::Linux {
         return local;
     }
     if env
@@ -246,5 +251,14 @@ mod tests {
         let mut mac = linux(None, None);
         mac.platform = Platform::MacOs;
         assert_eq!(auto(&mac), (System, LocalDisplay));
+    }
+
+    #[test]
+    fn windows_without_ssh_is_local() {
+        let mut windows = linux(None, None);
+        windows.platform = Platform::Windows;
+        assert_eq!(auto(&windows), (System, LocalDisplay));
+        windows.ssh = true;
+        assert_eq!(auto(&windows), (Window, SshSession));
     }
 }

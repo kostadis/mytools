@@ -633,8 +633,63 @@ impl MarkdownEditor {
 
 impl eframe::App for MarkdownEditor {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.draw(ui);
+        // The root Ui has no background of its own. Without this frame the
+        // toolbar, preview and status bar are drawn straight onto the clear
+        // colour, while the outline panel and the text editor fill theirs.
+        egui::Frame::central_panel(ui.style()).show(ui, |ui| self.draw(ui));
     }
+
+    /// eframe clears to near-black by default; use the page colour so any
+    /// area the frame above does not cover matches it.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        visuals.panel_fill.to_normalized_gamma_f32()
+    }
+}
+
+/// The light theme: warm off-white surfaces, near-black text and a clay
+/// accent, after Claude's light mode. Used whatever the system theme is, so
+/// every pane shares one palette.
+fn light_visuals() -> egui::Visuals {
+    use egui::{Color32, Stroke};
+    const PAGE: Color32 = Color32::from_rgb(0xFA, 0xF9, 0xF5);
+    const SURFACE: Color32 = Color32::from_rgb(0xF0, 0xEE, 0xE6);
+    const SURFACE_HOVER: Color32 = Color32::from_rgb(0xE8, 0xE6, 0xDC);
+    const SURFACE_ACTIVE: Color32 = Color32::from_rgb(0xDD, 0xDA, 0xCE);
+    const BORDER: Color32 = Color32::from_rgb(0xD1, 0xCF, 0xC5);
+    const TEXT: Color32 = Color32::from_rgb(0x14, 0x14, 0x13);
+    const TEXT_MUTED: Color32 = Color32::from_rgb(0x3D, 0x3D, 0x3A);
+    const CLAY: Color32 = Color32::from_rgb(0xC9, 0x64, 0x42);
+    const CLAY_WASH: Color32 = Color32::from_rgb(0xF2, 0xD5, 0xC8);
+
+    let mut v = egui::Visuals::light();
+    v.panel_fill = PAGE;
+    v.window_fill = PAGE;
+    v.window_stroke = Stroke::new(1.0, BORDER);
+    v.extreme_bg_color = Color32::WHITE;
+    v.faint_bg_color = SURFACE;
+    v.code_bg_color = SURFACE;
+    v.hyperlink_color = CLAY;
+    v.selection.bg_fill = CLAY_WASH;
+    v.selection.stroke = Stroke::new(1.0, CLAY);
+
+    let w = &mut v.widgets;
+    w.noninteractive.bg_fill = PAGE;
+    w.noninteractive.weak_bg_fill = PAGE;
+    w.noninteractive.bg_stroke = Stroke::new(1.0, BORDER);
+    w.noninteractive.fg_stroke = Stroke::new(1.0, TEXT);
+    for (state, fill, border) in [
+        (&mut w.inactive, SURFACE, Color32::TRANSPARENT),
+        (&mut w.hovered, SURFACE_HOVER, BORDER),
+        (&mut w.active, SURFACE_ACTIVE, CLAY),
+        (&mut w.open, SURFACE_HOVER, BORDER),
+    ] {
+        state.bg_fill = fill;
+        state.weak_bg_fill = fill;
+        state.bg_stroke = Stroke::new(1.0, border);
+        state.fg_stroke = Stroke::new(1.0, TEXT);
+    }
+    w.inactive.fg_stroke = Stroke::new(1.0, TEXT_MUTED);
+    v
 }
 
 /// The preview's per-section bodies and their chunks, derived from the text
@@ -871,6 +926,9 @@ fn main() -> eframe::Result {
         "markdown-editor",
         options,
         Box::new(|cc| {
+            cc.egui_ctx
+                .set_visuals_of(egui::Theme::Light, light_visuals());
+            cc.egui_ctx.set_theme(egui::Theme::Light);
             app.heading_family = load_heading_font(&cc.egui_ctx);
             Ok(Box::new(app))
         }),
