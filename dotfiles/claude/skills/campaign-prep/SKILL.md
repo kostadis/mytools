@@ -14,7 +14,7 @@ The corpus plays three roles, and this skill treats each one differently:
 |---|---|---|
 | **The product** | `docs/planning.md` | Loaded in full at start (it is the brief) |
 | **Navigation index** | `campaign_state`, `world_state`, `party` | Searched when needed, never loaded whole |
-| **Evidence** | summaries, NPC dossiers, chapters | Searched, then confirmed by reading the cited source |
+| **Evidence** | session summaries, NPC dossiers | Searched, then confirmed by reading the cited source |
 
 Which files are the brief is the GM's declaration (`brief:` in `.mneme/corpus.yaml`), not this skill's. Out of the Abyss's grounding kind alone is ~786 KB (~200K tokens), which is why the rest is searched instead of loaded.
 
