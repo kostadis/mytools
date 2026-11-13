@@ -20,7 +20,7 @@ from pathlib import Path
 HELPER = Path(__file__).resolve().parents[1] / "corpus_files.py"
 
 
-class CorpusFilesTests(unittest.TestCase):
+class _Fixture(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         base = Path(self.tmp.name)
@@ -60,6 +60,8 @@ class CorpusFilesTests(unittest.TestCase):
     def _toc(kinds: dict, valid: bool = True) -> dict:
         return {"schema": 1, "campaign": "camp", "valid": valid, "findings": [], "kinds": kinds}
 
+
+class CorpusFilesTests(_Fixture):
     def test_lists_only_toc_paths_absolute_with_trust(self) -> None:
         self._fake(stdout=self._toc({"grounding": {"trust": "authoritative", "files": [
             {"path": "docs/world_state.md"}, {"path": "docs/party.md"}]}}))
@@ -130,6 +132,96 @@ class CorpusFilesTests(unittest.TestCase):
 
     def test_never_reads_toc_snapshot(self) -> None:
         self.assertNotIn("corpus.toc.json\"", HELPER.read_text().replace("``.mneme/corpus.toc.json``", ""))
+
+
+class CorpusBriefTests(_Fixture):
+    """--brief: mneme 009 consumer obligations 4-5 (load the brief, keep the map, refuse)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        (self.root / "docs" / "planning.md").write_text("plan")
+
+    @staticmethod
+    def _brief(files=None, kinds=None, **extra) -> dict:
+        d = {"schema": 1, "campaign": "camp", "corpus_sha256": "x",
+             "brief": files if files is not None else [
+                 {"path": "docs/planning.md", "kinds": ["grounding"],
+                  "trust": "authoritative", "bytes": 4}],
+             "brief_bytes": 4,
+             "kinds": kinds if kinds is not None else {
+                 "grounding": {"standard": True, "trust": "authoritative", "files": 4,
+                               "bytes": 900, "searchable": True, "searchable_files": 4},
+                 "background": {"standard": False, "trust": "reference", "files": 2,
+                                "bytes": 50, "searchable": False, "searchable_files": 0}}}
+        d.update(extra)
+        return d
+
+    def test_brief_lines_then_map(self) -> None:
+        self._fake(stdout=self._brief())
+        r = self._run("--brief")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(), [
+            "# campaign: camp",
+            f"BRIEF\tgrounding\tauthoritative\t4\t{self.root / 'docs/planning.md'}",
+            "MAP\tgrounding\tauthoritative\t4\t900\t4\tstandard",
+            "MAP\tbackground\treference\t2\t50\t0\textra",
+        ])
+        self.assertNotIn("stray.md", r.stdout)
+
+    def test_brief_passes_name_dir_json(self) -> None:
+        self._fake(stdout=self._brief())
+        self._run("--brief", cwd=self.root / "docs")
+        argv = json.loads(self.argv_log.read_text())
+        self.assertEqual(argv, ["corpus", "brief", "camp", "--dir", str(self.root.resolve()),
+                                "--json"])
+
+    def test_no_brief_refuses_with_remedy(self) -> None:
+        self._fake(rc=1, stderr="error: corpus.yaml declares no `brief:`; add one with "
+                                "`mneme corpus migrate-brief CAMPAIGN`")
+        r = self._run("--brief")
+        self.assertEqual(r.returncode, 2)
+        self.assertEqual(r.stdout, "")
+        self.assertIn("REFUSE:", r.stderr)
+        self.assertIn("migrate-brief", r.stderr)
+        self.assertIn("--apply", r.stderr)
+
+    def test_error_payload_refuses(self) -> None:
+        self._fake(stdout={"campaign": "camp", "error": "brief-unavailable",
+                           "detail": "docs/planning.md not on this checkout"})
+        r = self._run("--brief")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("brief-unavailable", r.stderr)
+        self.assertIn("not on this checkout", r.stderr)
+
+    def test_brief_file_missing_on_disk_refuses(self) -> None:
+        (self.root / "docs" / "planning.md").unlink()
+        self._fake(stdout=self._brief())
+        r = self._run("--brief")
+        self.assertEqual(r.returncode, 2)
+        self.assertEqual(r.stdout, "")
+        self.assertIn("not on disk", r.stderr)
+
+    def test_empty_brief_refuses(self) -> None:
+        self._fake(stdout=self._brief(files=[]))
+        r = self._run("--brief")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("empty brief", r.stderr)
+
+    def test_unknown_schema_refuses(self) -> None:
+        self._fake(stdout=self._brief(schema=2))
+        r = self._run("--brief")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("schema", r.stderr)
+
+    def test_brief_and_kind_together_is_usage_error(self) -> None:
+        self._fake(stdout=self._brief())
+        r = self._run("--brief", "grounding")
+        self.assertEqual(r.returncode, 2)
+        self.assertFalse(self.argv_log.exists(), "mneme must not be called on a usage error")
+
+    def test_neither_is_usage_error(self) -> None:
+        r = self._run()
+        self.assertEqual(r.returncode, 2)
 
 
 if __name__ == "__main__":

@@ -20,9 +20,22 @@ silently read the wrong copy.
 
 Output, one line per file:  KIND <TAB> TRUST <TAB> ABSOLUTE-PATH
 A declared kind with no files prints ``# KIND: declared, 0 files``.
+
+``--brief`` (consumer obligations 4-5, mneme 009) asks ``mneme corpus brief NAME --dir ROOT
+--json`` instead: the GM's load-now files plus a per-kind map of everything else. Output:
+
+    # campaign: NAME
+    BRIEF <TAB> KINDS <TAB> TRUST <TAB> BYTES <TAB> ABSOLUTE-PATH      (declared order)
+    MAP <TAB> KIND <TAB> TRUST <TAB> FILES <TAB> BYTES <TAB> SEARCHABLE-FILES <TAB> standard|extra
+
+A briefing consumer reads the BRIEF paths and nothing else up front; MAP rows say what else
+exists and which palace wing (= the kind) to search. No brief, an invalid corpus, or a brief
+file absent from this checkout is a refusal: never substitute a whole kind for the brief.
+
 Exit 0 on success; 2 on refusal (message on stderr, starting ``REFUSE:``).
 
 Usage:  corpus_files.py KIND [KIND ...] [--campaign-dir DIR]
+        corpus_files.py --brief [--campaign-dir DIR]
 """
 
 from __future__ import annotations
@@ -55,11 +68,12 @@ def campaign_root(start: Path) -> Path:
     return start
 
 
-def toc(root: Path, kind: str) -> dict:
+def _mneme_json(root: Path, args: list[str], what: str) -> dict:
+    """Run ``mneme corpus ARGS NAME --dir ROOT --json``; refuse on any failure."""
     mneme = os.environ.get("MNEME_BIN") or shutil.which("mneme")
     if not mneme:
         raise Refusal("mneme is not on PATH; cannot resolve the declared corpus")
-    cmd = [mneme, "corpus", "toc", root.name, "--dir", str(root), "--kind", kind, "--json"]
+    cmd = [mneme, "corpus", args[0], root.name, "--dir", str(root), *args[1:], "--json"]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=MNEME_TIMEOUT_S)
     except subprocess.TimeoutExpired:
@@ -69,13 +83,21 @@ def toc(root: Path, kind: str) -> dict:
         if "store alias" in msg and "claimed by" in msg:
             msg += (f"\n  ({root} looks like a second checkout of a registered campaign; "
                     "run from the workspace mneme owns, e.g. ~/<campaign>/<campaign>.)")
-        raise Refusal(f"mneme refused kind '{kind}' for {root}: {msg}")
+        if "migrate-brief" in msg:
+            msg += ("\n  (The GM declares the brief: `mneme corpus migrate-brief CAMPAIGN` "
+                    "previews it, `--apply` writes it.)")
+        raise Refusal(f"mneme refused {what} for {root}: {msg}")
     try:
         data = json.loads(p.stdout)
     except json.JSONDecodeError as e:
-        raise Refusal(f"mneme returned non-JSON for kind '{kind}': {e}")
+        raise Refusal(f"mneme returned non-JSON for {what}: {e}")
     if data.get("error"):
-        raise Refusal(f"mneme error for kind '{kind}': {data['error']}")
+        raise Refusal(f"mneme error for {what}: {data['error']}: {data.get('detail', '')}")
+    return data
+
+
+def toc(root: Path, kind: str) -> dict:
+    data = _mneme_json(root, ["toc", "--kind", kind], f"kind '{kind}'")
     if data.get("valid") is not True:
         raise Refusal(
             f"corpus for {root} is not valid: {json.dumps(data.get('findings', []))}"
@@ -86,15 +108,43 @@ def toc(root: Path, kind: str) -> dict:
     return kinds[kind]
 
 
+def brief(root: Path) -> list[str]:
+    """The brief answer as output lines (see module docstring)."""
+    data = _mneme_json(root, ["brief"], "the brief")
+    if data.get("schema") != 1:
+        raise Refusal(f"unexpected brief schema {data.get('schema')!r} (this helper reads 1)")
+    files = data.get("brief") or []
+    if not files:
+        raise Refusal(f"mneme returned an empty brief for {root}")
+    lines = [f"# campaign: {data.get('campaign', root.name)}"]
+    for f in files:
+        path = root / f["path"]
+        if not path.is_file():
+            raise Refusal(f"brief file {f['path']} is not on disk at {path}")
+        lines.append("\t".join(["BRIEF", ",".join(f.get("kinds") or []), str(f.get("trust", "")),
+                                str(f.get("bytes", "")), str(path)]))
+    for name, k in (data.get("kinds") or {}).items():
+        lines.append("\t".join(["MAP", name, str(k.get("trust", "")), str(k.get("files", "")),
+                                str(k.get("bytes", "")), str(k.get("searchable_files", "")),
+                                "standard" if k.get("standard") else "extra"]))
+    return lines
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("kinds", nargs="+", metavar="KIND")
+    ap.add_argument("kinds", nargs="*", metavar="KIND")
+    ap.add_argument("--brief", action="store_true",
+                    help="print the GM's load-now files and the per-kind map")
     ap.add_argument("--campaign-dir", default=None)
     args = ap.parse_args(argv)
+    if args.brief == bool(args.kinds):
+        ap.error("give either one or more KINDs or --brief, not both and not neither")
 
     root = campaign_root(Path(args.campaign_dir or os.getcwd()))
     lines: list[str] = []
     try:
+        if args.brief:
+            lines = brief(root)
         for kind in args.kinds:
             k = toc(root, kind)
             files = k.get("files") or []
