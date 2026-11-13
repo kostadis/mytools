@@ -16,6 +16,16 @@ def files_below(root: Path):
         yield path
 
 
+def link_level(path: Path, side_root: Path) -> bool:
+    """True if `path` or any directory between it and `side_root` is a symlink."""
+    node = path
+    while node != side_root and side_root in node.parents:
+        if node.is_symlink():
+            return True
+        node = node.parent
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dotfiles", type=Path, default=Path(__file__).resolve().parent)
@@ -42,7 +52,7 @@ def main() -> int:
             rel = canonical.relative_to(shared)
             for side_name, side_root in (("claude", claude), ("codex", codex)):
                 runtime = side_root / rel
-                if not runtime.is_symlink():
+                if not link_level(runtime, side_root):
                     state = "missing" if not runtime.exists() else "copied, not linked"
                     errors.append(f"{side_name.upper()} {state}: {rel}")
                     continue
@@ -79,7 +89,11 @@ def main() -> int:
     for left in files_below(claude):
         rel = left.relative_to(claude)
         right = codex / rel
-        if rel.as_posix() in paired or left.is_symlink() or right.is_symlink():
+        if (
+            rel.as_posix() in paired
+            or link_level(left, claude)
+            or link_level(right, codex)
+        ):
             continue
         if right.is_file() and left.read_bytes() == right.read_bytes():
             errors.append(f"DUPLICATED neutral file outside shared tree: {rel}")

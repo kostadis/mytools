@@ -98,7 +98,7 @@ Never populate an approval speculatively. Valid decisions are `approve`,
 `reject`, `discuss`. Omitted IDs stay unresolved. The helper rejects foreign
 IDs, duplicate JSON keys, invalid verdicts, and mismatched review IDs.
 
-For page review, read [the shared contract](../../_shared/review-page/CONTRACT.md).
+For page review, read [the shared contract](../../_shared/review-artifact/CONTRACT.md).
 Prepare every selected scene first; then collect their frozen runs onto **one
 session page**:
 
@@ -108,8 +108,8 @@ python3 "$SKILL_ROOT/scripts/review_edits.py" session-page \
   --run-dir /campaign/summaries/session/dialogue_edit/scene02-r1 \
   --spec /campaign/summaries/session/dialogue_edit/session-r1/review_page.json \
   --map  /campaign/summaries/session/dialogue_edit/session-r1/session_map.json
-REVIEW_PAGE="$HOME/.codex/skills/_shared/review-page"
-python3 "$REVIEW_PAGE/build_review.py" \
+REVIEW_PAGE="$HOME/.codex/skills/_shared/review-artifact"
+python3 "$REVIEW_PAGE/build_review.py" --save local \
   --in  /campaign/summaries/session/dialogue_edit/session-r1/review_page.json \
   --out /campaign/summaries/session/dialogue_edit/session-r1/review.html
 ```

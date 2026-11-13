@@ -132,15 +132,15 @@ revisions, put reports under a separate `<session>/voice_critic/<run>/` and reco
 the selected revision paths; leave frozen dialogue-edit records intact. Preserve
 previous completed reviews with a new run/path when necessary.
 
-Keep the review-page files in the session directory, never scratch:
+Keep the review-artifact files in the session directory, never scratch:
 `<session>/voice_critic_review/review_items.json`, `review.html`,
 `decisions.json`, and the frozen sidecar `review_map.json`. A follow-up round
 suffixes each of them with its round (`review_items_r2.json`, `review_r2.html`,
 `review_map_r2.json`, `decisions_r2.json`) and its own `reviewId`
 (`vc:<session>:r2`).
 
-Read `../_shared/review-page/CONTRACT.md`, then use its existing
-`build_review.py` with an escaped JSON queue covering every selected scene on one
+Read `../_shared/review-artifact/CONTRACT.md`, then use its existing
+`build_review.py --save local` with an escaped JSON queue covering every selected scene on one
 page. Put the input-resolution table, budget ledger, and coverage summary before
 detailed findings: a compact version in the page's lede (rulebook state and
 digest, voices resolved or not, lint errors/warnings/skipped checks, every BREACH

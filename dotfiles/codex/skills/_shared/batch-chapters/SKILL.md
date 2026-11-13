@@ -5,7 +5,7 @@ description: Run one or more campaign chapters through a requested range of the 
 
 # Batch chapters
 
-This skill owns the *whole requested run*: inventory, stage order, review gates, carry-forward, and a final completeness audit. It works for one chapter or several. Read [BATCH.md](BATCH.md) for the batch mechanics and `../review-page/CONTRACT.md` for review pages. The authoritative stage order is `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`. Read each stage's `SKILL.md` before running it; that skill owns its method and output checks. Do not substitute this wrapper for a stage skill.
+This skill owns the *whole requested run*: inventory, stage order, review gates, carry-forward, and a final completeness audit. It works for one chapter or several. Read [BATCH.md](BATCH.md) for the batch mechanics and `../review-artifact/CONTRACT.md` for review pages. The authoritative stage order is `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`. Read each stage's `SKILL.md` before running it; that skill owns its method and output checks. Do not substitute this wrapper for a stage skill.
 
 ## Define the run
 

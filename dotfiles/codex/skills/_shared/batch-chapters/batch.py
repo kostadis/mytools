@@ -43,7 +43,7 @@ rulings.json (chat rulings; the GM's own words go in "said"):
 """
 import argparse, json, os, pathlib, subprocess, sys
 
-RP = pathlib.Path(os.environ.get("CODEX_HOME", pathlib.Path.home() / ".codex")) / "skills/_shared/review-page"
+RP = pathlib.Path(os.environ.get("CODEX_HOME", pathlib.Path.home() / ".codex")) / "skills/_shared/review-artifact"
 
 
 CARD = ("card", "tape")  # "tape": a transcript garble; its writes go to transcript_corrections.yaml, not the target
@@ -69,13 +69,32 @@ def target_of(c, ch, a):
     return t or c.get("target", "session-summary.md")
 
 
+def fix_review_id(items):
+    """Make items['reviewId'] a valid id via the kit's one derivation; returns (old, new) when it changed."""
+    sys.path.insert(0, str(RP))
+    from review_ids import derive_review_id
+    old = items.get("reviewId")
+    if not old:
+        return None
+    new = derive_review_id(str(old))
+    if new == old:
+        return None
+    items["reviewId"] = new
+    return old, new
+
+
 def cmd_validate(a):
     c, base = load_cfg(a.config); bad = 0
     for ch in c["chapters"]:
         sd = base / ch["dir"]; R = sd / "staged_review"
         if not (R / f"review_items_{a.stage}.json").exists():
             print(f"== {ch['dir']}  not built yet (no review_items_{a.stage}.json)"); bad += 1; continue
-        items = json.load(open(R / f"review_items_{a.stage}.json"))
+        ipath = R / f"review_items_{a.stage}.json"
+        items = json.load(open(ipath))
+        fixed = fix_review_id(items)
+        if fixed:  # chapter dirs may hold spaces or slashes; every later read_decisions --items reads this file
+            ipath.write_text(json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"== {ch['dir']}  reviewId {fixed[0]!r} is not a valid id; rewritten to {fixed[1]!r}")
         L = findings(R, a.stage); t = (sd / target_of(c, ch, a)).read_text()
         cards = {x["id"] for x in L if x.get("disposition") in CARD}
         iids = {i["id"] for i in items["items"]}
@@ -96,7 +115,7 @@ def cmd_validate(a):
         if lit: print("   literal \\n in card text:", lit)
         if items["items"]:
             r = subprocess.run([sys.executable, str(RP / "build_review.py"), "--in", str(R / f"review_items_{a.stage}.json"),
-                                "--out", str(R / f"review_{a.stage}.html")], capture_output=True, text=True)
+                                "--out", str(R / f"review_{a.stage}.html"), "--save", "local"], capture_output=True, text=True)
             if r.returncode: bad += 1; print("   build failed:", r.stderr.strip()[-300:])
     sys.exit(1 if bad else 0)
 

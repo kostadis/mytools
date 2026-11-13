@@ -72,10 +72,10 @@ Write a builder at <TMP>/<CH>_s1_write.py that writes:
 - **staged_review/review_items_stage1.json**, with:
   - title "Chapter <N> Stage 1"
   - eyebrow "<campaign> · ch<N> · stage 1 consistency — session-summary.md"
-  - reviewId "stage1:<CH>"
+  - reviewId "stage1:<CH>" (an id is 1-128 chars of [A-Za-z0-9_.:@-]; `batch.py validate` rewrites a chapter name with spaces or slashes to a valid one)
   - a footer listing every auto and every false positive
 
-Then check the edit counts and build the page (batch.py validate does both, or run build_review.py directly).
+Then check the edit counts and build the page (batch.py validate does both, or run build_review.py --save local directly).
 
 - No literal "\n" in card text.
 - Do NOT hand off the review page. Do NOT edit any campaign file.

@@ -203,9 +203,9 @@ class ReviewTests(unittest.TestCase):
         self.edits[0]["reason"] = "Keep literal <script> & </script> harmless in evidence"
         self.prepare()
         page = self.run / "review.html"
-        builder = SKILL.parent / "_shared" / "review-page" / "build_review.py"
+        builder = SKILL.parent / "_shared" / "review-artifact" / "build_review.py"
         subprocess.run([sys.executable, str(builder), "--in", str(self.run / "review_page.json"),
-                        "--out", str(page)], check=True, capture_output=True, text=True)
+                        "--out", str(page), "--save", "local"], check=True, capture_output=True, text=True)
         self.assertIn("&lt;script&gt;", page.read_text())
         decisions = self.decisions(unmarked=["s1-radio"], discuss=[], notes={})
         proc = subprocess.run([sys.executable, str(MODULE), "apply", "--run-dir", str(self.run),

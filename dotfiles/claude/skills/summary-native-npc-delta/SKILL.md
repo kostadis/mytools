@@ -102,6 +102,8 @@ exact-draft signoffs. The GM signs; you never sign on their behalf.
 
 If the saved approval already covers the exact selected publication, compose, publish and verify directly without another “may I apply?” prompt. A draft-only review does not authorize publication; obtain only the missing application authorization with its concrete plan, without repeating unchanged content review.
 
+For an `npc_verification` review, build and read the page through the shared kit's card loop: `npc_review_items.py`, then the page, then `read_decisions.py --npc`, then `summary_native review cards decide` (a plan), then the GM's confirmation of that plan, then `--write --plan-sha256`. Never translate page verdicts into `review decide` or `review npc sign` by hand. See [review through application](references/review-and-apply.md).
+
 Compose and publish through the native writers with an explicit NPC selection.
 Do not hand-edit published replicas, use `--force`, override a signoff checker
 or manufacture authority receipts. If a native gate refuses, keep the verified

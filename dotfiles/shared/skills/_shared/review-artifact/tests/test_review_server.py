@@ -147,7 +147,7 @@ def test_generated_page_keeps_hosted_and_standalone_save_paths():
     module = importlib.util.module_from_spec(module_spec)
     assert module_spec.loader is not None
     module_spec.loader.exec_module(module)
-    html = module.build(SPEC)
+    html = module.build(SPEC, save="local")
     assert "Save to VM" in html
     assert "meta[name=\"codex-review-save\"]" in html
     assert "fetch(new URL('decisions'" in html

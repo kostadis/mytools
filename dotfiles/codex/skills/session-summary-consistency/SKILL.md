@@ -31,7 +31,7 @@ changing this skill.
 - Use `update_plan` for multi-step progress when useful.
 - Use `apply_patch` for manual edits to tracked documents.
 - Batch reviews must produce `<session-dir>/quote_review/review.html`, a
-  standalone interactive page built with the shared review-page builder. Markdown
+  standalone interactive page built with the shared review-artifact builder. Markdown
   and JSON are supporting artifacts, not substitutes for the HTML page.
 - Ask the review mode in chat at the start of every run (Step 0); do not
   remember a default across runs.
@@ -291,7 +291,7 @@ it to the glossary's DO-NOT-CORRECT area instead of the garble table.
 
 Use this when the user chose the review page at Step 0.
 
-Read `../_shared/review-page/CONTRACT.md` relative to this skill directory.
+Read `../_shared/review-artifact/CONTRACT.md` relative to this skill directory.
 All review files live in the session directory under
 `<session-dir>/quote_review/`, not in a scratch location, so the run leaves an
 audit record beside the scenes it changed. Create the required standalone
@@ -300,9 +300,9 @@ Copy output, and Save output controls. Use the shared builder rather than
 inventing a separate review UI:
 
 ```bash
-REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-page"
+REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-artifact"
 mkdir -p <session-dir>/quote_review
-python "$REVIEW_PAGE/build_review.py" \
+python "$REVIEW_PAGE/build_review.py" --save local \
   --in <session-dir>/quote_review/review_items.json \
   --out <session-dir>/quote_review/review.html
 python "$REVIEW_PAGE/serve_review.py" \

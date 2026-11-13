@@ -1,4 +1,11 @@
-# Batch review artifact — contract
+# Batch review page — contract
+
+One kit for both agents, at `dotfiles/shared/skills/_shared/review-artifact/`.
+It is linked as `~/.claude/skills/_shared/review-artifact` and
+`~/.codex/skills/_shared/review-artifact`. Claude builds the page with the
+default `--save artifact`; Codex builds it with `--save local`. The card
+schema, the verdicts and the decisions file are the same for both; only the
+save transport differs (see **Save transports**).
 
 Shared machinery for the review skills that publish a review page:
 `dialogue-edit`, `session-summary-consistency`, `speaker-attribution-text`,
@@ -32,6 +39,7 @@ which ran a real `/staged-consistency` pass this way. Do not reauthor it.
        --in  <session>/<skill>_review/review_items.json \
        --out <session>/<skill>_review/review.html
    ```
+   (Codex builds with `--save local` instead: see **Save transports**.)
    Then the `Artifact` tool on that `review.html` with
    **`capabilities: {"artifact": {}}`** — without it the page cannot save and
    the GM gets the read-only fallback. Give it a stable `favicon` and a
@@ -93,6 +101,51 @@ Ch 50, 2026-08-28: only stage 2's file survived; stages 0 and 1 were gone.)
 
 ---
 
+## Save transports
+
+`build_review.py --save artifact|local` picks how the GM's marks leave the
+page. Everything else on the page is identical. Artifact output is
+byte-identical to what the builder produced before `--save` existed, and a
+test holds it to that.
+
+| | `--save artifact` (default) | `--save local` |
+|---|---|---|
+| Used by | Claude | Codex |
+| Save | **Save decisions** republishes the page itself with the state embedded in `<script type="application/json" id="state">` (`window.claude.use('artifact')`) | **Copy output**, **Save output** (a download named by the spec's `outputName`, default `decisions.json`), and **Save to VM** |
+| Read back | `read_decisions.py --html SAVED.html` | `read_decisions.py --in decisions.json` |
+| Needs | the `Artifact` tool with `capabilities: {"artifact": {}}` | nothing: it opens from `file://` and loads no web font |
+
+`--save local` details:
+
+- **Save to VM** appears when `<meta name="codex-review-save" content="enabled">`
+  is in the page (`serve_review.py` injects it) and does `PUT ./decisions`.
+  Without the meta, the same button is **Save output**, a download.
+- Copy output and Save output stay disabled until the GM has marked or noted
+  something, so an all-unmarked export cannot pass for a review.
+- The export always lists every item in `decisions` or `unmarked`, plus the
+  `reviewId` and a `savedAt` stamped by the GM's own gesture. `picks` is added
+  when the page has any pick card, and `extraVerdicts` (the declared keys) when
+  it has any extra verdict.
+- The page keeps no browser storage: a reload loses unsaved marks and a
+  re-review never opens with an earlier run's marks ticked.
+- The default `reviewId` is the slugged title, capped at 128 (reproducible, so
+  `read_decisions.py --in --items` can check it). The artifact default also
+  appends the build time. A `reviewId` is 1-128 chars of `[A-Za-z0-9_.:@-]`; to
+  put a path or a name with a space in one, derive it with `review_ids.py`
+  (`derive_review_id`): the text itself when valid, else a slug plus a short hash
+  of the original, so the same text always gives the same id.
+- `serve_review.py` validates a Save to VM payload with the same `normalize()`
+  as `read_decisions.py --in`. With the items file it accepts approve, reject,
+  discuss, the items file's declared `extraVerdicts` and, on a card that offered
+  picks, `pick` with one of the offered words (returned as `picks`). Without
+  `--items` it can only trust the export's own `extraVerdicts` / `picks`.
+
+The `--in` reader exits 1 on an export with no `savedAt` and 2 on a note for an
+id the page never asked about, an id both decided and unmarked, or an export
+whose items differ from `--items` (a stale export from an earlier run).
+
+---
+
 ## Pickup — how the save comes back
 
 **Publishing arms a live subscription on the publishing session.** When the GM
@@ -142,6 +195,7 @@ re-apply a stage you have already applied.
 |---|---|---|
 | `title` | yes | Becomes `<title>`, the `<h1>`, and the artifact's gallery name. Short noun phrase. |
 | `eyebrow` | no | Campaign · chapter · which skill. |
+| `outputName` | no | `--save local` only: the download's file name, 1-128 chars of `[A-Za-z0-9_.-]`, default `decisions.json`. |
 | `reviewId` | no | Identifies this page's run, e.g. `ch63:stage-1`. Default: the title plus the build time (UTC). It is saved with the decisions, and `read_decisions.py --items` refuses a page whose `reviewId` differs from the items file's. |
 | `lede` | no | **Say how many need a ruling and that the rest already ran.** |
 | `footer` | no | What was applied without asking, and which state file it went to. |
@@ -240,18 +294,12 @@ whole mechanism exists to avoid.
 page the GM has not saved yet must never be read as *"approved nothing."*
 Pass `--allow-unsaved` only to inspect a freshly built page.
 
-**Class cards expand on read-back.** A card with a `members` list stands for
-those items. `read_decisions.py` turns its approve/reject verdict into one
-entry per member id in `decisions` (the same per-item shape as any card), each
-member's note reading `GM class verdict on batch card [<card id>] (<k>
-occurrences): <card note>`, or just the part before the colon when the card has
-no note. That way the decision history shows the verdict was a class verdict,
-not an individual ruling. It also records `classes`
-(`{card id: {verdict, members}}`) when the page has any class card. The member
-ids come from `--items`; if the page's `members` differ from the items file's,
-it exits 2 (stale page). A class card left at discuss or unmarked yields no
-decision for any member: it is listed in `discuss` / `unmarked` under the card
-id. A verdict is never inferred for an item not on a decided card.
+**Class cards are not expanded here.** A card with a `members` list stands
+for those items, but the kit never turns one verdict into per-member records.
+`members` and `draftSha256` are passed through to the page's `ITEMS` so they can
+be echoed back, and a card with several members (or a `group`) shows an
+"Applies to N items" marker so the GM sees how far one verdict reaches; CampaignGenerator expands them from its own stored packet (see
+**NPC reviews**).
 
 Items the GM left unmarked do not appear in `decisions`; they are listed in
 `unmarked`. Treat them as undecided, not as rejected, and say so when you
@@ -271,65 +319,87 @@ exits 2 rather than being passed through.
 - **One page, one skill, one run.** Do not collate two skills into one artifact.
 - **One page, one items file.** A run that publishes more than one page names
   each page's items and decisions file for that page — see **File names**.
+- **One item is one consent unit.** Never imply approval across several findings.
+- **The page existing, being opened, or having a newer mtime is never approval.**
+  Only a saved decisions file authorizes follow-up work.
 - **Read-only viewers.** The page already degrades: marks stay on screen, the
   copy says read-only, and it tells the GM to report picks in chat. If they do
   that, take it — do not insist on the artifact.
 
 ---
 
-## NPC reviews: `npc_review_items.py`
+## NPC reviews
 
-A summary_native NPC review (`<campaign>/docs/reviews/npc-review-*/`) does
-not need a hand-written builder. This adapter reads the review's
-`manifest.json`, current item revisions and `events/` (read-only) and writes a
-contract-shaped items file:
+A summary_native NPC review (`<campaign>/docs/reviews/npc-review-*/`) is
+reviewed through CampaignGenerator's card contract, not by this kit reading the
+review store. The kit holds no review rules: it never opens `manifest.json`,
+`items/`, `events/` or `docs/reviews`, and a test enforces that. The schemas
+for the packet and the decisions file are in CampaignGenerator
+`specs/043-review-card-contract/contracts/card-files.md`.
 
 ```bash
-python ~/.claude/skills/_shared/review-artifact/npc_review_items.py \
-    <campaign>/docs/reviews/<review-id> --out <items>.json \
-    [--undecided] [--ids ID,ID | --ids-file FILE] [--action signoff_npc_draft]
-python ~/.claude/skills/_shared/review-artifact/build_review.py --in <items>.json --out <page>.html
+KIT=~/.claude/skills/_shared/review-artifact    # or ~/.codex/skills/_shared/review-artifact
+python $KIT/npc_review_items.py <campaign>/docs/reviews/<review-id> --campaign <campaign> \
+    --out items.json [--ids ID,ID | --ids-file FILE] [--action NAME]
+python $KIT/build_review.py --in items.json --out page.html     # add --save local on Codex
+#   ... the GM marks and saves ...
+python $KIT/read_decisions.py --npc --html saved.html --review <review-id> --out decisions-cards.json
+#   Codex (--save local; the page holds no state, so read the exported decisions.json against the items file):
+python $KIT/read_decisions.py --npc --in decisions.json --items items.json --review <review-id> --out decisions-cards.json
+summary_native review cards decide <review-id> --decisions decisions-cards.json \
+    --reviewer GM --campaign-dir <campaign>                       # prints the plan
+#   show the plan to the GM and get their confirmation, then:
+summary_native review cards decide <review-id> --decisions decisions-cards.json \
+    --reviewer GM --campaign-dir <campaign> --write --plan-sha256 <HASH>
 ```
 
-- Card ids are the review's item ids, so decisions round-trip straight to
-  `summary_native review decide` (findings) and `review npc sign`
-  (sign-offs). The adapter records nothing in the review.
-- Every card has a keep-as-is outcome. For a finding, Approve keeps the draft
-  line as written (`accept_no_change`) and Reject means the draft (the origin)
-  needs a fix, which the note gives. For a sign-off, Approve signs the exact
-  bytes shown and Reject keeps the draft unsigned and unchanged.
-- `--undecided` leaves out items with a current approve or reject. An item
-  counts as undecided if it was never decided, was decided on an older
-  revision, was withdrawn, or was left at discuss.
-- Sign-off cards embed the full draft text. If a draft's bytes no longer
-  match the item's `draft_sha256`, it exits 2. `--allow-stale` builds anyway,
-  with those cards marked STALE, for inspection only.
-- Cards are grouped by draft file: findings in line order, then the sign-off.
-  Override `--title/--eyebrow/--lede/--footer/--review-id` as needed.
-  A 427-item review builds a page of about 2.3 MB.
-
-- **Classified-noise class cards** (spec 041). An item whose diagnostic
-  `legacy_code` is `noise-label`, `noise-idiom`, `noise-negated-status`,
-  `noise-spelled-number`, `noise-synonym` or `noise-other-citation` is not
-  shown as its own card. The adapter emits ONE card per class, ahead of the
-  per-NPC cards:
-
-  ```json
-  { "id": "noise-class:label", "group": "Classified noise",
-    "members": ["<item id>", "<item id>"],
-    "t": "...", "y": "...", "n": "...", "ev": "..." }
-  ```
-
-  `ev` carries "One verdict here applies to every listed occurrence; each gets
-  its own decision record.", the count, and every occurrence (NPC, line, token,
-  sentence, cited scenes, resolved_by). `members` holds the member item ids
-  (draft order); it lists only occurrences with no current approve/reject, and
-  a class with none left renders no card. Approve = keep every line as written
-  (`accept_no_change`); Reject = each listed line needs a draft fix.
-  `build_review.py` is unchanged: `group` and `members` are extra card fields
-  it passes through to the page.
+- `npc_review_items.py` is a shim over `summary_native review cards export`.
+  It maps each card to an item (`id`, `t` = title, `y` = approveMeans,
+  `n` = rejectMeans, `ev` = body plus evidence), escaping every string. A class
+  card carries `members` and `group`, a sign-off card carries `draftSha256`, and
+  `reviewId` is the packet id. `--ids` and `--ids-file` map to `--item`. A card
+  the GM cannot validly approve is never shown, and the packet already leaves
+  out items with a current approve or reject.
+- `read_decisions.py --npc` writes a CampaignGenerator decisions file. With
+  `--html` it takes `members` and `draftSha256` from the saved page's `ITEMS`;
+  with `--in --items` it takes them from the items file (validated against the
+  export by `normalize()`: item set and `reviewId` = the packet id), never from
+  the GM's export. It copies notes, omits unmarked cards, and refuses `pick` and
+  extra verdicts. A note on an unmarked card cannot be recorded, so every such
+  card id and note is printed to stdout under "UNMARKED CARDS WITH A NOTE" and
+  counted in the summary line. The echoes are compared with CampaignGenerator's stored packet, and
+  the whole file is refused on any difference.
+- **The agent never builds a decision batch by hand** and never runs
+  `review decide` or `review npc sign` for page verdicts. `review cards decide`
+  expands class cards, records what a verdict means (Approve keeps a finding as
+  written, Reject sends it back for a draft fix, Approve on a sign-off signs the
+  exact bytes shown), and a re-save is a no-op or a listed supersede.
+- Applying is two steps on purpose: the first `decide` is a plan and writes
+  nothing. Only `--write --plan-sha256 HASH` records, after the GM has seen the
+  plan.
 
 Tests: `python3 -m pytest tests/` in this directory.
+
+---
+
+## Phone review over Tailscale (`--save local`)
+
+`serve_review.py` serves one built page and saves its decisions on the VM:
+
+```bash
+python $KIT/serve_review.py --page review.html --items review_items.json --out decisions.json
+```
+
+It binds to `0.0.0.0:8765` by default and prints the machine's Tailscale IPv4
+address when the `tailscale` CLI is available. It serves one HTML file at an
+unguessable `/r/<token>/` URL and accepts `PUT` only at that URL's `decisions`
+endpoint. It exposes no directory listing, arbitrary file read or
+caller-selected write path. Keep it in the foreground while the page is in use
+and stop it after the decisions file has been saved and validated. Use `--port`
+when 8765 is taken and `--host 127.0.0.1` for local-only testing. It is
+stdlib-only and meant for a private tailnet or trusted LAN, never the public
+internet. An HTTP success is a save: the same validator the CLI uses accepted
+the payload. Merely loading the URL is not a decision.
 
 ---
 
@@ -343,7 +413,21 @@ python build_review.py --in fixture.json --out page.html
 python read_decisions.py --html page.html            # must exit 1: never saved
 # simulate a save: replace the #state block with a filled one, then
 python read_decisions.py --html page_saved.html --out decisions.json
+
+# the local transport
+python build_review.py --in fixture.json --out page.html --save local
+python read_decisions.py --in never.json                       # no savedAt -> exit 1
+cat > export.json <<'JSON'
+{"schemaVersion": 1, "reviewId": "<fixture reviewId>", "savedAt": "2026-01-01 00:00 UTC",
+ "decisions": {"c1": "approve"}, "notes": {}, "unmarked": ["c2"]}
+JSON
+python read_decisions.py --in export.json --items fixture.json   # exit 0
 ```
+
+`--in` must also exit 2 for a note on an id the fixture never asked about, an
+id both decided and unmarked, and an `--items` file whose ids differ. A fixture
+whose `state` pre-fills `decisions`, `notes` or `savedAt` must be refused by
+the builder.
 
 The generated page's JS can be extracted from the `#src` block and checked
 with `node --check`.

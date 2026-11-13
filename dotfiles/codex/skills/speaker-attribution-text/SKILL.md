@@ -139,7 +139,7 @@ NOTE and speaker prefixes, including cue identifiers, settings, numeric-only
 dialogue, multiline payloads, and original line endings.
 
 If the user wants to review ambiguous cues in a batch rather than in chat, use
-the shared review page (`../_shared/review-page/CONTRACT.md`): one page for the
+the shared review page (`../_shared/review-artifact/CONTRACT.md`): one page for the
 run, preferably served over Tailscale so **Save to VM** writes its validated
 decision file in place. Copy and standalone download remain fallbacks. Validate
 the result with `read_decisions.py --items`. A review page must never

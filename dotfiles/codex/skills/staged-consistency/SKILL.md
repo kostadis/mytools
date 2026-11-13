@@ -24,7 +24,7 @@ skill.
 - Use `apply_patch` for manual edits.
 - Do not use Claude Artifact mode.
 - For batch review, use the shared page at
-  `~/.codex/skills/_shared/review-page/`. Prefer its Tailscale server, whose
+  `~/.codex/skills/_shared/review-artifact/`. Prefer its Tailscale server, whose
   explicit **Save to VM** action writes a validated decision file; retain Copy
   output and the standalone download as fallbacks. Never infer a save from a
   page load or file timestamp.
@@ -535,7 +535,7 @@ Likely next actions:
 ## Batch Review Page
 
 This replaces each stage's interactive adjudication only. Read the full shared
-contract at `~/.codex/skills/_shared/review-page/CONTRACT.md` before building a
+contract at `~/.codex/skills/_shared/review-artifact/CONTRACT.md` before building a
 queue.
 
 Use one page per stage. Do not combine all stages into one end-of-run review:
@@ -559,8 +559,8 @@ For every stage:
 4. Render the page:
 
    ```bash
-   REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-page"
-   python "$REVIEW_PAGE/build_review.py" \
+   REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-artifact"
+   python "$REVIEW_PAGE/build_review.py" --save local \
      --in  <session-dir>/staged_review/review_items_stage<N>.json \
      --out <session-dir>/staged_review/review_stage<N>.html
    ```
