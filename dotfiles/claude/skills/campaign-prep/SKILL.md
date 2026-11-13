@@ -1,54 +1,87 @@
 ---
 name: campaign-prep
-description: Load the four grounding docs (campaign_state, world_state, planning, party) for the current campaign before session prep. Use when the user says "campaign prep", "prep mode", or invokes /campaign-prep.
-tools: Read, Bash
+description: Load the current campaign's brief (the files the GM declared in mneme's corpus, normally docs/planning.md) plus a map of the rest of the corpus before session prep; everything else is searched, not loaded. Use when the user says "campaign prep", "prep mode", or invokes /campaign-prep.
+tools: Read, Bash, Grep
 ---
 
 # Campaign Prep Mode
 
-Load the four grounding docs for the current campaign so you have authoritative context before any prep work (beats, encounters, NPC drafts, session arcs).
+Load the campaign's **brief** before any prep work (beats, encounters, NPC drafts, session arcs), and keep a map of where everything else lives.
+
+The corpus plays three roles, and this skill treats each one differently:
+
+| Role | Example | What this skill does |
+|---|---|---|
+| **The product** | `docs/planning.md` | Loaded in full at start (it is the brief) |
+| **Navigation index** | `campaign_state`, `world_state`, `party` | Searched when needed, never loaded whole |
+| **Evidence** | session summaries, NPC dossiers | Searched, then confirmed by reading the cited source |
+
+Which files are the brief is the GM's declaration (`brief:` in `.mneme/corpus.yaml`), not this skill's. Out of the Abyss's grounding kind alone is ~786 KB (~200K tokens), which is why the rest is searched instead of loaded.
 
 ## Workflow
 
-### 1. Locate the campaign directory
+### 1. Get the brief from mneme
 
-Run `pwd` to confirm CWD. The user invokes this skill from inside a campaign directory (e.g. `~/src/campaigns/out-of-the-abyss/`, `~/src/campaigns/Phandalin/` — `$CAMPAIGNS_ROOT/<campaign>`). All four docs live at `docs/<name>.md` relative to that directory.
+Run from inside the campaign workspace mneme owns (`~/obelisk/obelisk`, `~/toee/toee`, `~/out-of-the-abyss/out-of-the-abyss`, `~/phandalin/Phandalin`):
 
-If CWD is the campaigns root (`$CAMPAIGNS_ROOT`, default `~/src/campaigns/`) itself or somewhere else without a `docs/` subdir, ask the user which campaign to enter.
+```bash
+python3 ~/.claude/skills/_shared/corpus/corpus_files.py --brief
+```
 
-### 2. Read all four docs in parallel
+Output (tab-separated):
 
-In a single message, issue four parallel Read tool calls:
+```
+# campaign: NAME
+BRIEF  KINDS  TRUST  BYTES  /absolute/path          ← load these, in this order
+MAP    KIND   TRUST  FILES  BYTES  SEARCHABLE-FILES  standard|extra   ← where everything else is
+```
 
-- `docs/campaign_state.md` — what's true at the table right now (party state, ongoing arcs, recent sessions)
-- `docs/world_state.md` — distilled world facts (NPCs, factions, locations, threads)
-- `docs/planning.md` — DM planning notes, upcoming beats, intended arcs
-- `docs/party.md` — party composition, character relationships, mechanical state
+**If the helper prints `REFUSE:` (exit 2), stop.** Show the GM mneme's message verbatim. Do not read `docs/planning.md` or any other file by name, do not glob `docs/`, and do not load a whole kind instead. Common causes:
 
-Read each one in full unless it's enormous (>2000 lines), in which case read the head and tail and note that the middle was skipped.
+- `declares no brief:`: the GM has not declared a brief. The remedy, the GM's to run, is `mneme corpus migrate-brief CAMPAIGN` (preview), then `--apply`.
+- `campaign declares no corpus` / `campaign workspace not found`: this campaign is not managed by mneme. This skill does not work there.
+- `store alias ... claimed by 2 campaigns`: you are in a second or stale checkout (e.g. `~/src/campaigns/<name>`). `cd` to the workspace mneme owns.
+- `brief-unavailable` / `not on disk`: a brief file is outside this sparse checkout or missing. Report it; do not substitute.
+- `invalid`: the corpus has findings. Point the GM to `mneme corpus check CAMPAIGN`.
 
-### 3. Acknowledge readiness
+### 2. Read every BRIEF file
+
+In a single message, issue one Read call per BRIEF path. Read each in full unless it is enormous (>2000 lines); then read the head and tail and say the middle was skipped. These are the **only** files loaded up front.
+
+### 3. Keep the MAP
+
+Hold the MAP rows as the index of what else exists. Do not read those files now. When prep needs a fact the brief does not give:
+
+1. **Search the palace.** Call the campaign's `mempalace_search` (the `mempalace` server in the campaign's `.mcp.json`) with keywords as `query` and `wing` set to the MAP kind (`grounding`, `summaries`, `npcs`, `party`, `prep`, …). A corpus-built palace mines each kind into the wing of the same name, **except** that a file declared in two kinds is mined only once, under one of them: `docs/party.md` is in both `party` and `grounding` and lives in the `grounding` wing, and toee's `arcs` files live in `prep`. So if a wing-filtered search comes back empty, repeat it with no `wing` before concluding the fact is absent.
+2. **Confirm by reading the source.** A search hit is a pointer. Read the cited file, only the section you need (Grep for the heading or name, then Read with an offset), before stating the fact.
+3. **Follow grounding citations to the evidence.** Grounding lines carry citations like `[ch 042 / …]` into the session summaries. Where a grounding document and a summary disagree, the summary wins.
+4. **A kind with `SEARCHABLE-FILES` 0 is not in the palace** (PDFs, images, skip-named files). To find a file in it, list the kind with `python3 ~/.claude/skills/_shared/corpus/corpus_files.py KIND` and Grep or Read the specific file. Use the same command whenever you need a kind's exact file list; never glob.
+
+### 4. Acknowledge readiness
 
 After the reads complete, give a short status (3–6 lines):
 
-- Campaign name (from the docs)
-- Where the party is right now (from campaign_state)
-- The most recent session / chapter played
-- Any open threads or near-term beats flagged in planning.md
+- Campaign name (from `# campaign:`)
+- The most recent session / chapter planning.md covers
+- Open threads or near-term beats flagged in planning.md
+- One line on the map: e.g. "Searchable: summaries (214), npcs (103), grounding (13), …"
 - "Ready for prep — what are we working on?"
 
-Do NOT summarize the docs in detail. The point is to load them into context, not to produce a written briefing. The user's next message will be the actual prep task.
+If planning.md does not say where the party is right now, say so rather than searching for it now. The user's next message is the prep task.
 
-### 4. Stay in prep mode
+Do NOT summarize the docs in detail. The point is to load the brief, not to produce a written briefing.
 
-Once loaded, treat these four docs as the working reference for the rest of the conversation. When drafting:
+### 5. Stay in prep mode
 
-- Cite specifics from the docs rather than inventing
-- If a fact is missing from the four docs, say so before fabricating — offer to check `docs/chapters/`, dossiers, or the mempalace
-- Voice files (`voice/`) and chapter splits (`docs/chapters/`) remain authoritative over the grounding docs when there's a conflict — but for prep ideation, the grounding docs are the right starting point
+For the rest of the conversation:
+
+- Cite specifics from the brief or from a source you read, never from memory
+- If a fact is in neither, search (step 3) before saying it is unknown, and say so before fabricating
+- Session summaries are the authority: where a grounding doc and a summary disagree, the summary wins. Voice files (`voice/`) are authoritative for how a character speaks
+- Ignore `docs/chapters/`. The chapter splits were made to review the campaign bible and are not canon; never cite them
 
 ## Notes
 
-- The four docs are CampaignGenerator pipeline outputs. They can drift from the authoritative sources (summaries, VTT, voice files). For precision questions, verify against the authoritative source per the trust hierarchy in the campaign's CLAUDE.md.
-- This skill only reads. It never writes to the grounding docs — those are regenerated by CampaignGenerator scripts (`campaign_state.py`, `distill.py`, `party.py`), not edited by hand.
-- If any of the four docs is missing, note which one and continue with the rest.
+- The brief and map come from `mneme corpus brief` on every run (mneme spec 009, mytools#87): never from `.mneme/corpus.toc.json`, a glob, or a remembered path. The helper follows mneme's consumer obligations 4–5 (`mneme/recipes/instructions/manage-mempalace.md`).
+- This skill only reads. It never writes to the corpus, the brief, or the grounding docs, which are regenerated by CampaignGenerator pipelines.
+- Managed campaigns today: obelisk, toee, out-of-the-abyss, Phandalin. Anything else refuses, by design.
