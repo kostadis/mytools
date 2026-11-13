@@ -130,7 +130,10 @@ def main():
     invented, initial_only = set(), set()
     lower_anywhere = set(re.findall(r"(?<![A-Za-z])[a-z][a-z']+",
                                     strip_accents(obody + " " + src).replace("\u2019", "'")))
-    for m in re.finditer(r"\b[A-Z][A-Za-z]{2,}(?:'s|’s)?\b", scan):
+    # Internal apostrophes are part of the name (Graz'zt, Lu'kah): stopping at
+    # the apostrophe reported "Graz" as invented whenever Graz'zt fell
+    # mid-sentence. A trailing possessive 's is stripped into the stem below.
+    for m in re.finditer(r"\b[A-Z][A-Za-z]{2,}(?:['’][A-Za-z]+)*\b", scan):
         w = m.group(0)
         stem = re.sub(r"['’]s$", "", w).lower()
         if stem in src_tok or stem in SENTENCE_STARTERS:
