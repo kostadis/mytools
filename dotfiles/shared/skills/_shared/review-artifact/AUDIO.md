@@ -62,3 +62,30 @@ If new evidence changes a proposal already handed off, preserve its earlier
 wording/rulings and use a new review ID and decision file for the revised question.
 Loading or playing the audio is not a ruling. Never pre-fill choices; Discuss
 and unmarked items keep the ordinary review semantics.
+
+
+## Large review sets
+
+For many clips, serve the short WAVs on demand rather than embedding all audio
+in the initial page. Keep the same nearby original-audio player and evidence
+layout, but use a relative source `audio/<clip-sha256>.wav` and `preload="none"`.
+Preserve recording hashes and exact clip bounds in the stage receipt.
+
+Put `review.html`, the matching `review_items.json`, and `audio_manifest.json`
+in one review folder. The manifest maps each `<64-hex-sha256>.wav` to
+`{"file": "/absolute/path/to/the/short-clip.wav"}`. Then run:
+
+```bash
+python "$KIT/serve_audio_review.py" \
+  --review /absolute/path/to/review-folder \
+  --host <current-tailscale-ipv4> --port 8878
+```
+
+This reuses the shared **Save to VM** validation and writes only that folder's
+`decisions.json`. It validates every clip hash and serves only manifest entries
+under the same random capability path, with no directory listing or arbitrary
+file route. Full recordings never go in this allowlist. Loopback binding is
+supported for local verification; other hosts must match the current Tailscale
+IPv4 address. Keep the server running until the GM finishes. Verify page/save
+marker, exact audio bytes, seeking, rejected unknown paths, and rejection of
+invalid saves before handing off a new integration.
