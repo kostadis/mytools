@@ -14,9 +14,19 @@ This skill owns the *whole requested run*: inventory, stage order, review gates,
 3. Make a durable run ledger, with one row per chapter and stage. Record `NOT STARTED`, `RUNNING`, `AWAITING GM`, `COMPLETE`, `BLOCKED`, or `NOT APPLICABLE`, the input and output paths, the review decision file, verification result, and any carry-forward item. Update it after every stage. A `BLOCKED` chapter is explicit; it is never silently omitted from the batch.
 4. Show material input gaps and ask for decisions only where the existing session does not already authorize a choice. Preserve the selected model and prep set across every model-bearing consistency stage.
 
+## Review routing and batch continuity
+
+Use Tailscale for any set of more than three questions or approvals; handle sets of three or fewer in the current chat. Count the complete pending set before handoff, including follow-ups and setup questions. Do not split a larger set into small chat groups to avoid the threshold. Serve decision pages with the shared review kit and read saved rulings before applying edits. An explicit user routing choice overrides this default.
+
+Keep a multi-chapter request in one run ledger and current conversation unless the user requests a separate conversation. Different transcript-provenance cohorts may need separate front-end queues or batch configs within that run; reunite them at the common stage boundary without skipping their prerequisites. Do not interpret “one batch” as permission to bypass attribution or review gates.
+
+Record the selected generation backend, model and reasoning effort separately from where the conversation runs. “Use this conversation” does not change the model or backend. If “send to ChatGPT” is ambiguous, resolve the destination before transferring anything to another conversation or changing providers; continue independent inventory work meanwhile.
+
 ## Execute every stage through the endpoint
 
 For each chapter, use the pipeline order. Transcript front-end stages use their own attribution and spell-pass apply procedures. Document-editing stages use BATCH.md's full review loop: deterministic run, adjudication, validation, review handoff, saved decision read-back, re-asks, dry-run, apply, manifest, verification, and stage commit when the repository workflow calls for it. A later stage cannot consume output that is still awaiting GM review.
+
+For review cards about uncertain recorded words, include a short inline original-audio player when the matching recording is available. Reuse the preferred [audio-evidence layout](../review-artifact/AUDIO.md), keeping the exact edit, transcript/ASR readings, and keep-verbatim option beside it.
 
 Before moving forward, check the stage's own completion evidence:
 

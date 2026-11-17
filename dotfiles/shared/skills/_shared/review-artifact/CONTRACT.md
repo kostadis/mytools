@@ -225,6 +225,15 @@ yours to use. That also means any literal `<` or `&` in quoted transcript text
 must be escaped by the caller. The builder refuses to emit a page containing
 an unescaped `</script`.
 
+### Audio evidence on a card
+
+For a ruling about uncertain recorded wording, prefer a short original-audio
+player beside the transcript readings and exact proposed edit when matching
+audio is available (GM preference, Hillsfar chapter 38, 2026-11-17). Follow
+[AUDIO.md](AUDIO.md); `attach_audio.py` adds a self-contained player to `ev`
+and source/clip hashes and times to `audio_evidence`. The existing builder,
+Tailscale save transport, and verdict semantics are unchanged.
+
 ### Card standard (GM, 2026-10-19; mytools #85)
 
 The GM is dyslexic and rules on dozens of cards per stage. Every card a skill

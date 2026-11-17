@@ -538,6 +538,12 @@ This replaces each stage's interactive adjudication only. Read the full shared
 contract at `~/.codex/skills/_shared/review-artifact/CONTRACT.md` before building a
 queue.
 
+When a ruling depends on uncertain recorded wording and matching audio is
+available, include an inline original-audio player on that card. The GM
+preferred this layout in Hillsfar chapter 38. Follow the shared
+[audio-evidence pattern](../_shared/review-artifact/AUDIO.md) for the clip,
+transcript/ASR comparison, provenance, and unchanged decision gates.
+
 Use one page per stage. Do not combine all stages into one end-of-run review:
 the user must rule on a stage, approved fixes must be applied, and only then may
 the next stage run against the corrected input.
