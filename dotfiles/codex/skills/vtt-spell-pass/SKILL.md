@@ -701,7 +701,30 @@ proposal's edit scope changes, preserve its earlier question and rulings and
 issue a new review ID. After decisions, compose approved changes once per cue
 and verify that the applied text equals that merged result.
 
-### Phase 3 — ask the user, one CLUSTER at a time, ALWAYS
+### Phase 3 — review every cluster
+
+Count the complete pending set before choosing the review channel. Use
+Tailscale for more than three questions; do not split a larger set into small
+chat groups to avoid that threshold. For sets of three or fewer, interactive
+chat review can proceed one cluster at a time.
+
+**Limit every review page to 100 decision items.** For larger queues, split
+into numbered pages with an index and previous/next links. Keep requested
+Clef batches ahead of individual cases, retaining separate score-group bulk
+buttons when a page contains more than one group. Scores must still cover the
+actual complete-passage proposal; pagination does not change its edit scope.
+Give each page a unique review ID, its exact item subset and its own decisions
+file. Preserve item IDs and maintain a manifest proving that the pages cover
+the full pending queue exactly once. Show per-page saved progress and restore
+saved decisions when returning to a page. Save before navigating away.
+
+Validate each saved export against that page's item subset before merging
+rulings into the full queue. A finished page does not complete the spell pass:
+missing pages, unmarked items and unresolved Discuss notes remain open. Do not
+apply corrections or advance to consistency/enhancement until the complete
+queue resolves. If earlier approvals are challenged, keep their history,
+quarantine questionable replacements and hold dependent pages until their
+wording and scores have been revalidated.
 
 For interactive review, enumerate the clusters with `update_plan` when useful
 and walk them one at a time in chat as multiple choice. Wait for the user's
@@ -1157,7 +1180,9 @@ and non-alphanumerics collapsed to `_`, and keep a sidecar map in
 reject_as}`. The page exports generic `approve`, `reject`, and `discuss`
 verdicts; map them back to the VTT decisions below. Accept the exported JSON
 either pasted into chat or from the downloaded `decisions.json` file, and save
-it as `spell_review/decisions.json`.
+it as `spell_review/decisions.json`. For paginated reviews, first retain and
+validate each page export separately; this file is the validated full-queue
+merge, with page IDs and source decision files recorded in the manifest.
 
 `decision` and `note` exist to carry a ruling recorded in an earlier run. The
 page shows them as text on the card, never as a pre-marked verdict — the GM
@@ -1168,9 +1193,10 @@ is the exact failure the pair-consent rule exists to prevent.
 
 ### Hand off, then stop
 
-Give the user the rendered HTML path and stop. Resume only when the user pastes
-the exported decisions or points to the saved decisions file. Validate it
-against the queue the page was built from:
+Give the user the Tailscale index/page URL (or HTML path for an explicitly
+requested local review) and wait for saved rulings. For paginated queues, read
+each page as it is saved and report remaining pages without inferring that
+they are approved. Validate every export against the exact page subset:
 
 ```bash
 REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-artifact"

@@ -130,14 +130,39 @@ were asked for may not be the next one due.
 1. deterministic run   the stage's CLI, one process per chapter (check_consistency, enhance_summary, …)
 2. agent per chapter   adjudicate from a brief → findings + items + page. No handoff, no campaign edits.
 3. validate            batch.py validate — counts, card↔item ids, builds review_<stage>.html
-4. hand off            give the GM each local review_<stage>.html path
+4. hand off            publish the review index over Tailscale when >3 questions; max100 items/page
 5. STOP                wait for the GM to return saved decisions JSON
-6. read back           place each export beside its page → batch.py read
-7. re-ask              missing exports, unmarked cards and discuss notes → chat
+6. read back           validate each page export, merge coverage → batch.py read
+7. re-ask              missing exports, unmarked cards and discuss notes → Tailscale if >3
 8. apply               batch.py apply --rulings chat_rulings.json   (all-or-nothing)
 9. manifest            batch.py manifest → paste the Rulings section into the stage's manifest
 10. verify + commit    the stage's own checks (quote verifier, …); one commit per stage, one campaign
 ```
+
+## Review pages — at most 100 decisions each
+
+Count the pending set across the entire stage. More than three questions go
+through Tailscale; the page cap does not change that threshold. Split larger
+queues into numbered pages of at most 100 decision items, with an index,
+previous/next navigation and per-page saved progress. Restore saved rulings
+when revisiting a page. Keep Clef batches first when requested; a score-group
+bulk approval affects only its items on that page.
+
+Keep each chapter's original complete item queue for stage validation. Every
+published page has a distinct review ID, an exact item subset and a separate
+decisions destination. Record page membership in the run ledger/manifest and
+verify that every pending item occurs on exactly one page. Validate each
+export against its page subset, then merge the rulings back into the original
+chapter queues with page/source provenance before using `batch.py read` and
+`batch.py apply`. Never treat one page's export as a completed chapter or
+rewrite its review ID merely to make it pass a different queue's validator.
+
+All pages must resolve before the stage applies: missing exports, unmarked
+items and unresolved Discuss notes remain open. Score and complete-passage
+checks still apply after splitting. If a re-audit challenges earlier approved
+wording, preserve those historical decisions, quarantine questionable edits,
+and hold dependent review pages and downstream stages until fresh rulings
+resolve the conflict and affected proposals/scores are revalidated.
 
 ## Step 2 — the agent brief
 
@@ -283,9 +308,9 @@ Every item below reached a GM approval on the 2026-09-28 batch:
 - **One reading per note, or ask.** A note like "I meant X" can mean edit the
   document, edit the tape, or both. Offer each reading as an option that names
   the files it writes.
-- Take everything left open to chat, grouped: unmarked cards, discuss notes (one
-  at a time, per the campaign instruction files), and whole unsaved pages if the GM would rather rule
-  in chat. Record each answer in `chat_rulings.json` **with the GM's own words**
+- Route everything left open by the complete pending count: Tailscale for more
+  than three, chat for three or fewer unless the GM explicitly chooses otherwise.
+  Include unmarked cards, Discuss notes and unsaved pages. Record each answer in `chat_rulings.json` **with the GM's own words**
   in `said`. A discuss note that resolves to new wording carries that wording
   as `edits`. That wording is a second question, not your interpretation.
 - `batch.py apply` refuses while anything is unresolved and writes **nothing,
@@ -296,13 +321,12 @@ Every item below reached a GM approval on the 2026-09-28 batch:
 
 ## When a stage has only a handful of rulings
 
-Per the campaign review threshold (about a dozen), a stage whose cards total fewer
-than that across **all** chapters is ruled in chat, not on pages. Build the
-items files anyway, since they are the record. Ask one question per card with
-the exact before and after text, and put every answer in the rulings file.
-`batch.py apply` accepts a chapter whose page was never handed off, as long
-as the chat rulings cover every card. The manifest records "ruled in chat".
-The 2026-09-28 remove-recap stage (8 cards across 3 chapters) ran this way.
+Use chat only when the complete pending set is three questions or fewer,
+unless the user explicitly chooses another route. More than three questions
+use Tailscale, with at most 100 items per page. Build the item files even for
+chat rulings, record the exact before/after and the GM's words, and account for
+every card. `batch.py apply` accepts a chapter whose page was never handed
+off when chat rulings cover every card; the manifest records "ruled in chat".
 
 ## Each stage can bring back what an earlier stage removed
 
