@@ -672,6 +672,15 @@ actual spoken grammar, false starts, self-corrections and numbers; this is not
 a prose rewrite. Use the independent sibling and original audio to support
 repairs, and explicitly retain uncertain words when no defensible reading exists.
 
+Confirm the referent before choosing a recognised name: nearby explicit
+introductions, attendance and role matter more than a close spelling match.
+An accompanying warrior must not become a distant archwizard merely because
+an independent ASR also printed that wizard's name. Agreement between ASRs
+corroborates a reading, not its canonical identity. When a GM role correction
+exposes this kind of collision, census already-approved substitutions as well
+as pending ones, quarantine the affected edits, and distinguish unsupported
+name insertions from genuine recorded slips before proposing a repair.
+
 For every affected cue, compose its vetted glossary baseline and already
 approved peer corrections before displaying a proposal. Show the full raw cue
 and the complete proposed cue, with the new changes clearly identified. If
