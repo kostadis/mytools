@@ -28,6 +28,8 @@ For each chapter, use the pipeline order. Transcript front-end stages use their 
 
 For review cards about uncertain recorded words, include a short inline original-audio player when the matching recording is available. Reuse the preferred [audio-evidence layout](../review-artifact/AUDIO.md), keeping the exact edit, transcript/ASR readings, and keep-verbatim option beside it.
 
+For transcript questions, follow the [complete-utterance and merged-preview pass](../../vtt-spell-pass/SKILL.md#phase-27--complete-utterance-coverage-and-merged-previews). A correct isolated word pair must not hide other garbled words in the same passage; carry prior approvals forward and expose only genuinely unresolved new repairs.
+
 Before moving forward, check the stage's own completion evidence:
 
 - Inputs came from the intended recording and prior reviewed artifact; the transcript and prep choices are recorded.

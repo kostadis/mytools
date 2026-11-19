@@ -663,6 +663,36 @@ The same timeline also speeds up Phase 2.5. Restrict each `sibling_context`
 lookup to the sibling cues within ±90 s of the candidate's own cue. A
 whole-file search is quadratic and also matches the wrong span.
 
+### Phase 2.7 — complete-utterance coverage and merged previews
+
+A successful name replacement is not proof that the passage is repaired. Read
+the whole transcript for obvious ASR corruption beyond capitalised candidates,
+including lowercase spell/ability names and mangled ordinary phrases. Preserve
+actual spoken grammar, false starts, self-corrections and numbers; this is not
+a prose rewrite. Use the independent sibling and original audio to support
+repairs, and explicitly retain uncertain words when no defensible reading exists.
+
+For every affected cue, compose its vetted glossary baseline and already
+approved peer corrections before displaying a proposal. Show the full raw cue
+and the complete proposed cue, with the new changes clearly identified. If
+several pending cards share it, show their combined candidate and state exactly
+which pending changes this approval covers, or bundle the remaining repairs
+into one explicit cue-level decision. Existing approvals stay fixed context;
+rejecting a new proposal must not undo them.
+
+Check the entire proposed utterance for leftover corruption. For example,
+Dion→Daein does not finish a sentence still containing “mass healing boards”
+and “told the dud”. Each remaining suspect span must be covered by a linked
+pending repair or explicitly marked unresolved/keep-verbatim. Do not label a
+partially repaired excerpt as the final corrected passage.
+
+When using a decision scorer, score the full proposal actually shown, including
+its complete cue and exact new-write scope. A score for one word pair cannot be
+reused as approval confidence for a larger sentence repair. If a handed-off
+proposal's edit scope changes, preserve its earlier question and rulings and
+issue a new review ID. After decisions, compose approved changes once per cue
+and verify that the applied text equals that merged result.
+
 ### Phase 3 — ask the user, one CLUSTER at a time, ALWAYS
 
 For interactive review, enumerate the clusters with `update_plan` when useful
