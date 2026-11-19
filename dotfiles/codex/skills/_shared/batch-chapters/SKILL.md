@@ -18,6 +18,8 @@ This skill owns the *whole requested run*: inventory, stage order, review gates,
 
 Use Tailscale for any set of more than three questions or approvals; handle sets of three or fewer in the current chat. Count the complete pending set before handoff, including follow-ups and setup questions. Do not split a larger set into small chat groups to avoid the threshold. Serve decision pages with the shared review kit and read saved rulings before applying edits. An explicit user routing choice overrides this default.
 
+For large review queues, cap each page at 100 decision items and provide numbered pages with previous/next navigation and per-page saved progress. Keep Clef batches first when requested. Give each page its own review ID and validated decision file; aggregate coverage across pages without duplicating or dropping items. The page cap does not change the Tailscale routing threshold for the complete pending set.
+
 Keep a multi-chapter request in one run ledger and current conversation unless the user requests a separate conversation. Different transcript-provenance cohorts may need separate front-end queues or batch configs within that run; reunite them at the common stage boundary without skipping their prerequisites. Do not interpret “one batch” as permission to bypass attribution or review gates.
 
 Record the selected generation backend, model and reasoning effort separately from where the conversation runs. “Use this conversation” does not change the model or backend. If “send to ChatGPT” is ambiguous, resolve the destination before transferring anything to another conversation or changing providers; continue independent inventory work meanwhile.
