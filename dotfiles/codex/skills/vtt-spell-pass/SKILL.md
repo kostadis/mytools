@@ -677,8 +677,16 @@ approved peer corrections before displaying a proposal. Show the full raw cue
 and the complete proposed cue, with the new changes clearly identified. If
 several pending cards share it, show their combined candidate and state exactly
 which pending changes this approval covers, or bundle the remaining repairs
-into one explicit cue-level decision. Existing approvals stay fixed context;
-rejecting a new proposal must not undo them.
+into one explicit cue-level decision. Preserve existing rulings as history;
+rejecting a new proposal must not silently undo them. Approval is not evidence
+that the proposed replacement was correct. If a systemic review defect or the
+user's concern calls earlier proposals into question, re-audit those replacements
+and every targeted occurrence without assuming the approved wording is true.
+Separate a correct fix with leftover corruption from a wrong or unsupported
+replacement. Hold questionable edits out of application, show the raw wording,
+previous ruling and new evidence together, and obtain a fresh ruling under a
+new review ID before changing an earlier decision. A newly challenged baseline
+also requires checking dependent passage proposals and their scores.
 
 Check the entire proposed utterance for leftover corruption. For example,
 Dion→Daein does not finish a sentence still containing “mass healing boards”
