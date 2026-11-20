@@ -697,6 +697,12 @@ previous ruling and new evidence together, and obtain a fresh ruling under a
 new review ID before changing an earlier decision. A newly challenged baseline
 also requires checking dependent passage proposals and their scores.
 
+Keep the source of a prior disposition explicit. An agent’s ignored, benign or
+false-positive classification is not a saved GM keep-verbatim ruling. Recheck
+those dismissed spans against the recording when the complete-utterance audit
+exposes a possible error; disclose any corrected interpretation. Require a
+prior-ruling conflict only when proposing to change an actual GM decision.
+
 Check the entire proposed utterance for leftover corruption. For example,
 Dion→Daein does not finish a sentence still containing “mass healing boards”
 and “told the dud”. Each remaining suspect span must be covered by a linked

@@ -177,6 +177,10 @@ in one message. Each brief must say:
   continuity evidence, **not** canon.
 - **Grep every prior rulings log for the subject before carding it.** A finding
   that would reverse a ruling becomes a CONFLICT card that quotes the ruling.
+  Identify the source of that disposition: a saved GM card/note versus an agent’s
+  false-positive or benign assessment. Recheck the latter against the tape; it
+  does not bind the GM or prove the wording correct. Disclose a corrected prior
+  interpretation without falsely presenting it as a reversal of a GM decision.
 - **The standing GM rulings from this cycle**, stated literally (for example,
   "the creatures in the chapter 20 fight are X, not Y"). Agents cannot see your chat.
 - **Canon chain from the campaign instruction files for every name; never invent a spelling.** The
@@ -225,6 +229,12 @@ chapter. The check for one chapter and the adjudication of another overlap.
   applied without asking and listed in the page footer.
 - `false_positive` and `note` never touch the file. A note can record an
   upstream gap, for example.
+- An upstream carry-back has its own exact file, source hash and old/new/count
+  edits. Show those alongside the current-layer edits before handoff. Approval
+  of a target-only card does not authorize unlisted source edits; use the owning
+  deterministic apply path for each approved target and verify their counts
+  before writing either. Do not leave necessary source repairs as a vague
+  request for a later approval.
 - **`count` is the exact number of occurrences of `old`.** The apply refuses on
   any mismatch. That is how a stale finding, a double apply or an ambiguous
   anchor is caught instead of silently mis-editing the file.

@@ -28,6 +28,8 @@ Record the selected generation backend, model and reasoning effort separately fr
 
 For each chapter, use the pipeline order. Transcript front-end stages use their own attribution and spell-pass apply procedures. Document-editing stages use BATCH.md's full review loop: deterministic run, adjudication, validation, review handoff, saved decision read-back, re-asks, dry-run, apply, manifest, verification, and stage commit when the repository workflow calls for it. A later stage cannot consume output that is still awaiting GM review.
 
+Keep saved GM decisions separate from agent dispositions. An earlier agent’s `false_positive`, ignore, or benign assessment is a hypothesis to recheck against the primary evidence, not a GM ruling. Disclose an earlier dismissal when correcting its interpretation; reserve a prior-ruling conflict for an actual saved GM choice. If a correction needs an upstream carry-back, prepare the exact file, before/after text and counts before handoff, and make the approval scope explicit for every file.
+
 For review cards about uncertain recorded words, include a short inline original-audio player when the matching recording is available. Reuse the preferred [audio-evidence layout](../review-artifact/AUDIO.md), keeping the exact edit, transcript/ASR readings, and keep-verbatim option beside it.
 
 For transcript questions, follow the [complete-utterance and merged-preview pass](../../vtt-spell-pass/SKILL.md#phase-27--complete-utterance-coverage-and-merged-previews). A correct isolated word pair must not hide other garbled words in the same passage; carry prior approvals forward and expose only genuinely unresolved new repairs.
