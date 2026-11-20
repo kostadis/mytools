@@ -16,9 +16,22 @@ This skill owns the *whole requested run*: inventory, stage order, review gates,
 
 ## Review routing and batch continuity
 
-Use Tailscale for any set of more than three questions or approvals; handle sets of three or fewer in the current chat. Count the complete pending set before handoff, including follow-ups and setup questions. Do not split a larger set into small chat groups to avoid the threshold. Serve decision pages with the shared review kit and read saved rulings before applying edits. An explicit user routing choice overrides this default.
+Use Tailscale for any set of more than three questions or approvals; handle sets of
+three or fewer in the current chat. Count the complete pending set before handoff,
+including follow-ups and setup questions. Do not split a larger set into small chat
+groups to avoid the threshold. Serve decision pages with the shared review kit and read
+saved rulings before applying edits. Reuse explicit review routing and run choices
+already established in this conversation; ask only for missing or changed choices. An
+explicit user routing choice overrides this default.
 
-For large review queues, cap each page at 100 decision items and provide numbered pages with previous/next navigation and per-page saved progress. Keep Clef batches first when requested. Give each page its own review ID and validated decision file; aggregate coverage across pages without duplicating or dropping items. The page cap does not change the Tailscale routing threshold for the complete pending set.
+For large review queues, cap each page at 100 decision items and provide numbered pages
+with previous/next navigation and per-page saved progress. Keep Clef batches first when
+requested. Give each page its own review ID and validated decision file; aggregate
+coverage across pages without duplicating or dropping items. The page cap does not
+change the Tailscale routing threshold for the complete pending set. Small queues may
+keep separate Clef groups and individual cards on one page. Read
+[SERVING.md](../review-artifact/SERVING.md) for durable hosting, saved-state restoration
+and mobile checks; current-phase navigation must not count completed history pages.
 
 Keep a multi-chapter request in one run ledger and current conversation unless the user requests a separate conversation. Different transcript-provenance cohorts may need separate front-end queues or batch configs within that run; reunite them at the common stage boundary without skipping their prerequisites. Do not interpret “one batch” as permission to bypass attribution or review gates.
 
@@ -26,7 +39,14 @@ Record the selected generation backend, model and reasoning effort separately fr
 
 ## Execute every stage through the endpoint
 
-For each chapter, use the pipeline order. Transcript front-end stages use their own attribution and spell-pass apply procedures. Document-editing stages use BATCH.md's full review loop: deterministic run, adjudication, validation, review handoff, saved decision read-back, re-asks, dry-run, apply, manifest, verification, and stage commit when the repository workflow calls for it. A later stage cannot consume output that is still awaiting GM review.
+For each chapter, use the pipeline order. Transcript front-end stages use their own
+attribution and spell-pass apply procedures. Document-editing stages use BATCH.md's full
+review loop: deterministic run, adjudication, validation, review handoff, saved decision
+read-back, re-asks, dry-run, apply, manifest, verification, and stage commit when the
+repository workflow calls for it. A later stage cannot consume output that is still
+awaiting GM review. Treat content application and post-apply verification as separate
+checkpoints: if a manifest or report fails after edits land, verify the recorded output
+hashes and resume the unfinished checks rather than applying again.
 
 Keep saved GM decisions separate from agent dispositions. An earlier agent’s `false_positive`, ignore, or benign assessment is a hypothesis to recheck against the primary evidence, not a GM ruling. Disclose an earlier dismissal when correcting its interpretation; reserve a prior-ruling conflict for an actual saved GM choice. If a correction needs an upstream carry-back, prepare the exact file, before/after text and counts before handoff, and make the approval scope explicit for every file.
 
@@ -37,7 +57,11 @@ For transcript questions, follow the [complete-utterance and merged-preview pass
 Before moving forward, check the stage's own completion evidence:
 
 - Inputs came from the intended recording and prior reviewed artifact; the transcript and prep choices are recorded.
-- Every review card has a saved ruling or a recorded chat ruling. Unmarked, unsaved, and Discuss items remain open until resolved.
+- Every review card has a saved ruling or a recorded chat ruling. Unmarked, unsaved, and
+  Discuss items remain open until resolved. Preserve the original export when a later
+  chat answer resolves it; record the exact question/option mapping, the GM's reply and
+  its scoped interpretation separately. A factual concern such as “is this the only
+  summary?” needs a primary-source coverage check before re-asking the pending edit.
 - Approved edits landed in the named target files with exact counts. Tape corrections were regenerated and checked through the owning transcript skill. Earlier-stage carry-backs were applied only when the ruling covers those files.
 - The stage manifest records the sources, rulings, false positives, open items, and verification. Run the stage's quote and inline-quote checks where required; an automated flag needs manual VTT adjudication.
 - Search the next generated artifact for ruled wording that may have been reintroduced. Resolve conflicts against the earlier ruling before advancing.
@@ -49,3 +73,11 @@ If work pauses at a review gate or context boundary, leave the ledger with the e
 ## Close the run
 
 Audit the ledger against every stage from the earliest needed stage through the requested endpoint. Mark each `COMPLETE`, `NOT APPLICABLE` with reason, or `BLOCKED` with the missing input or ruling. Verify the final artifact and report the chapters completed, stages not run, open items, and the next pipeline stage. Do not describe the full requested flow as complete while any in-scope ledger row is unresolved.
+
+When the user also requests publication or issue close-out, verify the
+merged/default-branch state and each issue's actual completion gate. Use the
+repository's publisher for derived summary copies and keep that verification separate
+from source-pipeline completion. Close only covered children, including earlier merged
+work when verified, and update the parent's remaining inventory. A completed local file
+or source-recovery PR alone is insufficient; push, PR and merge still follow the user's
+authorized scope.

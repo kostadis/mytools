@@ -22,7 +22,14 @@ The user's stated invariant: *"I know all the NPCs. If a proper name appears
 in a transcript that isn't in our notes, it's a misspelling."* The skill
 operationalises that: the unknown set IS the candidate-misspelling set.
 
-**Where this sits:** after `/speaker-attribution` (or `/transcript-rebuild`), before `/staged-consistency` phase 0 and `enhance_summary`. Run it on the **unlabelled** tape, never on a `.speakers.vtt` — the glossary's player→PC rows would rewrite the speaker labels — then re-apply the approved speaker mapping to the `.cleaned.vtt`. Full order: `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
+**Where this sits:** after `/speaker-attribution` (or `/transcript-rebuild`), before
+`/staged-consistency` phase 0 and `enhance_summary`. For an unlabelled archive with a
+separate attributed `.speakers.vtt`, run the glossary against the unlabelled archive and
+carry the approved labels onto the generated cleaned tape. Native Zoom archives may
+already contain human display-name labels; retain those archive labels and apply
+corrections only to cue bodies. Do not run player→PC rows over speaker prefixes or
+manufacture an extra speaker layer merely to fit a filename convention. Full order:
+`~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
 
 ## Codex compatibility
 
@@ -224,14 +231,18 @@ Detect or ask:
 
 ### Phase -1 — choose the review mode
 
-Before anything else, ask in chat:
+Resolve the review mode from the current run's explicit choices first. If none
+applies, ask in chat:
 
 > **Review the candidates interactively here, or in a batch review page?**
 > - **Interactive** — one cluster at a time in chat.
 > - **Batch page** — one standalone web page containing every pair that needs
 >   a ruling, with Accept, Reject, and Discuss controls.
 
-Ask this every run; do not remember a default. If they choose the batch page,
+Reuse an explicit choice already made for the current conversation/batch, including the
+Tailscale threshold; do not ask again solely because another chapter or stage starts. If
+no applicable choice exists, ask. Do not infer a permanent preference for unrelated
+runs. If they choose the batch page,
 Phases 0–2.5 run exactly as written and **Batch review page** below replaces
 Phase 3. Phases 4–7 are shared.
 
@@ -312,6 +323,13 @@ It reports three things that change the rest of the run:
   midpoint split: one split or merged utterance shifts everything after it and
   makes a 99.8%-identical duplicate look ~60% similar. The script anchors on
   the repeated first line and aligns with difflib.
+
+For a native labelled archive, build any glossary candidate in scratch without
+rewriting its speaker prefixes: use a body-only transformation or restore the
+original prefix on each matching cue before import. Compare every candidate cue's
+index, timing and prefix with the immutable archive, then review the body diff
+through the correction record. A globally safe spelling row is not permission
+to turn a human display name into a PC label.
 
 ### Phase 1 — gather candidates (deterministic, no LLM)
 
@@ -425,8 +443,11 @@ right before narration).
 
 ### Phase 2 — pre-classify candidates (LLM judgment, MINIMAL filtering)
 
-Use the prep for this session to identify misspellings and support proposed
-canonical spellings. For any low-confidence candidate, read the surrounding
+Use only the approved prep/evidence set for this session to identify misspellings and
+support proposed canonical spellings. If the GM says no prep exists, record none and
+proceed from tape and canon. Keep any separately authorized bounded prep/module lookup
+distinct from generation prep; such text supports spelling or context, never restoration
+of absent speech. For any low-confidence candidate, read the surrounding
 transcript context and propose a specific correction option for the GM to
 review; do not present only a fuzzy-match score or an unexplained unknown.
 
@@ -697,6 +718,11 @@ previous ruling and new evidence together, and obtain a fresh ruling under a
 new review ID before changing an earlier decision. A newly challenged baseline
 also requires checking dependent passage proposals and their scores.
 
+Keep label identity and wording scope separate: a native display-name alias resolves a
+human participant, not the fictional speaker of every line. A character name chosen only
+for derived prose is not a transcript correction, registry alias, or instruction to
+rewrite historical names globally.
+
 Keep the source of a prior disposition explicit. An agent’s ignored, benign or
 false-positive classification is not a saved GM keep-verbatim ruling. Recheck
 those dismissed spans against the recording when the complete-utterance audit
@@ -732,6 +758,11 @@ Give each page a unique review ID, its exact item subset and its own decisions
 file. Preserve item IDs and maintain a manifest proving that the pages cover
 the full pending queue exactly once. Show per-page saved progress and restore
 saved decisions when returning to a page. Save before navigating away.
+
+Keep saved decisions on durable storage and host long reviews with the lifecycle and
+hydration checks in [SERVING.md](../_shared/review-artifact/SERVING.md). A fresh page
+starts unmarked; a return to the same frozen queue may restore its validated saved
+decisions, picks and notes, never unsaved guesses.
 
 Validate each saved export against that page's item subset before merging
 rulings into the full queue. A finished page does not complete the spell pass:
@@ -1092,8 +1123,12 @@ python "$SKILL_DIR/state.py" \
   processed <vtt-path>
 ```
 
-**Then carry the speaker labels onto the cleaned tape.** The `.cleaned.vtt` is
-unlabelled, like its raw. Build `transcript.cleaned.speakers.vtt` cue by cue:
+**Then verify the applicable speaker path.** For native labelled archives, assert
+unchanged cue count, timing lines and every speaker prefix after regeneration; do not
+reassign humans or PCs. If the archive is unlabelled and has a separately approved
+speaker layer, carry those labels onto the cleaned tape as follows. In that path the
+`.cleaned.vtt` is unlabelled, like its raw. Build `transcript.cleaned.speakers.vtt` cue
+by cue:
 the timing line from `.speakers.vtt`, its label, and the cleaned cue's text.
 The two files must have the same cue count and identical timing lines; stop if
 not. Copy the `.speakers.vtt` header `NOTE` and add one line naming the cleaned
@@ -1126,18 +1161,22 @@ python "$SKILL_DIR/render_review.py" \
 
 `render_review.py` is a VTT-specific adapter over the shared review-artifact
 renderer. The HTML is standalone, keeps no browser storage (a reload loses
-unsaved marks), always opens unmarked, and exports the shared decision schema
+unsaved marks), opens unmarked unless the hosted page restores validated decisions from
+this same frozen queue, and exports the shared decision schema
 through Copy output or Save output. Prefer serving it with the shared
 `serve_review.py`, configured to write `$REVIEW/decisions.json`; summarize the
 counts, hand over the capability URL, and keep the server running. Fall back to
 the HTML path when the VM is unreachable. Do not modify the glossary or
 transcript while the page is awaiting review.
 
-### The consent unit is the PAIR, never the cluster
+### The consent unit: pair or explicit complete-cue repair
 
-Use one queue item per `(token → canonical)` pair. Group items by canonical in
-queue order so the GM reads a canonical's members together, but never merge
-them into a single item and never let approving one member imply another.
+Use one queue item per `(token → canonical)` pair for independent name decisions. Phase
+2.7 also permits an explicitly bundled complete-cue repair; list every changed span and
+its exact write scope as that one consent unit. Do not turn an unrelated canonical
+cluster into one blanket approval. Group independent pair items by canonical in queue
+order so the GM reads its members together, but never let approving one independent pair
+imply another.
 Every member must retain its own count, context, and sibling verdict; collapsing
 a group into one yes/no can approve hallucinated members invisibly.
 

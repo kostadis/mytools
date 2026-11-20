@@ -11,6 +11,14 @@ Run a consistency check at each LLM pipeline boundary, with a human review gate
 between stages. This prevents a stale quote or summary error from being fixed in
 one layer and then reintroduced by the next layer.
 
+Keep each ruling's target layer explicit. A native human label does not settle
+which PC voiced a line; a summary-only naming choice does not amend the tape or
+registry. State persistent facts as current or previous-session facts, distinguish
+plans from completed actions and impressions/claims from established outcomes.
+Carry unresolved source discrepancies as notes, with the exact evidence and
+scope, rather than silently rewriting an earlier layer. Batch application and
+resume rules are in [BATCH.md](../_shared/batch-chapters/BATCH.md).
+
 This is the Codex port of the Claude skill. Do not edit
 `~/src/mytools/dotfiles/claude/skills/staged-consistency/` when changing this
 skill.

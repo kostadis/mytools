@@ -74,11 +74,11 @@ were asked for may not be the next one due.
    - **Stage 0 source.** Record each chapter's filename. A chapter with none has
      nothing for `enhance_summary` to render from.
 3. **Split the batch into cohorts by path, and set the odd ones out aside.**
-   One batch runs one path. A chapter that needs a different attribution route
-   (text-only, single source, or edited-cut projection) or is missing an input
-   goes into `batch.json` under `"blocked": [{"dir": …, "reason": …}]`. It is
-   not forced through a path it does not fit. `batch.py` ignores `blocked`, so
-   the manifest and commit message must name those chapters.
+   One cohort config runs one path; several cohort configs can share the run ledger. A
+   different valid attribution route is a separate cohort, not automatically blocked.
+   List genuinely missing inputs or rulings under `"blocked": [{"dir": …, "reason":
+   …}]`. `batch.py` ignores `blocked`, so retain those chapters and their next actions
+   in the ledger and handoff. Reunite ready cohorts at the common stage boundary.
 4. **Show the GM the gaps first, then ask.** Give a table with one row per
    chapter, what it has and what it lacks, plus what each gap costs. Then
    collect every run-wide decision in **one** question set:
@@ -157,9 +157,17 @@ chapter queues with page/source provenance before using `batch.py read` and
 `batch.py apply`. Never treat one page's export as a completed chapter or
 rewrite its review ID merely to make it pass a different queue's validator.
 
-All pages must resolve before the stage applies: missing exports, unmarked
-items and unresolved Discuss notes remain open. Score and complete-passage
-checks still apply after splitting. If a re-audit challenges earlier approved
+A chapter with zero judgment cards needs no fabricated empty decision export. Retain
+its findings and verification; skip empty-queue decision reads while still applying
+and verifying any mechanical auto plan through its owning helper. Its stage still
+appears in the ledger. For chapters with cards, all pages
+must resolve before the stage applies: missing exports, unmarked
+items and unresolved Discuss notes remain open. Score and complete-passage checks still
+apply after splitting. Named wording choices must return an explicit offered pick; a
+high decision-model score or generic Approve is not that pick. When exporting to chapter
+queues, preserve page provenance and apply only the chosen text to its declared layer; a
+summary-only name ruling does not create a global alias or tape correction. If a
+re-audit challenges earlier approved
 wording, preserve those historical decisions, quarantine questionable edits,
 and hold dependent review pages and downstream stages until fresh rulings
 resolve the conflict and affected proposals/scores are revalidated.
@@ -235,6 +243,12 @@ chapter. The check for one chapter and the adjudication of another overlap.
   deterministic apply path for each approved target and verify their counts
   before writing either. Do not leave necessary source repairs as a vague
   request for a later approval.
+- **Semantic dependencies are separate from count checks.** Record `requires` or an
+  equivalent explicit dependency when a cut needs a separate rescue destination. The
+  orchestrator must resolve it before `batch.py apply`; the helper does not enforce such
+  fields. A mechanically valid cut/rescue subset can still discard unique content. Test
+  allowed independent subsets where practical and report incompatible choices for GM
+  resolution.
 - **`count` is the exact number of occurrences of `old`.** The apply refuses on
   any mismatch. That is how a stale finding, a double apply or an ambiguous
   anchor is caught instead of silently mis-editing the file.
@@ -327,7 +341,11 @@ Every item below reached a GM approval on the 2026-09-28 batch:
   in any chapter**, until every chapter resolves and every count matches. Run
   `--dry-run` first. `--propagate-stage0` also applies an identical edit to the
   chapter's Stage 0 source wherever the same text occurs, and reports each hit.
-  Use it when the Stage 0 source must stay in agreement, as at Stage 1.
+  Use it only when the saved card explicitly authorizes those exact occurrences and
+  file. For a bounded carry-back, prepare a separate exact plan/config for the Stage 0
+  target, dry-run both plans before either write, and compare each result with its
+  approved scope. Never enable broad propagation merely because wording happens to
+  match.
 
 ## When a stage has only a handful of rulings
 
@@ -348,12 +366,11 @@ brought back a struck "contact poison", a quote word the GM had cut, and a
 - **The enhancement brief must list every approved Stage 0 card's subject.**
   The agent then checks each one in the new summary. A re-introduction is a
   card that quotes the Stage 0 ruling.
-- **Later-stage cards that fix the Stage 0 source are hand-applied.**
-  `batch.py apply --propagate-stage0` copies an edit to the Stage 0 source only
-  where the *same* text occurs. A card that needs a different edit there (the
-  summary was already right but the gm-assist was not) carries a
-  `stage0_edits` list. Apply those by hand with exact counts and name them in
-  the manifest.
+- **Later-stage source carry-backs need their own exact plan.** `--propagate-stage0`
+  matches text, not semantic scope. When the source needs different wording or only
+  selected occurrences, list the source path/hash and its `stage0_edits` before handoff,
+  then use the owning deterministic apply path for that target. Verify both the
+  current-layer and source plans without broadening the saved ruling.
 - **An approval covers the target file only.** When a card's `y` says "the same
   wording also sits in the Stage 0 source", approving it does not authorise
   editing that file. Ask, or leave it and say so.
@@ -554,3 +571,17 @@ apply without the chat rulings, and refused a second apply.
 **What it does not do:** detection, adjudication, review handoff, or anything
 stage-specific in the manifest (renumbering, upstream gaps, and so on). Those
 stay with the stage skill and with you.
+
+## Apply checkpoints and evidence bytes
+
+Freeze target hashes, exact expected outputs and immutable source hashes before the
+first write. Record the applied result before starting fallible quote/report/manifest
+steps. On resume, distinguish unapplied input, the exact approved output, and an
+unexpected third state; run the apply only for the first. A successful apply followed by
+a formatting failure is unfinished verification, not permission to apply twice.
+
+Keep analysis snapshots and their cited hashes immutable. Normalize generated
+display/log whitespace before hashing it, or preserve the original bytes and record a
+new version/hash after normalization; do not silently invalidate source receipts. Keep
+deterministic verification separate from model work so retries need not regenerate
+reviewed prose.

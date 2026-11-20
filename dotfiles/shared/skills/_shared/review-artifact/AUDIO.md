@@ -89,3 +89,8 @@ supported for local verification; other hosts must match the current Tailscale
 IPv4 address. Keep the server running until the GM finishes. Verify page/save
 marker, exact audio bytes, seeking, rejected unknown paths, and rejection of
 invalid saves before handing off a new integration.
+
+For paginated or multi-turn audio reviews, use [SERVING.md](SERVING.md) for durable
+process lifetime, same-queue saved-state restoration, phase navigation and mobile
+verification. A transient tool session is not sufficient evidence that the review will
+remain available.

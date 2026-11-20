@@ -71,8 +71,12 @@ them together and diff to confirm they still agree.
 
 ## Scope: the first scene
 
-**Check the first scene. That is where the recap is**, because the recap is the
-opening of the recording and the extractor cuts scenes in recording order.
+Start at the opening of the recording and the first scene, then follow the actual
+recap through its end. Before extraction, one read-aloud recap can occupy several
+summary scenes, or be interrupted by fresh material such as a player-facing
+letter and resume afterwards. Mark disjoint recap spans and retain every live
+interruption. A new NPC dinner that recalls older events is still live dialogue,
+not automatically an opening recap. Do not infer the cut from scene titles.
 
 `find_recap.py` defaults to the first scene for exactly this reason. `--all-scenes`
 exists to *audit the assumption* once per campaign, not to hunt for a recap in
@@ -174,6 +178,13 @@ Before extraction the bullets are a summary of the recap, not the recap, so
 also read the VTT span you bounded in Phase 1 for asides and bookkeeping the
 summary may have dropped.
 
+Select and name the previous chapter's primary source before comparing coverage: its
+reviewed summary when available, otherwise the explicit draft/export with its
+limitations. Avoid recursively searching its review packets, which can quote the current
+recap and falsely corroborate it. Compare substance, not just matching names or numbers.
+If the GM worries this is the only surviving account, quote the corresponding earlier
+passage before seeking the trim ruling.
+
 A recap is *supposed* to be redundant. It is not reliably redundant, and three
 kinds of content die if you cut it blind:
 
@@ -215,10 +226,21 @@ Then the options:
   boundary candidates, and cut at a beat, never mid-exchange.
 - **Leave it** — some campaigns want the recap in the document.
 
+Keep analysis notes visible on the review page, including quoted asides and upstream
+discrepancies; they must not vanish when chapter queues are combined. Notes with no
+proposed write are not approvals of new canon. A meaningful “GM note only” destination
+can be a card with `edits: []`; record its approved scope in the final manifest.
+
 **Where rescued content goes is its own decision.** Bookkeeping usually belongs
 in this chapter's session summary; a GM aside that reveals canon usually belongs
 in the entity's own record or the grounding docs, not smuggled into a scene it
 did not happen in.
+
+Before application, enforce any cut→rescue dependencies separately from exact
+replacement counts. A cut approved while its required destination is rejected or
+unmarked stays pending explicit resolution. Independent subsets should apply
+without destroying retained bookkeeping; count-valid subsets alone do not prove
+that. A boundary-only ruling still needs its cue and timestamp in the manifest.
 
 ## Phase 4 — apply, then rebuild
 
