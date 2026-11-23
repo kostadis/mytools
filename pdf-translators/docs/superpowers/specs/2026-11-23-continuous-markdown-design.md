@@ -1,6 +1,6 @@
 # Continuous selection and searchable Markdown conversion
 
-Status: proposed design, following the user's choice of the continuous approach. Implementation follows approval of this document. Existing metadata preparation continues while this design is reviewed.
+Status: approved and implemented. The continuous coordinator is deployed against the full library using preserved metadata/extraction checkpoints. See [pilot and rollout verification](../../continuous-markdown-pilot.md).
 
 ## Purpose and agreed behavior
 
