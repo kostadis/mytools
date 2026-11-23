@@ -5,6 +5,7 @@ pub mod grouping;
 pub mod hints;
 pub mod inventory;
 pub mod models;
+pub mod review;
 pub mod store;
 
 #[derive(Debug, thiserror::Error)]
