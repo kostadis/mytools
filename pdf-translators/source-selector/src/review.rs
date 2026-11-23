@@ -157,10 +157,11 @@ pub fn propose_decision(
     prior: Option<&Decision>,
 ) -> Decision {
     let ed = evidence_digest(group, evidence);
-    if let Some(p) = prior {
-        if p.membership_digest == group.membership_digest && p.evidence_digest == ed {
-            return p.clone();
-        }
+    if let Some(p) = prior
+        && p.membership_digest == group.membership_digest
+        && p.evidence_digest == ed
+    {
+        return p.clone();
     }
     let mut decision = Decision {
         group_id: group.group_id.clone(),
@@ -398,18 +399,25 @@ impl Store {
                 .ok_or_else(|| SelectionError::Invalid("scan first".into()))?,
         )?;
         for id in &group.source_ids {
-            if let Some(source) = sources.iter().find(|s| &s.source_id == id) {
-                if source.read_error.is_none() {
-                    let current =
-                        hash_source(&checked_path(&inventory.root, &source.relative_path)?)?;
-                    if !evidence
-                        .iter()
-                        .any(|e| &e.source_id == id && e.sha256 == current)
-                    {
-                        return Err(SelectionError::Invalid(
-                            "source changed or missing inspected evidence; inspect again".into(),
-                        ));
-                    }
+            let pending_without_evidence = !evidence.iter().any(|e| &e.source_id == id)
+                && decision.outcomes.iter().any(|o| {
+                    &o.source_id == id
+                        && matches!(o.status, Status::NeedsReview | Status::Unreadable)
+                });
+            if pending_without_evidence {
+                continue;
+            }
+            if let Some(source) = sources.iter().find(|s| &s.source_id == id)
+                && source.read_error.is_none()
+            {
+                let current = hash_source(&checked_path(&inventory.root, &source.relative_path)?)?;
+                if !evidence
+                    .iter()
+                    .any(|e| &e.source_id == id && e.sha256 == current)
+                {
+                    return Err(SelectionError::Invalid(
+                        "source changed or missing inspected evidence; inspect again".into(),
+                    ));
                 }
             }
         }

@@ -2,6 +2,48 @@ use rpg_source_select::{inventory::scan_root, models::SourceKind, store::Store};
 use std::fs;
 use tempfile::tempdir;
 
+#[cfg(unix)]
+#[test]
+fn unreadable_root_refuses_scan_while_unreadable_subfolder_is_a_coverage_error() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempdir().unwrap();
+    let blocked = root.path().join("blocked");
+    fs::create_dir(&blocked).unwrap();
+    fs::write(blocked.join("hidden.pdf"), b"hidden").unwrap();
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o0)).unwrap();
+    let nested = scan_root(root.path());
+    let direct = scan_root(&blocked);
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(nested.unwrap().errors.len(), 1);
+    assert!(direct.is_err());
+}
+
+#[test]
+fn interrupted_scan_rolls_back_inventory_and_keeps_previous_cache() {
+    let root = tempdir().unwrap();
+    let work = tempdir().unwrap();
+    fs::write(root.path().join("old.pdf"), b"old").unwrap();
+    let initial = scan_root(root.path()).unwrap();
+    let mut db = Store::open(&work.path().join("s.db")).unwrap();
+    db.upsert_inventory(&initial).unwrap();
+    db.put_cached("prior", "test", "key", &serde_json::json!("retained"))
+        .unwrap();
+    fs::write(root.path().join("new.pdf"), b"new").unwrap();
+    let next = scan_root(root.path()).unwrap();
+    let result: rpg_source_select::Result<()> = db.scan_transaction(|db| {
+        db.upsert_inventory(&next)?;
+        Err(rpg_source_select::SelectionError::Invalid(
+            "interrupted".into(),
+        ))
+    });
+    assert!(result.is_err());
+    assert_eq!(db.sources().unwrap().len(), 1);
+    assert_eq!(
+        db.get_cached("prior", "test", "key").unwrap().unwrap(),
+        "retained"
+    );
+}
+
 #[test]
 fn inventory_retains_old_pdfs_archives_and_artifacts_without_writing_sources() {
     let root = tempdir().unwrap();

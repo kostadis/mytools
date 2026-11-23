@@ -159,7 +159,7 @@ pub mod path_serde {
             use serde::Serialize;
             use std::os::unix::ffi::OsStrExt;
             let bytes: Vec<u8> = path.as_os_str().as_bytes().to_vec();
-            return serde_json::json!({"unix_bytes":bytes}).serialize(serializer);
+            serde_json::json!({"unix_bytes":bytes}).serialize(serializer)
         }
         #[cfg(not(unix))]
         {
@@ -178,7 +178,7 @@ pub mod path_serde {
             let bytes: Vec<u8> =
                 serde_json::from_value(value.get("unix_bytes").cloned().unwrap_or_default())
                     .map_err(D::Error::custom)?;
-            return Ok(std::ffi::OsString::from_vec(bytes).into());
+            Ok(std::ffi::OsString::from_vec(bytes).into())
         }
         #[cfg(not(unix))]
         {

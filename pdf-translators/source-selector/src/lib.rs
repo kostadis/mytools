@@ -1,4 +1,5 @@
 //! Read-only source selection for RPG libraries.
+pub mod cli;
 pub mod compare;
 pub mod evidence;
 pub mod export;
@@ -11,6 +12,8 @@ pub mod store;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SelectionError {
+    #[error("{0}")]
+    Usage(String),
     #[error("{0}")]
     Invalid(String),
     #[error(transparent)]

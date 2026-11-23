@@ -8,6 +8,59 @@ pub struct Store {
     conn: Connection,
 }
 impl Store {
+    pub fn open_readonly(path: &Path) -> Result<Self> {
+        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let store = Self { conn };
+        if store.meta("schema_version")? != Some(serde_json::json!(1)) {
+            return Err(SelectionError::Invalid(
+                "unsupported database schema".into(),
+            ));
+        }
+        Ok(store)
+    }
+    pub fn scan_transaction<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        match f(self) {
+            Ok(v) => {
+                self.conn.execute_batch("COMMIT")?;
+                Ok(v)
+            }
+            Err(e) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
+    }
+    pub fn count_records(&self, kind: &str) -> Result<usize> {
+        Ok(self
+            .conn
+            .query_row("SELECT count(*) FROM records WHERE kind=?1", [kind], |r| {
+                r.get::<_, i64>(0)
+            })? as usize)
+    }
+    pub fn keyed_records<T: DeserializeOwned>(
+        &self,
+        kind: &str,
+    ) -> Result<std::collections::BTreeMap<String, T>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id,body FROM records WHERE kind=?1 ORDER BY id")?;
+        let rows = stmt.query_map([kind], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+        rows.map(|r| {
+            let (id, body) = r?;
+            Ok((id, serde_json::from_str(&body)?))
+        })
+        .collect()
+    }
+    pub fn delete_record(&mut self, kind: &str, id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM records WHERE kind=?1 AND id=?2",
+            params![kind, id],
+        )?;
+        Ok(())
+    }
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY, body TEXT NOT NULL, active INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS cache (id TEXT, stage TEXT, cache_key TEXT, body TEXT NOT NULL, PRIMARY KEY(id,stage,cache_key)); CREATE TABLE IF NOT EXISTS records (kind TEXT,id TEXT,body TEXT NOT NULL,PRIMARY KEY(kind,id));")?;
@@ -24,16 +77,16 @@ impl Store {
         Ok(store)
     }
     pub fn upsert_inventory(&mut self, result: &InventoryResult) -> Result<()> {
-        let root = serde_json::to_value(&result.root.to_string_lossy())?;
+        let root = serde_json::to_value(result.root.to_string_lossy())?;
         let root_key = serde_json::json!(crate::inventory::path_bytes(&result.root));
-        if let Some(prior) = self.meta("root_key")? {
-            if prior != root_key {
-                return Err(SelectionError::Invalid(
-                    "state database belongs to a different root".into(),
-                ));
-            }
+        if let Some(prior) = self.meta("root_key")?
+            && prior != root_key
+        {
+            return Err(SelectionError::Invalid(
+                "state database belongs to a different root".into(),
+            ));
         }
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         tx.execute("UPDATE sources SET active=0", [])?;
         for source in &result.sources {
             tx.execute("INSERT INTO sources VALUES (?1,?2,1) ON CONFLICT(id) DO UPDATE SET body=excluded.body,active=1", params![source.source_id,serde_json::to_string(source)?])?;
@@ -105,7 +158,7 @@ impl Store {
         rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
     }
     pub fn replace_records(&mut self, kind: &str, values: &[(String, Value)]) -> Result<()> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.savepoint()?;
         tx.execute("DELETE FROM records WHERE kind=?1", [kind])?;
         for (id, value) in values {
             tx.execute(

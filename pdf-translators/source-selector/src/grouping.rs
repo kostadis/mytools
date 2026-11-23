@@ -44,10 +44,10 @@ pub fn cached_hash(root: &Path, source: &Source, store: &mut Store) -> Result<St
         )));
     }
     let key = digest_json(&(1, &source.fingerprint));
-    if let Some(v) = store.get_cached(&source.source_id, "hash", &key)? {
-        if let Some(s) = v.as_str() {
-            return Ok(s.into());
-        }
+    if let Some(v) = store.get_cached(&source.source_id, "hash", &key)?
+        && let Some(s) = v.as_str()
+    {
+        return Ok(s.into());
     }
     let hash = hash_source(&path)?;
     store.put_cached(&source.source_id, "hash", &key, &serde_json::json!(hash))?;
@@ -74,9 +74,11 @@ pub fn title_key(path: &Path) -> String {
     static VERSION: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?i)(?:^|[ _.-])v(?:er(?:sion)?)?[ _.-]*\d+(?:[._]\d+)*").unwrap()
     });
+    static DOTTED: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?:^|[ _-])\d+\.\d+(?:\.\d+)*(?:$|[ _()-])").unwrap());
     static FORMAT: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(
-            r"(?i)printer[ _-]*friendly|print[ _-]*friendly|optimized[ _-]*pdf|full[ _-]*res",
+            r"(?i)printer[ _-]*friendly|print[ _-]*friendly|optimized[ _-]*pdf|full[ _-]*res|quick[ _-]*load",
         )
         .unwrap()
     });
@@ -84,6 +86,7 @@ pub fn title_key(path: &Path) -> String {
     let s = OLD.replace_all(&stem, "");
     let s = ID.replace(&s, "");
     let s = VERSION.replace_all(&s, " ");
+    let s = DOTTED.replace_all(&s, " ");
     normalized(&FORMAT.replace_all(&s, " "))
 }
 

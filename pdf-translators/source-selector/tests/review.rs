@@ -13,6 +13,24 @@ use tempfile::tempdir;
 struct Reader;
 
 #[test]
+fn user_can_defer_an_uninspected_group_without_claiming_it_is_convertible() {
+    let (_r, _w, mut db, sources, group, _evidence) = setup(&["book-v1.pdf", "book-v3.pdf"]);
+    let mut d = propose_decision(&group, &[], &sources, None);
+    d.actor_role = ActorRole::User;
+    d.actor = "gm".into();
+    d.rationale = "Defer until readable evidence is available".into();
+    db.save_decision(&d).unwrap();
+    let saved = db.current_decisions().unwrap();
+    assert_eq!(saved.len(), 1);
+    assert!(
+        saved[0]
+            .outcomes
+            .iter()
+            .all(|o| o.status == Status::NeedsReview)
+    );
+}
+
+#[test]
 fn split_packets_preserve_unicode_text_and_say_when_more_parts_are_required() {
     let (_r, _w, _db, sources, group, mut evidence) = setup(&["book.pdf"]);
     evidence[0].pages[0].text = "Ω revision evidence. ".repeat(1000);
@@ -217,7 +235,7 @@ fn exact_duplicates_prefer_explicit_baseline_and_reader_claims_require_real_quot
         role: ActorRole::Reader,
     };
     assert_eq!(
-        apply_reader_claims(&packets[0], &[claim.clone()], &evidence)
+        apply_reader_claims(&packets[0], std::slice::from_ref(&claim), &evidence)
             .unwrap()
             .len(),
         1

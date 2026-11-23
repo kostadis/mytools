@@ -162,19 +162,18 @@ fn metadata(doc: &Document) -> BTreeMap<String, Value> {
             }
         }
     }
-    if let Ok(catalog) = doc.catalog() {
-        if let Some(Object::Stream(s)) = catalog
+    if let Ok(catalog) = doc.catalog()
+        && let Some(Object::Stream(s)) = catalog
             .get(b"Metadata")
             .ok()
             .and_then(|o| resolve(doc, o, 0))
-        {
-            match s.get_plain_content_with_limit(1024 * 1024) {
-                Ok(bytes) => {
-                    out.insert("xmp".into(), json!(String::from_utf8_lossy(&bytes)));
-                }
-                Err(e) => {
-                    out.insert("xmp_error".into(), json!(e.to_string()));
-                }
+    {
+        match s.get_plain_content_with_limit(1024 * 1024) {
+            Ok(bytes) => {
+                out.insert("xmp".into(), json!(String::from_utf8_lossy(&bytes)));
+            }
+            Err(e) => {
+                out.insert("xmp_error".into(), json!(e.to_string()));
             }
         }
     }

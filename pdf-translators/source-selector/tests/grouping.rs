@@ -8,6 +8,26 @@ use std::fs;
 use tempfile::tempdir;
 
 #[test]
+fn bare_dotted_versions_and_quick_load_presentations_are_compared_not_selected() {
+    let root = tempdir().unwrap();
+    let work = tempdir().unwrap();
+    let dir = root.path().join("Publisher/Manual");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("2327454-Manual_of_the_Planes_1.0.2.pdf"), b"first").unwrap();
+    fs::write(
+        dir.join("2327454-Manual_of_the_Planes_1.1_(Quick_Load).pdf"),
+        b"different",
+    )
+    .unwrap();
+    let inv = scan_root(root.path()).unwrap();
+    let mut db = Store::open(&work.path().join("s.db")).unwrap();
+    db.upsert_inventory(&inv).unwrap();
+    let groups = build_groups(&inv.sources, &[], &mut db).unwrap();
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].source_ids.len(), 2);
+}
+
+#[test]
 fn absolute_snapshot_paths_outside_the_inventory_root_do_not_match_by_suffix() {
     let root = tempdir().unwrap();
     let work = tempdir().unwrap();

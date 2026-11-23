@@ -1,5 +1,9 @@
 # Batch conversion pipeline
 
+For the independent Rust workflow that selects current, distinct PDFs before
+Markdown conversion, see [source selection](docs/source-selection.md). Its
+manifest and review decisions do not modify this existing 5etools pipeline.
+
 How to convert a whole directory tree of PDFs to 5etools JSON, unattended and
 resumably — and how to recover when individual docs fail. This covers the four
 batch scripts (`batch/batch_convert.py`, `batch/batch_mistral_ocr.py`,

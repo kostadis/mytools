@@ -67,7 +67,15 @@ pub fn build_snapshot(store: &Store) -> Result<SelectionSnapshot> {
     let previous = store.current_decisions()?;
     let hints: Vec<Hint> = store.records("hints")?;
     let mut errors = inventory.errors.clone();
-    errors.extend(store.records::<String>("grouping_errors")?);
+    for kind in ["grouping_errors", "inspection_errors"] {
+        errors.extend(
+            store
+                .keyed_records::<String>(kind)?
+                .into_iter()
+                .filter(|(id, _)| sources.iter().any(|s| &s.source_id == id))
+                .map(|(_, error)| error),
+        );
+    }
     let mut decisions = vec![];
     let mut counts = BTreeMap::new();
     let mut baseline = vec![];
@@ -89,12 +97,12 @@ pub fn build_snapshot(store: &Store) -> Result<SelectionSnapshot> {
                         "source fingerprint changed; rescan".into(),
                     ));
                 }
-                if let Some(ev) = evidence.iter().find(|e| e.source_id == source.source_id) {
-                    if hash_source(&p)? != ev.sha256 {
-                        return Err(SelectionError::Invalid(
-                            "source bytes changed; reinspect".into(),
-                        ));
-                    }
+                if let Some(ev) = evidence.iter().find(|e| e.source_id == source.source_id)
+                    && hash_source(&p)? != ev.sha256
+                {
+                    return Err(SelectionError::Invalid(
+                        "source bytes changed; reinspect".into(),
+                    ));
                 }
                 Ok(())
             });

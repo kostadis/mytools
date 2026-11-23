@@ -67,6 +67,8 @@ pub fn scan_root(root: &Path) -> Result<InventoryResult> {
         )));
     }
     let root = root.canonicalize()?;
+    // An unreadable root cannot replace an established inventory with an empty scan.
+    drop(fs::read_dir(&root)?);
     let mut result = InventoryResult {
         root: root.clone(),
         started: chrono::Utc::now().to_rfc3339(),
@@ -163,8 +165,16 @@ fn walk(root: &Path, dir: &Path, result: &mut InventoryResult) {
             source_id,
             relative_path: relative,
             kind: source_kind,
-            publisher: parts.first().cloned().unwrap_or_default(),
-            product_folder: parts.get(1).cloned().unwrap_or_default(),
+            publisher: if parts.len() > 1 {
+                parts[0].clone()
+            } else {
+                String::new()
+            },
+            product_folder: if parts.len() > 2 {
+                parts[1].clone()
+            } else {
+                String::new()
+            },
             fingerprint: fp,
             read_error: fs::File::open(&path).err().map(|e| e.to_string()),
             baseline_established: false,

@@ -27,3 +27,26 @@ fn missing_extractor_reports_failure() {
             .is_err()
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn extractor_timeout_and_nonzero_exit_are_explicit_errors() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempdir().unwrap();
+    let path = root.path().join("book.pdf");
+    common::pdf(&path, "text", "", false);
+    let script = root.path().join("extractor");
+    std::fs::write(&script, "#!/bin/sh\nexec sleep 3\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let start = std::time::Instant::now();
+    let e = PopplerExtractor::new(script.clone(), Duration::from_millis(50))
+        .extract(&path, &[1])
+        .unwrap_err();
+    assert!(e.to_string().contains("timed out"));
+    assert!(start.elapsed() < Duration::from_secs(1));
+    std::fs::write(&script, "#!/bin/sh\necho broken-extractor >&2\nexit 3\n").unwrap();
+    let e = PopplerExtractor::new(script, Duration::from_secs(1))
+        .extract(&path, &[1])
+        .unwrap_err();
+    assert!(e.to_string().contains("broken-extractor"));
+}
