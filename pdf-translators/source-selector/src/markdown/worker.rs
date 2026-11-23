@@ -45,6 +45,8 @@ struct Completion {
     engine_id: String,
     page_count: u32,
     ranges: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    extracted_at: Option<String>,
     checksum: String,
 }
 fn completion_path(output: &Path, ready: &Ready, engine: &Engine) -> PathBuf {
@@ -53,6 +55,11 @@ fn completion_path(output: &Path, ready: &Ready, engine: &Engine) -> PathBuf {
         .join(&ready.sha256)
         .join(&engine.id)
         .join(format!("{}.json", ready.page_count))
+}
+pub fn extracted_at(output: &Path, ready: &Ready, engine: &Engine) -> Option<String> {
+    read_json::<Completion>(&completion_path(output, ready, engine))
+        .ok()
+        .and_then(|c| c.extracted_at)
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorkerResult {
@@ -253,6 +260,11 @@ pub fn run(path: &Path) -> Result<()> {
                 .iter()
                 .map(|c| c.checksum.clone())
                 .collect(),
+            extracted_at: if result.extracted_ranges > 0 {
+                Some(chrono::Utc::now().to_rfc3339())
+            } else {
+                extracted_at(&job.output, &job.ready, &job.engine)
+            },
             checksum: String::new(),
         };
         completion.checksum = digest_json(&completion);

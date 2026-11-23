@@ -11,15 +11,25 @@ pub struct Publication {
     pub pending: bool,
     pub published_snapshot: Option<String>,
     pub pending_works: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adjacent: Option<adjacent::AdjacentReport>,
 }
 /// Always reread the latest policy under its lock. A completed old job supplies
 /// reusable bytes, never authority to restore its old selection.
 pub fn publish(output: &Path, engine: &Engine) -> Result<Publication> {
+    publish_with_destination(output, engine, None)
+}
+pub fn publish_with_destination(
+    output: &Path,
+    engine: &Engine,
+    adjacent_session: Option<&mut adjacent::Session>,
+) -> Result<Publication> {
     let _guard = lock(output, "selection.lock")?;
     let snapshot = selection::load_current(output)?;
     let job_store = crate::store::Store::open_readonly(&output.join("markdown.db")).ok();
     let mut catalog = vec![];
     let mut books = vec![];
+    let mut rendered = vec![];
     let mut seen = BTreeSet::new();
     for ready in &snapshot.ready {
         safe_id(&ready.work_id)?;
@@ -95,6 +105,21 @@ pub fn publish(output: &Path, engine: &Engine) -> Result<Publication> {
                 md.push_str(&escape(&p.text));
                 md.push_str("</pre>\n");
             }
+            let quality =
+                serde_json::json!({"empty_pages":empty,"sparse_pages":sparse,"warnings":warnings});
+            md = render::annotate(
+                &md,
+                ready,
+                &snapshot,
+                engine,
+                &quality,
+                worker::extracted_at(output, ready, engine),
+            )?;
+            rendered.push(adjacent::Book {
+                ready: ready.clone(),
+                markdown: md.clone(),
+                metadata: metadata.clone(),
+            });
             let artifact = digest_json(&(1, &metadata, &md));
             let dir = output.join("artifacts").join(&artifact);
             ensure_bytes(&dir.join("book.md"), md.as_bytes())?;
@@ -126,11 +151,36 @@ pub fn publish(output: &Path, engine: &Engine) -> Result<Publication> {
             catalog.push(serde_json::json!({"work":ready,"status":status,"error":state["error"],"missing_ranges":missing,"completion_attested":false}));
         }
     }
+    let adjacent_report = if let Some(session) = adjacent_session {
+        let states = catalog
+            .iter()
+            .map(|v| {
+                (
+                    v["work"]["work_id"].as_str().unwrap().to_string(),
+                    v.clone(),
+                )
+            })
+            .collect();
+        let report = session.sync(&snapshot, engine, &rendered, &states);
+        books.retain(|(id, _)| report.published.contains(id));
+        for entry in &mut catalog {
+            let id = entry["work"]["work_id"].as_str().unwrap();
+            if !report.published.iter().any(|v| v == id) {
+                let state=report.states.get(id).cloned().unwrap_or_else(||serde_json::json!({"status":"pending","error":"adjacent publication not confirmed"}));
+                entry["status"] = state["status"].clone();
+                entry["error"] = state["error"].clone();
+            }
+        }
+        Some(report)
+    } else {
+        None
+    };
     let mut result = Publication {
         selection_id: snapshot.snapshot_id.clone(),
         generation: None,
         books: books.len(),
-        pending: books.len() < snapshot.ready.len(),
+        pending: books.len() < snapshot.ready.len()||adjacent_report.as_ref().is_some_and(|r|!r.complete),
+        adjacent:adjacent_report,
         published_snapshot:read_json::<Value>(&output.join("corpus/current/catalog.json")).ok().and_then(|c|c["selection_id"].as_str().map(str::to_string)),
         pending_works:catalog.iter().filter(|v|v["status"]!="searchable_with_flags").map(|v|serde_json::json!({"work_id":v["work"]["work_id"],"source_id":v["work"]["source_id"],"status":v["status"],"error":v["error"],"missing_ranges":v["missing_ranges"]})).collect(),
     };

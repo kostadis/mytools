@@ -18,6 +18,9 @@ use std::{
 
 #[derive(Clone, Debug, Args)]
 pub struct Options {
+    /// Publish Markdown and current-documents.json beside selected PDFs.
+    #[arg(long)]
+    pub publish_next_to_source: bool,
     #[arg(long)]
     pub output: PathBuf,
     #[arg(long, default_value_t = 2)]
@@ -199,12 +202,24 @@ pub fn run(options: Options) -> Result<Report> {
         }
     }
     let engine = engine(&options)?;
+    let mut adjacent = if options.publish_next_to_source {
+        Some(adjacent::Session::new(&output, &snapshot)?)
+    } else {
+        None
+    };
     let mut store = Store::open(&output.join("markdown.db"))?;
     let mut queue = VecDeque::new();
     let mut report = Report {
         selection_id: snapshot.snapshot_id.clone(),
         ..Report::default()
     };
+    if adjacent.is_some() {
+        report.publication = Some(publication::publish_with_destination(
+            &output,
+            &engine,
+            adjacent.as_mut(),
+        )?);
+    }
     for ready in &snapshot.ready {
         let id = digest_json(&(&ready.sha256, &engine.id, ready.page_count));
         let state: State = store
@@ -347,7 +362,11 @@ pub fn run(options: Options) -> Result<Report> {
                 "{}: {} ({} reused, {} extracted ranges)",
                 item.job.ready.title, result.status, result.reused_ranges, result.extracted_ranges
             );
-            report.publication = Some(publication::publish(&output, &engine)?);
+            report.publication = Some(publication::publish_with_destination(
+                &output,
+                &engine,
+                adjacent.as_mut(),
+            )?);
         }
         if heartbeat.elapsed() >= Duration::from_secs(30) {
             eprintln!(
@@ -370,7 +389,11 @@ pub fn run(options: Options) -> Result<Report> {
             std::thread::sleep(Duration::from_millis(50));
         }
     }
-    report.publication = Some(publication::publish(&output, &engine)?);
+    report.publication = Some(publication::publish_with_destination(
+        &output,
+        &engine,
+        adjacent.as_mut(),
+    )?);
     report.published_books = report.publication.as_ref().unwrap().books;
     write_json(&output.join("last-run.json"), &report)?;
     Ok(report)

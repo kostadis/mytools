@@ -16,6 +16,26 @@ rg -i 'search phrase' "$OUTPUT/corpus/current/books" --glob '*.md'
 
 Both state and output must be outside the PDF library. Output is a dedicated managed directory: its contents must not be symlinks, except the managed `corpus/current` view. Keep private source caches and generated book text out of Git.
 
+## Publish beside the PDFs
+
+Add `--publish-next-to-source` to use the integrated source-adjacent workflow:
+
+```bash
+"$SELECT" markdown-convert --output "$OUTPUT" --publish-next-to-source
+```
+
+For each selected PDF, this writes a sibling with the same filename stem and `.md` extension, plus `current-documents.json` in that directory. The Markdown includes a clickable relative PDF link, source hash, work/source and selection identity, converter/quality provenance and physical page headings. Full extraction time is retained when known; preexisting checkpoints without a recorded time expose it as unknown rather than inventing an extraction date.
+
+The directory record can contain multiple works and distinguishes pending, published, empty/OCR, extraction failures, changed sources and output conflicts. Only confirmed current publications enter this mode's local `corpus/current/books` view; that local copy uses a source link appropriate to its own location. A plain recursive search over all sibling Markdown also finds retained older files, so use the current view or a manifest-aware index for current-only results. No historical database or new search index is created.
+
+The publisher preserves unrecognized Markdown, user-edited generated files, foreign/invalid directory records and PDF bytes. Such cases become output conflicts while independent directories continue. Existing directory records and source outputs are checksum-checked; matching names alone do not establish ownership. A hidden `.current-documents.lock` coordinates each directory. Durable ownership receipts and publication intents remain under `$OUTPUT/adjacent/`, outside the source library. Keep one output/coordinator namespace per managed library.
+
+After interruption, rerun the same command. An intent written before the Markdown rename allows the directory record to finish without new extraction. Receipts survive current-entry removal and support reselection or revised PDFs at the same filename. If private ownership state is lost, current recognized records can rebuild proof of ownership; unlisted old Markdown without surviving proof is preserved as a conflict.
+
+Manifest discovery also checks directories whose last PDF disappeared. Complete coverage allows obsolete managed entries to be removed from current records without deleting files. Incomplete scan/discovery coverage retains uncertain entries with their old selection identity, records partial reconciliation, and excludes them from newly confirmed current results. Inspect `publication.adjacent` and `publication.pending` in `last-run.json`, especially `errors` and per-work `states`. The previous good local view is retained explicitly as pending when no new current documents can publish.
+
+Without the flag, the existing local-only behavior remains unchanged: the command writes no source-directory outputs. Workers and extraction caches always stay private; only the coordinator publishes sibling files. The workflow assumes Drive is mounted and writable and uses same-directory atomic rename and flush operations for each record, without claiming a cross-directory or cross-machine transaction.
+
 ## Selection
 
 `markdown-select` reads the existing scan database without changing legacy decisions, samples, or exports. It probes PDF metadata independently of the five-page inspection budget. For large PDFs this can still involve substantial PDF I/O. Metadata is cached by content hash. The selection snapshot keeps all alternatives and raw date evidence; its separate queue does not claim older files are obsolete.

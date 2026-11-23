@@ -1,8 +1,11 @@
 //! Additive policy selection and native-text search artifacts.
+pub mod adjacent;
 pub mod conversion;
 pub mod dates;
 pub mod metadata;
+pub mod progress;
 pub mod publication;
+pub mod render;
 pub mod selection;
 pub mod worker;
 use crate::{

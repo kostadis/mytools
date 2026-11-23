@@ -52,6 +52,7 @@ pub fn select(store: &Store, output: &Path, provenance: Option<&Path>) -> Result
         ready: vec![],
         records: vec![],
     };
+    let progress = super::progress::Progress::new("metadata selection");
     for group in store.records::<Group>("groups")? {
         let members: Vec<_> = group
             .source_ids
@@ -71,7 +72,11 @@ pub fn select(store: &Store, output: &Path, provenance: Option<&Path>) -> Result
             selected_source_id: None,
             candidates: members
                 .iter()
-                .map(|s| metadata::probe(&inv.root, s, store, &mut cache))
+                .map(|s| {
+                    let candidate = metadata::probe(&inv.root, s, store, &mut cache);
+                    progress.tick();
+                    candidate
+                })
                 .collect(),
         };
         let authority: Vec<_> = decisions
