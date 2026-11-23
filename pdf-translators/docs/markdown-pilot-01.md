@@ -35,8 +35,15 @@ rg -i 'Random Encounter Rolls|Parent’s Vocation' "$PILOT/corpus/current/books"
 - Rehashed all 18 staged candidate files against the original pilot manifest; all matched.
 - Confirmed resume reports four published books, five reused ranges, zero extracted ranges, zero failures and no pending publication.
 - Rust checks covered internal dates, authority/baseline preservation, coarse/qualified groups, source hash binding, full-page conversion, range corruption repair, failure isolation, policy-only assembly, and stale-worker publication. Operator instructions are in [searchable-markdown.md](searchable-markdown.md).
+- Final verification: **95 Rust tests passed**, plus the explicitly invoked installed-Poppler test; formatting, strict Clippy, and the locked release build passed.
 
-Detailed local evidence: `source-selection-data/markdown-pilot-01/{pilot-run-01.json,pilot-run-02.json,verification.json}`; coordinator and per-job logs are retained alongside them.
+Detailed final local evidence: `source-selection-data/markdown-pilot-01/{final-selection.json,final-run-01.json,final-run-02.json,verification.json}`; coordinator and per-job logs are retained alongside them. Earlier `pilot-run-*` records remain historical. After the final review, the extraction-cache contract changed once to require source verification before range commits and a checksummed full-completion attestation. The final release run extracted five ranges under that contract; its rerun reused all five.
+
+## Review and recovery checks
+
+A fresh Sol review identified source-validation, hold-lineage, date-precision, component-boundary, batching and publication-recovery faults. Regression tests reproduced the findings against the earlier commit; one correction pass made them pass alongside the whole suite. The fixes include hash-bound holds after renames, independent approved works beside a hold, language subfolders and alias bridges, empty/fractional/weakly zoned dates, staged-source mutation, accessible-original changes despite a cache, exact page delimiters, extractor termination at job deadlines, interrupted/corrupt artifacts and pointers, byte-safe Unix filenames, and explicit failed/missing-range catalog states. The corrected release was then used for the final pilot and resume verification above.
+
+Review boundaries follow the approved milestone: native-text diagnostics do not validate OCR or layout reconstruction; library-wide throughput/storage tuning remains unmeasured; publication targets Linux; archives, search-index promotion and 5etools encoding remain later work. No review finding within the pilot scope was deferred.
 
 ## Interpretation
 

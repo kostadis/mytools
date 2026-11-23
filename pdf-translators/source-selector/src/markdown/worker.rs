@@ -38,6 +38,22 @@ pub struct Chunk {
     pub warnings: Vec<String>,
     pub checksum: String,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Completion {
+    schema_version: u32,
+    sha256: String,
+    engine_id: String,
+    page_count: u32,
+    ranges: Vec<String>,
+    checksum: String,
+}
+fn completion_path(output: &Path, ready: &Ready, engine: &Engine) -> PathBuf {
+    output
+        .join("cache/completions")
+        .join(&ready.sha256)
+        .join(&engine.id)
+        .join(format!("{}.json", ready.page_count))
+}
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorkerResult {
     pub status: String,
@@ -78,6 +94,27 @@ pub fn read_chunk(
     Ok(c)
 }
 pub fn all_chunks(output: &Path, ready: &Ready, engine: &Engine) -> Result<Vec<Chunk>> {
+    let chunks = raw_chunks(output, ready, engine)?;
+    let mut completion: Completion = read_json(&completion_path(output, ready, engine))?;
+    let checksum = std::mem::take(&mut completion.checksum);
+    if completion.schema_version != 1
+        || completion.sha256 != ready.sha256
+        || completion.engine_id != engine.id
+        || completion.page_count != ready.page_count
+        || completion.ranges
+            != chunks
+                .iter()
+                .map(|c| c.checksum.clone())
+                .collect::<Vec<_>>()
+        || digest_json(&completion) != checksum
+    {
+        return Err(SelectionError::Invalid(
+            "completion attestation does not match verified ranges".into(),
+        ));
+    }
+    Ok(chunks)
+}
+fn raw_chunks(output: &Path, ready: &Ready, engine: &Engine) -> Result<Vec<Chunk>> {
     let mut chunks = vec![];
     for first in (1..=ready.page_count).step_by(engine.chunk_pages as usize) {
         let last = ready.page_count.min(first + engine.chunk_pages - 1);
@@ -86,6 +123,11 @@ pub fn all_chunks(output: &Path, ready: &Ready, engine: &Engine) -> Result<Vec<C
     Ok(chunks)
 }
 fn stage(job: &Job) -> Result<PathBuf> {
+    if live_source_matches(&job.source_root, &job.ready)? == Some(false) {
+        return Err(SelectionError::Invalid(
+            "accessible original changed; rescan/reselect".into(),
+        ));
+    }
     let dest = job
         .output
         .join("cache/sources")
@@ -155,6 +197,11 @@ pub fn run(path: &Path) -> Result<()> {
                     job.ready.source_id, job.ready.page_count
                 );
                 let pages = extractor.extract(&path, &(first..=last).collect::<Vec<_>>())?;
+                if hash_source(&path)? != job.ready.sha256 {
+                    return Err(SelectionError::Invalid(
+                        "cached source changed during range extraction".into(),
+                    ));
+                }
                 if pages.iter().map(|p| p.page).collect::<Vec<_>>()
                     != (first..=last).collect::<Vec<_>>()
                 {
@@ -197,6 +244,22 @@ pub fn run(path: &Path) -> Result<()> {
                 "cached source changed during extraction".into(),
             ));
         }
+        let mut completion = Completion {
+            schema_version: 1,
+            sha256: job.ready.sha256.clone(),
+            engine_id: job.engine.id.clone(),
+            page_count: job.ready.page_count,
+            ranges: raw_chunks(&job.output, &job.ready, &job.engine)?
+                .iter()
+                .map(|c| c.checksum.clone())
+                .collect(),
+            checksum: String::new(),
+        };
+        completion.checksum = digest_json(&completion);
+        write_json(
+            &completion_path(&job.output, &job.ready, &job.engine),
+            &completion,
+        )?;
         result.status = if result.text_pages == 0 {
             "needs_ocr_or_visual_review"
         } else {

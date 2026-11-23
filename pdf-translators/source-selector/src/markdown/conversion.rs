@@ -96,18 +96,61 @@ pub fn engine(options: &Options) -> Result<Engine> {
         chunk_pages: options.chunk_pages,
         timeout_secs: options.timeout_secs,
     };
-    engine.id = digest_json(&(1, &engine));
+    engine.id = digest_json(&(2, &engine));
     Ok(engine)
 }
-fn stop(child: &mut Child) {
+fn stop(mut child: Child) {
+    #[cfg(target_os = "linux")]
+    {
+        // Extractors own a separate process group so their pipe timeout can
+        // kill wrapper descendants. Capture the entire worker tree before
+        // terminating any parent, then stop every owned group/process.
+        let mut parents = std::collections::BTreeMap::new();
+        if let Ok(entries) = fs::read_dir("/proc") {
+            for e in entries.flatten() {
+                if let Ok(pid) = e.file_name().to_string_lossy().parse::<u32>()
+                    && let Ok(stat) = fs::read_to_string(e.path().join("stat"))
+                    && let Some((_, fields)) = stat.rsplit_once(") ")
+                    && let Some(ppid) = fields
+                        .split_whitespace()
+                        .nth(1)
+                        .and_then(|p| p.parse::<u32>().ok())
+                {
+                    parents.insert(pid, ppid);
+                }
+            }
+        }
+        let mut owned = vec![child.id()];
+        let mut i = 0;
+        while i < owned.len() {
+            let parent = owned[i];
+            for (&pid, &ppid) in &parents {
+                if ppid == parent && !owned.contains(&pid) {
+                    owned.push(pid);
+                }
+            }
+            i += 1;
+        }
+        for pid in owned.iter().rev() {
+            let _ = Command::new("/bin/kill")
+                .args(["-KILL", "--", &format!("-{pid}"), &pid.to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
     #[cfg(unix)]
     {
-        let _ = Command::new("kill")
+        let _ = Command::new("/bin/kill")
             .args(["-KILL", "--", &format!("-{}", child.id())])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status();
     }
     let _ = child.kill();
-    let _ = child.wait();
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
 }
 pub fn run(options: Options) -> Result<Report> {
     if options.workers == 0
@@ -141,6 +184,20 @@ pub fn run(options: Options) -> Result<Report> {
         crate::export::validate_work_dir(&snapshot.source_root, &output)?;
     }
     let _coordinator = lock(&output, "conversion.lock")?;
+    if let Ok(entries) = fs::read_dir(output.join("corpus")) {
+        for entry in entries {
+            let entry = entry?;
+            if entry
+                .file_name()
+                .to_str()
+                .and_then(|s| s.strip_prefix(".current-"))
+                .is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+                && entry.file_type()?.is_symlink()
+            {
+                fs::remove_file(entry.path())?;
+            }
+        }
+    }
     let engine = engine(&options)?;
     let mut store = Store::open(&output.join("markdown.db"))?;
     let mut queue = VecDeque::new();
@@ -148,7 +205,7 @@ pub fn run(options: Options) -> Result<Report> {
         selection_id: snapshot.snapshot_id.clone(),
         ..Report::default()
     };
-    for ready in snapshot.ready.iter().take(options.limit) {
+    for ready in &snapshot.ready {
         let id = digest_json(&(&ready.sha256, &engine.id, ready.page_count));
         let state: State = store
             .get_cached(&id, "job", "v1")?
@@ -184,6 +241,11 @@ pub fn run(options: Options) -> Result<Report> {
             state,
         ));
     }
+    // Exhaust outstanding work before spending a bounded batch validating
+    // already-completed books. Failed/leased jobs never consume its prefix.
+    let mut pending: Vec<_> = queue.drain(..).collect();
+    pending.sort_by_key(|(j, _)| worker::all_chunks(&output, &j.ready, &engine).is_ok());
+    queue = pending.into_iter().take(options.limit).collect();
     let mut active: Vec<Running> = vec![];
     let mut heartbeat = Instant::now();
     while !queue.is_empty() || !active.is_empty() {
@@ -244,7 +306,7 @@ pub fn run(options: Options) -> Result<Report> {
             }
             let mut item = active.swap_remove(i);
             if timeout {
-                stop(&mut item.child);
+                stop(item.child);
             }
             let result: WorkerResult = if !timeout && exit.is_some_and(|s| s.success()) {
                 read_json(&output.join("results").join(format!("{}.json", item.job.id)))

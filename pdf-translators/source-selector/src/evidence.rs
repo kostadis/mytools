@@ -129,9 +129,9 @@ impl PopplerExtractor {
             .map_err(|e| SelectionError::Invalid(format!("non-UTF-8 extraction: {e}")))?;
         let parts: Vec<_> = text.split('\u{c}').collect();
         let count = (last - first + 1) as usize;
-        if parts.len() < count {
+        if parts.len() != count + 1 || parts.last() != Some(&"") {
             return Err(SelectionError::Invalid(
-                "extractor returned fewer pages than requested".into(),
+                "extractor page delimiters do not match requested range".into(),
             ));
         }
         Ok((0..count)

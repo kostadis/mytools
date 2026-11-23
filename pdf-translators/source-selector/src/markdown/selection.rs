@@ -78,9 +78,15 @@ pub fn select(store: &Store, output: &Path, provenance: Option<&Path>) -> Result
             .iter()
             .filter(|d| {
                 matches!(d.actor_role, ActorRole::User | ActorRole::Sol)
-                    && d.outcomes
+                    && (d
+                        .outcomes
                         .iter()
                         .any(|o| group.source_ids.contains(&o.source_id))
+                        || record.candidates.iter().any(|c| {
+                            c.sha256
+                                .as_ref()
+                                .is_some_and(|h| d.source_hashes.values().any(|v| v == h))
+                        }))
             })
             .collect();
         let baseline = members.iter().any(|s| {
@@ -100,10 +106,6 @@ pub fn select(store: &Store, output: &Path, provenance: Option<&Path>) -> Result
                 if adopted.iter().any(|a| {
                     a.group_id == d.group_id && a.membership_digest == group.membership_digest
                 }) && d.membership_digest == group.membership_digest
-                    && !d
-                        .outcomes
-                        .iter()
-                        .any(|o| matches!(o.status, Status::NeedsReview | Status::Unreadable))
                 {
                     choices = d
                         .outcomes
@@ -291,12 +293,12 @@ fn automatic(candidates: &[Candidate]) -> std::result::Result<String, String> {
         let key = title_key(&c.source.relative_path);
         presentation_key(Path::new(&format!("{key}.pdf")))
     };
-    let folders: BTreeSet<_> = reps
+    let folders: BTreeSet<_> = candidates
         .iter()
         .map(|c| (&c.source.publisher, &c.source.product_folder))
         .collect();
-    let keys: BTreeSet<_> = reps.iter().map(family).collect();
-    let qualifiers: BTreeSet<_> = reps
+    let keys: BTreeSet<_> = candidates.iter().map(|c| family(&c)).collect();
+    let qualifiers: BTreeSet<_> = candidates
         .iter()
         .map(|c| protected(&c.source.relative_path))
         .collect();
@@ -342,12 +344,7 @@ fn protected(path: &Path) -> Vec<String> {
     static Q: LazyLock<regex::Regex> = LazyLock::new(|| {
         regex::Regex::new(r"(?i)(?:d[&_ ]?d[ _-]*\d(?:\.\d)?|\b(?:vol(?:ume)?|book|part)[ _-]*\d+|\b\d+(?:e|nd[ _-]*edition|th[ _-]*edition)\b|\b(?:english|french|german|italian|spanish|fr|en|ita|pf2|pathfinder)\b)").unwrap()
     });
-    let raw = path
-        .file_stem()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .replace('_', " ")
-        .to_lowercase();
+    let raw = path.to_string_lossy().replace('_', " ").to_lowercase();
     Q.find_iter(&raw)
         .map(|m| m.as_str().replace([' ', '-'], ""))
         .collect()

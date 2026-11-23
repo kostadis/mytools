@@ -26,18 +26,19 @@ pub struct DateEvidence {
 fn parse(field: &str, raw: &str) -> std::result::Result<Stamp, String> {
     if !raw.starts_with("D:") && raw.contains('T') {
         let d = DateTime::parse_from_rfc3339(raw).map_err(|_| format!("{field}:invalid_date"))?;
-        let width = if raw.split('T').nth(1).is_some_and(|s| s.contains('.')) {
-            1
-        } else {
-            1000
-        };
+        let fraction = raw
+            .split('T')
+            .nth(1)
+            .and_then(|s| s.split_once('.'))
+            .map(|(_, s)| s.chars().take_while(|c| c.is_ascii_digit()).count());
+        let width = fraction.map_or(1000, |n| 10i64.pow(3 - n.min(3) as u32));
         return Ok(Stamp {
             field: field.into(),
             raw: raw.into(),
             start_ms: d.timestamp_millis(),
             end_ms: d.timestamp_millis() + width,
             utc: d.with_timezone(&chrono::Utc).to_rfc3339(),
-            precision: if width == 1 { "fractional" } else { "second" }.into(),
+            precision: fraction.map_or_else(|| "second".into(), |n| format!("fractional_{n}")),
             offset_seconds: Some(d.offset().local_minus_utc()),
             parts: vec![
                 d.year(),
@@ -168,7 +169,10 @@ fn agree(
         || parsed
             .iter()
             .filter(|s| s.offset_seconds.is_none())
-            .any(|s| !s.parts.iter().zip(&best.parts).all(|(a, b)| a == b))
+            .any(|s| {
+                s.parts.len() > best.parts.len()
+                    || !s.parts.iter().zip(&best.parts).all(|(a, b)| a == b)
+            })
     {
         flags.push(format!("{}:conflicting_representations", values[0].0));
         return None;
@@ -205,10 +209,8 @@ pub fn resolve(raw: &BTreeMap<String, Value>) -> DateEvidence {
             Ok(doc) => {
                 for node in doc.descendants().filter(|n| n.is_element()) {
                     let mut fields = vec![];
-                    if node.tag_name().namespace() == Some("http://ns.adobe.com/xap/1.0/")
-                        && let Some(v) = node.text()
-                    {
-                        fields.push((node.tag_name().name(), v));
+                    if node.tag_name().namespace() == Some("http://ns.adobe.com/xap/1.0/") {
+                        fields.push((node.tag_name().name(), node.text().unwrap_or("")));
                     }
                     for a in node
                         .attributes()

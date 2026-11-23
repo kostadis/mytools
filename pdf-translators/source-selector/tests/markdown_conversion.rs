@@ -66,6 +66,289 @@ fn files(root: &Path, ext: &str) -> Vec<PathBuf> {
     out
 }
 #[test]
+fn interrupted_or_corrupt_artifacts_rebuild_from_verified_ranges() {
+    let (_root, _state, out) = fixture("Verified amber dragon text.", 2);
+    convert(out.path(), &[]);
+    let catalog: Value =
+        serde_json::from_slice(&fs::read(out.path().join("corpus/current/catalog.json")).unwrap())
+            .unwrap();
+    let artifact = out
+        .path()
+        .join("artifacts")
+        .join(catalog["books"][0]["artifact"].as_str().unwrap());
+    fs::remove_file(artifact.join("book.json")).unwrap();
+    fs::remove_dir_all(out.path().join("corpus")).unwrap();
+    let r = convert(out.path(), &[]);
+    assert_eq!(r["extracted_ranges"], 0);
+    assert_eq!(r["published_books"], 1);
+    fs::write(artifact.join("book.md"), "corrupt artifact").unwrap();
+    let current = files(&out.path().join("corpus/current/books"), "md")[0].clone();
+    fs::write(&current, "corrupt generation").unwrap();
+    let r = convert(out.path(), &[]);
+    assert_eq!(r["extracted_ranges"], 0);
+    assert!(
+        fs::read_to_string(current)
+            .unwrap()
+            .contains("Verified amber dragon")
+    );
+}
+#[cfg(unix)]
+#[test]
+fn source_mutation_during_extraction_never_publishes_or_caches_invalid_ranges() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_root, _state, out) = fixture("Frozen searchable amber dragon words.", 2);
+    let wrapper = out.path().join("extractor");
+    fs::write(&wrapper,"#!/bin/sh\n/usr/bin/pdftotext \"$@\" || exit $?\nif [ \"$1\" != '-v' ]; then for arg do case \"$arg\" in *.pdf) printf '\\n' >> \"$arg\";; esac; done; fi\n").unwrap();
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+    let r = convert(out.path(), &["--pdftotext", wrapper.to_str().unwrap()]);
+    assert_eq!(r["failed"], 1);
+    assert_eq!(r["published_books"], 0);
+    let cache = out.path().join("cache/pages");
+    assert!(!cache.exists() || files(&cache, "json").is_empty());
+}
+#[cfg(target_os = "linux")]
+#[test]
+fn job_deadline_terminates_the_separate_extractor_process_group() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_root, _state, out) = fixture("Frozen searchable amber dragon words.", 1);
+    let wrapper = out.path().join("extractor");
+    let marker = out.path().join("extractor.pid");
+    fs::write(&wrapper,format!("#!/bin/sh\nif [ \"$1\" = '-v' ]; then exec /usr/bin/pdftotext \"$@\"; fi\necho $$ > '{}'\nsleep 60\n",marker.display())).unwrap();
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+    let r = convert(
+        out.path(),
+        &[
+            "--pdftotext",
+            wrapper.to_str().unwrap(),
+            "--timeout-secs",
+            "30",
+            "--job-timeout-secs",
+            "1",
+        ],
+    );
+    assert_eq!(r["failed"], 1);
+    let pid = fs::read_to_string(marker).unwrap().trim().to_string();
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let alive = fs::read_to_string(format!("/proc/{pid}/stat"))
+        .is_ok_and(|s| !s.rsplit_once(") ").unwrap().1.starts_with("Z "));
+    let _ = Command::new("/bin/kill")
+        .args(["-KILL", "--", &format!("-{pid}")])
+        .output();
+    assert!(!alive, "extractor outlived job deadline");
+}
+#[test]
+fn bounded_batches_reach_unfinished_books_and_cached_original_changes_defer() {
+    let (root, state, out) = fixture("Original amber dragon reference.", 1);
+    let dir = root.path().join("Pub/Other");
+    fs::create_dir_all(&dir).unwrap();
+    common::pdf(
+        &dir.join("Other.pdf"),
+        "Independent silver dragon reference.",
+        "D:20210101000000Z",
+        false,
+    );
+    assert!(
+        cli(&[
+            "--work-dir",
+            state.path().to_str().unwrap(),
+            "scan",
+            "--root",
+            root.path().to_str().unwrap()
+        ])
+        .status
+        .success()
+    );
+    selection::select(
+        &Store::open_readonly(&state.path().join("selection.db")).unwrap(),
+        out.path(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(convert(out.path(), &["--limit", "1"])["published_books"], 1);
+    assert_eq!(convert(out.path(), &["--limit", "1"])["published_books"], 2);
+    common::pdf(
+        &root.path().join("Pub/Book/Book.pdf"),
+        "Changed original after successful cache",
+        "D:20230101000000Z",
+        false,
+    );
+    let r = convert(out.path(), &[]);
+    assert_eq!(r["failed"], 1);
+    assert_eq!(r["published_books"], 1);
+    assert_eq!(
+        r["publication"]["pending_works"][0]["status"],
+        "source_changed"
+    );
+}
+#[test]
+fn cached_source_cannot_mask_accessible_original_change_and_old_view_is_explicit() {
+    let (root, _state, out) = fixture("Original amber dragon.", 1);
+    let first = convert(out.path(), &[]);
+    let pointer = fs::read_link(out.path().join("corpus/current")).unwrap();
+    common::pdf(
+        &root.path().join("Pub/Book/Book.pdf"),
+        "Changed original after cache exists.",
+        "D:20230101000000Z",
+        false,
+    );
+    let r = convert(out.path(), &[]);
+    assert_eq!(r["failed"], 1);
+    assert_eq!(r["published_books"], 0);
+    assert_eq!(
+        r["publication"]["published_snapshot"],
+        first["selection_id"]
+    );
+    assert_eq!(
+        r["publication"]["pending_works"][0]["status"],
+        "source_changed"
+    );
+    assert_eq!(
+        fs::read_link(out.path().join("corpus/current")).unwrap(),
+        pointer
+    );
+}
+#[test]
+fn existing_artifact_and_generation_bytes_are_checked_before_reuse() {
+    let (_root, _state, out) = fixture("Verified amber dragon.", 1);
+    convert(out.path(), &[]);
+    let catalog: Value =
+        serde_json::from_slice(&fs::read(out.path().join("corpus/current/catalog.json")).unwrap())
+            .unwrap();
+    let artifact = out
+        .path()
+        .join("artifacts")
+        .join(catalog["books"][0]["artifact"].as_str().unwrap());
+    let book = files(&out.path().join("corpus/current/books"), "md")[0].clone();
+    fs::write(artifact.join("book.md"), "damaged artifact").unwrap();
+    fs::write(&book, "damaged generation").unwrap();
+    convert(out.path(), &[]);
+    assert!(
+        fs::read_to_string(book)
+            .unwrap()
+            .contains("Verified amber dragon")
+    );
+}
+#[cfg(unix)]
+#[test]
+fn non_utf8_path_preserves_byte_safe_front_matter() {
+    use std::os::unix::ffi::OsStringExt;
+    let (root, state, out) = fixture("Amber dragon.", 1);
+    let dir = root.path().join("Pub/Other");
+    fs::create_dir_all(&dir).unwrap();
+    common::pdf(
+        &dir.join(std::ffi::OsString::from_vec(b"other\xff.pdf".to_vec())),
+        "Silver dragon.",
+        "D:20210101000000Z",
+        false,
+    );
+    assert!(
+        cli(&[
+            "--work-dir",
+            state.path().to_str().unwrap(),
+            "scan",
+            "--root",
+            root.path().to_str().unwrap()
+        ])
+        .status
+        .success()
+    );
+    selection::select(
+        &Store::open_readonly(&state.path().join("selection.db")).unwrap(),
+        out.path(),
+        None,
+    )
+    .unwrap();
+    let r = convert(out.path(), &[]);
+    assert_eq!(r["published_books"], 2);
+    assert!(
+        files(&out.path().join("corpus/current/books"), "md")
+            .iter()
+            .any(|f| fs::read_to_string(f).unwrap().contains("unix_bytes"))
+    );
+}
+#[cfg(unix)]
+#[test]
+fn abandoned_pointer_is_recovered_and_non_utf8_book_does_not_abort_batch() {
+    use std::os::unix::ffi::OsStringExt;
+    let (root, state, out) = fixture("Amber dragon.", 1);
+    let dir = root.path().join("Pub/Other");
+    fs::create_dir_all(&dir).unwrap();
+    common::pdf(
+        &dir.join(std::ffi::OsString::from_vec(b"other\xff.pdf".to_vec())),
+        "Silver dragon.",
+        "D:20210101000000Z",
+        false,
+    );
+    assert!(
+        cli(&[
+            "--work-dir",
+            state.path().to_str().unwrap(),
+            "scan",
+            "--root",
+            root.path().to_str().unwrap()
+        ])
+        .status
+        .success()
+    );
+    selection::select(
+        &Store::open_readonly(&state.path().join("selection.db")).unwrap(),
+        out.path(),
+        None,
+    )
+    .unwrap();
+    fs::create_dir_all(out.path().join("corpus")).unwrap();
+    let abandoned = out.path().join("corpus/.current-999999");
+    std::os::unix::fs::symlink("generations/abc", &abandoned).unwrap();
+    let r = convert(out.path(), &[]);
+    assert_eq!(r["published_books"], 2);
+    assert!(abandoned.symlink_metadata().is_err());
+}
+#[cfg(unix)]
+#[test]
+fn range_delimiters_prove_empty_pages_and_reject_truncated_output() {
+    use std::os::unix::fs::PermissionsExt;
+    for good in [false, true] {
+        let (_root, _state, out) = fixture("Actual PDF reference.", 2);
+        let wrapper = out.path().join("extractor");
+        let text = if good {
+            "Readable reference words\\f\\f"
+        } else {
+            "Readable reference words\\f"
+        };
+        fs::write(&wrapper,format!("#!/bin/sh\nif [ \"$1\" = '-v' ]; then exec /usr/bin/pdftotext \"$@\"; fi\nprintf '{text}'\n")).unwrap();
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+        let r = cli(&[
+            "markdown-convert",
+            "--output",
+            out.path().to_str().unwrap(),
+            "--pdftotext",
+            wrapper.to_str().unwrap(),
+            "--chunk-pages",
+            "2",
+        ]);
+        assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+        let r: Value = serde_json::from_slice(&r.stdout).unwrap();
+        if good {
+            assert_eq!(r["published_books"], 1);
+            assert!(
+                fs::read_to_string(
+                    files(&out.path().join("corpus/current/books"), "md")[0].clone()
+                )
+                .unwrap()
+                .contains("No native text extracted for this page.")
+            );
+        } else {
+            assert_eq!(r["failed"], 1);
+            assert_eq!(r["published_books"], 0);
+            assert_eq!(r["publication"]["pending_works"][0]["status"], "failed");
+            assert_eq!(
+                r["publication"]["pending_works"][0]["missing_ranges"][0]["last"],
+                2
+            );
+        }
+    }
+}
+#[test]
 fn full_pages_searchable_and_resume_repairs_corrupt_range() {
     let (root, _state, out) = fixture("Searchable amber dragon <b>literal</b> & # heading", 3);
     let before =
@@ -234,6 +517,14 @@ fn failed_range_resumes_and_other_worker_can_publish() {
     let r = convert(out.path(), &["--pdftotext", wrapper.to_str().unwrap()]);
     assert_eq!(r["failed"], 1);
     assert_eq!(r["published_books"], 1);
+    assert_eq!(r["publication"]["pending_works"][0]["status"], "failed");
+    assert_eq!(
+        r["publication"]["pending_works"][0]["missing_ranges"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     fs::write(marker, "").unwrap();
     let r = convert(
         out.path(),

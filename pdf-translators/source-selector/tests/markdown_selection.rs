@@ -166,7 +166,7 @@ fn tied_or_undated_competitors_and_ruleset_conflicts_stay_deferred() {
 #[test]
 fn adopted_holds_choices_and_baseline_are_preserved() {
     use rpg_source_select::{models::*, review::evidence_digest};
-    for mode in ["hold", "choice", "baseline", "grown"] {
+    for mode in ["hold", "choice", "partial", "baseline", "grown"] {
         let root = tempdir().unwrap();
         let work = tempdir().unwrap();
         let out = tempdir().unwrap();
@@ -226,8 +226,12 @@ fn adopted_holds_choices_and_baseline_are_preserved() {
                     .iter()
                     .map(|id| Outcome {
                         source_id: id.clone(),
-                        status: if mode == "choice" && *id == old.source_id {
-                            Status::Selected
+                        status: if ["choice", "partial"].contains(&mode) && *id == old.source_id {
+                            if mode == "partial" {
+                                Status::DistinctWork
+                            } else {
+                                Status::Selected
+                            }
                         } else {
                             Status::NeedsReview
                         },
@@ -250,7 +254,7 @@ fn adopted_holds_choices_and_baseline_are_preserved() {
             db.put_record("decisions", &g.group_id, &d).unwrap();
         }
         let s = selection::select(&db, out.path(), None).unwrap();
-        if mode == "choice" {
+        if ["choice", "partial"].contains(&mode) {
             assert_eq!(s.ready.len(), 1);
             assert_eq!(s.ready[0].source_id, old.source_id);
             assert_eq!(s.ready[0].selection_basis, "adopted_review");
@@ -258,6 +262,72 @@ fn adopted_holds_choices_and_baseline_are_preserved() {
             assert!(s.ready.is_empty(), "{mode}");
         }
     }
+}
+#[test]
+fn fractional_precision_and_weak_zoned_witnesses_stay_conservative() {
+    let xmp = |date: &str| {
+        format!("<xmp:ModifyDate xmlns:xmp='http://ns.adobe.com/xap/1.0/'>{date}</xmp:ModifyDate>")
+    };
+    let a = dates::resolve(&metadata(json!({"xmp":xmp("2020-01-01T00:00:00.1Z")})))
+        .effective
+        .unwrap();
+    let b = dates::resolve(&metadata(json!({"xmp":xmp("2020-01-01T00:00:00.15Z")})))
+        .effective
+        .unwrap();
+    assert_eq!(a.end_ms - a.start_ms, 100);
+    assert_eq!(b.end_ms - b.start_ms, 10);
+    assert!(a.end_ms > b.start_ms);
+    assert!(
+        dates::resolve(&metadata(
+            json!({"ModDate":"D:202001Z","xmp":xmp("20200102")})
+        ))
+        .effective
+        .is_none()
+    );
+}
+#[test]
+fn zoned_month_cannot_resolve_more_precise_offset_free_day() {
+    let d = dates::resolve(&metadata(
+        json!({"ModDate":"D:202001Z","xmp":"<xmp:ModifyDate xmlns:xmp='http://ns.adobe.com/xap/1.0/'>20200102</xmp:ModifyDate>"}),
+    ));
+    assert!(d.effective.is_none());
+}
+#[test]
+fn language_subfolders_are_protected_qualifiers() {
+    let root = tempdir().unwrap();
+    let work = tempdir().unwrap();
+    let out = tempdir().unwrap();
+    for (language, v, date) in [
+        ("English", 1, "D:20200101000000Z"),
+        ("French", 2, "D:20210101000000Z"),
+    ] {
+        let folder = root.path().join("Pub/Book").join(language);
+        fs::create_dir_all(&folder).unwrap();
+        common::pdf(
+            &folder.join(format!("Scarlet Almanac-v{v}.pdf")),
+            language,
+            date,
+            false,
+        );
+    }
+    assert!(
+        cli(
+            work.path(),
+            &["scan", "--root", root.path().to_str().unwrap()]
+        )
+        .status
+        .success()
+    );
+    assert!(
+        selection::select(
+            &Store::open_readonly(&work.path().join("selection.db")).unwrap(),
+            out.path(),
+            None
+        )
+        .unwrap()
+        .ready
+        .is_empty()
+    );
 }
 #[test]
 fn generic_family_and_explicit_reader_conflicts_defer_the_whole_component() {
@@ -362,4 +432,113 @@ fn managed_state_symlink_cannot_write_into_library() {
         .is_err()
     );
     assert!(!root.path().join("forbidden.db").exists());
+}
+#[test]
+fn empty_xmp_modification_is_malformed_instead_of_creation_fallback() {
+    let d = dates::resolve(&metadata(
+        json!({"CreationDate":"D:20210101000000Z","xmp":"<xmp:ModifyDate xmlns:xmp='http://ns.adobe.com/xap/1.0/'/>"}),
+    ));
+    assert!(d.effective.is_none());
+    assert!(!d.flags.is_empty());
+}
+#[test]
+fn renamed_byte_alias_keeps_hash_bound_human_hold() {
+    use rpg_source_select::models::*;
+    let root = tempdir().unwrap();
+    let work = tempdir().unwrap();
+    let out = tempdir().unwrap();
+    let pdf = root.path().join("Original.pdf");
+    common::pdf(&pdf, "Held source text", "D:20210101000000Z", false);
+    assert!(
+        cli(
+            work.path(),
+            &["scan", "--root", root.path().to_str().unwrap()]
+        )
+        .status
+        .success()
+    );
+    let mut db = Store::open(&work.path().join("selection.db")).unwrap();
+    let g = db.records::<Group>("groups").unwrap().remove(0);
+    let source = db.sources().unwrap().remove(0);
+    let d = Decision {
+        packet_ids: vec![],
+        source_hashes: BTreeMap::from([(
+            source.source_id.clone(),
+            rpg_source_select::grouping::hash_source(&pdf).unwrap(),
+        )]),
+        group_id: g.group_id.clone(),
+        membership_digest: g.membership_digest,
+        evidence_digest: String::new(),
+        actor: "user".into(),
+        actor_role: ActorRole::User,
+        outcomes: vec![Outcome {
+            source_id: source.source_id,
+            status: Status::NeedsReview,
+            work_id: None,
+            representative_id: None,
+            successor_id: None,
+        }],
+        rationale: "hold".into(),
+        evidence_refs: vec![],
+    };
+    db.put_record("decisions", &g.group_id, &d).unwrap();
+    drop(db);
+    fs::rename(pdf, root.path().join("Renamed.pdf")).unwrap();
+    assert!(
+        cli(
+            work.path(),
+            &["scan", "--root", root.path().to_str().unwrap()]
+        )
+        .status
+        .success()
+    );
+    assert!(
+        selection::select(
+            &Store::open_readonly(&work.path().join("selection.db")).unwrap(),
+            out.path(),
+            None
+        )
+        .unwrap()
+        .ready
+        .is_empty()
+    );
+}
+#[test]
+fn byte_alias_bridge_does_not_shrink_a_cross_product_component() {
+    let root = tempdir().unwrap();
+    let work = tempdir().unwrap();
+    let out = tempdir().unwrap();
+    let a = root.path().join("Pub/Amber");
+    let b = root.path().join("ZZOther/Independent");
+    fs::create_dir_all(&a).unwrap();
+    fs::create_dir_all(&b).unwrap();
+    common::pdf(
+        &a.join("Amber-v1.pdf"),
+        "Older amber book",
+        "D:20200101000000Z",
+        false,
+    );
+    common::pdf(
+        &a.join("Amber-v2.pdf"),
+        "Newer amber book",
+        "D:20210101000000Z",
+        false,
+    );
+    fs::copy(a.join("Amber-v1.pdf"), b.join("Independent.pdf")).unwrap();
+    assert!(
+        cli(
+            work.path(),
+            &["scan", "--root", root.path().to_str().unwrap()]
+        )
+        .status
+        .success()
+    );
+    let s = selection::select(
+        &Store::open_readonly(&work.path().join("selection.db")).unwrap(),
+        out.path(),
+        None,
+    )
+    .unwrap();
+    assert!(s.ready.is_empty());
+    assert_eq!(s.records.len(), 1);
 }

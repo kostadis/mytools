@@ -128,7 +128,16 @@ pub fn validate_output(output: &Path) -> Result<()> {
             let ty = entry.file_type()?;
             if ty.is_symlink() {
                 let target = fs::read_link(&path)?;
-                let allowed = path == root.join("corpus/current")
+                let is_pointer = path == root.join("corpus/current")
+                    || (path.parent() == Some(root.join("corpus").as_path())
+                        && path
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .and_then(|s| s.strip_prefix(".current-"))
+                            .is_some_and(|s| {
+                                !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
+                            }));
+                let allowed = is_pointer
                     && target.parent() == Some(Path::new("generations"))
                     && target
                         .file_name()
@@ -149,4 +158,22 @@ pub fn validate_output(output: &Path) -> Result<()> {
         walk(output, output)?;
     }
     Ok(())
+}
+
+/// None denotes an unavailable original; an observed mismatch must never be
+/// masked by an otherwise usable offline source cache.
+pub fn live_source_matches(root: &Path, ready: &Ready) -> Result<Option<bool>> {
+    if !root.try_exists()? {
+        return Ok(None);
+    }
+    let path = match crate::inventory::checked_path(root, &ready.relative_path) {
+        Ok(p) => p,
+        Err(SelectionError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    match crate::grouping::hash_source(&path) {
+        Ok(hash) => Ok(Some(hash == ready.sha256)),
+        Err(SelectionError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
 }
