@@ -139,7 +139,7 @@ pub fn title_key(path: &Path) -> String {
     normalized(&FORMAT.replace_all(&s, " "))
 }
 
-fn presentation_key(path: &Path) -> String {
+pub(crate) fn presentation_key(path: &Path) -> String {
     static LABEL: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(
         r"(?:^| )(?:no ?backgrounds?|black and white|black white|b and w|b w|bw|colou?red|colou?r|(?:colou?r|bw|b w) print|digital|interactive|(?:form )?fillable|printer ?friendly|print ?friendly|optimized pdf|full res|quick load)(?: (?:version|pdf))?(?: (?P<tail>v(?:er(?:sion)?)? ?\d[a-z0-9 ]*|\d+(?: \d+)*|\d{1,2}(?:st|nd|rd|th)? [a-z]+ \d{4}|final))?$"

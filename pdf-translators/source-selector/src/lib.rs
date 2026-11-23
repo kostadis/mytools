@@ -7,6 +7,7 @@ pub mod export;
 pub mod grouping;
 pub mod hints;
 pub mod inventory;
+pub mod markdown;
 pub mod models;
 pub mod packets;
 pub mod review;

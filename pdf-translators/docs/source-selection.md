@@ -1,6 +1,6 @@
 # Select PDFs for Markdown conversion
 
-`rpg-source-select` creates an evidence-backed conversion list. It does not convert books, write into the library, alter rpg-lib flags, or change existing 5etools results. It works across game systems and includes text-bearing handouts, reference sheets, and map booklets.
+`rpg-source-select` creates an evidence-backed conversion list. Its separate `markdown-select` and `markdown-convert` commands can select by internal PDF dates and convert full documents into a searchable Markdown corpus. It never writes into the library, alters rpg-lib flags, or changes existing 5etools results. It works across game systems and includes text-bearing handouts, reference sheets, and map booklets. See [searchable-markdown.md](searchable-markdown.md) for the conversion workflow.
 
 Build from `pdf-translators/`:
 

@@ -31,6 +31,20 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Commands {
+    /// Freeze a separate policy queue using internal PDF dates.
+    MarkdownSelect {
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        provenance: Option<PathBuf>,
+    },
+    /// Convert full selected PDFs into a resumable searchable corpus.
+    MarkdownConvert(crate::markdown::conversion::Options),
+    #[command(hide = true)]
+    MarkdownWorker {
+        #[arg(long)]
+        job: PathBuf,
+    },
     Evidence {
         #[arg(long)]
         source: String,
@@ -120,6 +134,17 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<ExitCode> {
             return Err(SelectionError::Usage(e.to_string()));
         }
     };
+    match &cli.command {
+        Commands::MarkdownWorker { job } => {
+            crate::markdown::worker::run(job)?;
+            return Ok(ExitCode::SUCCESS);
+        }
+        Commands::MarkdownConvert(options) => {
+            print_json(&crate::markdown::conversion::run(options.clone())?)?;
+            return Ok(ExitCode::SUCCESS);
+        }
+        _ => {}
+    }
     let work = cli
         .work_dir
         .ok_or_else(|| SelectionError::Usage("--work-dir is required".into()))?;
@@ -134,6 +159,13 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<ExitCode> {
             .ok_or_else(|| SelectionError::Invalid("scan first".into()))?,
     )?;
     validate_work_dir(&inventory.root, &work)?;
+    if let Commands::MarkdownSelect { output, provenance } = &cli.command {
+        let snapshot = crate::markdown::selection::select(&ro, output, provenance.as_deref())?;
+        print_json(
+            &json!({"selection_id":snapshot.snapshot_id,"ready":snapshot.ready.len(),"records":snapshot.records.len(),"output":output}),
+        )?;
+        return Ok(ExitCode::SUCCESS);
+    }
     if let Commands::Evidence { source } = &cli.command {
         let ev = ro
             .evidence()?

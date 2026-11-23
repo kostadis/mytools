@@ -17,6 +17,7 @@ flate2 = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 lopdf = "0.47"
 thiserror = "2"
+roxmltree = "0.20"
 
 [dev-dependencies]
 tempfile = "3"

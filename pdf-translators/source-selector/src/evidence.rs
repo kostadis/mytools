@@ -217,7 +217,7 @@ fn resolve<'a>(doc: &'a Document, obj: &'a Object, depth: usize) -> Option<&'a O
         _ => Some(obj),
     }
 }
-fn metadata(doc: &Document) -> BTreeMap<String, Value> {
+pub(crate) fn metadata(doc: &Document) -> BTreeMap<String, Value> {
     let mut out = BTreeMap::new();
     if let Some(Object::Dictionary(info)) = doc
         .trailer
