@@ -158,16 +158,71 @@ impl Directory {
         Ok(Some(format!("{:x}", hash.finalize())))
     }
     pub fn lock(&self) -> Result<File> {
-        let file = self
-            .open_file(
-                Path::new(".current-documents.lock"),
-                libc::O_RDWR | libc::O_CREAT,
-            )?
-            .unwrap();
+        self.lock_named(Path::new(".current-documents.lock"))
+    }
+    pub fn lock_named(&self, name: &Path) -> Result<File> {
+        let file = self.open_file(name, libc::O_RDWR | libc::O_CREAT)?.unwrap();
+        if file.metadata()?.nlink() != 1 {
+            return Err(SelectionError::Invalid(
+                "control lock must not be a hardlink".into(),
+            ));
+        }
         file.try_lock().map_err(|e| {
             SelectionError::Invalid(format!("directory publication is locked: {e}"))
         })?;
         Ok(file)
+    }
+    pub fn append_log(&self, name: &Path) -> Result<File> {
+        self.validate()?;
+        let file = self
+            .open_file(name, libc::O_WRONLY | libc::O_CREAT | libc::O_APPEND)?
+            .unwrap();
+        if file.metadata()?.nlink() != 1 {
+            return Err(SelectionError::Invalid(
+                "control log must not be a hardlink".into(),
+            ));
+        }
+        Ok(file)
+    }
+    pub fn create_capture(&self) -> Result<(PathBuf, File)> {
+        self.validate()?;
+        let name = PathBuf::from(format!(
+            ".rollout-capture-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let file = self
+            .open_file(&name, libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL)?
+            .unwrap();
+        Ok((name, file))
+    }
+    pub fn commit_control(&self, temporary: &Path, target: &Path) -> Result<()> {
+        self.validate()?;
+        sibling(temporary)?;
+        sibling(target)?;
+        let a = cstring(temporary)?;
+        let b = cstring(target)?;
+        if unsafe {
+            libc::renameat(
+                self.file.as_raw_fd(),
+                a.as_ptr(),
+                self.file.as_raw_fd(),
+                b.as_ptr(),
+            )
+        } != 0
+        {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        self.flush()
+    }
+    pub fn write_control(&self, target: &Path, bytes: &[u8]) -> Result<()> {
+        let (name, mut file) = self.create_capture()?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        self.commit_control(&name, target)
     }
     pub fn stage(&self, target: &Path, bytes: &[u8], before: Option<&[u8]>) -> Result<Plan> {
         self.validate()?;

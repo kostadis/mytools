@@ -14,6 +14,7 @@ use std::{
     process::ExitCode,
 };
 mod inspect;
+mod markdown_rollout;
 mod review;
 mod scan;
 
@@ -31,6 +32,11 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Commands {
+    /// Resume metadata selection, check space and convert the full eligible library.
+    MarkdownRollout {
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Freeze a separate policy queue using internal PDF dates.
     MarkdownSelect {
         #[arg(long)]
@@ -159,6 +165,10 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<ExitCode> {
             .ok_or_else(|| SelectionError::Invalid("scan first".into()))?,
     )?;
     validate_work_dir(&inventory.root, &work)?;
+    if let Commands::MarkdownRollout { output } = &cli.command {
+        drop(ro);
+        return markdown_rollout::run(&work, &inventory, output);
+    }
     if let Commands::MarkdownSelect { output, provenance } = &cli.command {
         let snapshot = crate::markdown::selection::select(&ro, output, provenance.as_deref())?;
         print_json(

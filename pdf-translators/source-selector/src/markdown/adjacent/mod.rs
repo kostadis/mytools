@@ -5,6 +5,7 @@ mod state;
 use super::worker::Engine;
 use super::*;
 use crate::{digest, digest_json, inventory::root_identity};
+pub(crate) use files::Directory as ControlDirectory;
 use state::{Operation, Ownership, Receipt};
 use std::collections::{BTreeMap, BTreeSet};
 const NAME: &str = "current-documents.json";
@@ -38,6 +39,34 @@ struct VerifiedDirectory {
     signature: String,
     stamps: Value,
     entries: Vec<Value>,
+}
+fn cache_verified(
+    cache: &mut BTreeMap<PathBuf, VerifiedDirectory>,
+    relative: &Path,
+    signature: String,
+    before: Option<Value>,
+    after: Option<Value>,
+    entries: &[Value],
+) {
+    if before.is_some()
+        && before == after
+        && entries.iter().all(|e| {
+            e["status"].as_str().is_some_and(|s| {
+                ["published", "pending", "needs_ocr_or_visual_review"].contains(&s)
+            })
+        })
+    {
+        cache.insert(
+            relative.into(),
+            VerifiedDirectory {
+                signature,
+                stamps: after.unwrap(),
+                entries: entries.to_vec(),
+            },
+        );
+    } else {
+        cache.remove(relative);
+    }
 }
 fn owned(v: &Value) -> bool {
     v["generator"] == OWNER
@@ -326,6 +355,7 @@ impl Session {
             }
             Ok(serde_json::to_value(stamps)?)
         };
+        let observed_before = stamp(&dir).ok();
         if !self
             .ownership
             .operations
@@ -333,7 +363,7 @@ impl Session {
             .any(|o| o.directory == relative)
             && let Some(cached) = self.verified.get(relative)
             && cached.signature == signature
-            && stamp(&dir).ok().as_ref() == Some(&cached.stamps)
+            && observed_before.as_ref() == Some(&cached.stamps)
         {
             return Ok(cached.entries.clone());
         }
@@ -604,16 +634,14 @@ impl Session {
             self.warnings.insert(format!("{}: directory fsync unsupported; file flushes and durable private recovery journal used",self.root.join(relative).display()));
         }
         self.ownership.save(&self.path)?;
-        if let Ok(stamps) = stamp(&dir) {
-            self.verified.insert(
-                relative.into(),
-                VerifiedDirectory {
-                    signature,
-                    stamps,
-                    entries: results.clone(),
-                },
-            );
-        }
+        cache_verified(
+            &mut self.verified,
+            relative,
+            signature,
+            observed_before,
+            stamp(&dir).ok(),
+            &results,
+        );
         Ok(results)
     }
 }
@@ -650,6 +678,39 @@ fn verify_pairs(dir: &files::Directory, entries: &mut [Value]) -> bool {
 #[cfg(test)]
 mod commit_tests {
     use super::*;
+    #[test]
+    fn verification_cache_does_not_attest_to_an_edit_after_the_byte_read() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("A.md"), b"verified bytes").unwrap();
+        let id = root_identity(root.path()).unwrap();
+        let dir = files::Directory::open(root.path(), &id, Path::new("")).unwrap();
+        let before = Some(serde_json::to_value(dir.stamp(Path::new("A.md")).unwrap()).unwrap());
+        assert_eq!(
+            dir.hash(Path::new("A.md")).unwrap(),
+            Some(digest(b"verified bytes"))
+        );
+        fs::write(root.path().join("A.md"), b"late user edits").unwrap();
+        let after = Some(serde_json::to_value(dir.stamp(Path::new("A.md")).unwrap()).unwrap());
+        let mut cache = BTreeMap::new();
+        cache_verified(
+            &mut cache,
+            Path::new(""),
+            "key".into(),
+            before,
+            after.clone(),
+            &[serde_json::json!({"status":"published"})],
+        );
+        assert!(cache.is_empty());
+        cache_verified(
+            &mut cache,
+            Path::new(""),
+            "key".into(),
+            after.clone(),
+            after,
+            &[serde_json::json!({"status":"output_conflict"})],
+        );
+        assert!(cache.is_empty());
+    }
     #[test]
     fn final_pair_check_rejects_earlier_source_or_markdown_changes_after_staging() {
         for source in [true, false] {

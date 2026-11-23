@@ -18,6 +18,9 @@ use std::{
 
 #[derive(Clone, Debug, Args)]
 pub struct Options {
+    /// Refuse to schedule a queue different from the one whose space was checked.
+    #[arg(long)]
+    pub expected_selection: Option<String>,
     /// Publish after this many jobs or 60 seconds with completed work; always flush at end.
     #[arg(long, default_value_t = 1)]
     pub publish_every: usize,
@@ -179,6 +182,15 @@ pub fn run(options: Options) -> Result<Report> {
         ));
     };
     let snapshot = selection::load_current(&output)?;
+    if options
+        .expected_selection
+        .as_ref()
+        .is_some_and(|id| id != &snapshot.snapshot_id)
+    {
+        return Err(SelectionError::Invalid(
+            "selection changed since preflight; rerun rollout".into(),
+        ));
+    }
     validate_output(&output)?;
     // Offline source caches are supported; canonicalize the frozen original root
     // when available and use lexical containment as a second independent guard.
@@ -191,6 +203,7 @@ pub fn run(options: Options) -> Result<Report> {
         crate::export::validate_work_dir(&snapshot.source_root, &output)?;
     }
     let _coordinator = lock(&output, "conversion.lock")?;
+    publication::protect_existing_artifacts(&output)?;
     if let Ok(entries) = fs::read_dir(output.join("corpus")) {
         for entry in entries {
             let entry = entry?;
@@ -381,16 +394,16 @@ pub fn run(options: Options) -> Result<Report> {
                 last_publication = Instant::now();
             }
         }
+        if since_publication > 0 && last_publication.elapsed() >= Duration::from_secs(60) {
+            report.publication = Some(publication::publish_with_destination(
+                &output,
+                &engine,
+                adjacent.as_mut(),
+            )?);
+            since_publication = 0;
+            last_publication = Instant::now();
+        }
         if heartbeat.elapsed() >= Duration::from_secs(30) {
-            if since_publication > 0 && last_publication.elapsed() >= Duration::from_secs(60) {
-                report.publication = Some(publication::publish_with_destination(
-                    &output,
-                    &engine,
-                    adjacent.as_mut(),
-                )?);
-                since_publication = 0;
-                last_publication = Instant::now();
-            }
             eprintln!(
                 "Markdown heartbeat: {} active, {} queued",
                 active.len(),

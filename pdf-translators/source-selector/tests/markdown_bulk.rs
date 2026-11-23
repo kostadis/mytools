@@ -54,7 +54,7 @@ fn fixture() -> (tempfile::TempDir, tempfile::TempDir, tempfile::TempDir) {
 }
 #[test]
 fn repeated_metadata_selection_reuses_verified_hash_for_unhashed_singleton() {
-    let _serial = SERIAL.lock().unwrap();
+    let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let (_root, work, out) = fixture();
     let store = Store::open_readonly(&work.path().join("selection.db")).unwrap();
     selection::select(&store, out.path(), None).unwrap();
@@ -69,7 +69,7 @@ fn repeated_metadata_selection_reuses_verified_hash_for_unhashed_singleton() {
 }
 #[test]
 fn unchanged_publication_avoids_rereading_large_pdf_but_detects_manual_edit() {
-    let _serial = SERIAL.lock().unwrap();
+    let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let (root, work, out) = fixture();
     selection::select(
         &Store::open_readonly(&work.path().join("selection.db")).unwrap(),
@@ -130,7 +130,7 @@ fn unchanged_publication_avoids_rereading_large_pdf_but_detects_manual_edit() {
 }
 #[test]
 fn bulk_publication_interval_and_hardlinks_preserve_final_current_view() {
-    let _serial = SERIAL.lock().unwrap();
+    let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     use std::os::unix::fs::MetadataExt;
     let (root, work, out) = fixture();
     for i in 0..3 {
@@ -188,4 +188,136 @@ fn bulk_publication_interval_and_hardlinks_preserve_final_current_view() {
         fs::metadata(current).unwrap().ino(),
         fs::metadata(artifact).unwrap().ino()
     );
+    let current = out
+        .path()
+        .join("corpus/current/books")
+        .join(format!("{}.md", b["work"]["work_id"].as_str().unwrap()));
+    assert!(
+        fs::write(&current, "in-place edit").is_err(),
+        "shared immutable payload must be read-only"
+    );
+}
+#[cfg(unix)]
+#[test]
+fn rollout_checks_output_before_touching_control_files() {
+    use std::os::unix::fs::symlink;
+    let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let (root, work, out) = fixture();
+    let pdf = root.path().join("Pub/Book/Book.pdf");
+    let before = fs::read(&pdf).unwrap();
+    symlink(&pdf, out.path().join("rollout.lock")).unwrap();
+    let r = cli(&[
+        "--work-dir",
+        work.path().to_str().unwrap(),
+        "markdown-rollout",
+        "--output",
+        out.path().to_str().unwrap(),
+    ]);
+    assert!(!r.status.success());
+    assert_eq!(fs::read(&pdf).unwrap(), before);
+    assert!(String::from_utf8_lossy(&r.stderr).contains("symlink"));
+    let bad = root.path().join("forbidden");
+    let r = cli(&[
+        "--work-dir",
+        work.path().to_str().unwrap(),
+        "markdown-rollout",
+        "--output",
+        bad.to_str().unwrap(),
+    ]);
+    assert!(!r.status.success());
+    assert!(!bad.exists());
+}
+#[test]
+fn conversion_refuses_a_selection_different_from_the_preflight_id() {
+    let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let (_root, work, out) = fixture();
+    selection::select(
+        &Store::open_readonly(&work.path().join("selection.db")).unwrap(),
+        out.path(),
+        None,
+    )
+    .unwrap();
+    let r = cli(&[
+        "markdown-convert",
+        "--output",
+        out.path().to_str().unwrap(),
+        "--expected-selection",
+        "wrong-selection",
+    ]);
+    assert!(!r.status.success());
+    assert!(String::from_utf8_lossy(&r.stderr).contains("changed since preflight"));
+}
+#[test]
+fn rollout_reselects_after_a_user_hold_without_a_new_scan() {
+    use rpg_source_select::{models::*, review::evidence_digest};
+    let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let (root, work, out) = fixture();
+    let mut db = Store::open(&work.path().join("selection.db")).unwrap();
+    assert_eq!(
+        selection::select(&db, out.path(), None)
+            .unwrap()
+            .ready
+            .len(),
+        1
+    );
+    let group = db.records::<Group>("groups").unwrap().remove(0);
+    let decision = Decision {
+        packet_ids: vec![],
+        source_hashes: Default::default(),
+        group_id: group.group_id.clone(),
+        membership_digest: group.membership_digest.clone(),
+        evidence_digest: evidence_digest(&group, &[]),
+        actor: "user".into(),
+        actor_role: ActorRole::User,
+        outcomes: group
+            .source_ids
+            .iter()
+            .map(|id| Outcome {
+                source_id: id.clone(),
+                status: Status::NeedsReview,
+                work_id: None,
+                representative_id: None,
+                successor_id: None,
+            })
+            .collect(),
+        rationale: "Hold this work".into(),
+        evidence_refs: vec![],
+    };
+    db.save_decision(&decision).unwrap();
+    drop(db);
+    let r = cli(&[
+        "--work-dir",
+        work.path().to_str().unwrap(),
+        "markdown-rollout",
+        "--output",
+        out.path().to_str().unwrap(),
+    ]);
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    assert!(
+        selection::load_current(out.path())
+            .unwrap()
+            .ready
+            .is_empty()
+    );
+    assert!(!root.path().join("Pub/Book/Book.md").exists());
+}
+#[test]
+fn older_shared_artifact_payloads_are_made_read_only_before_rollout() {
+    let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let (_root, work, out) = fixture();
+    selection::select(
+        &Store::open_readonly(&work.path().join("selection.db")).unwrap(),
+        out.path(),
+        None,
+    )
+    .unwrap();
+    let old = out.path().join("artifacts").join("a".repeat(64));
+    fs::create_dir_all(&old).unwrap();
+    fs::write(old.join("book.md"), "old generated text").unwrap();
+    fs::write(old.join("book.json"), "{}").unwrap();
+    let linked = out.path().join("old-generation.md");
+    fs::hard_link(old.join("book.md"), &linked).unwrap();
+    let r = cli(&["markdown-convert", "--output", out.path().to_str().unwrap()]);
+    assert!(r.status.success());
+    assert!(fs::write(linked, "in-place edit").is_err());
 }

@@ -53,6 +53,13 @@ fn convert(out: &Path, extra: &[&str]) -> Value {
     assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
     serde_json::from_slice(&r.stdout).unwrap()
 }
+fn force_corrupt(path: impl AsRef<Path>, text: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let path = path.as_ref();
+    let mode = fs::metadata(path).unwrap().permissions().mode();
+    fs::set_permissions(path, fs::Permissions::from_mode(mode | 0o200)).unwrap();
+    fs::write(path, text).unwrap();
+}
 fn files(root: &Path, ext: &str) -> Vec<PathBuf> {
     let mut out = vec![];
     for f in fs::read_dir(root).unwrap() {
@@ -81,9 +88,9 @@ fn interrupted_or_corrupt_artifacts_rebuild_from_verified_ranges() {
     let r = convert(out.path(), &[]);
     assert_eq!(r["extracted_ranges"], 0);
     assert_eq!(r["published_books"], 1);
-    fs::write(artifact.join("book.md"), "corrupt artifact").unwrap();
+    force_corrupt(artifact.join("book.md"), "corrupt artifact");
     let current = files(&out.path().join("corpus/current/books"), "md")[0].clone();
-    fs::write(&current, "corrupt generation").unwrap();
+    force_corrupt(&current, "corrupt generation");
     let r = convert(out.path(), &[]);
     assert_eq!(r["extracted_ranges"], 0);
     assert!(
@@ -219,8 +226,8 @@ fn existing_artifact_and_generation_bytes_are_checked_before_reuse() {
         .join("artifacts")
         .join(catalog["books"][0]["artifact"].as_str().unwrap());
     let book = files(&out.path().join("corpus/current/books"), "md")[0].clone();
-    fs::write(artifact.join("book.md"), "damaged artifact").unwrap();
-    fs::write(&book, "damaged generation").unwrap();
+    force_corrupt(artifact.join("book.md"), "damaged artifact");
+    force_corrupt(&book, "damaged generation");
     convert(out.path(), &[]);
     assert!(
         fs::read_to_string(book)

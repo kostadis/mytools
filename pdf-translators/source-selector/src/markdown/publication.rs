@@ -127,6 +127,14 @@ pub fn publish_with_destination(
                 &dir.join("book.json"),
                 &serde_json::to_vec_pretty(&metadata)?,
             )?;
+            for name in ["book.md", "book.json"] {
+                let file = dir.join(name);
+                let mut permissions = fs::metadata(&file)?.permissions();
+                if !permissions.readonly() {
+                    permissions.set_readonly(true);
+                    fs::set_permissions(file, permissions)?;
+                }
+            }
             catalog.push(serde_json::json!({"work":ready,"status":"searchable_with_flags","artifact":artifact,"markdown_sha256":crate::digest(md.as_bytes()),"empty_pages":empty,"sparse_pages":sparse}));
             books.push((ready.work_id.clone(), dir));
         } else {
@@ -268,6 +276,39 @@ fn link_or_copy(source: impl AsRef<Path>, target: impl AsRef<Path>) -> Result<()
             Ok(())
         }
     }
+}
+pub fn protect_existing_artifacts(output: &Path) -> Result<()> {
+    let root = output.join("artifacts");
+    if !root.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir()
+            || !entry
+                .file_name()
+                .to_string_lossy()
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit())
+            || entry.file_name().len() != 64
+        {
+            continue;
+        }
+        for name in ["book.md", "book.json"] {
+            let path = entry.path().join(name);
+            if let Ok(metadata) = path.symlink_metadata() {
+                if !metadata.is_file() || metadata.file_type().is_symlink() {
+                    return Err(SelectionError::Invalid("invalid artifact payload".into()));
+                }
+                let mut permissions = metadata.permissions();
+                if !permissions.readonly() {
+                    permissions.set_readonly(true);
+                    fs::set_permissions(path, permissions)?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 fn frozen_source_matches(s: &Snapshot, r: &Ready) -> Result<Option<bool>> {
     if let Some(c) = s.records.iter().flat_map(|v| &v.candidates).find(|c| {
