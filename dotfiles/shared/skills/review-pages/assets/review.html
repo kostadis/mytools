@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__TITLE__</title>
+<style>
+:root{--ground:#f1f3f1;--surface:#fafbfa;--ink:#171b19;--muted:#59635d;--rule:#cbd3cd;--accent:#2f6f62;--soft:#dce9e5}*{box-sizing:border-box}body{margin:0;background:var(--ground);color:var(--ink);font:16px/1.5 system-ui,sans-serif}.wrap{max-width:1060px;margin:auto;padding:32px 24px 100px}h1,h2{font-family:Georgia,serif;line-height:1.15}h1{font-size:40px;margin:12px 0}h2{font-size:28px;margin:0}.eyebrow{color:var(--accent);font-size:12px;text-transform:uppercase;letter-spacing:.1em}.lede,.muted{color:var(--muted)}.bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:3;background:var(--ground);border-bottom:1px solid var(--rule);padding:12px 0;margin-bottom:28px}.bar span{flex:1}.section-top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.section{margin:32px 0}button{font:inherit;cursor:pointer;border:1px solid var(--rule);background:var(--surface);border-radius:5px;padding:8px 12px}button:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #7db7a8;outline-offset:2px}button:disabled{cursor:default;opacity:.45}.primary{background:var(--accent);color:white;border-color:var(--accent)}.small{padding:4px 9px;font-size:13px}.list,.card{background:var(--surface);border:1px solid var(--rule);border-radius:7px}.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:12px 16px;border-bottom:1px solid var(--rule)}.row:last-child{border-bottom:0}.row.approved{background:var(--soft)}.pair{font-weight:600;overflow-wrap:anywhere}.session{font-size:12px;color:var(--muted);overflow-wrap:anywhere}.row-actions{display:flex;align-items:center;gap:8px}.badge{font-size:12px;color:var(--accent)}details{margin-top:6px}summary{cursor:pointer;font-size:13px;color:var(--accent)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 ui-monospace,monospace;max-height:360px;overflow:auto} .card{padding:20px;margin:16px 0}.card h3{font-size:19px;margin:6px 0}.actions{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 8px}.selected{background:var(--soft);border-color:var(--accent)}textarea{display:block;resize:vertical;width:100%;min-height:55px;border:1px solid var(--rule);border-radius:4px;padding:8px;font:inherit;margin-top:12px}.notice{border-left:3px solid var(--accent);padding-left:12px;font-size:14px;color:var(--muted)}#status{min-height:24px;color:var(--accent)}.empty{padding:16px;color:var(--muted)}@media(max-width:600px){.wrap{padding:20px 14px 90px}h1{font-size:32px}.row{grid-template-columns:minmax(0,1fr)}.row-actions{justify-content:space-between}.section-top .primary{width:100%}.card{padding:14px}}
+#group-summary{display:flex;gap:10px;flex-wrap:wrap}#group-summary a{color:var(--accent);border:1px solid var(--rule);padding:6px 10px;border-radius:4px;text-decoration:none}.middle .primary{background:#93601f;border-color:#93601f}.section{scroll-margin-top:80px}
+button.small,.session,.badge,summary,pre,.notice,.eyebrow{font-size:15px} .card p{white-space:pre-line}audio{display:block;width:100%;max-width:400px;margin:12px 0}.full-passage{background:#e7f0eb;border-left:4px solid #2f6f62;padding:14px 16px;margin:12px 0}.full-passage p{font-family:Georgia,serif;font-size:18px;line-height:1.6;white-space:pre-line;overflow-wrap:anywhere;margin:8px 0}.full-passage strong{font-size:15px;color:#2f6f62}.uncertainty{background:#fff6dc;padding:10px 14px;font-size:15px}.uncertainty ul{padding-left:18px}.row p,.card p,.pair,pre,.session{overflow-wrap:anywhere}.row-actions{flex-wrap:wrap}h3{font-size:19px}pre{white-space:pre-wrap}</style>
+</head><body><div class="wrap">
+ <div class="eyebrow">__MODEL__ · review decisions</div>
+ <h1>__TITLE__</h1>
+ <p class="lede">__LEDE__</p>
+ <p class="notice" id="decision-notice">Approve uses the displayed proposal. Reject keeps the displayed baseline. Each named choice shows its exact text. Scores predict reviewer approval, not correctness. Save before leaving a page; only validated saved decisions authorize changes.</p>
+ <details class="notice"><summary>Checked findings and retained uncertainty</summary><pre style="white-space:pre-wrap;font:inherit">__FOOTER__</pre></details><div class="bar"><span id="progress" aria-live="polite"></span><button id="save" disabled>Save to VM</button></div>
+ <nav id="group-summary" aria-label="Review groups"></nav>
+ <section class="section" id="high-section" aria-labelledby="high-title"><div class="section-top"><h2 id="high-title">Over 90%</h2><button class="primary" id="bulk-high" data-bulk="high"></button></div>
+ <p class="muted" id="high-description"></p><div id="high" class="list"></div></section>
+ <section class="section middle" id="middle-section" aria-labelledby="middle-title"><div class="section-top"><h2 id="middle-title">80–90%</h2><button class="primary" id="bulk-middle" data-bulk="middle"></button></div>
+ <p class="muted" id="middle-description"></p><div id="middle" class="list"></div></section>
+ <section class="section" id="cards-section" aria-labelledby="cards-title"><h2 id="cards-title">Regular cards</h2><p class="muted">Individual decisions, including lower scores, unscored questions and named choices.</p><div id="cards"></div></section>
+ <p id="status" role="status"></p>
+</div>
+<script type="application/json" id="data">__REVIEW_DATA__</script>
+<script>
+'use strict';
+const spec=JSON.parse(document.getElementById('data').textContent);
+const items=spec.items, decisions={}, notes={}, picks={}, exceptions=new Set();
+const $=id=>document.getElementById(id);
+function esc(text){return String(text??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function probabilityLabel(it){return typeof it.p_yes==='number'?`${(it.p_yes*100).toFixed(2)}%`:'Not scored';}
+function tierOf(it){return exceptions.has(it.id)?'cards':it.tier;}
+function reviewKind(it){return it.reviewKind||spec.reviewKind||'text-edit';}
+function groupKind(rows){return rows.length&&rows.every(it=>reviewKind(it)==='interpretation')?'interpretation':rows.length&&rows.every(it=>reviewKind(it)==='text-edit')?'text-edit':'decision';}
+function decisionLabel(it,d){if(reviewKind(it)==='interpretation')return d==='approve'?'Yes — these readings match':d==='reject'?'No — readings need correction':'Discuss';return d==='approve'?'Approve':d==='reject'?'Reject':'Discuss';}
+function recommendation(it){if(it.choiceOnly)return it.guessPick;if(reviewKind(it)==='interpretation')return 'These readings match the passage';return 'Approve displayed decision';}
+function pair(it){return it.display_pair?esc(it.display_pair):it.replacement?`${esc(it.token)} → ${esc(it.replacement)}`:esc(it.title);}
+function passage(it){
+ const before=it.confirmedPassage||'';const proposed=it.fullPassage||'';const raw=it.sourcePassage||before;
+ const needs=[...(it.requires||[]),...Object.entries(it.requiresNamed||{}).map(([id,pick])=>id+' → '+pick)];
+ const dependency=needs.length?`<p class="uncertainty"><strong>Conditional on:</strong> ${needs.map(esc).join('; ')}.</p>`:'';
+ const box=(label,text)=>`<div class="full-passage"><strong>${esc(label)}</strong><p>${esc(text)}</p></div>`;
+ let passages='';
+ if(it.choiceOnly){if(raw)passages+=box('Original source passage',raw);if(before&&before!==raw)passages+=box('Reviewed baseline, including earlier approved repairs',before);for(const label of (it.picks||[])){const text=(it.pickTexts||{})[label];if(typeof text!=='string')throw new Error('Missing exact named-choice passage');passages+=box(reviewKind(it)==='text-edit'?'Choosing “'+label+'” keeps or writes exactly:':'Choosing “'+label+'” records this outcome:',text);}}
+ else if(reviewKind(it)==='interpretation'||reviewKind(it)==='decision'){
+  if(raw)passages+=box('Passage being reviewed — text stays unchanged',raw);
+  if(before&&before!==raw)passages+=box('Reviewed baseline — text stays unchanged',before);
+  if(proposed)passages+=box(reviewKind(it)==='interpretation'?'Does the passage say these things?':'Decision to record',proposed);
+  for(const label of(it.picks||[])){const text=(it.pickTexts||{})[label];if(typeof text==='string')passages+=box('Choosing “'+label+'” records this outcome:',text);}
+ }
+ else {if(raw&&raw!==before)passages+=box('Original source — “Keep original source passage exactly” retains this',raw);if(before)passages+=box(it.baselineLabel||'Reject keeps this exact wording',before);if(it.deletionOnly)passages+=box('Approve deletes the passage shown above','No replacement text will be written.');else if(proposed)passages+=box('Approve writes this exact proposed text',proposed);for(const label of (it.picks||[])){const text=(it.pickTexts||{})[label];if(typeof text==='string')passages+=box('Choosing “'+label+'” retains exactly:',text);}}
+ const uncertainty=(it.uncertainties||[]).map(x=>`<li>${esc(typeof x==='string'?x:JSON.stringify(x))}</li>`).join('');
+ return dependency+passages+(uncertainty?`<div class="uncertainty"><strong>${reviewKind(it)==='interpretation'?'Record links and caveats':'Remaining uncertainty'}</strong><ul>${uncertainty}</ul></div>`:'');
+}
+function evidence(it){return `${[it.audioData,...(it.extraAudio||[])].filter(Boolean).map(u=>`<audio controls preload="none" src="${esc(u)}"></audio>`).join("")}<details><summary>See original proposal and source</summary><pre>${esc(it.proposal)}\n\n${esc(it.evidence)}</pre></details>`;}
+function pickButtons(it){
+ return (it.picks||[]).map(word=>`<button data-pick="${esc(word)}" data-pick-id="${it.id}" aria-pressed="${decisions[it.id]==='pick'&&picks[it.id]===word}" class="${decisions[it.id]==='pick'&&picks[it.id]===word?'selected':''}">${esc(word)}${it.guessPick===word?' · my guess':''}</button>`).join('');
+}
+function progress(){
+ const count=Object.keys(decisions).length, tally={approve:0,reject:0,discuss:0,pick:0};
+ Object.values(decisions).forEach(d=>tally[d]++);
+ $('progress').textContent=`${count} / ${items.length} decided · ${tally.approve} ${groupKind(items)==='interpretation'?'cards confirmed':'approved'} · ${tally.reject} rejected · ${tally.discuss} to discuss · ${tally.pick} named choices`;
+ $('save').disabled=!(count||Object.keys(notes).length);
+ for(const tier of ['high','middle']){
+  const pending=items.filter(it=>tierOf(it)===tier&&!it.choiceOnly&&!(it.requires||[]).length&&!Object.keys(it.requiresNamed||{}).length&&!decisions[it.id]&&!String(notes[it.id]||'').trim()).length;
+  $(`bulk-${tier}`).textContent=pending?(groupKind(items.filter(it=>tierOf(it)===tier))==='interpretation'?`Confirm readings on ${pending} cards`:`Accept displayed recommendations for ${pending}`):'All recommendations reviewed';
+  $(`bulk-${tier}`).disabled=!pending;
+ }
+}
+function render(){
+ const mode=groupKind(items);
+ $('decision-notice').textContent=mode==='interpretation'?'Check what the quoted draft says. Yes records the displayed readings; No marks those readings as inaccurate. Neither edits the passage or establishes its claims as canon. Discuss asks for clarification. Scores predict reviewer choices, not correctness. Save to VM when finished.':mode==='decision'?'Each card states the exact decision that approval records. Scores predict reviewer choices, not correctness. Save to VM when finished.':'Approve uses the displayed proposal. Reject keeps the displayed baseline. Each named choice shows its exact text. Scores predict reviewer approval, not correctness. Save before leaving a page; only validated saved decisions authorize changes.';
+ document.querySelector('.eyebrow').textContent=`${spec.model||'Decision model'} · review decisions`;
+ const groups={high:items.filter(it=>tierOf(it)==='high'),middle:items.filter(it=>tierOf(it)==='middle'),cards:items.filter(it=>tierOf(it)==='cards')}; for(const tier of ['high','middle','cards'])$(`${tier}-section`).hidden=groups[tier].length===0;
+ const highLabel=`Over ${(spec.threshold*100).toFixed(0)}%`,middleLabel=`${(spec.middle_threshold*100).toFixed(0)}–${(spec.threshold*100).toFixed(0)}%`;
+ $('high-title').textContent=`${highLabel} · ${groups.high.length}`;
+ $('middle-title').textContent=`${middleLabel} · ${groups.middle.length}`;
+ $('group-summary').innerHTML=`<a href="#high-section">${highLabel}: ${groups.high.length}</a><a href="#middle-section">${middleLabel}: ${groups.middle.length}</a><a href="#cards-section">Regular cards: ${groups.cards.length}</a>`;
+ for(const tier of ['high','middle']){
+  const rows=groups[tier];
+  $(`${tier}-description`).textContent=groupKind(rows)==='interpretation'?`${rows.length} interpretation cards. This button confirms every numbered reading on the undecided cards in this group. It inserts no text into the draft. Use Discuss if any reading needs clarification.`:groupKind(rows)==='decision'?`${rows.length} review decisions. This button records the displayed approval outcome on undecided cards in this group.`:`${rows.length} proposed corrections. This button approves the exact displayed proposals for undecided items in this group. Change exceptions using the inline decision buttons.`;
+  $(tier).innerHTML=rows.length?rows.map(it=>`<div class="row ${['approve','pick'].includes(decisions[it.id])?'approved':''}" data-row="${it.id}"><div><div class="pair">${pair(it)}</div><p><strong>Recommended decision: ${esc(recommendation(it))}</strong></p><div class="session">${esc(it.session)} · predicted approval ${(it.p_yes*100).toFixed(1)}%${it.updated_score?' · updated from corrected input':''}</div>${passage(it)}${evidence(it)}</div><div class="row-actions"><span class="badge">${decisions[it.id]==='pick'?esc(picks[it.id]):decisions[it.id]==='approve'?'Approved':''}</span><div class="actions">${['approve','reject','discuss'].map(d=>`<button data-choice="${d}" data-id="${it.id}" aria-pressed="${decisions[it.id]===d}" class="${decisions[it.id]===d?'selected':''}">${esc(decisionLabel(it,d))}</button>`).join('')}</div><div class="actions">${pickButtons(it)}</div><label>Note<textarea data-note="${it.id}">${esc(notes[it.id]||'')}</textarea></label></div></div>`).join(''):'<div class="empty">No items in this group.</div>';
+ }
+ const cards=groups.cards;
+ $('cards-title').textContent=`Regular cards · ${cards.length}`;
+ $('cards').innerHTML=cards.map(it=>`<article class="card" data-card="${it.id}"><div class="session">${esc(it.session)} · ${probabilityLabel(it)}</div><h3>${pair(it)}</h3><p>${esc(it.proposed_text)}</p>${passage(it)}${evidence(it)}<div class="actions">${(it.choiceOnly?['discuss']:(it.guess==='reject'?['reject','approve','discuss']:['approve','reject','discuss'])).map(d=>`<button data-choice="${d}" data-id="${it.id}" aria-pressed="${decisions[it.id]===d}" class="${decisions[it.id]===d?'selected':''}" aria-pressed="${decisions[it.id]===d}">${esc(decisionLabel(it,d))}</button>`).join('')}</div><div class="actions">${pickButtons(it)}</div><label class="muted" for="note-${it.id}">Optional note</label><textarea id="note-${it.id}" data-note="${it.id}">${esc(notes[it.id]||'')}</textarea></article>`).join('');
+ progress();
+}
+document.addEventListener('click',event=>{
+ const bulk=event.target.closest('[data-bulk]');
+ if(bulk){const tier=bulk.dataset.bulk;items.filter(it=>tierOf(it)===tier&&!it.choiceOnly&&!(it.requires||[]).length&&!Object.keys(it.requiresNamed||{}).length&&!decisions[it.id]&&!String(notes[it.id]||'').trim()).forEach(it=>{if(it.choiceOnly){if(!it.picks.includes(it.guessPick))throw new Error('Named choices require an individual selection');decisions[it.id]='pick';picks[it.id]=it.guessPick;}else{decisions[it.id]='approve';delete picks[it.id];}});render();return;}
+ const exception=event.target.closest('[data-except]');
+ if(exception){const id=exception.dataset.except;exceptions.add(id);delete decisions[id];delete picks[id];render();document.querySelector(`[data-card="${id}"]`).scrollIntoView({block:'center'});return;}
+ const picked=event.target.closest('[data-pick-id]');
+ if(picked){const id=picked.dataset.pickId;decisions[id]='pick';picks[id]=picked.dataset.pick;render();return;}
+ const choice=event.target.closest('[data-choice]');
+ if(choice){const id=choice.dataset.id,d=choice.dataset.choice;if(decisions[id]===d)delete decisions[id];else decisions[id]=d;delete picks[id];
+  choice.closest('.actions').querySelectorAll('[data-choice]').forEach(b=>{const on=decisions[id]===b.dataset.choice;b.classList.toggle('selected',on);b.setAttribute('aria-pressed',String(on));});render();}
+});
+document.addEventListener('input',event=>{const id=event.target.dataset.note;if(id){if(event.target.value)notes[id]=event.target.value;else delete notes[id];progress();}});
+function payload(){
+ const tally={approve:0,reject:0,discuss:0,pick:0};Object.values(decisions).forEach(d=>tally[d]++);
+ return {schemaVersion:1,reviewId:spec.reviewId,savedAt:new Date().toISOString(),decided:Object.keys(decisions).length,tally,
+  decisions:{...decisions},notes:{...notes},picks:{...picks},exceptions:[...exceptions],discuss:items.filter(it=>decisions[it.id]==='discuss').map(it=>it.id),unmarked:items.filter(it=>!decisions[it.id]).map(it=>it.id)};
+}
+$('save').addEventListener('click',async()=>{
+ const data=JSON.stringify(payload(),null,2);
+ if(document.querySelector('meta[name="codex-review-save"]')){
+  $('save').disabled=true;
+  try{
+   const response=await fetch(new URL('decisions',window.location.href),{method:'PUT',headers:{'Content-Type':'application/json'},body:data});
+   const result=await response.json();
+   if(!response.ok)throw new Error(result.error||response.status);
+   $('status').textContent='Saved on VM: '+result.decided+' decisions.';
+  }catch(error){$('status').textContent='Save failed: '+error.message;}
+  finally{progress();}
+ }else{
+  const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
+  const link=document.createElement('a');link.href=url;link.download='decisions.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  $('status').textContent='Decisions downloaded; return decisions.json.';
+ }
+});
+function restoreReview(saved){
+ for(const k of Object.keys(decisions))delete decisions[k];
+ for(const k of Object.keys(notes))delete notes[k];
+ for(const k of Object.keys(picks))delete picks[k];
+ Object.assign(decisions,saved.decisions||{});Object.assign(notes,saved.notes||{});Object.assign(picks,saved.picks||{});
+ exceptions.clear();for(const id of saved.exceptions||[])exceptions.add(id);
+ render();$('status').textContent='Restored saved decisions from '+saved.savedAt;
+}
+render();
+</script></body></html>

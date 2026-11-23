@@ -20,7 +20,11 @@ Read `~/.codex/skills/remove-recap/SKILL.md` first. This run happens **before** 
 - **Stage 0 source:** `<STAGE0>` is not narration input. Still, report whether it carries the same recap.
 - **Tape:** `transcript.cleaned.speakers.vtt`. Cite cue numbers and timestamps.
 - **Session-start trim:** `notes/session_start_trims.json`, if the campaign keeps one. Chatter before the trim was never reviewed.
-- **Previous chapter:** `<PREV>/session-summary.md`. The recap's content should already be there.
+- **Previous chapter:** select `<PREV>/session-summary.md`, or explicitly name the
+  draft/export if no reviewed summary exists. Check its actual content and limitations;
+  do not search review packets as independent corroboration.
+- **Native labelled tape:** use the exact reviewed cleaned native VTT when that is the
+  established source; a `.speakers.vtt` filename is not required.
 
 ## Phase 1: detect
 
@@ -29,6 +33,7 @@ Read the opening cues up to the first line of live play, and apply the skill's m
 - where the recap starts and ends, as cue numbers and timestamps
 - where live play begins
 - which scene or scenes in session-summary.md carry the recap, and which Summary paragraphs or sentences
+- any interrupted recap spans and the fresh letter/discussion/bookkeeping between them; retain those live portions
 
 **Read-aloud recaps are often an older summary, read out with corrections.** The GM reads the previous chapter's summary,
 which may hold errors that a later review fixed, and corrects it on the fly ("no, that was a typo, it was X"). Never carry a
@@ -79,6 +84,11 @@ Make one card per decision:
 
 Rules for every card:
 - Offer "leave it / keep verbatim" as the reject option.
+- Put any semantic cut→rescue dependency in `requires` (or an explicit equivalent), and
+  test independent edit subsets. Count checks do not resolve a rejected rescue
+  destination.
+- Return every note/quoted aside for the combined page footer, and state each retained
+  rescue's existing destination even when no insertion is needed.
 - If there is no recap at all, make one card: "Mark #N as the start of play, cut nothing".
 - Put no literal "\n" in card text, and HTML-escape the evidence.
 - Do NOT hand off the review page. Do NOT edit any campaign file.

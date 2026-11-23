@@ -74,11 +74,11 @@ were asked for may not be the next one due.
    - **Stage 0 source.** Record each chapter's filename. A chapter with none has
      nothing for `enhance_summary` to render from.
 3. **Split the batch into cohorts by path, and set the odd ones out aside.**
-   One batch runs one path. A chapter that needs a different attribution route
-   (text-only, single source, or edited-cut projection) or is missing an input
-   goes into `batch.json` under `"blocked": [{"dir": …, "reason": …}]`. It is
-   not forced through a path it does not fit. `batch.py` ignores `blocked`, so
-   the manifest and commit message must name those chapters.
+   One cohort config runs one path; several cohort configs can share the run ledger. A
+   different valid attribution route is a separate cohort, not automatically blocked.
+   List genuinely missing inputs or rulings under `"blocked": [{"dir": …, "reason":
+   …}]`. `batch.py` ignores `blocked`, so retain those chapters and their next actions
+   in the ledger and handoff. Reunite ready cohorts at the common stage boundary.
 4. **Show the GM the gaps first, then ask.** Give a table with one row per
    chapter, what it has and what it lacks, plus what each gap costs. Then
    collect every run-wide decision in **one** question set:
@@ -130,14 +130,47 @@ were asked for may not be the next one due.
 1. deterministic run   the stage's CLI, one process per chapter (check_consistency, enhance_summary, …)
 2. agent per chapter   adjudicate from a brief → findings + items + page. No handoff, no campaign edits.
 3. validate            batch.py validate — counts, card↔item ids, builds review_<stage>.html
-4. hand off            give the GM each local review_<stage>.html path
+4. hand off            publish the review index over Tailscale when >3 questions; max100 items/page
 5. STOP                wait for the GM to return saved decisions JSON
-6. read back           place each export beside its page → batch.py read
-7. re-ask              missing exports, unmarked cards and discuss notes → chat
+6. read back           validate each page export, merge coverage → batch.py read
+7. re-ask              missing exports, unmarked cards and discuss notes → Tailscale if >3
 8. apply               batch.py apply --rulings chat_rulings.json   (all-or-nothing)
 9. manifest            batch.py manifest → paste the Rulings section into the stage's manifest
 10. verify + commit    the stage's own checks (quote verifier, …); one commit per stage, one campaign
 ```
+
+## Review pages — at most 100 decisions each
+
+Count the pending set across the entire stage. More than three questions go
+through Tailscale; the page cap does not change that threshold. Split larger
+queues into numbered pages of at most 100 decision items, with an index,
+previous/next navigation and per-page saved progress. Restore saved rulings
+when revisiting a page. Keep Clef batches first when requested; a score-group
+bulk approval affects only its items on that page.
+
+Keep each chapter's original complete item queue for stage validation. Every
+published page has a distinct review ID, an exact item subset and a separate
+decisions destination. Record page membership in the run ledger/manifest and
+verify that every pending item occurs on exactly one page. Validate each
+export against its page subset, then merge the rulings back into the original
+chapter queues with page/source provenance before using `batch.py read` and
+`batch.py apply`. Never treat one page's export as a completed chapter or
+rewrite its review ID merely to make it pass a different queue's validator.
+
+A chapter with zero judgment cards needs no fabricated empty decision export. Retain
+its findings and verification; skip empty-queue decision reads while still applying
+and verifying any mechanical auto plan through its owning helper. Its stage still
+appears in the ledger. For chapters with cards, all pages
+must resolve before the stage applies: missing exports, unmarked
+items and unresolved Discuss notes remain open. Score and complete-passage checks still
+apply after splitting. Named wording choices must return an explicit offered pick; a
+high decision-model score or generic Approve is not that pick. When exporting to chapter
+queues, preserve page provenance and apply only the chosen text to its declared layer; a
+summary-only name ruling does not create a global alias or tape correction. If a
+re-audit challenges earlier approved
+wording, preserve those historical decisions, quarantine questionable edits,
+and hold dependent review pages and downstream stages until fresh rulings
+resolve the conflict and affected proposals/scores are revalidated.
 
 ## Step 2 — the agent brief
 
@@ -152,6 +185,10 @@ in one message. Each brief must say:
   continuity evidence, **not** canon.
 - **Grep every prior rulings log for the subject before carding it.** A finding
   that would reverse a ruling becomes a CONFLICT card that quotes the ruling.
+  Identify the source of that disposition: a saved GM card/note versus an agent’s
+  false-positive or benign assessment. Recheck the latter against the tape; it
+  does not bind the GM or prove the wording correct. Disclose a corrected prior
+  interpretation without falsely presenting it as a reversal of a GM decision.
 - **The standing GM rulings from this cycle**, stated literally (for example,
   "the creatures in the chapter 20 fight are X, not Y"). Agents cannot see your chat.
 - **Canon chain from the campaign instruction files for every name; never invent a spelling.** The
@@ -200,6 +237,18 @@ chapter. The check for one chapter and the adjudication of another overlap.
   applied without asking and listed in the page footer.
 - `false_positive` and `note` never touch the file. A note can record an
   upstream gap, for example.
+- An upstream carry-back has its own exact file, source hash and old/new/count
+  edits. Show those alongside the current-layer edits before handoff. Approval
+  of a target-only card does not authorize unlisted source edits; use the owning
+  deterministic apply path for each approved target and verify their counts
+  before writing either. Do not leave necessary source repairs as a vague
+  request for a later approval.
+- **Semantic dependencies are separate from count checks.** Record `requires` or an
+  equivalent explicit dependency when a cut needs a separate rescue destination. The
+  orchestrator must resolve it before `batch.py apply`; the helper does not enforce such
+  fields. A mechanically valid cut/rescue subset can still discard unique content. Test
+  allowed independent subsets where practical and report incompatible choices for GM
+  resolution.
 - **`count` is the exact number of occurrences of `old`.** The apply refuses on
   any mismatch. That is how a stale finding, a double apply or an ambiguous
   anchor is caught instead of silently mis-editing the file.
@@ -283,26 +332,29 @@ Every item below reached a GM approval on the 2026-09-28 batch:
 - **One reading per note, or ask.** A note like "I meant X" can mean edit the
   document, edit the tape, or both. Offer each reading as an option that names
   the files it writes.
-- Take everything left open to chat, grouped: unmarked cards, discuss notes (one
-  at a time, per the campaign instruction files), and whole unsaved pages if the GM would rather rule
-  in chat. Record each answer in `chat_rulings.json` **with the GM's own words**
+- Route everything left open by the complete pending count: Tailscale for more
+  than three, chat for three or fewer unless the GM explicitly chooses otherwise.
+  Include unmarked cards, Discuss notes and unsaved pages. Record each answer in `chat_rulings.json` **with the GM's own words**
   in `said`. A discuss note that resolves to new wording carries that wording
   as `edits`. That wording is a second question, not your interpretation.
 - `batch.py apply` refuses while anything is unresolved and writes **nothing,
   in any chapter**, until every chapter resolves and every count matches. Run
   `--dry-run` first. `--propagate-stage0` also applies an identical edit to the
   chapter's Stage 0 source wherever the same text occurs, and reports each hit.
-  Use it when the Stage 0 source must stay in agreement, as at Stage 1.
+  Use it only when the saved card explicitly authorizes those exact occurrences and
+  file. For a bounded carry-back, prepare a separate exact plan/config for the Stage 0
+  target, dry-run both plans before either write, and compare each result with its
+  approved scope. Never enable broad propagation merely because wording happens to
+  match.
 
 ## When a stage has only a handful of rulings
 
-Per the campaign review threshold (about a dozen), a stage whose cards total fewer
-than that across **all** chapters is ruled in chat, not on pages. Build the
-items files anyway, since they are the record. Ask one question per card with
-the exact before and after text, and put every answer in the rulings file.
-`batch.py apply` accepts a chapter whose page was never handed off, as long
-as the chat rulings cover every card. The manifest records "ruled in chat".
-The 2026-09-28 remove-recap stage (8 cards across 3 chapters) ran this way.
+Use chat only when the complete pending set is three questions or fewer,
+unless the user explicitly chooses another route. More than three questions
+use Tailscale, with at most 100 items per page. Build the item files even for
+chat rulings, record the exact before/after and the GM's words, and account for
+every card. `batch.py apply` accepts a chapter whose page was never handed
+off when chat rulings cover every card; the manifest records "ruled in chat".
 
 ## Each stage can bring back what an earlier stage removed
 
@@ -314,12 +366,11 @@ brought back a struck "contact poison", a quote word the GM had cut, and a
 - **The enhancement brief must list every approved Stage 0 card's subject.**
   The agent then checks each one in the new summary. A re-introduction is a
   card that quotes the Stage 0 ruling.
-- **Later-stage cards that fix the Stage 0 source are hand-applied.**
-  `batch.py apply --propagate-stage0` copies an edit to the Stage 0 source only
-  where the *same* text occurs. A card that needs a different edit there (the
-  summary was already right but the gm-assist was not) carries a
-  `stage0_edits` list. Apply those by hand with exact counts and name them in
-  the manifest.
+- **Later-stage source carry-backs need their own exact plan.** `--propagate-stage0`
+  matches text, not semantic scope. When the source needs different wording or only
+  selected occurrences, list the source path/hash and its `stage0_edits` before handoff,
+  then use the owning deterministic apply path for that target. Verify both the
+  current-layer and source plans without broadening the saved ruling.
 - **An approval covers the target file only.** When a card's `y` says "the same
   wording also sits in the Stage 0 source", approving it does not authorise
   editing that file. Ask, or leave it and say so.
@@ -520,3 +571,17 @@ apply without the chat rulings, and refused a second apply.
 **What it does not do:** detection, adjudication, review handoff, or anything
 stage-specific in the manifest (renumbering, upstream gaps, and so on). Those
 stay with the stage skill and with you.
+
+## Apply checkpoints and evidence bytes
+
+Freeze target hashes, exact expected outputs and immutable source hashes before the
+first write. Record the applied result before starting fallible quote/report/manifest
+steps. On resume, distinguish unapplied input, the exact approved output, and an
+unexpected third state; run the apply only for the first. A successful apply followed by
+a formatting failure is unfinished verification, not permission to apply twice.
+
+Keep analysis snapshots and their cited hashes immutable. Normalize generated
+display/log whitespace before hashing it, or preserve the original bytes and record a
+new version/hash after normalization; do not silently invalidate source receipts. Keep
+deterministic verification separate from model work so retries need not regenerate
+reviewed prose.
