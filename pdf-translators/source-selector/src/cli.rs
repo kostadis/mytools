@@ -32,6 +32,13 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Commands {
+    /// Continuously select complete groups and publish Markdown while metadata continues.
+    MarkdownContinuous(crate::markdown::continuous::Options),
+    #[command(hide = true)]
+    MarkdownMetadataWorker {
+        #[arg(long)]
+        request: PathBuf,
+    },
     /// Resume metadata selection, check space and convert the full eligible library.
     MarkdownRollout {
         #[arg(long)]
@@ -141,6 +148,27 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<ExitCode> {
         }
     };
     match &cli.command {
+        Commands::MarkdownMetadataWorker { request } => {
+            crate::markdown::continuous::metadata_worker(request)?;
+            return Ok(ExitCode::SUCCESS);
+        }
+        Commands::MarkdownContinuous(options) => {
+            let work = cli
+                .work_dir
+                .as_ref()
+                .ok_or_else(|| SelectionError::Usage("--work-dir required".into()))?;
+            let status = crate::markdown::continuous::run(work, options.clone())?;
+            let incomplete = matches!(
+                status.phase.as_str(),
+                "capacity_pending" | "needs_regroup" | "authority_pending"
+            );
+            print_json(&status)?;
+            return Ok(if incomplete {
+                ExitCode::from(75)
+            } else {
+                ExitCode::SUCCESS
+            });
+        }
         Commands::MarkdownWorker { job } => {
             crate::markdown::worker::run(job)?;
             return Ok(ExitCode::SUCCESS);

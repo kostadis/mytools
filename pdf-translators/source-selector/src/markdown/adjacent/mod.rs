@@ -1,6 +1,8 @@
 //! Coordinator-only publication into the source tree. Directory manifests are
 //! commit records; private receipts/intents establish ownership after a crash.
+mod discovery;
 mod files;
+pub use discovery::Discovery;
 mod state;
 use super::worker::Engine;
 use super::*;
@@ -26,6 +28,9 @@ pub struct AdjacentReport {
     pub warnings: Vec<String>,
 }
 pub struct Session {
+    scoped: bool,
+    authority_db: Option<PathBuf>,
+    confirmed: BTreeSet<String>,
     root: PathBuf,
     identity: Value,
     path: PathBuf,
@@ -72,7 +77,10 @@ fn owned(v: &Value) -> bool {
     v["generator"] == OWNER
 }
 fn check_manifest(v: &Value) -> Result<()> {
-    if !owned(v) || v["schema_version"] != 1 || !v["documents"].is_array() {
+    if !owned(v)
+        || !matches!(v["schema_version"].as_u64(), Some(1 | 2))
+        || !v["documents"].is_array()
+    {
         return Err(SelectionError::Invalid(
             "foreign, invalid or unsupported directory record".into(),
         ));
@@ -183,6 +191,12 @@ pub fn managed_markdown(output: &Path, root: &Path, source: &crate::models::Sour
 }
 impl Session {
     pub fn new(output: &Path, s: &Snapshot) -> Result<Self> {
+        Self::open(output, s, false)
+    }
+    pub fn new_scoped(output: &Path, s: &Snapshot) -> Result<Self> {
+        Self::open(output, s, true)
+    }
+    fn open(output: &Path, s: &Snapshot, scoped: bool) -> Result<Self> {
         files::Directory::open(&s.source_root, &s.root_identity, Path::new(""))?;
         if root_identity(&s.source_root)? != s.root_identity {
             return Err(SelectionError::Invalid(
@@ -195,7 +209,11 @@ impl Session {
         ));
         let path = output.join("adjacent").join(format!("{key}.json"));
         let ownership = Ownership::open(&path, s)?;
-        let (dirs, discovery_errors) = files::discover(&s.source_root);
+        let (dirs, discovery_errors) = if scoped {
+            (vec![], vec![])
+        } else {
+            files::discover(&s.source_root)
+        };
         let mut directories: BTreeSet<_> = dirs.into_iter().collect();
         for r in ownership.receipts.iter().chain(&ownership.intents) {
             if let Some(parent) = r.target.parent() {
@@ -206,6 +224,9 @@ impl Session {
             directories.insert(operation.directory.clone());
         }
         Ok(Self {
+            scoped,
+            authority_db: None,
+            confirmed: BTreeSet::new(),
             root: s.source_root.clone(),
             identity: s.root_identity.clone(),
             path,
@@ -215,6 +236,88 @@ impl Session {
             warnings: BTreeSet::new(),
             verified: BTreeMap::new(),
         })
+    }
+    pub fn clear_authority_database(&mut self) {
+        self.authority_db = None;
+    }
+    pub fn set_authority_database(&mut self, path: &Path) {
+        self.authority_db = Some(path.to_path_buf());
+    }
+    fn authority_guard(&self, s: &Snapshot) -> Result<Option<File>> {
+        let Some(path) = &self.authority_db else {
+            return Ok(None);
+        };
+        let db = crate::store::Store::open_readonly(path)?;
+        let guard = db.authority_guard()?;
+        let groups: Vec<crate::models::Group> = db.records("groups")?;
+        for record in &s.records {
+            let group = groups
+                .iter()
+                .find(|g| g.group_id == record.group_id)
+                .ok_or_else(|| {
+                    SelectionError::Invalid("group changed before publication".into())
+                })?;
+            let fresh = super::selection::resolve_group(
+                &db,
+                self.path.parent().unwrap().parent().unwrap(),
+                &self.root,
+                group,
+                record.candidates.clone(),
+                &Value::Null,
+            )?;
+            if fresh.snapshot_id != s.snapshot_id {
+                return Err(SelectionError::Invalid(
+                    "selection authority changed before manifest commit".into(),
+                ));
+            }
+            for c in &record.candidates {
+                if crate::inventory::checked_path(&self.root, &c.source.relative_path)
+                    .and_then(|p| crate::inventory::fingerprint(&p))
+                    .ok()
+                    .as_ref()
+                    != Some(&c.source.fingerprint)
+                {
+                    return Err(SelectionError::Invalid(
+                        "competitor observation changed before manifest commit".into(),
+                    ));
+                }
+            }
+        }
+        Ok(Some(guard))
+    }
+    /// Reconcile an emptied/previously managed directory after bounded discovery.
+    /// Current selected directories are handled by ordinary scoped publication.
+    pub fn reconcile_discovered(
+        &mut self,
+        s: &Snapshot,
+        engine: &Engine,
+        relative: &Path,
+    ) -> Result<usize> {
+        if s.ready
+            .iter()
+            .any(|r| r.relative_path.parent() == Some(relative))
+        {
+            return Ok(0);
+        }
+        self.sync_directory(
+            relative,
+            s,
+            engine,
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &BTreeMap::new(),
+            s.coverage_errors.is_empty(),
+        )?;
+        let dir = files::Directory::open(&self.root, &self.identity, relative)?;
+        let record = dir
+            .read(Path::new(NAME))?
+            .map(|b| serde_json::from_slice::<Value>(&b))
+            .transpose()?;
+        Ok(record
+            .as_ref()
+            .and_then(|r| r["unverified_work_ids"].as_array())
+            .map_or(0, |v| v.len()))
     }
     pub fn sync(
         &mut self,
@@ -237,6 +340,25 @@ impl Session {
                 .errors
                 .push("source root changed; adjacent publication refused".into());
             return report;
+        }
+        if self.scoped {
+            self.directories.clear();
+            for record in &s.records {
+                for c in &record.candidates {
+                    self.directories.insert(
+                        c.source
+                            .relative_path
+                            .parent()
+                            .unwrap_or(Path::new(""))
+                            .to_path_buf(),
+                    );
+                }
+            }
+        }
+        for record in &s.records {
+            if record.candidates.iter().all(|c| c.error.is_none()) {
+                self.confirmed.insert(record.group_id.clone());
+            }
         }
         for ready in &s.ready {
             self.directories.insert(
@@ -427,7 +549,7 @@ impl Session {
             .cloned()
             .collect();
         let mut unresolved = vec![];
-        if !coverage_complete {
+        if !coverage_complete || self.scoped {
             for entry in old["documents"]
                 .as_array()
                 .unwrap()
@@ -439,15 +561,45 @@ impl Session {
                     .iter()
                     .any(|r| Some(r.work_id.as_str()) == entry["work_id"].as_str())
                 {
-                    documents.push(entry.clone());
-                    unresolved.push(entry["work_id"].clone());
+                    let proven = self.scoped
+                        && s.records.iter().any(|r| {
+                            let complete = r.status == "source_changed"
+                                || r.candidates.iter().all(|c| c.error.is_none());
+                            complete
+                                && (entry["group_id"] == r.group_id
+                                    || r.candidates.iter().any(|c| {
+                                        entry["source_id"] == c.source.source_id
+                                            && (r.status == "source_changed"
+                                                || c.sha256.as_deref()
+                                                    == entry["pdf_sha256"].as_str())
+                                    }))
+                        });
+                    let disappeared = self.scoped
+                        && coverage_complete
+                        && files::filename(&entry["pdf"])
+                            .ok()
+                            .is_some_and(|p| matches!(dir.stamp(&p), Ok(None)));
+                    if !proven && !disappeared {
+                        documents.push(entry.clone());
+                        if !entry["group_id"]
+                            .as_str()
+                            .is_some_and(|g| self.confirmed.contains(g))
+                        {
+                            unresolved.push(entry["work_id"].clone());
+                        }
+                    }
                 }
             }
         }
         let mut results = vec![];
         for r in members {
             let target = r.relative_path.with_extension("md");
-            let mut entry = serde_json::json!({"generator":OWNER,"work_id":r.work_id,"source_id":r.source_id,"selection_id":s.snapshot_id,"pdf":files::path_value(Path::new(r.relative_path.file_name().unwrap())),"pdf_sha256":r.sha256,"markdown":files::path_value(Path::new(target.file_name().unwrap())),"selection_basis":r.selection_basis,"internal_date":r.date,"engine_id":engine.id,"status":states.get(&r.work_id).and_then(|v|v["status"].as_str()).unwrap_or("pending")});
+            let mut entry = serde_json::json!({"generator":OWNER,"work_id":r.work_id,"source_id":r.source_id,"selection_id":super::publication::revision(s,r),"pdf":files::path_value(Path::new(r.relative_path.file_name().unwrap())),"pdf_sha256":r.sha256,"markdown":files::path_value(Path::new(target.file_name().unwrap())),"selection_basis":r.selection_basis,"internal_date":r.date,"engine_id":engine.id,"status":states.get(&r.work_id).and_then(|v|v["status"].as_str()).unwrap_or("pending")});
+            if self.scoped {
+                entry["group_id"] = Value::String(r.group_id.clone());
+                entry["selection_revision"] =
+                    Value::String(super::publication::revision(s, r).into());
+            }
             if let Some(error) = states.get(&r.work_id).and_then(|v| v.get("error")) {
                 entry["error"] = error.clone();
             }
@@ -483,6 +635,15 @@ impl Session {
                 }
                 let markdown = super::render::sibling(&book.markdown, r, s);
                 let bytes = markdown.as_bytes();
+                if dir.available_bytes()?
+                    < (bytes.len() as u64)
+                        .saturating_mul(2)
+                        .saturating_add(1024 * 1024)
+                {
+                    return Err(SelectionError::Invalid(
+                        "destination space insufficient; publication pending".into(),
+                    ));
+                }
                 let sha = digest(bytes);
                 let receipt = Receipt {
                     target: target.clone(),
@@ -542,12 +703,24 @@ impl Session {
         }
         documents.sort_by_key(|v| v["work_id"].as_str().unwrap_or("").to_string());
         let mut record = old.clone();
-        record["schema_version"] = Value::from(1);
+        record["schema_version"] = Value::from(if self.scoped { 2 } else { 1 });
         record["generator"] = Value::String(OWNER.into());
-        record["selection_id"] = Value::String(s.snapshot_id.clone());
+        if self.scoped {
+            let mut coverage = old["group_coverage"]
+                .as_object()
+                .cloned()
+                .unwrap_or_default();
+            for r in &s.records {
+                coverage.insert(r.group_id.clone(), serde_json::json!({"revision":s.snapshot_id,"status":r.status,"sources":r.candidates.iter().map(|c| &c.source.source_id).collect::<Vec<_>>()}));
+            }
+            record["group_coverage"] = Value::Object(coverage.clone());
+            record["selection_id"] = Value::String(digest_json(&coverage));
+        } else {
+            record["selection_id"] = Value::String(s.snapshot_id.clone());
+        }
         record["documents"] = Value::Array(documents);
         record["reconciliation_status"] = Value::String(
-            if coverage_complete {
+            if coverage_complete && unresolved.is_empty() {
                 "complete"
             } else {
                 "partial"
@@ -579,6 +752,7 @@ impl Session {
                 };
                 self.ownership.operations.push(operation.clone());
                 self.ownership.save(&self.path)?;
+                let before_verification = stamp(&dir)?;
                 if verify_pairs(&dir, &mut results) {
                     dir.cleanup(&operation.plan)?;
                     self.ownership.operations.retain(|o| o != &operation);
@@ -594,6 +768,17 @@ impl Session {
                         }
                     }
                     continue;
+                }
+                if stamp(&dir)? != before_verification {
+                    return Err(SelectionError::Invalid(
+                        "source changed during final verification".into(),
+                    ));
+                }
+                let _authority = self.authority_guard(s)?;
+                if stamp(&dir)? != before_verification {
+                    return Err(SelectionError::Invalid(
+                        "source observations changed at authority gate".into(),
+                    ));
                 }
                 dir.install(&operation.plan)?;
                 committed = true;

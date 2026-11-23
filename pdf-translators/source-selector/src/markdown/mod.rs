@@ -1,5 +1,7 @@
 //! Additive policy selection and native-text search artifacts.
 pub mod adjacent;
+pub mod capacity;
+pub mod continuous;
 pub mod conversion;
 pub mod dates;
 pub mod metadata;

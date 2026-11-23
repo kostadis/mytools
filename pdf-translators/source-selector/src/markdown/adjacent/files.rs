@@ -132,6 +132,14 @@ impl Directory {
         f.read_to_end(&mut bytes)?;
         Ok(Some(bytes))
     }
+    pub fn available_bytes(&self) -> Result<u64> {
+        let mut v = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+        if unsafe { libc::fstatvfs(self.file.as_raw_fd(), v.as_mut_ptr()) } != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        let v = unsafe { v.assume_init() };
+        Ok((u128::from(v.f_bavail) * u128::from(v.f_frsize)).min(u128::from(u64::MAX)) as u64)
+    }
     pub fn stamp(&self, name: &Path) -> Result<Option<serde_json::Value>> {
         let Some(f) = self.open_file(name, libc::O_RDONLY)? else {
             return Ok(None);

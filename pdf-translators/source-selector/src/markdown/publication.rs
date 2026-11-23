@@ -11,6 +11,8 @@ pub struct Publication {
     pub pending: bool,
     pub published_snapshot: Option<String>,
     pub pending_works: Vec<Value>,
+    #[serde(default)]
+    pub catalog: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adjacent: Option<adjacent::AdjacentReport>,
 }
@@ -26,6 +28,16 @@ pub fn publish_with_destination(
 ) -> Result<Publication> {
     let _guard = lock(output, "selection.lock")?;
     let snapshot = selection::load_current(output)?;
+    publish_snapshot(output, engine, &snapshot, adjacent_session, true)
+}
+/// Explicit scoped authority; caller holds the main-store publication gate.
+pub fn publish_snapshot(
+    output: &Path,
+    engine: &Engine,
+    snapshot: &Snapshot,
+    adjacent_session: Option<&mut adjacent::Session>,
+    update_corpus: bool,
+) -> Result<Publication> {
     let job_store = crate::store::Store::open_readonly(&output.join("markdown.db")).ok();
     let mut catalog = vec![];
     let mut books = vec![];
@@ -36,7 +48,7 @@ pub fn publish_with_destination(
         if !seen.insert(&ready.work_id) {
             return Err(SelectionError::Invalid("duplicate current work IDs".into()));
         }
-        match frozen_source_matches(&snapshot, ready) {
+        match frozen_source_matches(snapshot, ready) {
             Ok(Some(false)) => {
                 catalog.push(serde_json::json!({"work":ready,"status":"source_changed","error":"accessible original no longer matches frozen selection; rescan/reselect"}));
                 continue;
@@ -80,7 +92,7 @@ pub fn publish_with_destination(
                     ));
                 }
             }
-            let metadata = serde_json::json!({"schema_version":1,"format_version":2,"selection_id":snapshot.snapshot_id,"source":ready,"engine":engine,"total_pages":ready.page_count,"text_pages":text_pages,"empty_pages":empty,"sparse_pages":sparse,"warnings":warnings,"native_layout_limitation":"Native text may omit images, confuse column/table order, or miss text inside images. Caption-only scans may escape sparse-page detection.","pages":pages});
+            let metadata = serde_json::json!({"schema_version":1,"format_version":2,"selection_id":revision(snapshot,ready),"source":ready,"engine":engine,"total_pages":ready.page_count,"text_pages":text_pages,"empty_pages":empty,"sparse_pages":sparse,"warnings":warnings,"native_layout_limitation":"Native text may omit images, confuse column/table order, or miss text inside images. Caption-only scans may escape sparse-page detection.","pages":pages});
             let mut md = format!(
                 "---\ntitle: {}\npublisher: {}\nsource_id: {}\nsource_path: {}\nsource_sha256: {}\npdf_pages: {}\nselection_id: {}\nselection_basis: {}\ninternal_date: {}\n---\n\n# {}\n\nNative PDF text. Images and reading order may need visual review.\n",
                 serde_json::to_string(&ready.title)?,
@@ -89,7 +101,7 @@ pub fn publish_with_destination(
                 serde_json::to_string(&serde_json::to_value(ready)?["relative_path"])?,
                 serde_json::to_string(&ready.sha256)?,
                 ready.page_count,
-                serde_json::to_string(&snapshot.snapshot_id)?,
+                serde_json::to_string(revision(snapshot, ready))?,
                 serde_json::to_string(&ready.selection_basis)?,
                 serde_json::to_string(&ready.date)?,
                 escape(&ready.title)
@@ -110,7 +122,7 @@ pub fn publish_with_destination(
             md = render::annotate(
                 &md,
                 ready,
-                &snapshot,
+                snapshot,
                 engine,
                 &quality,
                 worker::extracted_at(output, ready, engine),
@@ -169,7 +181,7 @@ pub fn publish_with_destination(
                 )
             })
             .collect();
-        let report = session.sync(&snapshot, engine, &rendered, &states);
+        let report = session.sync(snapshot, engine, &rendered, &states);
         books.retain(|(id, _)| report.published.contains(id));
         for entry in &mut catalog {
             let id = entry["work"]["work_id"].as_str().unwrap();
@@ -190,8 +202,12 @@ pub fn publish_with_destination(
         pending: books.len() < snapshot.ready.len()||adjacent_report.as_ref().is_some_and(|r|!r.complete),
         adjacent:adjacent_report,
         published_snapshot:read_json::<Value>(&output.join("corpus/current/catalog.json")).ok().and_then(|c|c["selection_id"].as_str().map(str::to_string)),
+        catalog: catalog.clone(),
         pending_works:catalog.iter().filter(|v|v["status"]!="searchable_with_flags").map(|v|serde_json::json!({"work_id":v["work"]["work_id"],"source_id":v["work"]["source_id"],"status":v["status"],"error":v["error"],"missing_ranges":v["missing_ranges"]})).collect(),
     };
+    if !update_corpus {
+        return Ok(result);
+    }
     if books.is_empty()
         && !(snapshot.ready.is_empty()
             && snapshot.coverage_errors.is_empty()
@@ -258,7 +274,7 @@ pub fn publish_with_destination(
         "atomic corpus view currently requires Unix".into(),
     ));
     result.generation = Some(id);
-    result.published_snapshot = Some(snapshot.snapshot_id);
+    result.published_snapshot = Some(snapshot.snapshot_id.clone());
     write_json(&output.join("corpus/pending.json"), &result)?;
     Ok(result)
 }
@@ -324,4 +340,12 @@ fn escape(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+pub fn revision<'a>(s: &'a Snapshot, ready: &'a Ready) -> &'a str {
+    ready
+        .provenance
+        .get("selection_revision")
+        .and_then(Value::as_str)
+        .unwrap_or(&s.snapshot_id)
 }

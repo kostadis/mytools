@@ -29,10 +29,6 @@ pub fn select(store: &Store, output: &Path, provenance: Option<&Path>) -> Result
         .into_iter()
         .map(|s| (s.source_id.clone(), s))
         .collect();
-    let decisions: Vec<Decision> = store.records("decisions")?;
-    let adopted = store.current_decisions()?;
-    let evidence = store.evidence()?;
-    let hints: Vec<Hint> = store.records("hints")?;
     let provenance: Value = provenance
         .map(read_json)
         .transpose()?
@@ -63,147 +59,26 @@ pub fn select(store: &Store, output: &Path, provenance: Option<&Path>) -> Result
         if members.is_empty() {
             continue;
         }
-        let work_id = format!("w{}", &digest_json(&group.group_id)[..24]);
-        let mut record = PolicyRecord {
-            work_id: work_id.clone(),
-            group_id: group.group_id.clone(),
-            status: "deferred_choice".into(),
-            reason: String::new(),
-            selected_source_id: None,
-            candidates: members
-                .iter()
-                .map(|s| {
-                    let candidate = metadata::probe(&inv.root, s, store, &mut cache);
-                    progress.tick();
-                    candidate
-                })
-                .collect(),
-        };
-        let authority: Vec<_> = decisions
+        let candidates = members
             .iter()
-            .filter(|d| {
-                matches!(d.actor_role, ActorRole::User | ActorRole::Sol)
-                    && (d
-                        .outcomes
-                        .iter()
-                        .any(|o| group.source_ids.contains(&o.source_id))
-                        || record.candidates.iter().any(|c| {
-                            c.sha256
-                                .as_ref()
-                                .is_some_and(|h| d.source_hashes.values().any(|v| v == h))
-                        }))
+            .map(|s| {
+                let c = metadata::probe(&inv.root, s, store, &mut cache);
+                progress.tick();
+                c
             })
             .collect();
-        let baseline = members.iter().any(|s| {
-            let generated = !s.artifacts.is_empty()
-                && s.publisher.to_lowercase().contains("dungeon")
-                && super::adjacent::managed_markdown(output, &inv.root, s);
-            let md = s.relative_path.with_extension("md");
-            let protected_artifacts = s.artifacts.iter().any(|artifact| {
-                !(generated && md.file_name().and_then(|n| n.to_str()) == Some(artifact.as_str()))
-            });
-            s.baseline_established
-                || (protected_artifacts && s.publisher.to_lowercase().contains("dungeon"))
-        });
-        let mut choices: Vec<(String, String, String)> = vec![];
-        if baseline {
-            record.status = "existing_or_baseline".into();
-            record.reason =
-                "baseline requires separate reconciliation; JSON is not Markdown coverage".into();
-        } else if !authority.is_empty() {
-            record.reason =
-                "adopted review or hold preserved; changed membership requires review".into();
-            if authority.len() == 1 {
-                let d = authority[0];
-                if adopted.iter().any(|a| {
-                    a.group_id == d.group_id && a.membership_digest == group.membership_digest
-                }) && d.membership_digest == group.membership_digest
-                {
-                    choices = d
-                        .outcomes
-                        .iter()
-                        .filter(|o| matches!(o.status, Status::Selected | Status::DistinctWork))
-                        .map(|o| {
-                            (
-                                o.source_id.clone(),
-                                o.work_id.clone().unwrap_or_else(|| work_id.clone()),
-                                "adopted_review".into(),
-                            )
-                        })
-                        .collect();
-                }
-            }
-        } else {
-            let conflict = [
-                "ruleset",
-                "language",
-                "document_role",
-                "work_identity",
-                "volume",
-            ]
-            .iter()
-            .any(|kind| {
-                let mut values = BTreeSet::new();
-                for c in &record.candidates {
-                    for e in evidence.iter().filter(|e| {
-                        e.source_id == c.source.source_id
-                            && Some(e.sha256.as_str()) == c.sha256.as_deref()
-                    }) {
-                        for claim in e.claims.iter().filter(|v| v.kind == *kind) {
-                            values.insert(claim.value.trim().to_lowercase());
-                        }
-                    }
-                    for h in hints
-                        .iter()
-                        .filter(|h| h.source_ids.contains(&c.source.source_id))
-                    {
-                        if let Some(v) = h.payload.get(*kind).and_then(Value::as_str) {
-                            values.insert(v.trim().to_lowercase());
-                        }
-                    }
-                }
-                values.len() > 1
-            });
-            if conflict {
-                record.reason =
-                    "explicit content/hint qualifiers conflict; whole component deferred".into();
-            } else {
-                match automatic(&record.candidates) {
-                    Ok(id) => {
-                        choices.push((id, work_id.clone(), "most_recent_internal_date".into()))
-                    }
-                    Err(reason) => record.reason = reason,
-                }
-            }
-        }
-        for (id, work, basis) in choices {
-            let c = record
-                .candidates
-                .iter()
-                .find(|c| c.source.source_id == id)
-                .unwrap();
-            if c.error.is_some() || c.sha256.is_none() || c.page_count.is_none() {
-                record.reason = "chosen source unavailable".into();
-                continue;
-            }
-            safe_id(&work)?;
-            let p = provenance
-                .get("files")
-                .and_then(Value::as_array)
-                .and_then(|files| {
-                    files.iter().find(|f| {
-                        f["original_relative_path"]
-                            == serde_json::to_value(&c.source.relative_path).unwrap_or(Value::Null)
-                            && f["sha256"].as_str() == c.sha256.as_deref()
-                    })
-                });
-            snapshot.ready.push(Ready{work_id:work,group_id:group.group_id.clone(),source_id:id.clone(),relative_path:c.source.relative_path.clone(),sha256:c.sha256.clone().unwrap(),page_count:c.page_count.unwrap(),title:c.source.product_folder.clone(),publisher:c.source.publisher.clone(),selection_basis:basis,date:c.dates.effective.clone(),alternatives:members.iter().filter(|s|s.source_id!=id).map(|s|s.relative_path.to_string_lossy().into_owned()).collect(),provenance:serde_json::json!({"original_source_root":provenance.get("source_root"),"original":p})});
-            record.status = "ready".into();
-            record.selected_source_id = Some(id);
-            record.reason =
-                "ready to attempt full native-text extraction; alternatives retained".into();
-        }
-        snapshot.records.push(record);
+        let resolved = resolve_group(store, output, &inv.root, &group, candidates, &provenance)?;
+        // Batch snapshots retain the legacy global provenance contract.
+        snapshot
+            .ready
+            .extend(resolved.ready.into_iter().map(|mut r| {
+                r.provenance
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("selection_revision");
+                r
+            }));
+        snapshot.records.extend(resolved.records);
     }
     snapshot.snapshot_id = digest_json(&snapshot);
     let dir = output
@@ -360,4 +235,222 @@ fn protected(path: &Path) -> Vec<String> {
     Q.find_iter(&raw)
         .map(|m| m.as_str().replace([' ', '-'], ""))
         .collect()
+}
+
+/// Resolve exactly one complete frozen component using the batch policy.
+pub fn resolve_group(
+    store: &Store,
+    output: &Path,
+    root: &Path,
+    group: &Group,
+    candidates: Vec<Candidate>,
+    provenance: &Value,
+) -> Result<Snapshot> {
+    let expected: BTreeSet<_> = group.source_ids.iter().cloned().collect();
+    let actual: BTreeSet<_> = candidates
+        .iter()
+        .map(|c| c.source.source_id.clone())
+        .collect();
+    if actual != expected || actual.len() != candidates.len() || actual.is_empty() {
+        return Err(SelectionError::Invalid(
+            "complete PDF group required".into(),
+        ));
+    }
+    let members: Vec<_> = candidates.iter().map(|c| &c.source).cloned().collect();
+    let decisions: Vec<Decision> = store.records("decisions")?;
+    let adopted = store.current_decisions()?;
+    let evidence = store.evidence()?;
+    let hints: Vec<Hint> = store.records("hints")?;
+    let mut snapshot = Snapshot {
+        schema_version: 1,
+        snapshot_id: String::new(),
+        policy: "internal-recency-v1".into(),
+        created: String::new(),
+        source_root: root.to_path_buf(),
+        root_identity: crate::inventory::root_identity(root)?,
+        coverage_errors: vec![],
+        archives: 0,
+        ready: vec![],
+        records: vec![],
+    };
+    let work_id = format!("w{}", &digest_json(&group.group_id)[..24]);
+    let mut record = PolicyRecord {
+        work_id: work_id.clone(),
+        group_id: group.group_id.clone(),
+        status: "deferred_choice".into(),
+        reason: String::new(),
+        selected_source_id: None,
+        candidates,
+    };
+    let authority: Vec<_> = decisions
+        .iter()
+        .filter(|d| {
+            matches!(d.actor_role, ActorRole::User | ActorRole::Sol)
+                && (d
+                    .outcomes
+                    .iter()
+                    .any(|o| group.source_ids.contains(&o.source_id))
+                    || record.candidates.iter().any(|c| {
+                        c.sha256
+                            .as_ref()
+                            .is_some_and(|h| d.source_hashes.values().any(|v| v == h))
+                    }))
+        })
+        .collect();
+    let baseline = members.iter().any(|s| {
+        let generated = !s.artifacts.is_empty()
+            && s.publisher.to_lowercase().contains("dungeon")
+            && super::adjacent::managed_markdown(output, root, s);
+        let md = s.relative_path.with_extension("md");
+        let protected_artifacts = s.artifacts.iter().any(|artifact| {
+            !(generated && md.file_name().and_then(|n| n.to_str()) == Some(artifact.as_str()))
+        });
+        s.baseline_established
+            || (protected_artifacts && s.publisher.to_lowercase().contains("dungeon"))
+    });
+    let mut choices: Vec<(String, String, String)> = vec![];
+    if baseline {
+        record.status = "existing_or_baseline".into();
+        record.reason =
+            "baseline requires separate reconciliation; JSON is not Markdown coverage".into();
+    } else if !authority.is_empty() {
+        record.reason =
+            "adopted review or hold preserved; changed membership requires review".into();
+        if authority.len() == 1 {
+            let d = authority[0];
+            if adopted
+                .iter()
+                .any(|a| a.group_id == d.group_id && a.membership_digest == group.membership_digest)
+                && d.membership_digest == group.membership_digest
+            {
+                choices = d
+                    .outcomes
+                    .iter()
+                    .filter(|o| matches!(o.status, Status::Selected | Status::DistinctWork))
+                    .map(|o| {
+                        (
+                            o.source_id.clone(),
+                            o.work_id.clone().unwrap_or_else(|| work_id.clone()),
+                            "adopted_review".into(),
+                        )
+                    })
+                    .collect();
+            }
+        }
+    } else {
+        let conflict = [
+            "ruleset",
+            "language",
+            "document_role",
+            "work_identity",
+            "volume",
+        ]
+        .iter()
+        .any(|kind| {
+            let mut values = BTreeSet::new();
+            for c in &record.candidates {
+                for e in evidence.iter().filter(|e| {
+                    e.source_id == c.source.source_id
+                        && Some(e.sha256.as_str()) == c.sha256.as_deref()
+                }) {
+                    for claim in e.claims.iter().filter(|v| v.kind == *kind) {
+                        values.insert(claim.value.trim().to_lowercase());
+                    }
+                }
+                for h in hints
+                    .iter()
+                    .filter(|h| h.source_ids.contains(&c.source.source_id))
+                {
+                    if let Some(v) = h.payload.get(*kind).and_then(Value::as_str) {
+                        values.insert(v.trim().to_lowercase());
+                    }
+                }
+            }
+            values.len() > 1
+        });
+        if conflict {
+            record.reason =
+                "explicit content/hint qualifiers conflict; whole component deferred".into();
+        } else {
+            match automatic(&record.candidates) {
+                Ok(id) => choices.push((id, work_id.clone(), "most_recent_internal_date".into())),
+                Err(reason) => record.reason = reason,
+            }
+        }
+    }
+    for (id, work, basis) in choices {
+        let c = record
+            .candidates
+            .iter()
+            .find(|c| c.source.source_id == id)
+            .unwrap();
+        if c.error.is_some() || c.sha256.is_none() || c.page_count.is_none() {
+            record.reason = "chosen source unavailable".into();
+            continue;
+        }
+        safe_id(&work)?;
+        let p = provenance
+            .get("files")
+            .and_then(Value::as_array)
+            .and_then(|files| {
+                files.iter().find(|f| {
+                    f["original_relative_path"]
+                        == serde_json::to_value(&c.source.relative_path).unwrap_or(Value::Null)
+                        && f["sha256"].as_str() == c.sha256.as_deref()
+                })
+            });
+        snapshot.ready.push(Ready{work_id:work,group_id:group.group_id.clone(),source_id:id.clone(),relative_path:c.source.relative_path.clone(),sha256:c.sha256.clone().unwrap(),page_count:c.page_count.unwrap(),title:c.source.product_folder.clone(),publisher:c.source.publisher.clone(),selection_basis:basis,date:c.dates.effective.clone(),alternatives:members.iter().filter(|s|s.source_id!=id).map(|s|s.relative_path.to_string_lossy().into_owned()).collect(),provenance:serde_json::json!({"original_source_root":provenance.get("source_root"),"original":p})});
+        record.status = "ready".into();
+        record.selected_source_id = Some(id);
+        record.reason =
+            "ready to attempt full native-text extraction; alternatives retained".into();
+    }
+    snapshot.records.push(record);
+    // Observations are excluded: verified same bytes carry the same authority.
+    let mut semantic = snapshot.clone();
+    for record in &mut semantic.records {
+        for c in &mut record.candidates {
+            c.source.fingerprint = Fingerprint {
+                size: 0,
+                mtime_ns: None,
+                ctime_ns: None,
+                device: None,
+                inode: None,
+                sha256: None,
+            };
+            c.source.artifacts.clear();
+        }
+    }
+    let relevant_decisions: Vec<_> = decisions
+        .iter()
+        .filter(|d| {
+            d.outcomes.iter().any(|o| actual.contains(&o.source_id))
+                || d.source_hashes.values().any(|h| {
+                    snapshot
+                        .records
+                        .iter()
+                        .flat_map(|r| &r.candidates)
+                        .any(|c| c.sha256.as_ref() == Some(h))
+                })
+        })
+        .collect();
+    let relevant_evidence: Vec<_> = evidence
+        .iter()
+        .filter(|e| actual.contains(&e.source_id))
+        .collect();
+    let relevant_hints: Vec<_> = hints
+        .iter()
+        .filter(|h| h.source_ids.iter().any(|id| actual.contains(id)))
+        .collect();
+    snapshot.snapshot_id = digest_json(&(
+        "group-selection-v2",
+        semantic,
+        relevant_decisions,
+        relevant_evidence,
+        relevant_hints,
+    ));
+    for ready in &mut snapshot.ready {
+        ready.provenance["selection_revision"] = Value::String(snapshot.snapshot_id.clone());
+    }
+    Ok(snapshot)
 }

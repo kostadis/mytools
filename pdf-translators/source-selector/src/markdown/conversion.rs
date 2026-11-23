@@ -108,7 +108,7 @@ pub fn engine(options: &Options) -> Result<Engine> {
     engine.id = digest_json(&(2, &engine));
     Ok(engine)
 }
-fn stop(mut child: Child) {
+pub(crate) fn stop(mut child: Child) {
     #[cfg(target_os = "linux")]
     {
         // Extractors own a separate process group so their pipe timeout can

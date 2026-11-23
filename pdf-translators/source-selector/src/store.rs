@@ -8,6 +8,9 @@ pub struct Store {
     conn: Connection,
 }
 impl Store {
+    pub fn path(&self) -> &Path {
+        Path::new(self.conn.path().expect("file-backed store"))
+    }
     pub fn open_readonly(path: &Path) -> Result<Self> {
         let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         let store = Self { conn };
@@ -18,7 +21,32 @@ impl Store {
         }
         Ok(store)
     }
+    /// Shared with the final publication boundary. No PDF reads belong here.
+    pub fn authority_guard(&self) -> Result<std::fs::File> {
+        use std::os::unix::fs::OpenOptionsExt;
+        let path = self
+            .conn
+            .path()
+            .ok_or_else(|| SelectionError::Invalid("database has no path".into()))?;
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(format!("{path}.authority.lock"))?;
+        file.lock()?;
+        Ok(file)
+    }
+    fn mutation_guard(&self) -> Result<Option<std::fs::File>> {
+        if self.conn.is_autocommit() {
+            Ok(Some(self.authority_guard()?))
+        } else {
+            Ok(None)
+        }
+    }
     pub fn scan_transaction<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        let _gate = self.authority_guard()?;
         self.conn.execute_batch("BEGIN IMMEDIATE")?;
         match f(self) {
             Ok(v) => {
@@ -55,6 +83,7 @@ impl Store {
         .collect()
     }
     pub fn delete_record(&mut self, kind: &str, id: &str) -> Result<()> {
+        let _gate = self.mutation_guard()?;
         self.conn.execute(
             "DELETE FROM records WHERE kind=?1 AND id=?2",
             params![kind, id],
@@ -173,6 +202,7 @@ impl Store {
         Ok(())
     }
     pub fn put_record(&mut self, kind: &str, id: &str, value: &impl Serialize) -> Result<()> {
+        let _gate = self.mutation_guard()?;
         self.conn.execute(
             "INSERT OR REPLACE INTO records VALUES (?1,?2,?3)",
             params![kind, id, serde_json::to_string(value)?],
@@ -186,6 +216,7 @@ impl Store {
         id: &str,
         value: &impl Serialize,
     ) -> Result<bool> {
+        let _gate = self.mutation_guard()?;
         Ok(self.conn.execute(
             "INSERT OR IGNORE INTO records VALUES (?1,?2,?3)",
             params![kind, id, serde_json::to_string(value)?],
@@ -199,6 +230,7 @@ impl Store {
         rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
     }
     pub fn replace_records(&mut self, kind: &str, values: &[(String, Value)]) -> Result<()> {
+        let _gate = self.mutation_guard()?;
         let tx = self.conn.savepoint()?;
         tx.execute("DELETE FROM records WHERE kind=?1", [kind])?;
         for (id, value) in values {

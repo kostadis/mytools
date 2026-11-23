@@ -72,7 +72,13 @@ pub fn probe(root: &Path, source: &Source, legacy: &Store, cache: &mut Store) ->
                     "source changed during metadata probe".into(),
                 ));
             }
-            cache.put_cached(&sha, "pdf_metadata", "v1", &serde_json::to_value(&value)?)?;
+            let raw = serde_json::to_value(&value)?;
+            if serde_json::to_vec(&raw)?.len() > 16 * 1024 * 1024 {
+                return Err(SelectionError::Invalid(
+                    "embedded metadata exceeds 16 MiB cache limit".into(),
+                ));
+            }
+            cache.put_cached(&sha, "pdf_metadata", "v1", &raw)?;
             value
         };
         result.page_count = Some(metadata.page_count);
@@ -83,4 +89,34 @@ pub fn probe(root: &Path, source: &Source, legacy: &Store, cache: &mut Store) ->
         result.error = Some(e.to_string());
     }
     result
+}
+
+/// Cache-only lookup: never opens PDF contents or computes a new hash.
+pub fn cached(
+    root: &Path,
+    source: &Source,
+    legacy: &Store,
+    cache: &Store,
+) -> Result<Option<Candidate>> {
+    let path = checked_path(root, &source.relative_path)?;
+    if fingerprint(&path)? != source.fingerprint {
+        return Ok(None);
+    }
+    let key = digest_json(&(1, &source.fingerprint));
+    let sha = legacy
+        .get_cached(&source.source_id, "hash", &key)?
+        .or(cache.get_cached(&source.source_id, "verified_hash", &key)?)
+        .and_then(|v| v.as_str().map(str::to_owned));
+    let Some(sha) = sha else { return Ok(None) };
+    let Some(raw) = cache.get_cached(&sha, "pdf_metadata", "v1")? else {
+        return Ok(None);
+    };
+    let m: Cached = serde_json::from_value(raw)?;
+    Ok(Some(Candidate {
+        source: source.clone(),
+        sha256: Some(sha),
+        page_count: Some(m.page_count),
+        dates: dates::resolve(&m.raw),
+        error: None,
+    }))
 }

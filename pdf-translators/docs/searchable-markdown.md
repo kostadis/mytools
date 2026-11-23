@@ -46,22 +46,30 @@ The immutable snapshot lives at `selection/generations/<id>/markdown-selection.j
 
 Run selection against a completed scan. Do not start write stages against a database being populated by the broad scan; the pilot uses an independent completed scan.
 
-## Full-library rollout
+## Continuous full-library rollout
 
-After refreshing the inventory with the verified executable, use the resumable launcher from `pdf-translators/`:
+Use a completed inventory, then start the native coordinator from `pdf-translators/`:
 
 ```bash
-SELECTOR_BIN="$PWD/source-selector/target/release/rpg-source-select" \
-  scripts/run_markdown_rollout.sh source-selection-data source-selection-data/full-library-markdown
+source-selector/target/release/rpg-source-select \
+  --work-dir source-selection-data markdown-continuous \
+  --output source-selection-data/full-library-markdown \
+  > source-selection-data/full-library-markdown/continuous.log 2>&1
 ```
 
-The shell wrapper delegates to Rust's `markdown-rollout` command. It validates source/output containment and the output tree before creating launcher files; control files use pinned no-follow handles. It waits for an existing metadata selection to release its lock, then always recalculates selection from current review/evidence/hints using metadata/hash checkpoints. Scan timestamps alone do not prove that a previous selection still honors later user rulings. The launcher checks source-cache space with a 20 GiB reserve and binds conversion to that exact preflight selection ID, so a racing selection change stops conversion for a fresh preflight.
+One bounded metadata process and two extraction workers run concurrently. Cache-complete groups become eligible immediately; an incomplete candidate group cannot produce an automatic winner. Each completed nonempty book publishes its PDF-stem Markdown and schema-2 `current-documents.json` beside the PDF. Current local search is refreshed every 100 events or 30 seconds and at exit under `corpus/current/books/`.
 
-Defaults are two workers, 20-page chunks and publication after 100 completed jobs or roughly 60 seconds with completed work, plus a final flush. The ordinary CLI publication default remains one completed job. The launcher attempts the eligible queue once; failed jobs can retry on an explicit rerun within the existing three-failure ceiling, without automatically revalidating the whole library multiple times for a persistent error. Unresolved groups, legacy baselines, archives and OCR-only outcomes remain explicit exceptions.
+The metadata deadline is 300 seconds per PDF. `continuous.db` atomically records group revisions and eligibility, and `metadata.db`, `markdown.db`, `cache/`, `results/`, ownership receipts and journals retain completed work. Restart the same command after interruption. Terminal metadata/extraction failures require `--retry-failed`; extraction failures retain the three-attempt limit. Cached extraction is validated and reused. Source PDFs and edited/unowned Markdown are preserved.
 
-Logs and state are persistent: `rollout.log`, `rollout-state.json`, `rollout-preflight.json`, `selection-progress.log`, per-job `logs/`, `markdown.db` and `conversion-run.json` under the output directory. A stopped launcher can be rerun with the same paths. `completed_with_exceptions` means the eligible queue finished with failures or unresolved publication, not that every library PDF was converted.
+`continuous-status.json` separates checked/total metadata, resolved/deferred/pending groups, queued/active jobs, published books, OCR outcomes, failures and capacity conflicts. `continuous.log` includes group/job/publication events, summaries every 100 checked files and 30-second heartbeats. Per-job diagnostics are in `logs/`. A completed pass may still have deferred selections, legacy baselines, archives, OCR or publication exceptions.
 
-Unchanged publication reuses prior byte verification only when source/output/record fingerprints and selection/render inputs still match. A cached observation must have identical fingerprints from before and after the actual verification; a late edit or an operational failure is never promoted into a successful cache entry. Changed files are revalidated and manual edits preserved. Immutable corpus files use hardlinks where supported, with payload inodes made read-only before linking, including older existing artifacts. Edit the source-adjacent Markdown, whose manual edits are preserved as conflicts; the generated private corpus/artifacts are a read-only search view. Metadata selection also checkpoints verified source hashes for singletons, so a restart does not need to rehash each unchanged uncached-by-scan PDF.
+Selections have their own semantic revisions, so resolving an unrelated group or adding an unrelated book in a later inventory does not rewrite existing Markdown. Scoped directory records retain unchecked neighbors as unverified. A confirmed hold withdraws current authority and updates search even if the result is an empty view with pending coverage. Historical Markdown remains on disk.
+
+Local jobs reserve a conservative upper bound for PDF staging, bounded range output, assembly and artifacts across both workers while preserving 20 GiB free. Destination space is checked separately. Oversized jobs can remain pending while smaller jobs proceed. `capacity_pending`, `needs_regroup` and `authority_pending` exit with status 75 and are incomplete, resumable outcomes. Same-byte observation changes are refreshed; changed known PDF bytes or grouping hints require a refreshed inventory/group graph before new authority can publish.
+
+Stop an old `markdown-rollout` controller before stopping its metadata producer and starting this command. Preserve SQLite/WAL files and caches; never leave both publishers active. The older `markdown-select` → `markdown-convert` snapshot workflow and `scripts/run_markdown_rollout.sh` remain available for deliberate batch operation.
+
+Unchanged source/output/record observations reuse verified results only when before/after fingerprints agree. Private artifact and corpus payloads are read-only hardlinks; source-adjacent Markdown is the editable copy. Manual edits become preserved output conflicts.
 
 ## Conversion, logs and recovery
 
