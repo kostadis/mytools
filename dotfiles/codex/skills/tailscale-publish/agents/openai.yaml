@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tailscale Publish"
+  short_description: "Publish local HTML securely over Tailscale"
+  default_prompt: "Use $tailscale-publish to serve this local HTML page through a Tailscale-only link."
