@@ -1,6 +1,6 @@
 # Select sources for a searchable RPG Markdown library
 
-Status: proposed design, awaiting user approval. No implementation authorized by this document alone.
+Status: source-selection scope agreed in brainstorming and filed as https://github.com/kostadis/mytools/issues/144. This milestone stops at the reviewed list; implementation proceeds through the separately reviewed plan.
 
 ## Intent and agreed requirements
 
@@ -11,6 +11,8 @@ Dungeon Masters Guild is the only collection the user considers reliably convert
 Source selection is the first problem to solve. Older revisions should be excluded from the conversion queue. Neither version labels nor modification times reliably establish revision order. The user selected content comparison supported by metadata, with clear duplicates handled automatically and unresolved choices brought to them.
 
 Use simpler models for routine reading. Use Sol when reasoning or judgment is required. Deterministic work should not call a model.
+
+The user requires the selector to be implemented in Rust. Keep it independent of the existing Python converter and the separate `adventure_model_minimal` crate.
 
 The user agreed to include text-bearing handouts, reference sheets, and map booklets alongside books and supplements. Purely visual assets are excluded from text conversion. Judge assets by their content, not merely their filename or category.
 

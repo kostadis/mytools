@@ -1,4 +1,5 @@
 __pycache__/
+source-selector/target/
 *.pyc
 *.pyo
 .pytest_cache/
