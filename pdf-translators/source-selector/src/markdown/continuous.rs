@@ -172,6 +172,14 @@ pub fn metadata_worker(path: &Path) -> Result<()> {
         },
     )
 }
+fn publication_conflicts(p: &publication::Publication) -> usize {
+    p.adjacent.as_ref().map_or(0, |a| a.errors.len()).max(
+        p.pending_works
+            .iter()
+            .filter(|w| w["status"] == "output_conflict")
+            .count(),
+    )
+}
 fn persist_status(out: &Path, status: &Status) -> Result<()> {
     write_json(&out.join("continuous-status.json"), status)
 }
@@ -1145,17 +1153,8 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
             if let Some(p) = &r.publication {
                 if p.pending {
                     status.publication_pending += 1;
-                    status.output_conflicts += p
-                        .adjacent
-                        .as_ref()
-                        .map_or(0, |a| a.errors.len())
-                        .max(p.pending_works.len());
                 }
-                status.output_conflicts += p
-                    .pending_works
-                    .iter()
-                    .filter(|w| w["status"] == "output_conflict")
-                    .count();
+                status.output_conflicts += publication_conflicts(p);
             }
         }
         let eligible: BTreeSet<_> = resolutions
@@ -1286,6 +1285,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                 status.phase = if status.failures
                     + status.needs_ocr
                     + status.output_conflicts
+                    + status.publication_pending
                     + discovery.errors.len()
                     + unresolved_manifests
                     > 0
@@ -1388,5 +1388,23 @@ mod view_tests {
         );
         let state: Value = read_json(&out.path().join("current-view-state.json")).unwrap();
         assert_eq!(state["safe"], false);
+    }
+}
+
+#[cfg(test)]
+mod count_tests {
+    use super::*;
+    #[test]
+    fn queued_publication_is_pending_but_not_an_output_conflict() {
+        let mut p:publication::Publication=serde_json::from_value(serde_json::json!({"selection_id":"test","generation":null,"books":0,"pending":true,"published_snapshot":null,"pending_works":[{"work_id":"queued","status":"pending"}],"catalog":[],"adjacent":{"published":[],"errors":[],"directories":1,"complete":false,"states":{},"warnings":[]}})).unwrap();
+        assert_eq!(publication_conflicts(&p), 0);
+        p.adjacent
+            .as_mut()
+            .unwrap()
+            .errors
+            .push("foreign manifest".into());
+        assert_eq!(publication_conflicts(&p), 1);
+        p.pending_works[0]["status"] = "output_conflict".into();
+        assert_eq!(publication_conflicts(&p), 1, "same failure counted twice");
     }
 }
