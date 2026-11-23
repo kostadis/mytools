@@ -1,4 +1,6 @@
 //! Read-only source selection for RPG libraries.
+pub mod compare;
+pub mod evidence;
 pub mod grouping;
 pub mod hints;
 pub mod inventory;
