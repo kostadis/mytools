@@ -1,6 +1,6 @@
 # Bulk searchable Markdown beside selected PDFs
 
-Status: proposed design for user approval. This document authorizes no implementation or library-wide conversion by itself.
+Status: approved by the user's “go”; implementation and a bounded staged pilot are authorized. Library-wide conversion is a separate rollout. The mounted-filesystem refinement below records a concrete implementation ruling.
 
 ## Purpose and agreed requirements
 
@@ -94,11 +94,13 @@ For each completed, nonempty book:
 2. Resolve the selected source and destination within the expected real source directory, rejecting traversal and redirected symlink writes. Verify that the accessible PDF still matches the frozen selected hash.
 3. Check destination ownership and render the source-adjacent Markdown with its source link and metadata.
 4. Persist a recoverable publication intent locally, binding destination identity, source/work/snapshot, intended Markdown checksum and prior directory-record state.
-5. Write a uniquely named temporary Markdown in the destination directory, flush it and atomically rename it into place.
-6. Recheck latest selection/source validity as needed before committing the directory record. Atomically replace the record only after the published Markdown bytes exist and match its checksum. The record is the per-directory publication commit point.
+5. Write and flush a uniquely named temporary Markdown through a pinned no-follow directory handle. Use the mounted-filesystem non-clobbering installation protocol described below.
+6. Recheck every proposed published PDF/Markdown pair immediately before committing the directory record. Install the record only after the actual published Markdown bytes exist and match their checksums. The record is the per-directory publication commit point.
 7. Complete the local publication journal and refresh the local current view from confirmed current publications.
 
 A Markdown file and a directory record cannot be renamed atomically as one transaction. Before the record commits, current readers must treat new Markdown as uncommitted, and validate the old record's checksum if its target was replaced. On rerun, the intent and expected checksums let the coordinator finish or repair interrupted publication without re-extracting PDF pages. An interrupted reconciliation remains visible as pending; do not claim whole-library atomicity across independent directories. A run is fully reconciled only after all known affected directory records have been processed.
+
+**Mounted-filesystem implementation ruling:** a real temporary probe established that Drive supports file flush and `RENAME_NOREPLACE`, but rejects directory flush and `RENAME_EXCHANGE` with `EINVAL`. Prefer preservation of concurrent edits over an unconditional clobbering replacement. Journal the temporary and prior-file backup names/checksums privately before any move, move an owned existing filename aside with no-overwrite rename, verify the displaced bytes, then install the new file with no-overwrite rename. Restore or preserve displaced unexpected bytes and report a conflict. Recovery restores an interrupted prior record before reconciliation. A replacement can therefore briefly leave its filename absent; readers must retry and must not interpret that absence as an empty selection. This refines the proposed atomic-replacement availability promise. Directory-flush support is reported as a warning for adjacent output; private journal and file flushes remain required. No Drive-side crash-durability or cross-client atomicity guarantee is implied.
 
 Ownership rules are conservative defaults proposed by the designer:
 
@@ -156,7 +158,7 @@ After implementation verification, a separate explicitly requested bulk run can 
 - Use exact PDF-stem `.md` naming and a versioned `current-documents.json` with multiple work entries.
 - Preserve unrecognized or user-edited output and report conflicts; leave obsolete generated Markdown in place but outside current entries.
 - Keep private caches/artifacts outside the library and preserve existing CLI behavior with an explicit adjacent-publication destination option.
-- Use per-directory atomic record commits plus a local recovery intent, with no claim of cross-directory or cross-machine atomicity.
+- Use pinned no-follow directory handles, per-directory no-clobber record installation and durable private recovery operations. A brief missing-filename retry window is accepted on this mount; cross-directory/cross-machine atomicity remains unclaimed.
 - Retain the local current corpus as a mirror of confirmed current files; defer a new search database and historical indexing.
 - Retain private checksum ownership receipts after current-entry removal; preserve unlisted Markdown as a conflict if those receipts are lost.
 - Discover manifests even in directories with no PDFs, and treat incomplete coverage as partial reconciliation rather than proof that a work disappeared.
@@ -166,4 +168,4 @@ These choices are proposals within the agreed workflow. The builder may settle i
 
 ## Builder check
 
-A fresh Sol builder check identified four questions about durable ownership, discovery of emptied directories, incomplete scan coverage and refreshed provenance. The designer resolved them in the explicit contracts above. None requires a new user preference to plan the agreed workflow; the conservative defaults and their recovery limitation are listed for review. This remains a proposed design, awaiting user approval before an implementation plan.
+A fresh Sol builder check identified four questions about durable ownership, discovery of emptied directories, incomplete scan coverage and refreshed provenance. The designer resolved them in the explicit contracts above. The user approved the design and requested implementation. The mounted-filesystem refinement is recorded explicitly rather than claiming primitives this Drive does not support.

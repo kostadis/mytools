@@ -447,3 +447,171 @@ fn malformed_owned_record_is_preserved_instead_of_adopted() {
     assert_eq!(fs::read(dir.join("current-documents.json")).unwrap(), bytes);
     assert!(!dir.join("Amber Almanac.md").exists());
 }
+#[test]
+fn authoritative_empty_selection_publishes_an_empty_current_view() {
+    let (root, _state, out) = fixture();
+    convert(out.path(), &[]);
+    let mut empty = selection::load_current(out.path()).unwrap();
+    empty.ready.clear();
+    empty.records.clear();
+    replace_snapshot(out.path(), empty);
+    let r = convert(out.path(), &[]);
+    let catalog: Value =
+        serde_json::from_slice(&fs::read(out.path().join("corpus/current/catalog.json")).unwrap())
+            .unwrap();
+    assert!(catalog["books"].as_array().unwrap().is_empty());
+    assert_eq!(r["publication"]["pending"], false);
+    assert_eq!(r["publication"]["published_snapshot"], r["selection_id"]);
+    assert!(root.path().join("Pub/Book/Amber Almanac.md").exists());
+}
+#[cfg(unix)]
+#[test]
+fn redirecting_the_frozen_root_is_rejected_before_source_writes() {
+    let (root, _state, out) = fixture();
+    let relocated = tempfile::tempdir().unwrap();
+    let moved = relocated.path().join("moved");
+    fs::rename(root.path(), &moved).unwrap();
+    std::os::unix::fs::symlink(&moved, root.path()).unwrap();
+    let r = cli(&[
+        "markdown-convert",
+        "--output",
+        out.path().to_str().unwrap(),
+        "--publish-next-to-source",
+    ]);
+    assert!(!r.status.success());
+    assert!(!moved.join("Pub/Book/Amber Almanac.md").exists());
+}
+#[test]
+fn generated_dungeon_masters_guild_markdown_does_not_become_legacy_baseline() {
+    let (root, state, out) = fixture();
+    fs::rename(
+        root.path().join("Pub"),
+        root.path().join("Dungeon Masters Guild"),
+    )
+    .unwrap();
+    let s = select(root.path(), state.path(), out.path());
+    assert_eq!(s.ready.len(), 1);
+    convert(out.path(), &[]);
+    assert_eq!(select(root.path(), state.path(), out.path()).ready.len(), 1);
+    assert_eq!(convert(out.path(), &[])["published_books"], 1);
+    common::pdf(
+        &root
+            .path()
+            .join("Dungeon Masters Guild/Book/Amber Almanac.pdf"),
+        "Revised generated source.",
+        "D:20220101000000Z",
+        false,
+    );
+    assert_eq!(convert(out.path(), &[])["published_books"], 0); // stale queue observes changed source
+    assert_eq!(select(root.path(), state.path(), out.path()).ready.len(), 1);
+    assert_eq!(convert(out.path(), &[])["published_books"], 1);
+    fs::write(
+        root.path()
+            .join("Dungeon Masters Guild/Book/Amber Almanac.json"),
+        "legacy 5etools output",
+    )
+    .unwrap();
+    assert!(
+        select(root.path(), state.path(), out.path())
+            .ready
+            .is_empty()
+    );
+}
+#[test]
+fn a_positively_known_move_retires_the_old_entry_despite_unrelated_coverage_errors() {
+    let (root, _state, out) = fixture();
+    convert(out.path(), &[]);
+    let mut s = selection::load_current(out.path()).unwrap();
+    let old = root.path().join("Pub/Book");
+    let new = root.path().join("Pub/New");
+    fs::create_dir_all(&new).unwrap();
+    fs::rename(old.join("Amber Almanac.pdf"), new.join("Amber Almanac.pdf")).unwrap();
+    s.ready[0].relative_path = "Pub/New/Amber Almanac.pdf".into();
+    s.coverage_errors = vec!["unrelated unreadable path".into()];
+    replace_snapshot(out.path(), s);
+    let r = convert(out.path(), &[]);
+    assert_eq!(r["published_books"], 1);
+    assert!(manifest(&old)["documents"].as_array().unwrap().is_empty());
+    assert_eq!(manifest(&new)["documents"][0]["status"], "published");
+}
+#[test]
+#[ignore = "requires explicit mounted filesystem path; creates and removes an isolated probe directory"]
+fn mounted_filesystem_round_trip() {
+    let parent = std::env::var_os("RPG_ADJACENT_FS_ROOT")
+        .expect("set RPG_ADJACENT_FS_ROOT to the mounted test parent");
+    let root = tempfile::Builder::new()
+        .prefix(".rpg-publish-probe-")
+        .tempdir_in(parent)
+        .unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let dir = root.path().join("Probe");
+    fs::create_dir(&dir).unwrap();
+    common::pdf(
+        &dir.join("Probe.pdf"),
+        "Temporary publisher filesystem verification.",
+        "D:20210101000000Z",
+        false,
+    );
+    select(root.path(), state.path(), out.path());
+    let r = convert(out.path(), &[]);
+    assert_eq!(r["published_books"], 1);
+    assert_eq!(manifest(&dir)["documents"][0]["status"], "published");
+    let saved = fs::read(dir.join("Probe.md")).unwrap();
+    assert_eq!(convert(out.path(), &[])["extracted_ranges"], 0);
+    assert_eq!(fs::read(dir.join("Probe.md")).unwrap(), saved);
+    common::pdf(
+        &dir.join("Probe.pdf"),
+        "Updated temporary publisher verification.",
+        "D:20220101000000Z",
+        false,
+    );
+    select(root.path(), state.path(), out.path());
+    assert_eq!(convert(out.path(), &[])["published_books"], 1);
+    assert!(
+        fs::read_to_string(dir.join("Probe.md"))
+            .unwrap()
+            .contains("Updated temporary")
+    );
+    println!(
+        "mounted filesystem publication, replacement and resume passed; warnings: {}",
+        r["publication"]["adjacent"]["warnings"]
+    );
+}
+#[test]
+fn interrupted_manifest_rename_recovers_the_record_from_its_private_operation() {
+    let (root, _state, out) = fixture();
+    let dir = root.path().join("Pub/Book");
+    convert(out.path(), &[]);
+    let before = fs::read(dir.join("current-documents.json")).unwrap();
+    let registry = fs::read_dir(out.path().join("adjacent"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let mut state: Value = serde_json::from_slice(&fs::read(&registry).unwrap()).unwrap();
+    let pending = b"uncommitted temporary record";
+    fs::rename(
+        dir.join("current-documents.json"),
+        dir.join(".rpg-previous-probe"),
+    )
+    .unwrap();
+    fs::write(dir.join(".rpg-write-probe"), pending).unwrap();
+    state["operations"] = json!([{"directory":"Pub/Book","plan":{"target":"current-documents.json","temporary":".rpg-write-probe","backup":".rpg-previous-probe","before":rpg_source_select::digest(&before),"after":rpg_source_select::digest(pending)}}]);
+    fs::write(&registry, serde_json::to_vec(&state).unwrap()).unwrap();
+    let r = convert(out.path(), &[]);
+    assert_eq!(r["published_books"], 1);
+    assert_eq!(r["extracted_ranges"], 0);
+    assert_eq!(
+        fs::read(dir.join("current-documents.json")).unwrap(),
+        before
+    );
+    assert!(!dir.join(".rpg-write-probe").exists());
+    assert!(
+        serde_json::from_slice::<Value>(&fs::read(registry).unwrap()).unwrap()["operations"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}

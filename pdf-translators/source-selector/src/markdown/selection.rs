@@ -95,8 +95,15 @@ pub fn select(store: &Store, output: &Path, provenance: Option<&Path>) -> Result
             })
             .collect();
         let baseline = members.iter().any(|s| {
+            let generated = !s.artifacts.is_empty()
+                && s.publisher.to_lowercase().contains("dungeon")
+                && super::adjacent::managed_markdown(output, &inv.root, s);
+            let md = s.relative_path.with_extension("md");
+            let protected_artifacts = s.artifacts.iter().any(|artifact| {
+                !(generated && md.file_name().and_then(|n| n.to_str()) == Some(artifact.as_str()))
+            });
             s.baseline_established
-                || (!s.artifacts.is_empty() && s.publisher.to_lowercase().contains("dungeon"))
+                || (protected_artifacts && s.publisher.to_lowercase().contains("dungeon"))
         });
         let mut choices: Vec<(String, String, String)> = vec![];
         if baseline {

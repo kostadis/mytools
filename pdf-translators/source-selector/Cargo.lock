@@ -871,6 +871,7 @@ dependencies = [
  "clap",
  "csv",
  "flate2",
+ "libc",
  "lopdf",
  "regex",
  "roxmltree",

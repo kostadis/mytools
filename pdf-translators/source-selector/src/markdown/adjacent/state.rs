@@ -17,6 +17,14 @@ pub struct Ownership {
     pub root_identity: Value,
     pub receipts: Vec<Receipt>,
     pub intents: Vec<Receipt>,
+    #[serde(default)]
+    pub operations: Vec<Operation>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Operation {
+    #[serde(with = "path_serde")]
+    pub directory: PathBuf,
+    pub plan: super::files::Plan,
 }
 impl Ownership {
     pub fn open(path: &Path, s: &Snapshot) -> Result<Self> {
@@ -29,6 +37,7 @@ impl Ownership {
                 root_identity: s.root_identity.clone(),
                 receipts: vec![],
                 intents: vec![],
+                operations: vec![],
             }
         };
         if state.schema_version != 1

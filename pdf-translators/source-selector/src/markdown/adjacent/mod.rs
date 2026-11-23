@@ -5,7 +5,7 @@ mod state;
 use super::worker::Engine;
 use super::*;
 use crate::{digest, digest_json, inventory::root_identity};
-use state::{Ownership, Receipt};
+use state::{Operation, Ownership, Receipt};
 use std::collections::{BTreeMap, BTreeSet};
 const NAME: &str = "current-documents.json";
 const OWNER: &str = "rpg-source-select";
@@ -22,6 +22,7 @@ pub struct AdjacentReport {
     pub directories: usize,
     pub complete: bool,
     pub states: BTreeMap<String, Value>,
+    pub warnings: Vec<String>,
 }
 pub struct Session {
     root: PathBuf,
@@ -30,6 +31,7 @@ pub struct Session {
     ownership: Ownership,
     directories: BTreeSet<PathBuf>,
     discovery_errors: Vec<String>,
+    warnings: BTreeSet<String>,
 }
 fn owned(v: &Value) -> bool {
     v["generator"] == OWNER
@@ -96,8 +98,57 @@ fn check_manifest(v: &Value) -> Result<()> {
     }
     Ok(())
 }
+/// A generated sibling is not a preexisting Dungeon Masters Guild baseline.
+/// The exact checksum/source identity is required; other artifacts stay protected.
+pub fn managed_markdown(output: &Path, root: &Path, source: &crate::models::Source) -> bool {
+    (|| -> Result<bool> {
+        let identity = root_identity(root)?;
+        let dir = files::Directory::open(
+            root,
+            &identity,
+            source.relative_path.parent().unwrap_or(Path::new("")),
+        )?;
+        let target = source.relative_path.with_extension("md");
+        if let Some(sha) = dir.hash(Path::new(target.file_name().unwrap()))? {
+            let key = digest_json(&(&identity, crate::inventory::path_bytes(root)));
+            if let Ok(state) =
+                read_json::<Ownership>(&output.join("adjacent").join(format!("{key}.json")))
+                && state.schema_version == 1
+                && state.root == root
+                && state.root_identity == identity
+                && state.owns(&target, &sha)
+            {
+                return Ok(true);
+            }
+        }
+        let Some(bytes) = dir.read(Path::new(NAME))? else {
+            return Ok(false);
+        };
+        let manifest: Value = serde_json::from_slice(&bytes)?;
+        check_manifest(&manifest)?;
+        for entry in manifest["documents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| {
+                owned(e) && e["status"] == "published" && e["source_id"] == source.source_id
+            })
+        {
+            if files::filename(&entry["pdf"])?
+                == Path::new(source.relative_path.file_name().unwrap())
+                && dir.hash(&files::filename(&entry["markdown"])?)?.as_deref()
+                    == entry["markdown_sha256"].as_str()
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    })()
+    .unwrap_or(false)
+}
 impl Session {
     pub fn new(output: &Path, s: &Snapshot) -> Result<Self> {
+        files::Directory::open(&s.source_root, &s.root_identity, Path::new(""))?;
         if root_identity(&s.source_root)? != s.root_identity {
             return Err(SelectionError::Invalid(
                 "source root changed before adjacent publication".into(),
@@ -116,6 +167,9 @@ impl Session {
                 directories.insert(parent.to_path_buf());
             }
         }
+        for operation in &ownership.operations {
+            directories.insert(operation.directory.clone());
+        }
         Ok(Self {
             root: s.source_root.clone(),
             identity: s.root_identity.clone(),
@@ -123,6 +177,7 @@ impl Session {
             ownership,
             directories,
             discovery_errors,
+            warnings: BTreeSet::new(),
         })
     }
     pub fn sync(
@@ -212,6 +267,7 @@ impl Session {
         // the overall report remains pending until every selected book publishes.
         report.published.sort();
         report.published.dedup();
+        report.warnings = self.warnings.iter().cloned().collect();
         report
     }
     #[allow(clippy::too_many_arguments)]
@@ -226,23 +282,33 @@ impl Session {
         targets: &BTreeMap<PathBuf, usize>,
         coverage_complete: bool,
     ) -> Result<Vec<Value>> {
-        let dir = match files::directory(&self.root, relative) {
+        let dir = match files::Directory::open(&self.root, &self.identity, relative) {
             Err(SelectionError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(vec![]);
             }
             other => other?,
         };
-        let path = dir.join(NAME);
-        let original = files::read(&path)?;
+        let _guard = dir.lock()?;
+        let pending: Vec<_> = self
+            .ownership
+            .operations
+            .iter()
+            .filter(|o| o.directory == relative)
+            .cloned()
+            .collect();
+        for operation in pending {
+            dir.recover(&operation.plan)?;
+            self.ownership.operations.retain(|o| o != &operation);
+        }
+        self.ownership.save(&self.path)?;
+        let original = dir.read(Path::new(NAME))?;
         if members.is_empty() && original.is_none() {
             return Ok(vec![]);
         }
         if let Some(bytes) = &original {
             check_manifest(&serde_json::from_slice::<Value>(bytes)?)?;
         }
-        files::read(&dir.join(".current-documents.lock"))?;
-        let _guard = lock(&dir, ".current-documents.lock")?;
-        if files::read(&path)? != original {
+        if dir.read(Path::new(NAME))? != original {
             return Err(SelectionError::Invalid(
                 "directory record changed concurrently; retry".into(),
             ));
@@ -263,7 +329,7 @@ impl Session {
         {
             let target = relative.join(files::filename(&entry["markdown"])?);
             if let Some(sha) = entry["markdown_sha256"].as_str()
-                && let Ok(Some(bytes)) = files::read(&self.root.join(&target))
+                && let Ok(Some(bytes)) = dir.read(target.file_name().unwrap().as_ref())
                 && digest(&bytes) == sha
             {
                 self.ownership.remember(Receipt {
@@ -290,7 +356,8 @@ impl Session {
                 .iter()
                 .filter(|v| owned(v))
             {
-                if !members
+                if !s
+                    .ready
                     .iter()
                     .any(|r| Some(r.work_id.as_str()) == entry["work_id"].as_str())
                 {
@@ -312,8 +379,8 @@ impl Session {
                         "multiple selected works target the same Markdown filename".into(),
                     ));
                 }
-                let dest = dir.join(target.file_name().unwrap());
-                let existing = files::read(&dest)?;
+                let dest = Path::new(target.file_name().unwrap());
+                let existing = dir.read(dest)?;
                 if let Some(bytes) = &existing
                     && !self.ownership.owns(&target, &digest(bytes))
                 {
@@ -327,7 +394,11 @@ impl Session {
                 else {
                     return Ok(());
                 };
-                if live_source_matches(&self.root, r)? != Some(true) {
+                if dir
+                    .hash(Path::new(r.relative_path.file_name().unwrap()))?
+                    .as_deref()
+                    != Some(r.sha256.as_str())
+                {
                     entry["status"] = Value::String("source_changed".into());
                     entry["error"] = Value::String("selected PDF changed or is unavailable".into());
                     return Ok(());
@@ -346,14 +417,25 @@ impl Session {
                         self.ownership.intents.push(receipt.clone());
                     }
                     self.ownership.save(&self.path)?;
-                    if files::read(&dest)? != existing {
+                    if dir.read(dest)? != existing {
                         return Err(SelectionError::Invalid(
                             "Markdown changed concurrently; preserved".into(),
                         ));
                     }
-                    atomic_write(&dest, bytes)?;
+                    let plan = dir.stage(dest, bytes, existing.as_deref())?;
+                    let operation = Operation {
+                        directory: relative.into(),
+                        plan,
+                    };
+                    self.ownership.operations.push(operation.clone());
+                    self.ownership.save(&self.path)?;
+                    dir.install(&operation.plan)?;
                 }
-                if live_source_matches(&self.root, r)? != Some(true) {
+                if dir
+                    .hash(Path::new(r.relative_path.file_name().unwrap()))?
+                    .as_deref()
+                    != Some(r.sha256.as_str())
+                {
                     entry["status"] = Value::String("source_changed".into());
                     entry["error"] =
                         Value::String("selected PDF changed before record commit".into());
@@ -370,6 +452,15 @@ impl Session {
             }
             documents.push(entry.clone());
             results.push(entry);
+        }
+        verify_pairs(&dir, &mut results);
+        for result in &results {
+            if let Some(entry) = documents
+                .iter_mut()
+                .find(|e| owned(e) && e["work_id"] == result["work_id"])
+            {
+                *entry = result.clone();
+            }
         }
         documents.sort_by_key(|v| v["work_id"].as_str().unwrap_or("").to_string());
         let mut record = old.clone();
@@ -391,13 +482,50 @@ impl Session {
         comparable.as_object_mut().unwrap().remove("updated_at");
         prior.as_object_mut().unwrap().remove("updated_at");
         if comparable != prior {
-            if files::read(&path)? != original {
+            if dir.read(Path::new(NAME))? != original {
                 return Err(SelectionError::Invalid(
                     "directory record changed concurrently; preserved".into(),
                 ));
             }
             record["updated_at"] = Value::String(chrono::Utc::now().to_rfc3339());
-            write_json(&path, &record)?;
+            let mut committed = false;
+            for _ in 0..3 {
+                let plan = dir.stage(
+                    Path::new(NAME),
+                    &serde_json::to_vec_pretty(&record)?,
+                    original.as_deref(),
+                )?;
+                let operation = Operation {
+                    directory: relative.into(),
+                    plan,
+                };
+                self.ownership.operations.push(operation.clone());
+                self.ownership.save(&self.path)?;
+                if verify_pairs(&dir, &mut results) {
+                    dir.cleanup(&operation.plan)?;
+                    self.ownership.operations.retain(|o| o != &operation);
+                    self.ownership.save(&self.path)?;
+                    for result in &results {
+                        if let Some(entry) = record["documents"]
+                            .as_array_mut()
+                            .unwrap()
+                            .iter_mut()
+                            .find(|e| owned(e) && e["work_id"] == result["work_id"])
+                        {
+                            *entry = result.clone();
+                        }
+                    }
+                    continue;
+                }
+                dir.install(&operation.plan)?;
+                committed = true;
+                break;
+            }
+            if !committed {
+                return Err(SelectionError::Invalid(
+                    "published files changed repeatedly before directory commit; retry".into(),
+                ));
+            }
         }
         // Only after the manifest commits is an intent promoted to a receipt.
         for e in &results {
@@ -413,7 +541,77 @@ impl Session {
                 self.ownership.intents.retain(|r| r != &receipt);
             }
         }
+        let committed: Vec<_> = self
+            .ownership
+            .operations
+            .iter()
+            .filter(|o| o.directory == relative)
+            .cloned()
+            .collect();
+        for operation in committed {
+            dir.cleanup(&operation.plan)?;
+            self.ownership.operations.retain(|o| o != &operation);
+        }
+        if dir.sync_is_unsupported() {
+            self.warnings.insert(format!("{}: directory fsync unsupported; file flushes and durable private recovery journal used",self.root.join(relative).display()));
+        }
         self.ownership.save(&self.path)?;
         Ok(results)
+    }
+}
+
+fn verify_pairs(dir: &files::Directory, entries: &mut [Value]) -> bool {
+    let mut changed = false;
+    for entry in entries.iter_mut().filter(|e| e["status"] == "published") {
+        let check = (|| -> Result<Option<&str>> {
+            let pdf = files::filename(&entry["pdf"])?;
+            let md = files::filename(&entry["markdown"])?;
+            if dir.hash(&pdf)?.as_deref() != entry["pdf_sha256"].as_str() {
+                return Ok(Some("source_changed"));
+            }
+            if dir.hash(&md)?.as_deref() != entry["markdown_sha256"].as_str() {
+                return Ok(Some("output_conflict"));
+            }
+            Ok(None)
+        })();
+        if let Some(status) = match check {
+            Ok(s) => s,
+            Err(_) => Some("output_conflict"),
+        } {
+            changed = true;
+            entry["status"] = Value::String(status.into());
+            entry["error"] = Value::String(
+                "source or Markdown changed before directory commit; preserved".into(),
+            );
+            entry.as_object_mut().unwrap().remove("markdown_sha256");
+        }
+    }
+    changed
+}
+
+#[cfg(test)]
+mod commit_tests {
+    use super::*;
+    #[test]
+    fn final_pair_check_rejects_earlier_source_or_markdown_changes_after_staging() {
+        for source in [true, false] {
+            let root = tempfile::tempdir().unwrap();
+            fs::write(root.path().join("A.pdf"), b"pdf").unwrap();
+            fs::write(root.path().join("A.md"), b"markdown").unwrap();
+            let id = root_identity(root.path()).unwrap();
+            let dir = files::Directory::open(root.path(), &id, Path::new("")).unwrap();
+            let mut entries = vec![
+                serde_json::json!({"status":"published","pdf":"A.pdf","pdf_sha256":digest(b"pdf"),"markdown":"A.md","markdown_sha256":digest(b"markdown")}),
+            ];
+            let staged = dir.stage(Path::new(NAME), b"new manifest", None).unwrap();
+            fs::write(
+                root.path().join(if source { "A.pdf" } else { "A.md" }),
+                b"changed",
+            )
+            .unwrap();
+            assert!(verify_pairs(&dir, &mut entries));
+            assert_ne!(entries[0]["status"], "published");
+            dir.cleanup(&staged).unwrap();
+        }
     }
 }

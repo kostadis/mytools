@@ -184,7 +184,11 @@ pub fn publish_with_destination(
         published_snapshot:read_json::<Value>(&output.join("corpus/current/catalog.json")).ok().and_then(|c|c["selection_id"].as_str().map(str::to_string)),
         pending_works:catalog.iter().filter(|v|v["status"]!="searchable_with_flags").map(|v|serde_json::json!({"work_id":v["work"]["work_id"],"source_id":v["work"]["source_id"],"status":v["status"],"error":v["error"],"missing_ranges":v["missing_ranges"]})).collect(),
     };
-    if books.is_empty() {
+    if books.is_empty()
+        && !(snapshot.ready.is_empty()
+            && snapshot.coverage_errors.is_empty()
+            && result.adjacent.as_ref().is_some_and(|r| r.complete))
+    {
         write_json(&output.join("corpus/pending.json"), &result)?;
         return Ok(result);
     }
