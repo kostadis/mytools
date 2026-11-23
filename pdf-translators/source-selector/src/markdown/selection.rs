@@ -258,8 +258,16 @@ pub fn resolve_group(
     }
     let members: Vec<_> = candidates.iter().map(|c| &c.source).cloned().collect();
     let decisions: Vec<Decision> = store.records("decisions")?;
-    let adopted = store.current_decisions()?;
-    let evidence = store.evidence()?;
+    let evidence = store.group_evidence(&group.source_ids)?;
+    let adopted: Vec<_> = decisions
+        .iter()
+        .filter(|d| {
+            d.group_id == group.group_id
+                && d.membership_digest == group.membership_digest
+                && (crate::review::evidence_digest(group, &evidence) == d.evidence_digest
+                    || crate::review::same_user_sources(d, group, &evidence))
+        })
+        .collect();
     let hints: Vec<Hint> = store.records("hints")?;
     let mut snapshot = Snapshot {
         schema_version: 1,
@@ -275,6 +283,7 @@ pub fn resolve_group(
     };
     let work_id = format!("w{}", &digest_json(&group.group_id)[..24]);
     let mut record = PolicyRecord {
+        selection_revision: None,
         work_id: work_id.clone(),
         group_id: group.group_id.clone(),
         status: "deferred_choice".into(),
@@ -449,6 +458,9 @@ pub fn resolve_group(
         relevant_evidence,
         relevant_hints,
     ));
+    for record in &mut snapshot.records {
+        record.selection_revision = Some(snapshot.snapshot_id.clone());
+    }
     for ready in &mut snapshot.ready {
         ready.provenance["selection_revision"] = Value::String(snapshot.snapshot_id.clone());
     }

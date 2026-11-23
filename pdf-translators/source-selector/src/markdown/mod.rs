@@ -33,6 +33,8 @@ pub struct Candidate {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PolicyRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection_revision: Option<String>,
     pub work_id: String,
     pub group_id: String,
     pub status: String,

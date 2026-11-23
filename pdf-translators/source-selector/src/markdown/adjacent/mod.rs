@@ -30,6 +30,7 @@ pub struct AdjacentReport {
 pub struct Session {
     scoped: bool,
     authority_db: Option<PathBuf>,
+    expected_graph: Option<String>,
     confirmed: BTreeSet<String>,
     root: PathBuf,
     identity: Value,
@@ -226,6 +227,7 @@ impl Session {
         Ok(Self {
             scoped,
             authority_db: None,
+            expected_graph: None,
             confirmed: BTreeSet::new(),
             root: s.source_root.clone(),
             identity: s.root_identity.clone(),
@@ -239,6 +241,10 @@ impl Session {
     }
     pub fn clear_authority_database(&mut self) {
         self.authority_db = None;
+        self.expected_graph = None;
+    }
+    pub fn set_graph_token(&mut self, token: &str) {
+        self.expected_graph = Some(token.into());
     }
     pub fn set_authority_database(&mut self, path: &Path) {
         self.authority_db = Some(path.to_path_buf());
@@ -249,11 +255,18 @@ impl Session {
         };
         let db = crate::store::Store::open_readonly(path)?;
         let guard = db.authority_guard()?;
-        let groups: Vec<crate::models::Group> = db.records("groups")?;
+        if self.expected_graph.as_ref().is_some_and(|g| {
+            db.meta("graph_revision")
+                .map(|v| digest_json(&v) != *g)
+                .unwrap_or(true)
+        }) {
+            return Err(SelectionError::Invalid(
+                "group graph changed before source install".into(),
+            ));
+        }
         for record in &s.records {
-            let group = groups
-                .iter()
-                .find(|g| g.group_id == record.group_id)
+            let group = db
+                .record::<crate::models::Group>("groups", &record.group_id)?
                 .ok_or_else(|| {
                     SelectionError::Invalid("group changed before publication".into())
                 })?;
@@ -261,7 +274,7 @@ impl Session {
                 &db,
                 self.path.parent().unwrap().parent().unwrap(),
                 &self.root,
-                group,
+                &group,
                 record.candidates.clone(),
                 &Value::Null,
             )?;
@@ -271,12 +284,13 @@ impl Session {
                 ));
             }
             for c in &record.candidates {
-                if crate::inventory::checked_path(&self.root, &c.source.relative_path)
-                    .and_then(|p| crate::inventory::fingerprint(&p))
-                    .ok()
-                    .as_ref()
-                    != Some(&c.source.fingerprint)
-                {
+                let observed = crate::inventory::checked_path(&self.root, &c.source.relative_path)
+                    .and_then(|p| crate::inventory::fingerprint(&p));
+                let stable = match observed {
+                    Ok(fp) => fp == c.source.fingerprint,
+                    Err(_) => c.error.is_some(),
+                };
+                if !stable {
                     return Err(SelectionError::Invalid(
                         "competitor observation changed before manifest commit".into(),
                     ));
@@ -293,12 +307,42 @@ impl Session {
         engine: &Engine,
         relative: &Path,
     ) -> Result<usize> {
+        let dir = files::Directory::open(&self.root, &self.identity, relative)?;
         if s.ready
             .iter()
             .any(|r| r.relative_path.parent() == Some(relative))
         {
-            return Ok(0);
+            let record = dir
+                .read(Path::new(NAME))?
+                .map(|b| serde_json::from_slice::<Value>(&b))
+                .transpose()?;
+            return Ok(record
+                .as_ref()
+                .and_then(|r| r["unverified_work_ids"].as_array())
+                .map_or(0, |v| v.len()));
         }
+        let mut local = s.clone();
+        let old = dir
+            .read(Path::new(NAME))?
+            .map(|b| serde_json::from_slice::<Value>(&b))
+            .transpose()?
+            .unwrap_or(Value::Null);
+        local.records.retain(|r| {
+            r.candidates.iter().any(|c| {
+                c.source.relative_path.parent() == Some(relative)
+                    || old["documents"].as_array().is_some_and(|docs| {
+                        docs.iter().any(|d| d["source_id"] == c.source.source_id)
+                    })
+            })
+        });
+        local.snapshot_id = digest_json(
+            &local
+                .records
+                .iter()
+                .map(|r| (&r.group_id, &r.selection_revision))
+                .collect::<Vec<_>>(),
+        );
+        let s = &local;
         self.sync_directory(
             relative,
             s,
@@ -327,7 +371,12 @@ impl Session {
         states: &BTreeMap<String, Value>,
     ) -> AdjacentReport {
         let mut report = AdjacentReport {
-            complete: s.coverage_errors.is_empty() && self.discovery_errors.is_empty(),
+            complete: s.coverage_errors.is_empty()
+                && self.discovery_errors.is_empty()
+                && (!self.scoped
+                    || s.records
+                        .iter()
+                        .all(|r| r.candidates.iter().all(|c| c.error.is_none()))),
             errors: self.discovery_errors.clone(),
             ..AdjacentReport::default()
         };
@@ -569,13 +618,10 @@ impl Session {
                                 && (entry["group_id"] == r.group_id
                                     || r.candidates.iter().any(|c| {
                                         entry["source_id"] == c.source.source_id
-                                            && (r.status == "source_changed"
-                                                || c.sha256.as_deref()
-                                                    == entry["pdf_sha256"].as_str())
+                                            && (r.status == "source_changed" || c.sha256.is_some())
                                     }))
                         });
                     let disappeared = self.scoped
-                        && coverage_complete
                         && files::filename(&entry["pdf"])
                             .ok()
                             .is_some_and(|p| matches!(dir.stamp(&p), Ok(None)));
@@ -668,6 +714,7 @@ impl Session {
                     };
                     self.ownership.operations.push(operation.clone());
                     self.ownership.save(&self.path)?;
+                    let _authority = self.authority_guard(s)?;
                     dir.install(&operation.plan)?;
                 }
                 if dir
@@ -711,7 +758,7 @@ impl Session {
                 .cloned()
                 .unwrap_or_default();
             for r in &s.records {
-                coverage.insert(r.group_id.clone(), serde_json::json!({"revision":s.snapshot_id,"status":r.status,"sources":r.candidates.iter().map(|c| &c.source.source_id).collect::<Vec<_>>()}));
+                coverage.insert(r.group_id.clone(), serde_json::json!({"revision":r.selection_revision.as_deref().unwrap_or(&s.snapshot_id),"status":r.status,"sources":r.candidates.iter().map(|c| &c.source.source_id).collect::<Vec<_>>()}));
             }
             record["group_coverage"] = Value::Object(coverage.clone());
             record["selection_id"] = Value::String(digest_json(&coverage));

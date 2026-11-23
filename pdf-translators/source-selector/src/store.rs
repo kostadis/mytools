@@ -11,6 +11,34 @@ impl Store {
     pub fn path(&self) -> &Path {
         Path::new(self.conn.path().expect("file-backed store"))
     }
+    pub fn record<T: DeserializeOwned>(&self, kind: &str, id: &str) -> Result<Option<T>> {
+        let body: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT body FROM records WHERE kind=?1 AND id=?2",
+                params![kind, id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(body.map(|b| serde_json::from_str(&b)).transpose()?)
+    }
+    fn bump_graph(&self, kind: &str) -> Result<()> {
+        if matches!(kind, "groups" | "hints" | "decisions" | "evidence") {
+            let n = self
+                .meta("authority_revision")?
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            self.set_meta("authority_revision", &serde_json::json!(n + 1))?;
+        }
+        if matches!(kind, "groups" | "hints") {
+            let n = self
+                .meta("graph_revision")?
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            self.set_meta("graph_revision", &serde_json::json!(n + 1))?;
+        }
+        Ok(())
+    }
     pub fn open_readonly(path: &Path) -> Result<Self> {
         let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         let store = Self { conn };
@@ -88,6 +116,7 @@ impl Store {
             "DELETE FROM records WHERE kind=?1 AND id=?2",
             params![kind, id],
         )?;
+        self.bump_graph(kind)?;
         Ok(())
     }
     pub fn open(path: &Path) -> Result<Self> {
@@ -207,6 +236,7 @@ impl Store {
             "INSERT OR REPLACE INTO records VALUES (?1,?2,?3)",
             params![kind, id, serde_json::to_string(value)?],
         )?;
+        self.bump_graph(kind)?;
         Ok(())
     }
     /// Preserve the original audit event when the same fact is replayed.
@@ -217,10 +247,14 @@ impl Store {
         value: &impl Serialize,
     ) -> Result<bool> {
         let _gate = self.mutation_guard()?;
-        Ok(self.conn.execute(
+        let inserted = self.conn.execute(
             "INSERT OR IGNORE INTO records VALUES (?1,?2,?3)",
             params![kind, id, serde_json::to_string(value)?],
-        )? > 0)
+        )? > 0;
+        if inserted {
+            self.bump_graph(kind)?;
+        }
+        Ok(inserted)
     }
     pub fn records<T: DeserializeOwned>(&self, kind: &str) -> Result<Vec<T>> {
         let mut stmt = self
@@ -240,6 +274,7 @@ impl Store {
             )?;
         }
         tx.commit()?;
+        self.bump_graph(kind)?;
         Ok(())
     }
 }

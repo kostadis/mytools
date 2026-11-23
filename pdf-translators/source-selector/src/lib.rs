@@ -16,6 +16,8 @@ pub mod store;
 #[derive(Debug, thiserror::Error)]
 pub enum SelectionError {
     #[error("{0}")]
+    Capacity(String),
+    #[error("{0}")]
     Usage(String),
     #[error("{0}")]
     Invalid(String),

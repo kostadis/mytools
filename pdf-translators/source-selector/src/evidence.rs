@@ -389,7 +389,20 @@ impl Store {
         )
     }
     pub fn evidence(&self) -> Result<Vec<Evidence>> {
-        self.records::<Value>("evidence")?
+        self.decode_evidence(self.records::<Value>("evidence")?)
+    }
+    pub fn group_evidence(&self, ids: &[String]) -> Result<Vec<Evidence>> {
+        self.decode_evidence(
+            ids.iter()
+                .map(|id| self.record::<Value>("evidence", id))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect(),
+        )
+    }
+    fn decode_evidence(&self, values: Vec<Value>) -> Result<Vec<Evidence>> {
+        values
             .into_iter()
             .map(|v| {
                 let bytes: Vec<u8> = serde_json::from_value(v["bytes"].clone())?;

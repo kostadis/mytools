@@ -23,7 +23,7 @@ fn source_hashes(group: &Group, evidence: &[Evidence]) -> BTreeMap<String, Strin
         .map(|e| (e.source_id.clone(), e.sha256.clone()))
         .collect()
 }
-fn same_user_sources(decision: &Decision, group: &Group, evidence: &[Evidence]) -> bool {
+pub(crate) fn same_user_sources(decision: &Decision, group: &Group, evidence: &[Evidence]) -> bool {
     decision.actor_role == ActorRole::User
         && !decision.source_hashes.is_empty()
         && decision.source_hashes == source_hashes(group, evidence)

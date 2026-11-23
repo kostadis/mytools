@@ -143,6 +143,11 @@ fn stage(job: &Job) -> Result<PathBuf> {
         return Ok(dest);
     }
     let source = checked_path(&job.source_root, &job.ready.relative_path)?;
+    capacity::request(
+        &job.output,
+        &job.id,
+        capacity::reservation_bytes(fs::metadata(&source)?.len(), 0, false),
+    )?;
     fs::create_dir_all(dest.parent().unwrap())?;
     let tmp = dest.with_extension(format!("staging-{}", std::process::id()));
     let result = (|| {
@@ -227,6 +232,11 @@ pub fn run(path: &Path) -> Result<()> {
                     checksum: String::new(),
                 };
                 c.checksum = digest_json(&c);
+                let planned = capacity::job_bytes(&job.output, &job.ready, &job.engine, 0)
+                    .saturating_add(
+                        (serde_json::to_vec_pretty(&c)?.len() as u64).saturating_mul(16),
+                    );
+                capacity::request(&job.output, &job.id, planned)?;
                 write_json(
                     &range_path(&job.output, &job.ready.sha256, &job.engine, first, last),
                     &c,
@@ -281,7 +291,12 @@ pub fn run(path: &Path) -> Result<()> {
         Ok(())
     })();
     if let Err(e) = attempt {
-        result.status = "failed".into();
+        result.status = if matches!(e, SelectionError::Capacity(_)) {
+            "capacity_pending"
+        } else {
+            "failed"
+        }
+        .into();
         result.error = Some(e.to_string());
     }
     write_json(

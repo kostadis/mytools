@@ -35,14 +35,104 @@ impl Reservations {
         self.jobs.remove(id);
     }
 }
-pub fn job_bytes(source_size: u64, pages: u32, chunk_pages: u32) -> u64 {
-    source_size.saturating_mul(2).saturating_add(
-        u64::from(pages.div_ceil(chunk_pages)).saturating_mul(4 * 1024 * 1024 * 1024),
+pub const WINDOW: u64 = 1024 * 1024 * 1024;
+pub fn reservation_bytes(missing_source: u64, cached_bytes: u64, complete: bool) -> u64 {
+    missing_source
+        .saturating_mul(2)
+        .saturating_add(cached_bytes.saturating_mul(16))
+        .saturating_add(if complete { 16 * 1024 * 1024 } else { WINDOW })
+}
+pub fn job_bytes(output: &Path, ready: &Ready, engine: &worker::Engine, source_size: u64) -> u64 {
+    let mut cached = 0u64;
+    for first in (1..=ready.page_count).step_by(engine.chunk_pages as usize) {
+        let last = ready.page_count.min(first + engine.chunk_pages - 1);
+        cached = cached.saturating_add(
+            fs::metadata(worker::range_path(
+                output,
+                &ready.sha256,
+                engine,
+                first,
+                last,
+            ))
+            .map_or(0, |m| m.len()),
+        );
+    }
+    let missing = if output
+        .join("cache/sources")
+        .join(format!("{}.pdf", ready.sha256))
+        .exists()
+    {
+        0
+    } else {
+        source_size
+    };
+    reservation_bytes(
+        missing,
+        cached,
+        worker::all_chunks(output, ready, engine).is_ok(),
     )
+}
+#[derive(Serialize, Deserialize)]
+pub struct Request {
+    pub nonce: String,
+    pub bytes: u64,
+}
+#[derive(Serialize, Deserialize)]
+pub struct Grant {
+    pub nonce: String,
+    pub allowed: bool,
+}
+/// Workers request allocation growth; only the coordinator owns reservations.
+pub fn request(output: &Path, id: &str, bytes: u64) -> Result<()> {
+    if !output.join("capacity-jobs").join(id).exists() {
+        return Ok(());
+    }
+    let nonce = crate::digest_json(&(
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+    ));
+    write_json(
+        &output.join("capacity-requests").join(format!("{id}.json")),
+        &Request {
+            nonce: nonce.clone(),
+            bytes,
+        },
+    )?;
+    let start = std::time::Instant::now();
+    while start.elapsed() < std::time::Duration::from_secs(120) {
+        if let Ok(grant) =
+            read_json::<Grant>(&output.join("capacity-grants").join(format!("{id}.json")))
+            && grant.nonce == nonce
+        {
+            return if grant.allowed {
+                Ok(())
+            } else {
+                Err(SelectionError::Capacity(
+                    "local allocation growth pending".into(),
+                ))
+            };
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    Err(SelectionError::Capacity(
+        "coordinator capacity grant unavailable".into(),
+    ))
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cached_assembly_fits_a_small_budget_and_uncached_growth_is_bounded() {
+        let mut r = Reservations::default();
+        let cached = reservation_bytes(0, 1024 * 1024, true);
+        assert!(r.reserve("cached", cached, FLOOR + 64 * 1024 * 1024));
+        let growth = reservation_bytes(0, 1024 * 1024, false);
+        assert!(!r.reserve("growing", growth, FLOOR + 64 * 1024 * 1024));
+        assert!(growth < 2 * 1024 * 1024 * 1024);
+    }
     #[test]
     fn reservations_do_not_double_spend_and_smaller_jobs_fit() {
         let mut r = Reservations::default();

@@ -489,7 +489,7 @@ fn new_inventory_with_unrelated_work_preserves_markdown_and_manifest_bytes_and_m
     }
 }
 #[test]
-fn oversized_job_exits_capacity_pending_without_spending_an_extraction_attempt() {
+fn long_document_uses_bounded_growth_instead_of_whole_document_reservation() {
     let (root, state, out) = fixture();
     common::pages(&root.path().join("Pub/Book/Chronicle.pdf"), 4000);
     scan(root.path(), state.path());
@@ -503,14 +503,359 @@ fn oversized_job_exits_capacity_pending_without_spending_an_extraction_attempt()
         .unwrap();
     assert_eq!(
         r.status.code(),
-        Some(75),
+        Some(0),
         "{}",
         String::from_utf8_lossy(&r.stderr)
     );
     let s: serde_json::Value =
         serde_json::from_slice(&fs::read(out.path().join("continuous-status.json")).unwrap())
             .unwrap();
-    assert_eq!(s["phase"], "capacity_pending");
+    assert_eq!(s["phase"], "completed");
     assert_eq!(s["failures"], 0);
-    assert!(!out.path().join("jobs").exists());
+    assert!(root.path().join("Pub/Book/Chronicle.md").exists());
+}
+#[test]
+fn missing_source_settles_once_instead_of_requeuing_forever() {
+    use std::time::{Duration, Instant};
+    let (root, state, out) = fixture();
+    fs::remove_file(root.path().join("Pub/Book/Chronicle.pdf")).unwrap();
+    let log = fs::File::create(out.path().join("missing.log")).unwrap();
+    let mut c = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("--work-dir")
+        .arg(state.path())
+        .arg("markdown-continuous")
+        .arg("--output")
+        .arg(out.path())
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    let mut exit = None;
+    while start.elapsed() < Duration::from_secs(3) {
+        exit = c.try_wait().unwrap();
+        if exit.is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    if exit.is_none() {
+        c.kill().unwrap();
+    }
+    c.wait().unwrap();
+    assert!(exit.is_some(), "missing source was retried indefinitely");
+    let s: serde_json::Value =
+        serde_json::from_slice(&fs::read(out.path().join("continuous-status.json")).unwrap())
+            .unwrap();
+    assert_eq!(s["phase"], "completed_with_exceptions");
+}
+#[test]
+fn regroup_fence_survives_two_restarts_until_inventory_is_refreshed() {
+    let (root, state, out) = fixture();
+    let db = Store::open_readonly(&state.path().join("selection.db")).unwrap();
+    selection::select(&db, out.path(), None).unwrap();
+    drop(db);
+    common::pdf(
+        &root.path().join("Pub/Book/Chronicle.pdf"),
+        "Changed bytes require new graph",
+        "D:20250101000000Z",
+        false,
+    );
+    let run = || {
+        Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+            .arg("--work-dir")
+            .arg(state.path())
+            .arg("markdown-continuous")
+            .arg("--output")
+            .arg(out.path())
+            .output()
+            .unwrap()
+    };
+    for _ in 0..3 {
+        let r = run();
+        assert_eq!(
+            r.status.code(),
+            Some(75),
+            "{}",
+            String::from_utf8_lossy(&r.stderr)
+        );
+        assert!(!root.path().join("Pub/Book/Chronicle.md").exists());
+    }
+    scan(root.path(), state.path());
+    let r = run();
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    assert!(root.path().join("Pub/Book/Chronicle.md").exists());
+}
+#[test]
+fn record_only_publication_conflict_is_not_reported_clean() {
+    let (root, state, out) = fixture();
+    let mut db = Store::open(&state.path().join("selection.db")).unwrap();
+    let g = db.records::<Group>("groups").unwrap().remove(0);
+    let d = Decision {
+        packet_ids: vec![],
+        source_hashes: Default::default(),
+        group_id: g.group_id.clone(),
+        membership_digest: g.membership_digest,
+        evidence_digest: String::new(),
+        actor: "user".into(),
+        actor_role: ActorRole::User,
+        outcomes: g
+            .source_ids
+            .iter()
+            .map(|id| Outcome {
+                source_id: id.clone(),
+                status: Status::NeedsReview,
+                work_id: None,
+                representative_id: None,
+                successor_id: None,
+            })
+            .collect(),
+        rationale: "hold".into(),
+        evidence_refs: vec![],
+    };
+    db.put_record("decisions", &d.group_id, &d).unwrap();
+    drop(db);
+    fs::write(
+        root.path().join("Pub/Book/current-documents.json"),
+        "{foreign}",
+    )
+    .unwrap();
+    let r = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("--work-dir")
+        .arg(state.path())
+        .arg("markdown-continuous")
+        .arg("--output")
+        .arg(out.path())
+        .output()
+        .unwrap();
+    assert!(r.status.success());
+    let s: serde_json::Value =
+        serde_json::from_slice(&fs::read(out.path().join("continuous-status.json")).unwrap())
+            .unwrap();
+    assert!(s["output_conflicts"].as_u64().unwrap() > 0, "{s}");
+    assert_eq!(s["phase"], "completed_with_exceptions");
+}
+#[test]
+fn late_join_hint_fences_old_graph_before_dispatch_and_on_restart() {
+    use std::{
+        os::unix::fs::PermissionsExt,
+        time::{Duration, Instant},
+    };
+    let (root, state, out) = fixture();
+    fs::create_dir_all(root.path().join("Other/Atlas")).unwrap();
+    common::pdf(
+        &root.path().join("Other/Atlas/Atlas.pdf"),
+        "Other work",
+        "D:20200101000000Z",
+        false,
+    );
+    scan(root.path(), state.path());
+    let captured = out.path().join("captured");
+    let gate = out.path().join("release");
+    let wrapper = out.path().join("capture-metadata");
+    fs::write(
+        &wrapper,
+        format!(
+            "#!/bin/sh\n'{}' \"$@\"\ntouch '{}'\nwhile [ ! -e '{}' ]; do sleep 0.05; done\n",
+            env!("CARGO_BIN_EXE_rpg-source-select"),
+            captured.display(),
+            gate.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+    let log = fs::File::create(out.path().join("late.log")).unwrap();
+    let mut c = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("--work-dir")
+        .arg(state.path())
+        .arg("markdown-continuous")
+        .arg("--output")
+        .arg(out.path())
+        .arg("--metadata-worker")
+        .arg(wrapper)
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    while !captured.exists() && start.elapsed() < Duration::from_secs(3) {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(captured.exists());
+    let mut db = Store::open(&state.path().join("selection.db")).unwrap();
+    let sources = db.sources().unwrap();
+    let hint = Hint {
+        origin: "muse".into(),
+        source_ids: sources.iter().map(|s| s.source_id.clone()).collect(),
+        payload: serde_json::json!({}),
+        unmatched_references: vec![],
+    };
+    db.put_record("hints", "new-join", &hint).unwrap();
+    drop(db);
+    fs::write(gate, "go").unwrap();
+    let exit = c.wait().unwrap();
+    assert_eq!(
+        exit.code(),
+        Some(75),
+        "{}",
+        fs::read_to_string(out.path().join("late.log")).unwrap()
+    );
+    assert!(
+        !out.path().join("jobs").exists(),
+        "stale graph dispatched extraction"
+    );
+    let r = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("--work-dir")
+        .arg(state.path())
+        .arg("markdown-continuous")
+        .arg("--output")
+        .arg(out.path())
+        .output()
+        .unwrap();
+    assert_eq!(r.status.code(), Some(75));
+}
+#[test]
+fn review_committed_before_sibling_install_preserves_absent_target() {
+    use rpg_source_select::markdown::{adjacent, conversion, publication};
+    let (root, state, out) = fixture();
+    let db = Store::open_readonly(&state.path().join("selection.db")).unwrap();
+    selection::select(&db, out.path(), None).unwrap();
+    let r = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("markdown-convert")
+        .arg("--output")
+        .arg(out.path())
+        .output()
+        .unwrap();
+    assert!(r.status.success());
+    let g = db.records::<Group>("groups").unwrap().remove(0);
+    let source = db.sources().unwrap().remove(0);
+    let cache = Store::open_readonly(&out.path().join("metadata.db")).unwrap();
+    let c = metadata::cached(root.path(), &source, &db, &cache)
+        .unwrap()
+        .unwrap();
+    let old = selection::resolve_group(
+        &db,
+        out.path(),
+        root.path(),
+        &g,
+        vec![c],
+        &serde_json::Value::Null,
+    )
+    .unwrap();
+    let mut session = adjacent::Session::new_scoped(out.path(), &old).unwrap();
+    session.set_authority_database(&state.path().join("selection.db"));
+    let mut writer = Store::open(&state.path().join("selection.db")).unwrap();
+    let d = Decision {
+        packet_ids: vec![],
+        source_hashes: Default::default(),
+        group_id: g.group_id.clone(),
+        membership_digest: g.membership_digest,
+        evidence_digest: String::new(),
+        actor: "user".into(),
+        actor_role: ActorRole::User,
+        outcomes: g
+            .source_ids
+            .iter()
+            .map(|id| Outcome {
+                source_id: id.clone(),
+                status: Status::NeedsReview,
+                work_id: None,
+                representative_id: None,
+                successor_id: None,
+            })
+            .collect(),
+        rationale: "late hold".into(),
+        evidence_refs: vec![],
+    };
+    writer.put_record("decisions", &d.group_id, &d).unwrap();
+    let mut opt = options(out.path());
+    opt.timeout_secs = 120;
+    let e = conversion::engine(&opt).unwrap();
+    let p = publication::publish_snapshot(out.path(), &e, &old, Some(&mut session), false).unwrap();
+    assert!(p.pending);
+    assert!(
+        !root.path().join("Pub/Book/Chronicle.md").exists(),
+        "revoked bytes installed before authority gate"
+    );
+}
+#[test]
+fn mixed_directory_retains_unmatched_entry_as_unverified_and_counts_it() {
+    let (root, state, out) = fixture();
+    let run = || {
+        Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+            .arg("--work-dir")
+            .arg(state.path())
+            .arg("markdown-continuous")
+            .arg("--output")
+            .arg(out.path())
+            .output()
+            .unwrap()
+    };
+    assert!(run().status.success());
+    let path = root.path().join("Pub/Book/current-documents.json");
+    let mut m: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let mut unknown = m["documents"][0].clone();
+    unknown["work_id"] = "unmatched-work".into();
+    unknown["source_id"] = "unknown-source".into();
+    unknown["group_id"] = "unknown-group".into();
+    unknown["pdf"] = "Untracked.pdf".into();
+    unknown["markdown"] = "Untracked.md".into();
+    fs::copy(
+        root.path().join("Pub/Book/Chronicle.pdf"),
+        root.path().join("Pub/Book/Untracked.pdf"),
+    )
+    .unwrap();
+    fs::copy(
+        root.path().join("Pub/Book/Chronicle.md"),
+        root.path().join("Pub/Book/Untracked.md"),
+    )
+    .unwrap();
+    m["documents"].as_array_mut().unwrap().push(unknown);
+    fs::write(&path, serde_json::to_vec_pretty(&m).unwrap()).unwrap();
+    let r = run();
+    assert!(r.status.success());
+    let s: serde_json::Value =
+        serde_json::from_slice(&fs::read(out.path().join("continuous-status.json")).unwrap())
+            .unwrap();
+    assert_eq!(s["phase"], "completed_with_exceptions");
+    let after: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert!(
+        after["unverified_work_ids"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("unmatched-work"))
+    );
+    assert!(root.path().join("Pub/Book/Chronicle.md").exists());
+}
+#[test]
+fn proven_missing_current_pdf_withdraws_directory_claim_and_search_pointer() {
+    let (root, state, out) = fixture();
+    let run = || {
+        Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+            .arg("--work-dir")
+            .arg(state.path())
+            .arg("markdown-continuous")
+            .arg("--output")
+            .arg(out.path())
+            .output()
+            .unwrap()
+    };
+    assert!(run().status.success());
+    fs::remove_file(root.path().join("Pub/Book/Chronicle.pdf")).unwrap();
+    let r = run();
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    let m: serde_json::Value = serde_json::from_slice(
+        &fs::read(root.path().join("Pub/Book/current-documents.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        m["documents"].as_array().unwrap().is_empty(),
+        "missing PDF kept its current claim: {m}"
+    );
+    let c: serde_json::Value =
+        serde_json::from_slice(&fs::read(out.path().join("corpus/current/catalog.json")).unwrap())
+            .unwrap();
+    assert!(c["books"].as_array().unwrap().is_empty());
+    assert_eq!(c["pending"], true);
+    assert!(root.path().join("Pub/Book/Chronicle.md").exists());
 }

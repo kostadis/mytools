@@ -46,6 +46,8 @@ pub struct Status {
     pub needs_ocr: usize,
     pub failures: usize,
     pub output_conflicts: usize,
+    pub publication_pending: usize,
+    pub unverified_manifests: usize,
     pub capacity_pending: usize,
     pub manifest_discovery_complete: bool,
 }
@@ -145,6 +147,9 @@ pub fn metadata_worker(path: &Path) -> Result<()> {
             different
         });
     let candidate = match changed {
+        Err(SelectionError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+            empty(&observed, format!("source_missing: {e}"))
+        }
         Err(e) => empty(&observed, e.to_string()),
         Ok(changed) => {
             let mut c = metadata::probe(&r.root, &observed, &db, &mut cache);
@@ -171,15 +176,71 @@ fn persist_status(out: &Path, status: &Status) -> Result<()> {
     write_json(&out.join("continuous-status.json"), status)
 }
 fn authority_token(db: &Store) -> Result<String> {
-    Ok(digest_json(&(
-        db.records::<Value>("decisions")?,
-        db.records::<Value>("hints")?,
-        db.records::<Value>("evidence")?,
-    )))
+    Ok(digest_json(&db.meta("authority_revision")?))
+}
+fn graph_token(db: &Store) -> Result<String> {
+    Ok(digest_json(&db.meta("graph_revision")?))
+}
+fn observations_current(candidates: &[Candidate], root: &Path) -> bool {
+    candidates.iter().all(|c| {
+        let observed = checked_path(root, &c.source.relative_path).and_then(|p| fingerprint(&p));
+        match observed {
+            Ok(fp) => fp == c.source.fingerprint,
+            Err(_) => c.error.is_some(),
+        }
+    })
+}
+fn invalidate_revoked_current(
+    out: &Path,
+    resolutions: &BTreeMap<String, Resolution>,
+) -> Result<bool> {
+    let old = read_json::<Value>(&out.join("corpus/current/catalog.json")).unwrap_or(Value::Null);
+    let revoked = old["books"].as_array().is_some_and(|books| {
+        books.iter().any(|b| {
+            b["work"]["group_id"]
+                .as_str()
+                .and_then(|g| resolutions.get(g))
+                .is_some_and(|r| {
+                    (r.snapshot.records.iter().any(|p| {
+                        p.candidates.iter().any(|c| {
+                            b["work"]["source_id"] == c.source.source_id
+                                && c.error
+                                    .as_deref()
+                                    .is_some_and(|e| e.starts_with("source_missing:"))
+                        })
+                    }) || r.snapshot.records.iter().all(|p| {
+                        p.status == "source_changed"
+                            || p.candidates.iter().all(|c| c.error.is_none())
+                    })) && !r.snapshot.ready.iter().any(|ready| {
+                        b["work"]["work_id"] == ready.work_id && b["work"]["sha256"] == ready.sha256
+                    })
+                })
+        })
+    });
+    if revoked {
+        let pointer = out.join("corpus/current");
+        match fs::remove_file(&pointer) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                write_json(
+                    &out.join("current-view-state.json"),
+                    &serde_json::json!({"safe":false,"error":e.to_string()}),
+                )?;
+                return Err(e.into());
+            }
+        }
+        write_json(
+            &out.join("current-view-state.json"),
+            &serde_json::json!({"safe":false,"reason":"confirmed revocation; replacement pending"}),
+        )?;
+    }
+    Ok(revoked)
 }
 fn resolution_key(run: &str, group: &str) -> String {
     format!("{run}-{group}")
 }
+#[allow(clippy::too_many_arguments)]
 fn commit_group(
     db: &Store,
     ledger: &mut Store,
@@ -188,8 +249,12 @@ fn commit_group(
     group: &Group,
     candidates: Vec<Candidate>,
     run: &str,
-) -> Result<Resolution> {
+    graph: &str,
+) -> Result<Option<Resolution>> {
     let _gate = db.authority_guard()?;
+    if graph_token(db)? != graph || !observations_current(&candidates, root) {
+        return Ok(None);
+    }
     let snapshot = selection::resolve_group(db, out, root, group, candidates, &Value::Null)?;
     let resolution = Resolution {
         snapshot,
@@ -200,7 +265,7 @@ fn commit_group(
         &resolution_key(run, &group.group_id),
         &resolution,
     )?;
-    Ok(resolution)
+    Ok(Some(resolution))
 }
 #[allow(clippy::too_many_arguments)]
 fn publish_group(
@@ -212,6 +277,7 @@ fn publish_group(
     resolution: &mut Resolution,
     engine: &Engine,
     session: &mut adjacent::Session,
+    graph: &str,
 ) -> Result<()> {
     // Long parsing/staging happens outside the authority gate. The final pass is
     // observation-cached; reread authority under the gate before installing.
@@ -229,11 +295,45 @@ fn publish_group(
         resolution.publication = None;
     }
     session.set_authority_database(db.path());
-    let p = publication::publish_snapshot(out, engine, &resolution.snapshot, Some(session), false)?;
+    session.set_graph_token(graph);
+    let mut p =
+        publication::publish_snapshot(out, engine, &resolution.snapshot, Some(session), false)?;
     eprintln!(
         "group {}: {} sibling Markdown published, revision {}",
         group.group_id, p.books, resolution.snapshot.snapshot_id
     );
+    if p.pending {
+        let changed = {
+            let _gate = db.authority_guard()?;
+            if graph_token(db)? == graph {
+                let final_authority = selection::resolve_group(
+                    db,
+                    out,
+                    &resolution.snapshot.source_root,
+                    group,
+                    resolution.snapshot.records[0].candidates.clone(),
+                    &Value::Null,
+                )?;
+                if final_authority.snapshot_id != resolution.snapshot.snapshot_id {
+                    resolution.snapshot = final_authority;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+        if changed {
+            p = publication::publish_snapshot(
+                out,
+                engine,
+                &resolution.snapshot,
+                Some(session),
+                false,
+            )?;
+        }
+    }
     resolution.publication = Some(p);
     ledger.put_record(
         "continuous_groups",
@@ -250,6 +350,10 @@ fn current_view(
     resolutions: &BTreeMap<String, Resolution>,
     pending: bool,
 ) -> Result<bool> {
+    {
+        let _gate = db.authority_guard()?;
+        invalidate_revoked_current(out, resolutions)?;
+    }
     let entries: Vec<_> = resolutions
         .values()
         .filter_map(|r| r.publication.as_ref())
@@ -295,6 +399,10 @@ fn current_view(
         return Err(e.into());
     }
     File::open(out.join("corpus"))?.sync_all()?;
+    write_json(
+        &out.join("current-view-state.json"),
+        &serde_json::json!({"safe":true}),
+    )?;
     Ok(true)
 }
 
@@ -332,7 +440,14 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
             "source root identity changed".into(),
         ));
     }
-    let run = digest_json(&("continuous-v2", &inv.root, &identity, &groups));
+    let run = digest_json(&(
+        "continuous-v2",
+        &inv.root,
+        &identity,
+        &groups,
+        &inv.finished,
+    ));
+    let graph = graph_token(&db)?;
     let conversion_options = conversion::Options {
         output: out.clone(),
         expected_selection: None,
@@ -360,6 +475,40 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
         groups_total: groups.len(),
         ..Status::default()
     };
+    if ledger
+        .meta("regroup_fence")?
+        .is_some_and(|f| f["inventory_finished"] == inv.finished)
+    {
+        status.phase = "needs_regroup".into();
+        persist_status(&out, &status)?;
+        return Ok(status);
+    }
+    let group_by_source: BTreeMap<_, _> = groups
+        .iter()
+        .flat_map(|g| {
+            g.source_ids
+                .iter()
+                .map(move |id| (id.clone(), g.group_id.clone()))
+        })
+        .collect();
+    if db
+        .records::<Hint>("hints")?
+        .iter()
+        .filter(|h| h.origin == "muse")
+        .any(|h| {
+            h.source_ids
+                .iter()
+                .filter_map(|id| group_by_source.get(id))
+                .collect::<BTreeSet<_>>()
+                .len()
+                > 1
+        })
+    {
+        ledger.set_meta("regroup_fence",&serde_json::json!({"inventory_finished":inv.finished,"reason":"grouping hints require graph refresh"}))?;
+        status.phase = "needs_regroup".into();
+        persist_status(&out, &status)?;
+        return Ok(status);
+    }
     persist_status(&out, &status)?;
     let mut scan_groups: VecDeque<_> = groups.iter().collect();
     let mut pending: BTreeSet<String> = BTreeSet::new();
@@ -386,6 +535,41 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
     let mut reconciled_directories = BTreeSet::new();
     let mut unresolved_manifests = 0usize;
     loop {
+        if graph_token(&db)? != graph {
+            status.phase = "needs_regroup".into();
+        }
+        let capacity_jobs: BTreeSet<_> = active
+            .iter()
+            .map(|a| a.job.id.clone())
+            .chain(
+                reservations
+                    .jobs
+                    .keys()
+                    .filter(|id| id.as_str() != "metadata")
+                    .cloned(),
+            )
+            .collect();
+        for id in capacity_jobs {
+            if let Ok(request) = read_json::<capacity::Request>(
+                &out.join("capacity-requests").join(format!("{}.json", id)),
+            ) {
+                let prior = read_json::<capacity::Grant>(
+                    &out.join("capacity-grants").join(format!("{}.json", id)),
+                )
+                .ok();
+                if prior.as_ref().is_none_or(|g| g.nonce != request.nonce) {
+                    let allowed = reservations.reserve(&id, request.bytes, capacity::free(&out)?);
+                    write_json(&out.join("reservations.json"), &reservations)?;
+                    write_json(
+                        &out.join("capacity-grants").join(format!("{}.json", id)),
+                        &capacity::Grant {
+                            nonce: request.nonce,
+                            allowed,
+                        },
+                    )?;
+                }
+            }
+        }
         // Inspect only one component per turn; an early cached group can dispatch
         // before the remaining cache census or metadata requests have completed.
         if status.phase != "needs_regroup"
@@ -408,6 +592,12 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                             .as_ref()
                             == Some(&c.source.fingerprint)
                     {
+                        if c.error
+                            .as_deref()
+                            .is_some_and(|e| e.starts_with("needs_regroup:"))
+                        {
+                            status.phase = "needs_regroup".into();
+                        }
                         candidates.insert(id.clone(), c);
                         continue;
                     }
@@ -451,6 +641,11 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                         )
                     })
                 };
+                if !observations_current(std::slice::from_ref(&c), &inv.root) {
+                    pending.insert(c.source.source_id.clone());
+                    reservations.release("metadata");
+                    continue;
+                }
                 if c.error
                     .as_deref()
                     .is_some_and(|e| e.starts_with("needs_regroup:"))
@@ -472,6 +667,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                             archives: 0,
                             ready: vec![],
                             records: vec![PolicyRecord {
+                                selection_revision: None,
                                 work_id: format!("w{}", &digest_json(&group.group_id)[..24]),
                                 group_id: group.group_id.clone(),
                                 status: "source_changed".into(),
@@ -486,13 +682,22 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                         }
                         session.as_mut().unwrap().clear_authority_database();
                         let _gate = db.authority_guard()?;
-                        publication::publish_snapshot(
+                        resolutions.insert(
+                            group.group_id.clone(),
+                            Resolution {
+                                snapshot: withdrawal.clone(),
+                                publication: None,
+                            },
+                        );
+                        invalidate_revoked_current(&out, &resolutions)?;
+                        let p = publication::publish_snapshot(
                             &out,
                             &engine,
                             &withdrawal,
                             session.as_mut(),
                             false,
                         )?;
+                        resolutions.get_mut(&group.group_id).unwrap().publication = Some(p);
                         dirty = 100;
                     }
                 }
@@ -563,7 +768,25 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                     .iter()
                     .all(|id| candidates.contains_key(id))
                 {
-                    let r = commit_group(
+                    let complete: Vec<_> = group
+                        .source_ids
+                        .iter()
+                        .map(|id| candidates[id].clone())
+                        .collect();
+                    if !observations_current(&complete, &inv.root) {
+                        for c in complete {
+                            if !observations_current(std::slice::from_ref(&c), &inv.root) {
+                                candidates.remove(&c.source.source_id);
+                                pending.insert(c.source.source_id);
+                            }
+                        }
+                        continue;
+                    }
+                    if graph_token(&db)? != graph {
+                        status.phase = "needs_regroup".into();
+                        break;
+                    }
+                    let result = commit_group(
                         &db,
                         &mut ledger,
                         &out,
@@ -575,7 +798,18 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                             .map(|id| candidates[id].clone())
                             .collect(),
                         &run,
+                        &graph,
                     )?;
+                    let Some(r) = result else {
+                        for id in &group.source_ids {
+                            candidates.remove(id);
+                            pending.insert(id.clone());
+                        }
+                        if graph_token(&db)? != graph {
+                            status.phase = "needs_regroup".into();
+                        }
+                        continue;
+                    };
                     eprintln!(
                         "group {} eligible: {} work(s), {}",
                         group.group_id,
@@ -583,7 +817,14 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                         r.snapshot.records[0].reason
                     );
                     publish_ids.insert(group.group_id.clone());
+                    let revocation = r.snapshot.ready.is_empty();
                     resolutions.insert(group.group_id.clone(), r);
+                    if revocation {
+                        let _gate = db.authority_guard()?;
+                        if invalidate_revoked_current(&out, &resolutions)? {
+                            dirty = 100;
+                        }
+                    }
                 }
             }
         }
@@ -598,7 +839,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                 token = fresh;
                 for group in &groups {
                     if let Some(r) = resolutions.get_mut(&group.group_id) {
-                        let current = commit_group(
+                        let result = commit_group(
                             &db,
                             &mut ledger,
                             &out,
@@ -606,7 +847,14 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                             group,
                             r.snapshot.records[0].candidates.clone(),
                             &run,
+                            &graph,
                         )?;
+                        let Some(current) = result else {
+                            if graph_token(&db)? != graph {
+                                status.phase = "needs_regroup".into();
+                            }
+                            continue;
+                        };
                         if current.snapshot.snapshot_id != r.snapshot.snapshot_id {
                             *r = current;
                             publish_ids.insert(group.group_id.clone());
@@ -624,6 +872,9 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
             observation_cursor += 1;
             if let Some(r) = resolutions.get(&group.group_id) {
                 for c in &r.snapshot.records[0].candidates {
+                    if c.error.is_some() {
+                        continue;
+                    }
                     if checked_path(&inv.root, &c.source.relative_path)
                         .and_then(|p| fingerprint(&p))
                         .ok()
@@ -675,6 +926,12 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                 .transpose()?
                 .unwrap_or_default();
             state.status = result.status.clone();
+            let _ = fs::remove_file(out.join("capacity-jobs").join(&item.job.id));
+            if state.status == "capacity_pending" {
+                capacity_blocked.insert(item.job.id.clone());
+                handled.remove(&item.job.id);
+                reservations.release(&item.job.id);
+            }
             state.error = result.error;
             if state.status == "failed" {
                 state.attempts += 1;
@@ -711,6 +968,28 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                     if handled.contains(&id) || active.iter().any(|a| a.job.id == id) {
                         continue;
                     }
+                    let _authority = db.authority_guard()?;
+                    if graph_token(&db)? != graph {
+                        status.phase = "needs_regroup".into();
+                        break;
+                    }
+                    if !observations_current(&r.snapshot.records[0].candidates, &inv.root) {
+                        continue;
+                    }
+                    let fresh = selection::resolve_group(
+                        &db,
+                        &out,
+                        &inv.root,
+                        groups
+                            .iter()
+                            .find(|g| g.group_id == ready.group_id)
+                            .unwrap(),
+                        r.snapshot.records[0].candidates.clone(),
+                        &Value::Null,
+                    )?;
+                    if fresh.snapshot_id != r.snapshot.snapshot_id {
+                        continue;
+                    }
                     let state: JobState = jobs
                         .get_cached(&id, "job", "v1")?
                         .map(serde_json::from_value)
@@ -725,11 +1004,13 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                         continue;
                     }
                     let source = &sources[&ready.source_id];
-                    let bytes = capacity::job_bytes(
-                        source.fingerprint.size,
-                        ready.page_count,
-                        engine.chunk_pages,
-                    );
+                    let bytes = capacity::job_bytes(&out, ready, &engine, source.fingerprint.size)
+                        .max(
+                            read_json::<capacity::Request>(
+                                &out.join("capacity-requests").join(format!("{id}.json")),
+                            )
+                            .map_or(0, |r| r.bytes),
+                        );
                     if !reservations.reserve(&id, bytes, capacity::free(&out)?) {
                         capacity_blocked.insert(id);
                         continue;
@@ -744,6 +1025,10 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                         ready: ready.clone(),
                         engine: engine.clone(),
                     };
+                    atomic_write(
+                        &out.join("capacity-jobs").join(&id),
+                        b"continuous allocation grants",
+                    )?;
                     let path = out.join("jobs").join(format!("{id}.json"));
                     write_json(&path, &job)?;
                     let result = out.join("results").join(format!("{id}.json"));
@@ -766,7 +1051,17 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                     });
                 }
             }
+            {
+                let _gate = db.authority_guard()?;
+                if invalidate_revoked_current(&out, &resolutions)? {
+                    dirty = 100;
+                }
+            }
             for id in publish_ids {
+                if graph_token(&db)? != graph {
+                    status.phase = "needs_regroup".into();
+                    break;
+                }
                 if let Some(r) = resolutions.get_mut(&id) {
                     if r.snapshot.ready.iter().any(|ready| {
                         worker::all_chunks(&out, ready, &engine).is_ok()
@@ -778,6 +1073,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                         session = Some(adjacent::Session::new_scoped(&out, &r.snapshot)?);
                     }
                     let group = groups.iter().find(|g| g.group_id == id).unwrap();
+                    let prior_revision = r.snapshot.snapshot_id.clone();
                     publish_group(
                         &db,
                         &mut ledger,
@@ -787,7 +1083,11 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                         r,
                         &engine,
                         session.as_mut().unwrap(),
+                        &graph,
                     )?;
+                    if r.snapshot.snapshot_id != prior_revision {
+                        dirty = 100;
+                    }
                     if r.publication.as_ref().is_some_and(|p| {
                         p.pending_works.iter().any(|w| {
                             w["error"]
@@ -827,6 +1127,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
         status.needs_ocr = 0;
         status.failures = candidates.values().filter(|c| c.error.is_some()).count();
         status.output_conflicts = 0;
+        status.publication_pending = 0;
         status.queued = 0;
         for r in resolutions.values() {
             for ready in &r.snapshot.ready {
@@ -842,6 +1143,14 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                 }
             }
             if let Some(p) = &r.publication {
+                if p.pending {
+                    status.publication_pending += 1;
+                    status.output_conflicts += p
+                        .adjacent
+                        .as_ref()
+                        .map_or(0, |a| a.errors.len())
+                        .max(p.pending_works.len());
+                }
                 status.output_conflicts += p
                     .pending_works
                     .iter()
@@ -849,6 +1158,21 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                     .count();
             }
         }
+        let eligible: BTreeSet<_> = resolutions
+            .values()
+            .flat_map(|r| r.snapshot.ready.iter().map(|ready| job_id(ready, &engine)))
+            .collect();
+        capacity_blocked.retain(|id| {
+            if let Some(g) = id.strip_prefix("destination-") {
+                resolutions
+                    .get(g)
+                    .is_some_and(|r| !r.snapshot.ready.is_empty())
+            } else if id == "metadata" {
+                !pending.is_empty() || metadata.is_some()
+            } else {
+                eligible.contains(id)
+            }
+        });
         status.capacity_pending = capacity_blocked.len();
         if status.manifest_discovery_complete
             && status.groups_pending == 0
@@ -902,18 +1226,26 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
             }
             reconciled_directories.insert(relative);
         }
+        status.unverified_manifests = unresolved_manifests;
         persist_status(&out, &status)?;
         if dirty >= 100 || dirty > 0 && catalog_time.elapsed() > Duration::from_secs(30) {
-            current_view(
+            let installed = current_view(
                 &db,
                 &token,
                 &out,
                 &run,
                 &resolutions,
-                status.groups_pending > 0,
+                status.groups_pending > 0
+                    || status.failures > 0
+                    || status.publication_pending > 0
+                    || status.unverified_manifests > 0,
             )?;
-            dirty = 0;
-            catalog_time = Instant::now();
+            if installed {
+                dirty = 0;
+                catalog_time = Instant::now();
+            } else {
+                dirty = 100;
+            }
         }
         if heartbeat.elapsed() >= Duration::from_secs(30)
             || status.metadata_checked >= last_logged + 100
@@ -968,6 +1300,9 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
         }
         std::thread::sleep(Duration::from_millis(25));
     }
+    if status.phase == "needs_regroup" {
+        ledger.set_meta("regroup_fence",&serde_json::json!({"inventory_finished":inv.finished,"graph":graph,"reason":"known input changed; refresh inventory/group graph"}))?;
+    }
     if let Some(m) = metadata {
         conversion::stop(m.child);
     }
@@ -978,11 +1313,80 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
             &out,
             &run,
             &resolutions,
-            status.groups_pending > 0,
-        )? {
+            status.groups_pending > 0
+                || status.failures > 0
+                || status.publication_pending > 0
+                || status.unverified_manifests > 0,
+        )? && status.phase != "needs_regroup"
+        {
             status.phase = "authority_pending".into();
         }
     }
     persist_status(&out, &status)?;
     Ok(status)
+}
+
+#[cfg(test)]
+mod view_tests {
+    use super::*;
+    #[test]
+    fn revoked_pointer_is_removed_before_a_failing_generation_stage() {
+        let out = tempfile::tempdir().unwrap();
+        let main = tempfile::tempdir().unwrap();
+        let db = Store::open(&main.path().join("selection.db")).unwrap();
+        let old = out.path().join("corpus/generations/old");
+        fs::create_dir_all(&old).unwrap();
+        write_json(&old.join("catalog.json"),&serde_json::json!({"books":[{"work":{"group_id":"held-group","work_id":"held-work","sha256":"old"}}]})).unwrap();
+        std::os::unix::fs::symlink("generations/old", out.path().join("corpus/current")).unwrap();
+        let snapshot = Snapshot {
+            schema_version: 1,
+            snapshot_id: "held".into(),
+            policy: "internal-recency-v1".into(),
+            created: String::new(),
+            source_root: main.path().into(),
+            root_identity: Value::Null,
+            coverage_errors: vec![],
+            archives: 0,
+            ready: vec![],
+            records: vec![PolicyRecord {
+                selection_revision: Some("held".into()),
+                work_id: "held-work".into(),
+                group_id: "held-group".into(),
+                status: "deferred_choice".into(),
+                reason: "user hold".into(),
+                selected_source_id: None,
+                candidates: vec![],
+            }],
+        };
+        let resolutions = BTreeMap::from([(
+            "held-group".into(),
+            Resolution {
+                snapshot,
+                publication: None,
+            },
+        )]);
+        let id = digest_json(
+            &serde_json::json!({"schema_version":2,"run_id":"run","pending":true,"books":[]}),
+        );
+        fs::write(
+            out.path().join("corpus/generations").join(id),
+            b"injected stage conflict",
+        )
+        .unwrap();
+        let result = current_view(
+            &db,
+            &authority_token(&db).unwrap(),
+            out.path(),
+            "run",
+            &resolutions,
+            true,
+        );
+        assert!(result.is_err());
+        assert!(
+            fs::symlink_metadata(out.path().join("corpus/current")).is_err(),
+            "revoked default view survived staging failure"
+        );
+        let state: Value = read_json(&out.path().join("current-view-state.json")).unwrap();
+        assert_eq!(state["safe"], false);
+    }
 }
