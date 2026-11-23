@@ -169,7 +169,7 @@ fn walk(root: &Path, dir: &Path, result: &mut InventoryResult) {
             read_error: fs::File::open(&path).err().map(|e| e.to_string()),
             baseline_established: false,
             artifacts,
-            metadata: BTreeMap::new(),
+            metadata: BTreeMap::from([("inventory_root".into(), serde_json::json!(root.to_str()))]),
         });
     }
 }
