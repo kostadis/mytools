@@ -25,6 +25,8 @@ pub struct Options {
     pub metadata_timeout_secs: u64,
     #[arg(long, hide = true)]
     pub metadata_worker: Option<PathBuf>,
+    #[arg(long, hide = true)]
+    pub publication_gate: Option<PathBuf>,
     #[arg(long, default_value = "pdftotext")]
     pub pdftotext: PathBuf,
     #[arg(long)]
@@ -47,6 +49,8 @@ pub struct Status {
     pub failures: usize,
     pub output_conflicts: usize,
     pub publication_pending: usize,
+    pub publication_active: bool,
+    pub publication_queued: usize,
     pub unverified_manifests: usize,
     pub capacity_pending: usize,
     pub manifest_discovery_complete: bool,
@@ -65,15 +69,21 @@ pub struct MetadataResult {
     pub candidate: Candidate,
 }
 #[derive(Clone, Serialize, Deserialize)]
-struct Resolution {
-    snapshot: Snapshot,
-    publication: Option<publication::Publication>,
+pub(crate) struct Resolution {
+    pub snapshot: Snapshot,
+    pub publication: Option<publication::Publication>,
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 struct JobState {
     attempts: usize,
     status: String,
     error: Option<String>,
+}
+struct PublicationTicket {
+    group_id: Option<String>,
+    revision: String,
+    job_ids: Vec<String>,
+    withdrawal: bool,
 }
 struct MetadataRunning {
     child: Child,
@@ -84,6 +94,30 @@ struct Extracting {
     child: Child,
     job: Job,
     start: Instant,
+}
+fn publication_factor(
+    id: &str,
+    resolutions: &BTreeMap<String, Resolution>,
+    tickets: &BTreeMap<u64, PublicationTicket>,
+    engine: &Engine,
+) -> u64 {
+    resolutions
+        .values()
+        .map(|r| {
+            r.snapshot
+                .ready
+                .iter()
+                .filter(|ready| job_id(ready, engine) == id)
+                .count() as u64
+        })
+        .chain(
+            tickets
+                .values()
+                .map(|t| t.job_ids.iter().filter(|job| job.as_str() == id).count() as u64),
+        )
+        .max()
+        .unwrap_or(1)
+        .max(1)
 }
 fn empty(source: &Source, error: String) -> Candidate {
     Candidate {
@@ -276,12 +310,10 @@ fn commit_group(
     Ok(Some(resolution))
 }
 #[allow(clippy::too_many_arguments)]
-fn publish_group(
+pub(crate) fn publish_group(
     db: &Store,
-    ledger: &mut Store,
     out: &Path,
     group: &Group,
-    run: &str,
     resolution: &mut Resolution,
     engine: &Engine,
     session: &mut adjacent::Session,
@@ -301,11 +333,11 @@ fn publish_group(
     if fresh.snapshot_id != expected {
         resolution.snapshot = fresh;
         resolution.publication = None;
+        return Ok(());
     }
     session.set_authority_database(db.path());
     session.set_graph_token(graph);
-    let mut p =
-        publication::publish_snapshot(out, engine, &resolution.snapshot, Some(session), false)?;
+    let p = publication::publish_snapshot(out, engine, &resolution.snapshot, Some(session), false)?;
     eprintln!(
         "group {}: {} sibling Markdown published, revision {}",
         group.group_id, p.books, resolution.snapshot.snapshot_id
@@ -333,21 +365,11 @@ fn publish_group(
             }
         };
         if changed {
-            p = publication::publish_snapshot(
-                out,
-                engine,
-                &resolution.snapshot,
-                Some(session),
-                false,
-            )?;
+            resolution.publication = None;
+            return Ok(());
         }
     }
     resolution.publication = Some(p);
-    ledger.put_record(
-        "continuous_groups",
-        &resolution_key(run, &group.group_id),
-        resolution,
-    )?;
     Ok(())
 }
 fn current_view(
@@ -528,7 +550,18 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
     reservations
         .jobs
         .retain(|id, _| id != "metadata" && lock(&out.join("leases"), id).is_err());
-    let mut session: Option<adjacent::Session> = None;
+    use super::continuous_publication::{DiscoveryWorker, Outcome, PublishRequest, Publisher};
+    let publisher = Publisher::start(&work, &out, &engine, &graph, options.publication_gate)?;
+    let discovery_worker = DiscoveryWorker::start(&inv.root, &identity)?;
+    let mut discovery: Option<adjacent::Discovery> = None;
+    let mut publication_sequence = 0u64;
+    // Every request retains its allocation consumers until a result/supersession.
+    let mut publication_tasks: BTreeMap<u64, PublicationTicket> = BTreeMap::new();
+    let mut publication_latest: BTreeMap<String, u64> = BTreeMap::new();
+    let mut reconciliation_pending: Option<u64> = None;
+    let mut publication_retry = BTreeSet::new();
+    let mut reservation_factors: BTreeMap<String, u64> = BTreeMap::new();
+
     let mut heartbeat = Instant::now();
     let mut reconciled = Instant::now();
     let mut token = authority_token(&db)?;
@@ -537,7 +570,6 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
     let mut catalog_time = Instant::now();
     let mut capacity_blocked = BTreeSet::new();
     let mut observation_cursor = 0usize;
-    let mut discovery = adjacent::Discovery::new(&inv.root, &identity);
     let mut states: BTreeMap<String, JobState> = BTreeMap::new();
     let mut last_logged = 0usize;
     let mut reconciled_directories = BTreeSet::new();
@@ -545,6 +577,96 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
     loop {
         if graph_token(&db)? != graph {
             status.phase = "needs_regroup".into();
+        }
+        while let Some(response) = publisher.poll()? {
+            let Some(PublicationTicket {
+                group_id,
+                revision: expected_revision,
+                ..
+            }) = publication_tasks.remove(&response.sequence)
+            else {
+                continue;
+            };
+            match response.outcome {
+                Outcome::Superseded => {
+                    if let Some(id) = group_id
+                        && publication_latest.get(&id) == Some(&response.sequence)
+                    {
+                        publication_latest.remove(&id);
+                    }
+                }
+                Outcome::Published(result) => {
+                    let Some(id) = group_id else { continue };
+                    if publication_latest.get(&id) != Some(&response.sequence) {
+                        continue;
+                    }
+                    publication_latest.remove(&id);
+                    if let Some(r) = resolutions.get_mut(&id) {
+                        if r.snapshot.snapshot_id != expected_revision {
+                            continue;
+                        }
+                        match result {
+                            Ok(done) => {
+                                let changed = done.snapshot.snapshot_id != r.snapshot.snapshot_id;
+                                *r = *done;
+                                if changed {
+                                    dirty = 100;
+                                }
+                            }
+                            Err(error) => {
+                                eprintln!("publication {id}: {error}");
+                                r.publication = Some(publication::Publication {
+                                    selection_id: r.snapshot.snapshot_id.clone(),
+                                    generation: None,
+                                    books: 0,
+                                    pending: true,
+                                    published_snapshot: None,
+                                    pending_works: vec![],
+                                    catalog: vec![],
+                                    adjacent: Some(adjacent::AdjacentReport {
+                                        errors: vec![error],
+                                        ..Default::default()
+                                    }),
+                                });
+                            }
+                        }
+                        ledger.put_record("continuous_groups", &resolution_key(&run, &id), r)?;
+                        if r.publication.as_ref().is_some_and(|p| {
+                            p.pending_works.iter().any(|w| {
+                                w["error"]
+                                    .as_str()
+                                    .is_some_and(|e| e.contains("destination space"))
+                            })
+                        }) {
+                            capacity_blocked.insert(format!("destination-{id}"));
+                        } else {
+                            capacity_blocked.remove(&format!("destination-{id}"));
+                        }
+                        dirty += 1;
+                    }
+                }
+                Outcome::Reconciled {
+                    directory,
+                    result,
+                    stale,
+                } => {
+                    reconciliation_pending = None;
+                    if !stale {
+                        match result {
+                            Ok(n) => unresolved_manifests += n,
+                            Err(e) => {
+                                eprintln!("manifest reconciliation {}: {e}", directory.display());
+                                unresolved_manifests += 1;
+                            }
+                        }
+                        reconciled_directories.insert(directory);
+                    }
+                }
+            }
+        }
+        if status.phase == "needs_regroup" {
+            let _gate = db.authority_guard()?;
+            publisher.fence();
         }
         let capacity_jobs: BTreeSet<_> = active
             .iter()
@@ -566,7 +688,15 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                 )
                 .ok();
                 if prior.as_ref().is_none_or(|g| g.nonce != request.nonce) {
-                    let allowed = reservations.reserve(&id, request.bytes, capacity::free(&out)?);
+                    let factor = publication_factor(&id, &resolutions, &publication_tasks, &engine);
+                    let allowed = reservations.reserve(
+                        &id,
+                        request.bytes.saturating_mul(factor),
+                        capacity::free(&out)?,
+                    );
+                    if allowed {
+                        reservation_factors.insert(id.clone(), factor);
+                    }
                     write_json(&out.join("reservations.json"), &reservations)?;
                     write_json(
                         &out.join("capacity-grants").join(format!("{}.json", id)),
@@ -685,27 +815,38 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                             }],
                         };
                         withdrawal.snapshot_id = digest_json(&withdrawal);
-                        if session.is_none() {
-                            session = Some(adjacent::Session::new_scoped(&out, &withdrawal)?);
+                        {
+                            let _gate = db.authority_guard()?;
+                            publisher.fence();
+                            resolutions.insert(
+                                group.group_id.clone(),
+                                Resolution {
+                                    snapshot: withdrawal.clone(),
+                                    publication: None,
+                                },
+                            );
+                            invalidate_revoked_current(&out, &resolutions)?;
                         }
-                        session.as_mut().unwrap().clear_authority_database();
-                        let _gate = db.authority_guard()?;
-                        resolutions.insert(
-                            group.group_id.clone(),
-                            Resolution {
-                                snapshot: withdrawal.clone(),
-                                publication: None,
+                        publication_sequence += 1;
+                        let sequence = publication_sequence;
+                        let resolution = resolutions[&group.group_id].clone();
+                        publication_tasks.insert(
+                            sequence,
+                            PublicationTicket {
+                                group_id: Some(group.group_id.clone()),
+                                revision: resolution.snapshot.snapshot_id.clone(),
+                                job_ids: vec![],
+                                withdrawal: true,
                             },
                         );
-                        invalidate_revoked_current(&out, &resolutions)?;
-                        let p = publication::publish_snapshot(
-                            &out,
-                            &engine,
-                            &withdrawal,
-                            session.as_mut(),
-                            false,
-                        )?;
-                        resolutions.get_mut(&group.group_id).unwrap().publication = Some(p);
+                        publication_latest.insert(group.group_id.clone(), sequence);
+                        publisher.submit(PublishRequest {
+                            sequence,
+                            group: group.clone(),
+                            resolution,
+                            priority: 0,
+                            withdrawal: true,
+                        })?;
                         dirty = 100;
                     }
                 }
@@ -765,7 +906,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
         }
         // Resolve completed groups only. Persistent resolutions and their Ready
         // records are one SQLite write; queue eligibility is derived from them.
-        let mut publish_ids = BTreeSet::new();
+        let mut publish_ids = std::mem::take(&mut publication_retry);
         if status.phase != "needs_regroup" {
             for group in &groups {
                 if resolutions.contains_key(&group.group_id) {
@@ -944,6 +1085,16 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
             if state.status == "failed" {
                 state.attempts += 1;
             }
+            if worker::all_chunks(&out, &item.job.ready, &engine).is_ok() {
+                let factor =
+                    publication_factor(&item.job.id, &resolutions, &publication_tasks, &engine);
+                let required =
+                    capacity::job_bytes(&out, &item.job.ready, &engine, 0).saturating_mul(factor);
+                if let Some(held) = reservations.jobs.get_mut(&item.job.id) {
+                    *held = (*held).min(required);
+                }
+                reservation_factors.insert(item.job.id.clone(), factor);
+            }
             states.insert(item.job.id.clone(), state.clone());
             jobs.put_cached(&item.job.id, "job", "v1", &serde_json::to_value(state)?)?;
             eprintln!(
@@ -1012,18 +1163,21 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                         continue;
                     }
                     let source = &sources[&ready.source_id];
+                    let factor = publication_factor(&id, &resolutions, &publication_tasks, &engine);
                     let bytes = capacity::job_bytes(&out, ready, &engine, source.fingerprint.size)
                         .max(
                             read_json::<capacity::Request>(
                                 &out.join("capacity-requests").join(format!("{id}.json")),
                             )
                             .map_or(0, |r| r.bytes),
-                        );
+                        )
+                        .saturating_mul(factor);
                     if !reservations.reserve(&id, bytes, capacity::free(&out)?) {
                         capacity_blocked.insert(id);
                         continue;
                     }
                     capacity_blocked.remove(&id);
+                    reservation_factors.insert(id.clone(), factor);
                     write_json(&out.join("reservations.json"), &reservations)?;
                     let job = Job {
                         id: id.clone(),
@@ -1070,55 +1224,128 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                     status.phase = "needs_regroup".into();
                     break;
                 }
-                if let Some(r) = resolutions.get_mut(&id) {
-                    if r.snapshot.ready.iter().any(|ready| {
-                        worker::all_chunks(&out, ready, &engine).is_ok()
-                            && !reservations.jobs.contains_key(&job_id(ready, &engine))
-                    }) {
-                        continue;
-                    }
-                    if session.is_none() {
-                        session = Some(adjacent::Session::new_scoped(&out, &r.snapshot)?);
-                    }
-                    let group = groups.iter().find(|g| g.group_id == id).unwrap();
-                    let prior_revision = r.snapshot.snapshot_id.clone();
-                    publish_group(
-                        &db,
-                        &mut ledger,
-                        &out,
-                        group,
-                        &run,
-                        r,
-                        &engine,
-                        session.as_mut().unwrap(),
-                        &graph,
-                    )?;
-                    if r.snapshot.snapshot_id != prior_revision {
-                        dirty = 100;
-                    }
-                    if r.publication.as_ref().is_some_and(|p| {
-                        p.pending_works.iter().any(|w| {
-                            w["error"]
-                                .as_str()
-                                .is_some_and(|e| e.contains("destination space"))
-                        })
-                    }) {
-                        capacity_blocked.insert(format!("destination-{id}"));
-                    } else {
-                        capacity_blocked.remove(&format!("destination-{id}"));
-                    }
-                    dirty += 1;
-                    for ready in &r.snapshot.ready {
-                        let job = job_id(ready, &engine);
-                        if !active.iter().any(|a| a.job.id == job) {
-                            reservations.release(&job);
+                if let Some(r) = resolutions.get(&id) {
+                    let mut fits = true;
+                    let ids: BTreeSet<_> = r
+                        .snapshot
+                        .ready
+                        .iter()
+                        .map(|ready| job_id(ready, &engine))
+                        .collect();
+                    for job in ids {
+                        let ready = r
+                            .snapshot
+                            .ready
+                            .iter()
+                            .find(|ready| job_id(ready, &engine) == job)
+                            .unwrap();
+                        let complete = worker::all_chunks(&out, ready, &engine).is_ok();
+                        if complete || reservations.jobs.contains_key(&job) {
+                            let factor =
+                                publication_factor(&job, &resolutions, &publication_tasks, &engine);
+                            let base = capacity::job_bytes(
+                                &out,
+                                ready,
+                                &engine,
+                                sources[&ready.source_id].fingerprint.size,
+                            );
+                            let prior_factor = reservation_factors.get(&job).copied().unwrap_or(1);
+                            let prior_base = reservations
+                                .jobs
+                                .get(&job)
+                                .copied()
+                                .unwrap_or(0)
+                                .div_ceil(prior_factor);
+                            let bytes = if complete { base } else { base.max(prior_base) }
+                                .saturating_mul(factor);
+                            if reservations
+                                .jobs
+                                .get(&job)
+                                .is_some_and(|held| *held >= bytes)
+                            {
+                                reservations.jobs.insert(job.clone(), bytes);
+                                reservation_factors.insert(job.clone(), factor);
+                            } else if reservations.reserve(&job, bytes, capacity::free(&out)?) {
+                                reservation_factors.insert(job.clone(), factor);
+                                capacity_blocked.remove(&job);
+                            } else {
+                                capacity_blocked.insert(job);
+                                fits = false;
+                            }
                         }
                     }
+                    if !fits {
+                        publication_retry.insert(id);
+                        continue;
+                    }
+                    let group = groups.iter().find(|g| g.group_id == id).unwrap();
+                    publication_sequence += 1;
+                    let sequence = publication_sequence;
+                    let ids: Vec<_> = r
+                        .snapshot
+                        .ready
+                        .iter()
+                        .map(|ready| job_id(ready, &engine))
+                        .collect();
+                    let priority = if r.snapshot.ready.is_empty()
+                        && r.snapshot
+                            .records
+                            .iter()
+                            .any(|record| record.reason.contains("adopted review"))
+                    {
+                        0
+                    } else if ids
+                        .iter()
+                        .any(|id| states.get(id).is_some_and(|s| s.status == "complete"))
+                    {
+                        1
+                    } else {
+                        2
+                    };
+                    publication_tasks.insert(
+                        sequence,
+                        PublicationTicket {
+                            group_id: Some(id.clone()),
+                            revision: r.snapshot.snapshot_id.clone(),
+                            job_ids: ids,
+                            withdrawal: false,
+                        },
+                    );
+                    publication_latest.insert(id.clone(), sequence);
+                    publisher.submit(PublishRequest {
+                        sequence,
+                        group: group.clone(),
+                        resolution: r.clone(),
+                        priority,
+                        withdrawal: false,
+                    })?;
                 }
             }
-            write_json(&out.join("reservations.json"), &reservations)?;
         }
-        status.manifest_discovery_complete = discovery.step();
+        let consumers: BTreeSet<_> = active
+            .iter()
+            .map(|a| a.job.id.clone())
+            .chain(
+                publication_tasks
+                    .values()
+                    .flat_map(|ticket| ticket.job_ids.iter().cloned()),
+            )
+            .collect();
+        reservations.jobs.retain(|id, _| {
+            id == "metadata" || consumers.contains(id) || lock(&out.join("leases"), id).is_err()
+        });
+        write_json(&out.join("reservations.json"), &reservations)?;
+        if discovery.is_none() {
+            discovery = discovery_worker.poll()?;
+        }
+        status.manifest_discovery_complete = discovery.is_some();
+        let active_publication = publisher.active_sequence();
+        status.publication_active = active_publication != 0;
+        status.publication_queued = publication_latest.len().saturating_sub(usize::from(
+            publication_latest
+                .values()
+                .any(|s| *s == active_publication),
+        ));
         status.metadata_checked = candidates.len();
         status.groups_resolved = resolutions.len();
         status.groups_pending = groups.len() - resolutions.len();
@@ -1176,7 +1403,11 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
         if status.manifest_discovery_complete
             && status.groups_pending == 0
             && active.is_empty()
+            && publication_latest.is_empty()
+            && reconciliation_pending.is_none()
             && let Some(relative) = discovery
+                .as_ref()
+                .unwrap()
                 .found
                 .iter()
                 .find(|p| !reconciled_directories.contains(*p))
@@ -1191,7 +1422,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                 root_identity: identity.clone(),
                 coverage_errors: if status.failures == 0
                     && inv.errors.is_empty()
-                    && discovery.errors.is_empty()
+                    && discovery.as_ref().unwrap().errors.is_empty()
                 {
                     vec![]
                 } else {
@@ -1207,23 +1438,19 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                     .flat_map(|r| r.snapshot.records.clone())
                     .collect(),
             };
-            if session.is_none() {
-                session = Some(adjacent::Session::new_scoped(&out, &snapshot)?);
-            }
-            session.as_mut().unwrap().clear_authority_database();
-            let _gate = db.authority_guard()?;
-            match session
-                .as_mut()
-                .unwrap()
-                .reconcile_discovered(&snapshot, &engine, &relative)
-            {
-                Ok(n) => unresolved_manifests += n,
-                Err(e) => {
-                    eprintln!("manifest reconciliation {}: {e}", relative.display());
-                    unresolved_manifests += 1;
-                }
-            }
-            reconciled_directories.insert(relative);
+            publication_sequence += 1;
+            let sequence = publication_sequence;
+            publication_tasks.insert(
+                sequence,
+                PublicationTicket {
+                    group_id: None,
+                    revision: String::new(),
+                    job_ids: vec![],
+                    withdrawal: false,
+                },
+            );
+            reconciliation_pending = Some(sequence);
+            publisher.reconcile(sequence, relative, snapshot, token.clone())?;
         }
         status.unverified_manifests = unresolved_manifests;
         persist_status(&out, &status)?;
@@ -1237,7 +1464,8 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                 status.groups_pending > 0
                     || status.failures > 0
                     || status.publication_pending > 0
-                    || status.unverified_manifests > 0,
+                    || status.unverified_manifests > 0
+                    || !publication_tasks.is_empty(),
             )?;
             if installed {
                 dirty = 0;
@@ -1265,10 +1493,17 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
             last_logged = status.metadata_checked;
             heartbeat = Instant::now();
         }
-        if status.phase == "needs_regroup" && active.is_empty() {
+        if status.phase == "needs_regroup"
+            && active.is_empty()
+            && !publication_tasks.values().any(|ticket| ticket.withdrawal)
+        {
             break;
         }
-        if scan_groups.is_empty() && metadata.is_none() && active.is_empty() {
+        if scan_groups.is_empty()
+            && metadata.is_none()
+            && active.is_empty()
+            && publication_tasks.is_empty()
+        {
             if status.phase == "needs_regroup" {
                 break;
             }
@@ -1280,13 +1515,13 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                 && status.groups_pending == 0
                 && status.queued == 0
                 && status.manifest_discovery_complete
-                && reconciled_directories.len() == discovery.found.len()
+                && reconciled_directories.len() == discovery.as_ref().unwrap().found.len()
             {
                 status.phase = if status.failures
                     + status.needs_ocr
                     + status.output_conflicts
                     + status.publication_pending
-                    + discovery.errors.len()
+                    + discovery.as_ref().map_or(0, |d| d.errors.len())
                     + unresolved_manifests
                     > 0
                 {
@@ -1316,7 +1551,8 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
             status.groups_pending > 0
                 || status.failures > 0
                 || status.publication_pending > 0
-                || status.unverified_manifests > 0,
+                || status.unverified_manifests > 0
+                || !publication_tasks.is_empty(),
         )? && status.phase != "needs_regroup"
         {
             status.phase = "authority_pending".into();

@@ -2,6 +2,7 @@
 pub mod adjacent;
 pub mod capacity;
 pub mod continuous;
+mod continuous_publication;
 pub mod conversion;
 pub mod dates;
 pub mod metadata;

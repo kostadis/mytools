@@ -859,3 +859,423 @@ fn proven_missing_current_pdf_withdraws_directory_claim_and_search_pointer() {
     assert_eq!(c["pending"], true);
     assert!(root.path().join("Pub/Book/Chronicle.md").exists());
 }
+#[test]
+fn blocked_publication_does_not_block_resolution_or_extraction() {
+    use std::time::{Duration, Instant};
+    let (root, state, out) = fixture();
+    for name in ["Atlas", "Bestiary", "Gazetteer", "Manual", "Codex"] {
+        let dir = root.path().join("Pub").join(name);
+        fs::create_dir_all(&dir).unwrap();
+        common::pdf(
+            &dir.join(format!("{name}.pdf")),
+            &format!("Independent searchable {name}"),
+            "D:20220101000000Z",
+            false,
+        );
+    }
+    scan(root.path(), state.path());
+    let db = Store::open_readonly(&state.path().join("selection.db")).unwrap();
+    let selected = selection::select(&db, out.path(), None).unwrap();
+    assert_eq!(selected.ready.len(), 6);
+    drop(db);
+    let gate = out.path().join("publication-blocked");
+    fs::write(&gate, "blocked").unwrap();
+    let log = fs::File::create(out.path().join("async-publication.log")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("--work-dir")
+        .arg(state.path())
+        .arg("markdown-continuous")
+        .arg("--output")
+        .arg(out.path())
+        .arg("--publication-gate")
+        .arg(&gate)
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    let mut before = serde_json::Value::Null;
+    while start.elapsed() < Duration::from_secs(10) && child.try_wait().unwrap().is_none() {
+        before = fs::read(out.path().join("continuous-status.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        if before["groups_resolved"] == 6 && before["active"] == 0 && before["queued"] == 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let completed=rusqlite::Connection::open_with_flags(out.path().join("markdown.db"),rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).ok().map(|db|db.query_row("SELECT count(*) FROM cache WHERE stage='job' AND json_extract(body,'$.status')='complete'",[],|r|r.get::<_,i64>(0)).unwrap());
+    let still_running = child.try_wait().unwrap().is_none();
+    let source_documents = selected
+        .ready
+        .iter()
+        .filter(|r| {
+            root.path()
+                .join(&r.relative_path)
+                .with_extension("md")
+                .exists()
+        })
+        .count();
+    fs::remove_file(&gate).unwrap();
+    let exit = child.wait().unwrap();
+    let log = fs::read_to_string(out.path().join("async-publication.log")).unwrap();
+    assert_eq!(
+        before["groups_resolved"], 6,
+        "coordinator blocked on publisher: {before}; {log}"
+    );
+    assert_eq!(before["queued"], 0, "extraction dispatch blocked: {before}");
+    assert_eq!(
+        before["active"], 0,
+        "extraction completion blocked: {before}"
+    );
+    assert!(still_running, "completed before publication drained: {log}");
+    assert_eq!(source_documents, 0);
+    assert_eq!(
+        completed,
+        Some(6),
+        "jobs did not finish while publication was gated"
+    );
+    assert!(exit.success(), "{log}");
+    let final_status: serde_json::Value =
+        serde_json::from_slice(&fs::read(out.path().join("continuous-status.json")).unwrap())
+            .unwrap();
+    assert_eq!(final_status["published"], 6);
+    assert_eq!(final_status["failures"], 0);
+    assert!(
+        log.matches(": complete (").count() >= 6,
+        "not all extraction jobs finished: {log}"
+    );
+}
+#[test]
+fn cached_work_can_be_republished_after_a_review_without_another_extraction() {
+    use std::{
+        os::unix::fs::PermissionsExt,
+        time::{Duration, Instant},
+    };
+    let (root, state, out) = fixture();
+    let db = Store::open_readonly(&state.path().join("selection.db")).unwrap();
+    let initial = selection::select(&db, out.path(), None).unwrap();
+    drop(db);
+    fs::create_dir_all(root.path().join("Other/Atlas")).unwrap();
+    common::pdf(
+        &root.path().join("Other/Atlas/Atlas.pdf"),
+        "Uncached delayed atlas",
+        "D:20250101000000Z",
+        false,
+    );
+    scan(root.path(), state.path());
+    let gate = out.path().join("release-metadata");
+    let wrapper = out.path().join("metadata-wrapper");
+    fs::write(
+        &wrapper,
+        format!(
+            "#!/bin/sh\nwhile [ ! -e '{}' ]; do sleep 0.05; done\nexec '{}' \"$@\"\n",
+            gate.display(),
+            env!("CARGO_BIN_EXE_rpg-source-select")
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+    let log = fs::File::create(out.path().join("review-republish.log")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("--work-dir")
+        .arg(state.path())
+        .arg("markdown-continuous")
+        .arg("--output")
+        .arg(out.path())
+        .arg("--metadata-worker")
+        .arg(wrapper)
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(5) {
+        let s: serde_json::Value = fs::read(out.path().join("continuous-status.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        if s["published"] == 1 && s["active"] == 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    let mut db = Store::open(&state.path().join("selection.db")).unwrap();
+    let group = db
+        .records::<Group>("groups")
+        .unwrap()
+        .into_iter()
+        .find(|g| g.group_id == initial.ready[0].group_id)
+        .unwrap();
+    let decision = Decision {
+        packet_ids: vec![],
+        source_hashes: Default::default(),
+        group_id: group.group_id.clone(),
+        membership_digest: group.membership_digest.clone(),
+        evidence_digest: rpg_source_select::review::evidence_digest(&group, &[]),
+        actor: "user".into(),
+        actor_role: ActorRole::User,
+        outcomes: group
+            .source_ids
+            .iter()
+            .map(|id| Outcome {
+                source_id: id.clone(),
+                status: Status::Selected,
+                work_id: Some("adopted-current-work".into()),
+                representative_id: None,
+                successor_id: None,
+            })
+            .collect(),
+        rationale: "adopt named work".into(),
+        evidence_refs: vec![],
+    };
+    db.put_record("decisions", &decision.group_id, &decision)
+        .unwrap();
+    let start = Instant::now();
+    let mut republished = false;
+    while start.elapsed() < Duration::from_secs(4) {
+        let m: serde_json::Value = fs::read(root.path().join("Pub/Book/current-documents.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        if m["documents"].as_array().is_some_and(|docs| {
+            docs.iter()
+                .any(|d| d["work_id"] == "adopted-current-work" && d["status"] == "published")
+        }) {
+            republished = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    fs::write(gate, "go").unwrap();
+    let exit = child.wait().unwrap();
+    let log = fs::read_to_string(out.path().join("review-republish.log")).unwrap();
+    assert!(republished, "cached re-publication was dropped: {log}");
+    assert!(exit.success());
+    assert_eq!(
+        log.matches("conversion started: Pub/Book/Chronicle.pdf")
+            .count(),
+        1,
+        "review re-extracted completed work: {log}"
+    );
+}
+#[test]
+fn a_second_source_publisher_cannot_take_the_same_namespace() {
+    let (root, state, out) = fixture();
+    let lease = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(out.path().join("publication-worker.lock"))
+        .unwrap();
+    lease.lock().unwrap();
+    let r = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("--work-dir")
+        .arg(state.path())
+        .arg("markdown-continuous")
+        .arg("--output")
+        .arg(out.path())
+        .output()
+        .unwrap();
+    assert!(!r.status.success());
+    assert!(String::from_utf8_lossy(&r.stderr).contains("publication-worker.lock"));
+    assert!(!root.path().join("Pub/Book/Chronicle.md").exists());
+}
+#[test]
+fn review_hold_supersedes_publication_while_publisher_is_blocked() {
+    use std::time::{Duration, Instant};
+    let (root, state, out) = fixture();
+    let gate = out.path().join("publisher-blocked");
+    fs::write(&gate, "wait").unwrap();
+    let log = fs::File::create(out.path().join("queued-hold.log")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("--work-dir")
+        .arg(state.path())
+        .arg("markdown-continuous")
+        .arg("--output")
+        .arg(out.path())
+        .arg("--publication-gate")
+        .arg(&gate)
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    let mut status = serde_json::Value::Null;
+    while start.elapsed() < Duration::from_secs(5) {
+        status = fs::read(out.path().join("continuous-status.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        if status["publication_active"] == true && status["queued"] == 0 && status["active"] == 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert_eq!(status["publication_active"], true);
+    let mut db = Store::open(&state.path().join("selection.db")).unwrap();
+    let group = db.records::<Group>("groups").unwrap().remove(0);
+    let d = Decision {
+        packet_ids: vec![],
+        source_hashes: Default::default(),
+        group_id: group.group_id.clone(),
+        membership_digest: group.membership_digest,
+        evidence_digest: String::new(),
+        actor: "user".into(),
+        actor_role: ActorRole::User,
+        outcomes: group
+            .source_ids
+            .iter()
+            .map(|id| Outcome {
+                source_id: id.clone(),
+                status: Status::NeedsReview,
+                work_id: None,
+                representative_id: None,
+                successor_id: None,
+            })
+            .collect(),
+        rationale: "hold queued work".into(),
+        evidence_refs: vec![],
+    };
+    db.put_record("decisions", &d.group_id, &d).unwrap();
+    let start = Instant::now();
+    let mut observed = false;
+    while start.elapsed() < Duration::from_secs(3) {
+        let s: serde_json::Value = fs::read(out.path().join("continuous-status.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        if s["groups_deferred"] == 1 {
+            observed = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    fs::remove_file(gate).unwrap();
+    let exit = child.wait().unwrap();
+    assert!(
+        observed,
+        "coordinator did not observe hold while publisher was blocked"
+    );
+    assert!(
+        exit.success(),
+        "{}",
+        fs::read_to_string(out.path().join("queued-hold.log")).unwrap()
+    );
+    assert!(
+        !root.path().join("Pub/Book/Chronicle.md").exists(),
+        "stale queued publication was installed"
+    );
+    let catalog: serde_json::Value =
+        serde_json::from_slice(&fs::read(out.path().join("corpus/current/catalog.json")).unwrap())
+            .unwrap();
+    assert!(catalog["books"].as_array().unwrap().is_empty());
+    let reservations: serde_json::Value =
+        serde_json::from_slice(&fs::read(out.path().join("reservations.json")).unwrap()).unwrap();
+    assert!(
+        reservations["jobs"].as_object().unwrap().is_empty(),
+        "superseded publication stranded a reservation"
+    );
+}
+#[test]
+fn independent_works_sharing_extraction_keep_each_publications_space_reserved() {
+    use std::time::{Duration, Instant};
+    let (root, state, out) = fixture();
+    fs::copy(
+        root.path().join("Pub/Book/Chronicle.pdf"),
+        root.path().join("Pub/Book/Cartography.pdf"),
+    )
+    .unwrap();
+    scan(root.path(), state.path());
+    let mut db = Store::open(&state.path().join("selection.db")).unwrap();
+    let group = db.records::<Group>("groups").unwrap().remove(0);
+    assert_eq!(group.source_ids.len(), 2);
+    let d = Decision {
+        packet_ids: vec![],
+        source_hashes: Default::default(),
+        group_id: group.group_id.clone(),
+        membership_digest: group.membership_digest.clone(),
+        evidence_digest: rpg_source_select::review::evidence_digest(&group, &[]),
+        actor: "user".into(),
+        actor_role: ActorRole::User,
+        outcomes: group
+            .source_ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| Outcome {
+                source_id: id.clone(),
+                status: Status::DistinctWork,
+                work_id: Some(format!("independent-{i}")),
+                representative_id: None,
+                successor_id: None,
+            })
+            .collect(),
+        rationale: "two adopted independent presentations".into(),
+        evidence_refs: vec![],
+    };
+    db.put_record("decisions", &d.group_id, &d).unwrap();
+    assert_eq!(
+        selection::select(&db, out.path(), None)
+            .unwrap()
+            .ready
+            .len(),
+        2
+    );
+    drop(db);
+    let gate = out.path().join("publication-blocked");
+    fs::write(&gate, "wait").unwrap();
+    let log = fs::File::create(out.path().join("shared-extraction.log")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("--work-dir")
+        .arg(state.path())
+        .arg("markdown-continuous")
+        .arg("--output")
+        .arg(out.path())
+        .arg("--publication-gate")
+        .arg(&gate)
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(5) {
+        let s: serde_json::Value = fs::read(out.path().join("continuous-status.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        if s["groups_resolved"] == 1
+            && s["active"] == 0
+            && s["queued"] == 0
+            && s["publication_active"] == true
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    let reserved: serde_json::Value =
+        serde_json::from_slice(&fs::read(out.path().join("reservations.json")).unwrap()).unwrap();
+    let held = reserved["jobs"]
+        .as_object()
+        .unwrap()
+        .values()
+        .map(|v| v.as_u64().unwrap())
+        .sum::<u64>();
+    fs::remove_file(gate).unwrap();
+    let exit = child.wait().unwrap();
+    assert!(
+        exit.success(),
+        "{}",
+        fs::read_to_string(out.path().join("shared-extraction.log")).unwrap()
+    );
+    assert!(
+        held >= 32 * 1024 * 1024,
+        "shared extraction only reserved one work: {reserved}"
+    );
+    let s: serde_json::Value =
+        serde_json::from_slice(&fs::read(out.path().join("continuous-status.json")).unwrap())
+            .unwrap();
+    assert_eq!(s["published"], 2);
+    let log = fs::read_to_string(out.path().join("shared-extraction.log")).unwrap();
+    assert_eq!(log.matches("conversion started:").count(), 1);
+}

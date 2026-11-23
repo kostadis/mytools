@@ -31,6 +31,7 @@ pub struct Session {
     scoped: bool,
     authority_db: Option<PathBuf>,
     expected_graph: Option<String>,
+    publication_fence: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     confirmed: BTreeSet<String>,
     root: PathBuf,
     identity: Value,
@@ -228,6 +229,7 @@ impl Session {
             scoped,
             authority_db: None,
             expected_graph: None,
+            publication_fence: None,
             confirmed: BTreeSet::new(),
             root: s.source_root.clone(),
             identity: s.root_identity.clone(),
@@ -242,6 +244,10 @@ impl Session {
     pub fn clear_authority_database(&mut self) {
         self.authority_db = None;
         self.expected_graph = None;
+        self.publication_fence = None;
+    }
+    pub fn set_publication_fence(&mut self, fence: std::sync::Arc<std::sync::atomic::AtomicBool>) {
+        self.publication_fence = Some(fence);
     }
     pub fn set_graph_token(&mut self, token: &str) {
         self.expected_graph = Some(token.into());
@@ -255,6 +261,15 @@ impl Session {
         };
         let db = crate::store::Store::open_readonly(path)?;
         let guard = db.authority_guard()?;
+        if self
+            .publication_fence
+            .as_ref()
+            .is_some_and(|f| f.load(std::sync::atomic::Ordering::Acquire))
+        {
+            return Err(SelectionError::Invalid(
+                "publication fenced; regroup required".into(),
+            ));
+        }
         if self.expected_graph.as_ref().is_some_and(|g| {
             db.meta("graph_revision")
                 .map(|v| digest_json(&v) != *g)
