@@ -65,6 +65,7 @@ struct Inspect {
     group: Option<String>,
     #[arg(long, default_value_t = 10)]
     limit: usize,
+    /// Explicit sample pages; at most five including previously cached pages.
     #[arg(long)]
     pages: Option<String>,
     #[arg(long, default_value = "pdftotext")]

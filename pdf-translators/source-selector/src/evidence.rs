@@ -5,55 +5,68 @@ use lopdf::{Document, Object};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    ffi::OsString,
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
+    sync::{Mutex, OnceLock, mpsc},
     time::{Duration, Instant},
 };
 
 pub trait TextExtractor {
     fn extract(&self, path: &Path, pages: &[u32]) -> Result<Vec<PageText>>;
+    fn provenance(&self) -> Value {
+        json!({"name":"custom extractor", "version":null})
+    }
+    fn warnings(&self) -> Vec<String> {
+        vec![]
+    }
 }
 pub struct PopplerExtractor {
     binary: PathBuf,
     timeout: Duration,
+    provenance: OnceLock<Value>,
+    warnings: Mutex<Vec<String>>,
 }
 impl PopplerExtractor {
     pub fn new(binary: PathBuf, timeout: Duration) -> Self {
-        Self { binary, timeout }
+        Self {
+            binary,
+            timeout,
+            provenance: OnceLock::new(),
+            warnings: Mutex::new(vec![]),
+        }
     }
-    fn range(&self, path: &Path, first: u32, last: u32) -> Result<Vec<PageText>> {
-        let mut child = Command::new(&self.binary)
-            .args([
-                "-enc",
-                "UTF-8",
-                "-eol",
-                "unix",
-                "-f",
-                &first.to_string(),
-                "-l",
-                &last.to_string(),
-            ])
-            .arg(path.canonicalize()?)
-            .arg("-")
+    fn output(&self, args: &[OsString]) -> Result<(Vec<u8>, Vec<u8>)> {
+        let mut command = Command::new(&self.binary);
+        command
+            .args(args)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                SelectionError::Invalid(format!("cannot start {}: {e}", self.binary.display()))
-            })?;
+            .stderr(Stdio::piped());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        let mut child = command.spawn().map_err(|e| {
+            SelectionError::Invalid(format!("cannot start {}: {e}", self.binary.display()))
+        })?;
         let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
-        let output = std::thread::spawn(move || {
+        let (output_tx, output) = mpsc::channel();
+        std::thread::spawn(move || {
             let mut v = vec![];
-            stdout
+            let result = stdout
                 .take(64 * 1024 * 1024 + 1)
                 .read_to_end(&mut v)
-                .map(|_| v)
+                .map(|_| v);
+            let _ = output_tx.send(result);
         });
-        let errors = std::thread::spawn(move || {
+        let (errors_tx, errors) = mpsc::channel();
+        std::thread::spawn(move || {
             let mut v = vec![];
-            stderr.take(1024 * 1024 + 1).read_to_end(&mut v).map(|_| v)
+            let result = stderr.take(1024 * 1024 + 1).read_to_end(&mut v).map(|_| v);
+            let _ = errors_tx.send(result);
         });
         let start = Instant::now();
         let status = loop {
@@ -61,24 +74,21 @@ impl PopplerExtractor {
                 break Some(status);
             }
             if start.elapsed() >= self.timeout {
-                let _ = child.kill();
-                let _ = child.wait();
                 break None;
             }
             std::thread::sleep(Duration::from_millis(10));
         };
-        let bytes = output
-            .join()
-            .map_err(|_| SelectionError::Invalid("text reader failed".into()))??;
-        let errors = errors
-            .join()
-            .map_err(|_| SelectionError::Invalid("stderr reader failed".into()))??;
         if status.is_none() {
-            return Err(SelectionError::Invalid(format!(
-                "pdftotext timed out after {:?}",
-                self.timeout
-            )));
+            return Err(stop_extractor(child, self.timeout));
         }
+        let bytes = match output.recv_timeout(self.timeout.saturating_sub(start.elapsed())) {
+            Ok(result) => result?,
+            Err(_) => return Err(stop_extractor(child, self.timeout)),
+        };
+        let errors = match errors.recv_timeout(self.timeout.saturating_sub(start.elapsed())) {
+            Ok(result) => result?,
+            Err(_) => return Err(stop_extractor(child, self.timeout)),
+        };
         if !status.unwrap().success() {
             return Err(SelectionError::Invalid(format!(
                 "pdftotext failed: {}",
@@ -89,6 +99,31 @@ impl PopplerExtractor {
             return Err(SelectionError::Invalid(
                 "text extraction exceeded 64 MiB; request fewer pages".into(),
             ));
+        }
+        Ok((bytes, errors))
+    }
+    fn range(&self, path: &Path, first: u32, last: u32) -> Result<Vec<PageText>> {
+        let mut args: Vec<OsString> = [
+            "-enc",
+            "UTF-8",
+            "-eol",
+            "unix",
+            "-f",
+            &first.to_string(),
+            "-l",
+            &last.to_string(),
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        args.push(path.canonicalize()?.into_os_string());
+        args.push("-".into());
+        let (bytes, errors) = self.output(&args)?;
+        if !errors.is_empty() {
+            self.warnings
+                .lock()
+                .expect("extractor warnings lock")
+                .push(String::from_utf8_lossy(&errors).into_owned());
         }
         let text = String::from_utf8(bytes)
             .map_err(|e| SelectionError::Invalid(format!("non-UTF-8 extraction: {e}")))?;
@@ -109,8 +144,49 @@ impl PopplerExtractor {
             .collect())
     }
 }
+
+fn stop_extractor(mut child: Child, timeout: Duration) -> SelectionError {
+    #[cfg(unix)]
+    {
+        // Each extractor has a private process group, including wrapper children
+        // which may otherwise keep stdout/stderr pipes open indefinitely.
+        let _ = Command::new("/bin/kill")
+            .args(["-KILL", "--", &format!("-{}", child.id())])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+    // Reaping cannot hold up the deadline if the OS is still waiting on I/O.
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    SelectionError::Invalid(format!("pdftotext timed out after {timeout:?}"))
+}
 impl TextExtractor for PopplerExtractor {
+    fn warnings(&self) -> Vec<String> {
+        self.warnings
+            .lock()
+            .expect("extractor warnings lock")
+            .clone()
+    }
+    fn provenance(&self) -> Value {
+        self.provenance.get_or_init(|| {
+            match self.output(&["-v".into()]) {
+                Ok((stdout, stderr)) => {
+                    let bytes = if stderr.is_empty() { stdout } else { stderr };
+                    let text = String::from_utf8_lossy(&bytes);
+                    json!({"name":"pdftotext", "binary":self.binary, "version_output":text.lines().next().unwrap_or("unknown"), "encoding":"UTF-8", "line_endings":"unix", "reading_order":"default"})
+                }
+                Err(error) => json!({"name":"pdftotext", "binary":self.binary, "version":null, "version_error":error.to_string(), "encoding":"UTF-8", "line_endings":"unix"}),
+            }
+        }).clone()
+    }
     fn extract(&self, path: &Path, pages: &[u32]) -> Result<Vec<PageText>> {
+        self.warnings
+            .lock()
+            .expect("extractor warnings lock")
+            .clear();
         let sorted: BTreeSet<_> = pages.iter().copied().collect();
         if sorted.contains(&0) {
             return Err(SelectionError::Invalid("page numbers start at 1".into()));
@@ -230,7 +306,7 @@ pub fn inspect_pdf(
             });
     }
     text.sort_by_key(|p| p.page);
-    let mut errors = vec![];
+    let mut errors = extractor.warnings();
     let bookmarks = match doc.get_toc() {
         Ok(toc) => {
             errors.extend(toc.errors);
@@ -252,11 +328,18 @@ pub fn inspect_pdf(
         ));
     }
     let quality = classify_text_quality(&text, count);
+    let mut pdf_metadata = metadata(&doc);
+    let provenance = extractor.provenance();
+    pdf_metadata.insert("_text_extractor".into(), provenance.clone());
+    pdf_metadata.insert(
+        "_extraction_batches".into(),
+        json!([{"pages":selected, "extractor":provenance, "warnings":extractor.warnings()}]),
+    );
     Ok(Evidence {
         source_id: source.source_id.clone(),
         sha256: sha,
         version: 1,
-        pdf_metadata: metadata(&doc),
+        pdf_metadata,
         pages: text,
         page_count: count,
         bookmarks,

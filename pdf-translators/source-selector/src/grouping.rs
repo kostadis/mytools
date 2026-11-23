@@ -54,6 +54,52 @@ pub fn cached_hash(root: &Path, source: &Source, store: &mut Store) -> Result<St
     Ok(hash)
 }
 
+/// Warm hashes outside the inventory publication transaction. Each successful
+/// cache write commits independently, so interrupted scans retain completed work.
+pub fn warm_candidate_hashes(root: &Path, sources: &[Source], store: &mut Store) -> Result<()> {
+    let mut sizes = BTreeMap::<u64, usize>::new();
+    for source in sources.iter().filter(|s| s.kind == SourceKind::Pdf) {
+        *sizes.entry(source.fingerprint.size).or_default() += 1;
+    }
+    let candidates: Vec<_> = sources
+        .iter()
+        .filter(|s| s.kind == SourceKind::Pdf && s.read_error.is_none())
+        .filter(|s| sizes[&s.fingerprint.size] > 1)
+        .collect();
+    let mut reused = 0;
+    let mut failed = 0;
+    eprintln!(
+        "{} hashes: starting {} candidates; completed hashes commit immediately",
+        chrono::Utc::now().to_rfc3339(),
+        candidates.len()
+    );
+    for (index, source) in candidates.iter().enumerate() {
+        let key = digest_json(&(1, &source.fingerprint));
+        let cached = store.get_cached(&source.source_id, "hash", &key)?.is_some();
+        match cached_hash(root, source, store) {
+            Ok(_) => reused += usize::from(cached),
+            Err(e) => {
+                failed += 1;
+                eprintln!(
+                    "{} hash error: {:?}: {e}",
+                    chrono::Utc::now().to_rfc3339(),
+                    source.relative_path
+                );
+            }
+        }
+        let completed = index + 1;
+        if completed.is_multiple_of(100) || completed == candidates.len() {
+            eprintln!(
+                "{} hashes: {completed}/{} checked, {reused} reused, {failed} failed; last={:?}",
+                chrono::Utc::now().to_rfc3339(),
+                candidates.len(),
+                source.relative_path
+            );
+        }
+    }
+    Ok(())
+}
+
 fn normalized(text: &str) -> String {
     text.chars()
         .map(|c| {

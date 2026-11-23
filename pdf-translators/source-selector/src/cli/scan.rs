@@ -1,14 +1,56 @@
 use super::*;
 use crate::{
     digest_json,
-    grouping::{build_groups, hash_source},
+    grouping::{build_groups, hash_source, warm_candidate_hashes},
     hints::{legacy_hints, read_muse, read_rpglib},
-    inventory::{checked_path, scan_root},
+    inventory::{checked_path, scan_root_with_progress},
     models::{Hint, Source},
 };
+use std::io::{BufWriter, Write};
+
 pub(super) fn run(work: &Path, args: Scan) -> Result<ExitCode> {
-    let mut inventory = scan_root(&args.root)?;
-    let work = validate_work_dir(&inventory.root, work)?;
+    let root = args.root.canonicalize()?;
+    let work = validate_work_dir(&root, work)?;
+    fs::create_dir_all(&work)?;
+    let journal_path = work.join("inventory-progress.jsonl");
+    refuse_symlink_database(&journal_path)?;
+    let mut journal = BufWriter::new(fs::File::create(&journal_path)?);
+    writeln!(
+        journal,
+        "{}",
+        json!({"type":"inventory-start", "root":root, "started":chrono::Utc::now().to_rfc3339(), "root_identity":crate::inventory::root_identity(&root)?})
+    )?;
+    journal.flush()?;
+    journal.get_ref().sync_data()?;
+    let mut saved = 0;
+    eprintln!(
+        "{} inventory: starting {:?}; checkpoints every 100 sources",
+        chrono::Utc::now().to_rfc3339(),
+        root
+    );
+    let mut inventory = scan_root_with_progress(&root, |inventory| {
+        for source in &inventory.sources[saved..] {
+            serde_json::to_writer(&mut journal, &json!({"type":"source", "source":source}))?;
+            writeln!(journal)?;
+        }
+        saved = inventory.sources.len();
+        if !inventory.finished.is_empty() {
+            writeln!(
+                journal,
+                "{}",
+                json!({"type":"inventory-finished", "sources":saved, "finished":inventory.finished, "errors":inventory.errors})
+            )?;
+        }
+        journal.flush()?;
+        journal.get_ref().sync_data()?;
+        eprintln!(
+            "{} inventory: {saved} sources, {} errors; checkpoint saved; last={:?}",
+            chrono::Utc::now().to_rfc3339(),
+            inventory.errors.len(),
+            inventory.sources.last().map(|s| &s.relative_path)
+        );
+        Ok(())
+    })?;
     if args.twins_json.is_some() && args.muse_csv.is_none() {
         return Err(SelectionError::Usage(
             "--twins-json requires --muse-csv".into(),
@@ -51,6 +93,11 @@ pub(super) fn run(work: &Path, args: Scan) -> Result<ExitCode> {
             hints.push(old);
         }
     }
+    warm_candidate_hashes(&inventory.root, &inventory.sources, &mut store)?;
+    eprintln!(
+        "{} scan: publishing inventory and candidate groups",
+        chrono::Utc::now().to_rfc3339()
+    );
     let result = store.scan_transaction(|store| {
         store.upsert_inventory(&inventory)?;
         store.replace_records("grouping_errors", &[])?;

@@ -60,6 +60,13 @@ pub fn checked_path(root: &Path, relative: &Path) -> Result<std::path::PathBuf> 
 }
 
 pub fn scan_root(root: &Path) -> Result<InventoryResult> {
+    scan_root_with_progress(root, |_| Ok(()))
+}
+
+pub fn scan_root_with_progress(
+    root: &Path,
+    mut progress: impl FnMut(&InventoryResult) -> Result<()>,
+) -> Result<InventoryResult> {
     if !root.is_dir() {
         return Err(SelectionError::Invalid(format!(
             "root is not a readable directory: {}",
@@ -76,20 +83,26 @@ pub fn scan_root(root: &Path) -> Result<InventoryResult> {
         sources: vec![],
         errors: vec![],
     };
-    walk(&root, &root, &mut result);
+    walk(&root, &root, &mut result, &mut progress)?;
+    result.finished = chrono::Utc::now().to_rfc3339();
+    progress(&result)?;
     result
         .sources
         .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-    result.finished = chrono::Utc::now().to_rfc3339();
     Ok(result)
 }
 
-fn walk(root: &Path, dir: &Path, result: &mut InventoryResult) {
+fn walk(
+    root: &Path,
+    dir: &Path,
+    result: &mut InventoryResult,
+    progress: &mut dyn FnMut(&InventoryResult) -> Result<()>,
+) -> Result<()> {
     let entries = match fs::read_dir(dir) {
         Ok(v) => v,
         Err(e) => {
             result.errors.push(format!("{}: {e}", dir.display()));
-            return;
+            return Ok(());
         }
     };
     for entry in entries {
@@ -117,7 +130,7 @@ fn walk(root: &Path, dir: &Path, result: &mut InventoryResult) {
         let name = entry.file_name().to_string_lossy().to_lowercase();
         if kind.is_dir() {
             if !name.ends_with("-responses") && ![".git", "_gsdata_"].contains(&name.as_str()) {
-                walk(root, &path, result);
+                walk(root, &path, result, progress)?;
             }
             continue;
         }
@@ -181,7 +194,11 @@ fn walk(root: &Path, dir: &Path, result: &mut InventoryResult) {
             artifacts,
             metadata: BTreeMap::from([("inventory_root".into(), serde_json::json!(root.to_str()))]),
         });
+        if result.sources.len().is_multiple_of(100) {
+            progress(result)?;
+        }
     }
+    Ok(())
 }
 
 pub fn path_bytes(path: &Path) -> Vec<u8> {

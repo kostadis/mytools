@@ -2,6 +2,66 @@ use rpg_source_select::{inventory::scan_root, models::SourceKind, store::Store};
 use std::fs;
 use tempfile::tempdir;
 
+#[test]
+fn inventory_reports_a_checkpoint_before_an_interrupted_walk() {
+    use rpg_source_select::inventory::scan_root_with_progress;
+    let root = tempdir().unwrap();
+    for i in 0..201 {
+        fs::write(root.path().join(format!("{i}.pdf")), b"pdf").unwrap();
+    }
+    let mut saved = vec![];
+    let result = scan_root_with_progress(root.path(), |inventory| {
+        saved = inventory.sources.clone();
+        Err(rpg_source_select::SelectionError::Invalid(
+            "interrupt".into(),
+        ))
+    });
+    assert!(result.is_err());
+    assert_eq!(saved.len(), 100);
+}
+
+#[test]
+fn completed_hashes_survive_an_interrupted_inventory_publication() {
+    use rpg_source_select::grouping::{cached_hash, warm_candidate_hashes};
+    let root = tempdir().unwrap();
+    let work = tempdir().unwrap();
+    fs::write(root.path().join("a.pdf"), b"same").unwrap();
+    fs::write(root.path().join("b.pdf"), b"same").unwrap();
+    let inventory = scan_root(root.path()).unwrap();
+    let path = work.path().join("selection.db");
+    let mut db = Store::open(&path).unwrap();
+    warm_candidate_hashes(&inventory.root, &inventory.sources, &mut db).unwrap();
+    let result: rpg_source_select::Result<()> = db.scan_transaction(|db| {
+        db.upsert_inventory(&inventory)?;
+        Err(rpg_source_select::SelectionError::Invalid(
+            "interrupt".into(),
+        ))
+    });
+    assert!(result.is_err());
+    drop(db);
+    let mut db = Store::open(&path).unwrap();
+    assert!(db.sources().unwrap().is_empty());
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let cached: i64 = conn
+        .query_row("SELECT count(*) FROM cache WHERE stage='hash'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(cached, 2);
+    for source in &inventory.sources {
+        assert_eq!(
+            cached_hash(&inventory.root, source, &mut db).unwrap(),
+            rpg_source_select::digest(b"same")
+        );
+    }
+    let after: i64 = conn
+        .query_row("SELECT count(*) FROM cache WHERE stage='hash'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(after, 2);
+}
+
 #[cfg(unix)]
 #[test]
 fn unreadable_root_refuses_scan_while_unreadable_subfolder_is_a_coverage_error() {

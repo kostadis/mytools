@@ -50,3 +50,23 @@ fn extractor_timeout_and_nonzero_exit_are_explicit_errors() {
         .unwrap_err();
     assert!(e.to_string().contains("broken-extractor"));
 }
+
+#[cfg(unix)]
+#[test]
+fn version_timeout_does_not_wait_for_inherited_child_pipes() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempdir().unwrap();
+    let script = root.path().join("extractor");
+    std::fs::write(&script, "#!/bin/sh\nsleep 3\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let extractor = PopplerExtractor::new(script, Duration::from_millis(100));
+    let start = std::time::Instant::now();
+    let provenance = extractor.provenance();
+    assert!(
+        provenance["version_error"]
+            .as_str()
+            .unwrap()
+            .contains("timed out")
+    );
+    assert!(start.elapsed() < Duration::from_secs(1));
+}
