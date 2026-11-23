@@ -36,7 +36,7 @@ pub fn publish_with_destination(
         if !seen.insert(&ready.work_id) {
             return Err(SelectionError::Invalid("duplicate current work IDs".into()));
         }
-        match live_source_matches(&snapshot.source_root, ready) {
+        match frozen_source_matches(&snapshot, ready) {
             Ok(Some(false)) => {
                 catalog.push(serde_json::json!({"work":ready,"status":"source_changed","error":"accessible original no longer matches frozen selection; rescan/reselect"}));
                 continue;
@@ -204,12 +204,12 @@ pub fn publish_with_destination(
         }
         fs::create_dir_all(staging.join("books"))?;
         for (work, artifact) in &books {
-            fs::copy(
+            link_or_copy(
                 artifact.join("book.md"),
                 staging.join("books").join(format!("{work}.md")),
             )?;
             File::open(staging.join("books").join(format!("{work}.md")))?.sync_all()?;
-            fs::copy(
+            link_or_copy(
                 artifact.join("book.json"),
                 staging.join("books").join(format!("{work}.json")),
             )?;
@@ -259,6 +259,25 @@ fn ensure_bytes(path: &Path, expected: &[u8]) -> Result<()> {
         atomic_write(path, expected)?;
     }
     Ok(())
+}
+fn link_or_copy(source: impl AsRef<Path>, target: impl AsRef<Path>) -> Result<()> {
+    match fs::hard_link(source.as_ref(), target.as_ref()) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            fs::copy(source, target)?;
+            Ok(())
+        }
+    }
+}
+fn frozen_source_matches(s: &Snapshot, r: &Ready) -> Result<Option<bool>> {
+    if let Some(c) = s.records.iter().flat_map(|v| &v.candidates).find(|c| {
+        c.source.source_id == r.source_id && c.sha256.as_deref() == Some(r.sha256.as_str())
+    }) && let Ok(path) = crate::inventory::checked_path(&s.source_root, &r.relative_path)
+        && crate::inventory::fingerprint(&path).ok().as_ref() == Some(&c.source.fingerprint)
+    {
+        return Ok(Some(true));
+    }
+    live_source_matches(&s.source_root, r)
 }
 fn escape(text: &str) -> String {
     text.replace('&', "&amp;")

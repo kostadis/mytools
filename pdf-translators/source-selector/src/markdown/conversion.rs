@@ -18,6 +18,9 @@ use std::{
 
 #[derive(Clone, Debug, Args)]
 pub struct Options {
+    /// Publish after this many jobs or 60 seconds with completed work; always flush at end.
+    #[arg(long, default_value_t = 1)]
+    pub publish_every: usize,
     /// Publish Markdown and current-documents.json beside selected PDFs.
     #[arg(long)]
     pub publish_next_to_source: bool,
@@ -156,7 +159,8 @@ fn stop(mut child: Child) {
     });
 }
 pub fn run(options: Options) -> Result<Report> {
-    if options.workers == 0
+    if options.publish_every == 0
+        || options.workers == 0
         || options.workers > 8
         || options.chunk_pages == 0
         || options.chunk_pages > 100
@@ -262,6 +266,8 @@ pub fn run(options: Options) -> Result<Report> {
     pending.sort_by_key(|(j, _)| worker::all_chunks(&output, &j.ready, &engine).is_ok());
     queue = pending.into_iter().take(options.limit).collect();
     let mut active: Vec<Running> = vec![];
+    let mut since_publication = 0usize;
+    let mut last_publication = Instant::now();
     let mut heartbeat = Instant::now();
     while !queue.is_empty() || !active.is_empty() {
         while active.len() < options.workers && !queue.is_empty() {
@@ -362,13 +368,29 @@ pub fn run(options: Options) -> Result<Report> {
                 "{}: {} ({} reused, {} extracted ranges)",
                 item.job.ready.title, result.status, result.reused_ranges, result.extracted_ranges
             );
-            report.publication = Some(publication::publish_with_destination(
-                &output,
-                &engine,
-                adjacent.as_mut(),
-            )?);
+            since_publication += 1;
+            if since_publication >= options.publish_every
+                || last_publication.elapsed() >= Duration::from_secs(60)
+            {
+                report.publication = Some(publication::publish_with_destination(
+                    &output,
+                    &engine,
+                    adjacent.as_mut(),
+                )?);
+                since_publication = 0;
+                last_publication = Instant::now();
+            }
         }
         if heartbeat.elapsed() >= Duration::from_secs(30) {
+            if since_publication > 0 && last_publication.elapsed() >= Duration::from_secs(60) {
+                report.publication = Some(publication::publish_with_destination(
+                    &output,
+                    &engine,
+                    adjacent.as_mut(),
+                )?);
+                since_publication = 0;
+                last_publication = Instant::now();
+            }
             eprintln!(
                 "Markdown heartbeat: {} active, {} queued",
                 active.len(),

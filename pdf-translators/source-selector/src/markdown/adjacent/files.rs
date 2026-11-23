@@ -132,6 +132,15 @@ impl Directory {
         f.read_to_end(&mut bytes)?;
         Ok(Some(bytes))
     }
+    pub fn stamp(&self, name: &Path) -> Result<Option<serde_json::Value>> {
+        let Some(f) = self.open_file(name, libc::O_RDONLY)? else {
+            return Ok(None);
+        };
+        let m = f.metadata()?;
+        Ok(Some(
+            serde_json::json!({"device":m.dev(),"inode":m.ino(),"length":m.len(),"modified":m.mtime(),"modified_ns":m.mtime_nsec(),"changed":m.ctime(),"changed_ns":m.ctime_nsec()}),
+        ))
+    }
     pub fn hash(&self, name: &Path) -> Result<Option<String>> {
         use sha2::{Digest, Sha256};
         let Some(mut f) = self.open_file(name, libc::O_RDONLY)? else {

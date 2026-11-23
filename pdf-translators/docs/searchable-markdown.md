@@ -46,6 +46,21 @@ The immutable snapshot lives at `selection/generations/<id>/markdown-selection.j
 
 Run selection against a completed scan. Do not start write stages against a database being populated by the broad scan; the pilot uses an independent completed scan.
 
+## Full-library rollout
+
+After refreshing the inventory with the verified executable, use the resumable launcher from `pdf-translators/`:
+
+```bash
+SELECTOR_BIN="$PWD/source-selector/target/release/rpg-source-select" \
+  scripts/run_markdown_rollout.sh source-selection-data source-selection-data/full-library-markdown
+```
+
+It waits for an existing metadata selection to release its lock, reuses a completed snapshot newer than the scan or resumes selection from metadata/hash checkpoints, checks source-cache space with a 20 GiB reserve, and converts the entire Ready queue. Defaults are two workers, 20-page chunks and publication after 100 completed jobs or roughly 60 seconds with completed work, plus a final flush. The ordinary CLI publication default remains one completed job. Failed jobs can retry within the existing three-failure ceiling; unresolved groups, legacy baselines, archives and OCR-only outcomes remain explicit exceptions.
+
+Logs and state are persistent: `rollout.log`, `rollout-state.json`, `rollout-preflight.json`, `selection-progress.log`, per-job `logs/`, `markdown.db` and `conversion-run.json` under the output directory. A stopped launcher can be rerun with the same paths. `completed_with_exceptions` means the eligible queue finished with failures or unresolved publication, not that every library PDF was converted.
+
+Unchanged publication reuses prior byte verification only when source/output/record fingerprints and selection/render inputs still match; changed files are revalidated and manual edits preserved. Immutable corpus files use hardlinks where supported, avoiding repeated full copies across generations. Metadata selection also checkpoints verified source hashes for singletons, so a restart does not need to rehash each unchanged uncached-by-scan PDF.
+
 ## Conversion, logs and recovery
 
 The coordinator uses two isolated workers and 20-page extraction ranges by default. Useful options:

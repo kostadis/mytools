@@ -32,6 +32,12 @@ pub struct Session {
     directories: BTreeSet<PathBuf>,
     discovery_errors: Vec<String>,
     warnings: BTreeSet<String>,
+    verified: BTreeMap<PathBuf, VerifiedDirectory>,
+}
+struct VerifiedDirectory {
+    signature: String,
+    stamps: Value,
+    entries: Vec<Value>,
 }
 fn owned(v: &Value) -> bool {
     v["generator"] == OWNER
@@ -178,6 +184,7 @@ impl Session {
             directories,
             discovery_errors,
             warnings: BTreeSet::new(),
+            verified: BTreeMap::new(),
         })
     }
     pub fn sync(
@@ -289,6 +296,47 @@ impl Session {
             other => other?,
         };
         let _guard = dir.lock()?;
+        let inputs: Vec<_> = members
+            .iter()
+            .map(|r| {
+                (
+                    &r.work_id,
+                    states.get(&r.work_id),
+                    books
+                        .iter()
+                        .find(|b| b.ready.work_id == r.work_id)
+                        .map(|b| digest(b.markdown.as_bytes())),
+                )
+            })
+            .collect();
+        let signature = digest_json(&(
+            &s.snapshot_id,
+            &engine.id,
+            coverage_complete,
+            members,
+            inputs,
+        ));
+        let stamp = |dir: &files::Directory| -> Result<Value> {
+            let mut stamps = vec![dir.stamp(Path::new(NAME))?];
+            for r in members {
+                stamps.push(dir.stamp(Path::new(r.relative_path.file_name().unwrap()))?);
+                stamps.push(dir.stamp(Path::new(
+                    r.relative_path.with_extension("md").file_name().unwrap(),
+                ))?);
+            }
+            Ok(serde_json::to_value(stamps)?)
+        };
+        if !self
+            .ownership
+            .operations
+            .iter()
+            .any(|o| o.directory == relative)
+            && let Some(cached) = self.verified.get(relative)
+            && cached.signature == signature
+            && stamp(&dir).ok().as_ref() == Some(&cached.stamps)
+        {
+            return Ok(cached.entries.clone());
+        }
         let pending: Vec<_> = self
             .ownership
             .operations
@@ -556,6 +604,16 @@ impl Session {
             self.warnings.insert(format!("{}: directory fsync unsupported; file flushes and durable private recovery journal used",self.root.join(relative).display()));
         }
         self.ownership.save(&self.path)?;
+        if let Ok(stamps) = stamp(&dir) {
+            self.verified.insert(
+                relative.into(),
+                VerifiedDirectory {
+                    signature,
+                    stamps,
+                    entries: results.clone(),
+                },
+            );
+        }
         Ok(results)
     }
 }

@@ -28,12 +28,26 @@ pub fn probe(root: &Path, source: &Source, legacy: &Store, cache: &mut Store) ->
             ));
         }
         let key = digest_json(&(1, &source.fingerprint));
-        let sha = match legacy
+        let prior = legacy
             .get_cached(&source.source_id, "hash", &key)?
-            .and_then(|v| v.as_str().map(str::to_string))
-        {
+            .or(cache.get_cached(&source.source_id, "verified_hash", &key)?);
+        let sha = match prior.and_then(|v| v.as_str().map(str::to_string)) {
             Some(s) => s,
-            None => hash_source(&path)?,
+            None => {
+                let sha = hash_source(&path)?;
+                if fingerprint(&path)? != source.fingerprint {
+                    return Err(SelectionError::Invalid(
+                        "source changed during hash; rescan".into(),
+                    ));
+                }
+                cache.put_cached(
+                    &source.source_id,
+                    "verified_hash",
+                    &key,
+                    &Value::String(sha.clone()),
+                )?;
+                sha
+            }
         };
         result.sha256 = Some(sha.clone());
         let metadata: Cached = if let Some(v) = cache.get_cached(&sha, "pdf_metadata", "v1")? {
