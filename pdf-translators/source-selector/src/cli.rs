@@ -141,7 +141,17 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<ExitCode> {
             .find(|e| &e.source_id == source)
             .ok_or_else(|| SelectionError::Usage("unknown inspected source ID".into()))?;
         let src = ro.sources()?.into_iter().find(|s| &s.source_id == source);
-        print_json(&json!({"cached_evidence":true,"source":src,"evidence":ev}))?;
+        let citations: Vec<_> = ro
+            .records::<serde_json::Value>("claim_bindings")?
+            .into_iter()
+            .filter(|c| {
+                c["source_id"].as_str() == Some(source.as_str())
+                    && c["source_sha256"].as_str() == Some(ev.sha256.as_str())
+            })
+            .collect();
+        print_json(
+            &json!({"cached_evidence":true,"source":src,"evidence":ev,"citation_bindings":citations}),
+        )?;
         return Ok(ExitCode::SUCCESS);
     }
     if matches!(cli.command, Commands::Status) {

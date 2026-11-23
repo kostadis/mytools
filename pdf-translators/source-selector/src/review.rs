@@ -28,6 +28,7 @@ fn same_user_sources(decision: &Decision, group: &Group, evidence: &[Evidence]) 
         && !decision.source_hashes.is_empty()
         && decision.source_hashes == source_hashes(group, evidence)
 }
+pub use crate::citations::bind_reader_claim;
 pub use crate::packets::{PageExcerpt, ReviewPacket, prepare_packets};
 
 pub fn apply_reader_claims(

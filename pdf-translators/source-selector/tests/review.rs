@@ -13,6 +13,67 @@ use tempfile::tempdir;
 struct Reader;
 
 #[test]
+fn automatic_citations_reject_ambiguous_fragments_but_allow_identical_exports() {
+    let (_r, _w, _db, sources, group, mut evidence) = setup(&["book.pdf"]);
+    evidence[0].pages[0].text = "Explicit revision statement. ".repeat(1000);
+    let packets = prepare_packets(&group, &evidence, &sources, ActorRole::Reader, 4096).unwrap();
+    let fact = Claim {
+        claim_id: "fact".into(),
+        kind: "statement".into(),
+        value: "A revision statement exists.".into(),
+        source_id: sources[0].source_id.clone(),
+        page: 1,
+        quote: "Explicit revision statement.".into(),
+        actor: "reader".into(),
+        role: ActorRole::Reader,
+    };
+    assert!(bind_reader_claim(&fact, &packets, std::slice::from_ref(&group), &evidence).is_err());
+    let mut alias = packets[0].clone();
+    alias.packet_id = "another-export-of-same-fragment".into();
+    let aliases = vec![packets[0].clone(), alias];
+    assert!(bind_reader_claim(&fact, &aliases, std::slice::from_ref(&group), &evidence).is_ok());
+    evidence[0].sha256 = "new-source-hash".into();
+    assert!(bind_reader_claim(&fact, &aliases, std::slice::from_ref(&group), &evidence).is_err());
+}
+
+#[test]
+fn reader_fragment_boundaries_stay_stable_after_fact_imports() {
+    let (_r, _w, _db, sources, group, mut evidence) = setup(&["book.pdf"]);
+    evidence[0].pages[0].text = format!(
+        "First unique revision clue. Second unique revision clue. {}",
+        "Filler text. ".repeat(5000)
+    );
+    let first = prepare_packets(&group, &evidence, &sources, ActorRole::Reader, 32000).unwrap();
+    let fact = Claim {
+        claim_id: "fact-one".into(),
+        kind: "statement".into(),
+        value: "First clue exists.".into(),
+        source_id: sources[0].source_id.clone(),
+        page: 1,
+        quote: "First unique revision clue.".into(),
+        actor: "reader".into(),
+        role: ActorRole::Reader,
+    };
+    evidence[0].claims.push(fact.clone());
+    let second = prepare_packets(&group, &evidence, &sources, ActorRole::Reader, 32000).unwrap();
+    let shape = |packets: &[ReviewPacket]| {
+        packets
+            .iter()
+            .flat_map(|p| p.excerpts.iter())
+            .map(|e| (e.offset_chars, e.text.clone()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(shape(&first), shape(&second));
+    let all: Vec<_> = first.into_iter().chain(second).collect();
+    let next = Claim {
+        claim_id: "fact-two".into(),
+        quote: "Second unique revision clue.".into(),
+        ..fact
+    };
+    assert!(bind_reader_claim(&next, &all, std::slice::from_ref(&group), &evidence).is_ok());
+}
+
+#[test]
 fn user_can_defer_an_uninspected_group_without_claiming_it_is_convertible() {
     let (_r, _w, mut db, sources, group, _evidence) = setup(&["book-v1.pdf", "book-v3.pdf"]);
     let mut d = propose_decision(&group, &[], &sources, None);

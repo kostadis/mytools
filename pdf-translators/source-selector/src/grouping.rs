@@ -114,9 +114,14 @@ fn normalized(text: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
-pub fn title_key(path: &Path) -> String {
+fn source_stem(path: &Path) -> String {
     static OLD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\.old-\d+").unwrap());
     static ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{5,}[-_ ]+").unwrap());
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    let s = OLD.replace_all(&stem, "");
+    ID.replace(&s, "").into_owned()
+}
+pub fn title_key(path: &Path) -> String {
     static VERSION: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?i)(?:^|[ _.-])v(?:er(?:sion)?)?[ _.-]*\d+(?:[._]\d+)*").unwrap()
     });
@@ -128,12 +133,28 @@ pub fn title_key(path: &Path) -> String {
         )
         .unwrap()
     });
-    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-    let s = OLD.replace_all(&stem, "");
-    let s = ID.replace(&s, "");
+    let s = source_stem(path);
     let s = VERSION.replace_all(&s, " ");
     let s = DOTTED.replace_all(&s, " ");
     normalized(&FORMAT.replace_all(&s, " "))
+}
+
+fn presentation_key(path: &Path) -> String {
+    static LABEL: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+        r"(?:^| )(?:no ?backgrounds?|black and white|black white|b and w|b w|bw|colou?red|colou?r|(?:colou?r|bw|b w) print|digital|interactive|(?:form )?fillable|printer ?friendly|print ?friendly|optimized pdf|full res|quick load)(?: (?:version|pdf))?(?: (?P<tail>v(?:er(?:sion)?)? ?\d[a-z0-9 ]*|\d+(?: \d+)*|\d{1,2}(?:st|nd|rd|th)? [a-z]+ \d{4}|final))?$"
+    ).unwrap()
+    });
+    // Keep edition/version numbers in this new comparison key: removing them
+    // would collapse distinct rulesets such as D&D 3.0 and D&D 3.5.
+    let mut key = normalized(&source_stem(path));
+    loop {
+        let next = LABEL.replace(&key, " $tail").trim().to_string();
+        if next == key {
+            return key;
+        }
+        key = next;
+    }
 }
 
 pub fn build_groups(sources: &[Source], hints: &[Hint], store: &mut Store) -> Result<Vec<Group>> {
@@ -155,11 +176,20 @@ pub fn build_groups(sources: &[Source], hints: &[Hint], store: &mut Store) -> Re
     let mut reasons = BTreeMap::<usize, BTreeSet<String>>::new();
     let mut sizes = BTreeMap::<u64, Vec<usize>>::new();
     let mut keys = BTreeMap::<String, Vec<usize>>::new();
+    let mut presentations = BTreeMap::<String, Vec<usize>>::new();
+    let mut styled = BTreeSet::new();
     for (i, s) in pdfs.iter().enumerate() {
         if s.read_error.is_none() {
             sizes.entry(s.fingerprint.size).or_default().push(i);
         }
         keys.entry(title_key(&s.relative_path)).or_default().push(i);
+        let key = presentation_key(&s.relative_path);
+        if key != normalized(&source_stem(&s.relative_path)) {
+            styled.insert(i);
+        }
+        if !key.is_empty() {
+            presentations.entry(key).or_default().push(i);
+        }
     }
     for bucket in sizes.values().filter(|v| v.len() > 1) {
         let mut hashes = BTreeMap::<String, Vec<usize>>::new();
@@ -177,6 +207,11 @@ pub fn build_groups(sources: &[Source], hints: &[Hint], store: &mut Store) -> Re
     }
     for group in keys.values().filter(|g| g.len() > 1) {
         join(&mut sets, &mut reasons, group, "title_candidate");
+    }
+    for group in presentations.values().filter(|g| g.len() > 1) {
+        if group.iter().any(|i| styled.contains(i)) {
+            join(&mut sets, &mut reasons, group, "presentation_candidate");
+        }
     }
     for hint in hints.iter().filter(|h| h.origin == "muse") {
         let group: Vec<_> = hint

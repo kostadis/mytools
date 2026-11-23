@@ -4,7 +4,9 @@ use crate::{
     grouping::hash_source,
     inventory::checked_path,
     models::*,
-    review::{ReviewPacket, apply_reader_claims, prepare_packets, propose_decision},
+    review::{
+        ReviewPacket, apply_reader_claims, bind_reader_claim, prepare_packets, propose_decision,
+    },
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -51,6 +53,7 @@ fn export_packets(
     let mut emitted = 0;
     let mut count = 0;
     let mut remaining = 0;
+    let mut issued_packets = vec![];
     for group in groups
         .iter()
         .filter(|g| requested.as_ref().is_none_or(|id| id == &g.group_id))
@@ -86,7 +89,7 @@ fn export_packets(
         .into();
         for packet in packets {
             let template = if role == ActorRole::Reader {
-                json!({"packet_id":packet.packet_id,"claims":[]})
+                json!({"claims":[]})
             } else {
                 json!({"packet_ids":ids,"decision":proposal})
             };
@@ -94,7 +97,7 @@ fn export_packets(
                 &json!({"packet":packet,"response_template":template}),
             )?);
             output.push('\n');
-            store.put_record("packets", &packet.packet_id, &packet)?;
+            issued_packets.push(packet);
             emitted += 1;
         }
         count += 1;
@@ -111,6 +114,12 @@ fn export_packets(
         f.sync_all()?;
     }
     fs::rename(temp, &out)?;
+    store.scan_transaction(|store| {
+        for packet in &issued_packets {
+            store.put_record("packets", &packet.packet_id, packet)?;
+        }
+        Ok(())
+    })?;
     print_json(
         &json!({"file":out,"groups":count,"packets":emitted,"groups_remaining":remaining,"role":role,"model_calls":0}),
     )?;
@@ -155,7 +164,42 @@ fn import(store: &mut Store, path: &Path) -> Result<ExitCode> {
         let mut evidence = store.evidence()?;
         let mut claims_count = 0;
         let mut decisions_count = 0;
+        let mut auto_bound_claims = 0;
         for row in rows {
+            if row.packet_id.is_none()
+                && row.packet_ids.is_empty()
+                && row.decision.is_none()
+                && let Some(claims) = row.claims
+            {
+                for claim in claims {
+                    let packet = bind_reader_claim(&claim, &packets, &groups, &evidence)?;
+                    let source = sources
+                        .iter()
+                        .find(|s| s.source_id == claim.source_id)
+                        .ok_or_else(|| SelectionError::Invalid("unknown reader source".into()))?;
+                    let ev = evidence
+                        .iter()
+                        .find(|e| e.source_id == claim.source_id)
+                        .unwrap();
+                    if hash_source(&checked_path(&inventory.root, &source.relative_path)?)?
+                        != ev.sha256
+                    {
+                        return Err(SelectionError::Invalid(
+                            "source changed since evidence was collected".into(),
+                        ));
+                    }
+                    apply_reader_claims(packet, std::slice::from_ref(&claim), &evidence)?;
+                    claims_count += usize::from(persist_reader_claim(
+                        store,
+                        &mut evidence,
+                        claim,
+                        packet,
+                        "automatic",
+                    )?);
+                    auto_bound_claims += 1;
+                }
+                continue;
+            }
             let mut ids = row.packet_ids;
             if let Some(id) = row.packet_id {
                 ids.push(id);
@@ -211,22 +255,13 @@ fn import(store: &mut Store, path: &Path) -> Result<ExitCode> {
                     }
                     let accepted = apply_reader_claims(first, &claims, &evidence)?;
                     for claim in accepted {
-                        if evidence.iter().flat_map(|e| &e.claims).any(|c| {
-                            c.claim_id == claim.claim_id && digest_json(c) != digest_json(&claim)
-                        }) {
-                            return Err(SelectionError::Usage(
-                                "claim ID already refers to different evidence".into(),
-                            ));
-                        }
-                        let ev = evidence
-                            .iter_mut()
-                            .find(|e| e.source_id == claim.source_id)
-                            .unwrap();
-                        if !ev.claims.iter().any(|c| c.claim_id == claim.claim_id) {
-                            ev.claims.push(claim);
-                            claims_count += 1;
-                        }
-                        store.save_evidence(ev)?;
+                        claims_count += usize::from(persist_reader_claim(
+                            store,
+                            &mut evidence,
+                            claim,
+                            first,
+                            "explicit",
+                        )?);
                     }
                 }
                 (None, Some(mut decision)) => {
@@ -270,8 +305,50 @@ fn import(store: &mut Store, path: &Path) -> Result<ExitCode> {
                 }
             }
         }
-        Ok((claims_count, decisions_count))
+        Ok((claims_count, decisions_count, auto_bound_claims))
     })?;
-    print_json(&json!({"accepted_claims":result.0,"accepted_decisions":result.1}))?;
+    print_json(
+        &json!({"accepted_claims":result.0,"accepted_decisions":result.1,"auto_bound_claims":result.2}),
+    )?;
     Ok(ExitCode::SUCCESS)
+}
+
+fn persist_reader_claim(
+    store: &mut Store,
+    evidence: &mut [Evidence],
+    claim: Claim,
+    packet: &ReviewPacket,
+    mode: &str,
+) -> Result<bool> {
+    if evidence
+        .iter()
+        .flat_map(|e| &e.claims)
+        .any(|c| c.claim_id == claim.claim_id && digest_json(c) != digest_json(&claim))
+    {
+        return Err(SelectionError::Usage(
+            "claim ID already refers to different evidence".into(),
+        ));
+    }
+    let ev = evidence
+        .iter_mut()
+        .find(|e| e.source_id == claim.source_id)
+        .expect("validated source evidence");
+    let added = !ev.claims.iter().any(|c| c.claim_id == claim.claim_id);
+    if added {
+        ev.claims.push(claim.clone());
+    }
+    store.save_evidence(ev)?;
+    let excerpt = packet
+        .excerpts
+        .iter()
+        .find(|e| {
+            e.source_id == claim.source_id
+                && e.page == claim.page
+                && crate::evidence::normalize_whitespace(&e.text)
+                    .contains(&crate::evidence::normalize_whitespace(&claim.quote))
+        })
+        .expect("validated reader excerpt");
+    let key = digest_json(&(&claim.claim_id, &packet.packet_id, &ev.sha256));
+    store.put_record_once("claim_bindings", &key, &json!({"claim_id":claim.claim_id,"packet_id":packet.packet_id,"group_id":packet.group_id,"source_id":claim.source_id,"source_sha256":ev.sha256,"page":claim.page,"offset_chars":excerpt.offset_chars,"quote_sha256":digest_json(&claim.quote),"mode":mode,"bound_at":chrono::Utc::now().to_rfc3339()}))?;
+    Ok(added)
 }

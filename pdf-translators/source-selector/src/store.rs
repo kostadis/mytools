@@ -179,6 +179,18 @@ impl Store {
         )?;
         Ok(())
     }
+    /// Preserve the original audit event when the same fact is replayed.
+    pub fn put_record_once(
+        &mut self,
+        kind: &str,
+        id: &str,
+        value: &impl Serialize,
+    ) -> Result<bool> {
+        Ok(self.conn.execute(
+            "INSERT OR IGNORE INTO records VALUES (?1,?2,?3)",
+            params![kind, id, serde_json::to_string(value)?],
+        )? > 0)
+    }
     pub fn records<T: DeserializeOwned>(&self, kind: &str) -> Result<Vec<T>> {
         let mut stmt = self
             .conn

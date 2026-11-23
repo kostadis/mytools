@@ -54,6 +54,8 @@ Hashes are checked on import. Existing JSON alone does not establish baseline id
 
 Candidate discovery compares normalized filenames library-wide and uses imported product/title relationships across publishers and folders. These broad relationships can increase review work; they never prove equivalence. Baseline protection follows the work's related sources, including an equivalent external path chosen by a user. Proposed baseline representative/successor changes are reported separately, not silently queued.
 
+Presentation labels such as No Background, BW/black-and-white, Colour/Color, Digital, Interactive and Fillable also propose comparisons, including labels before retained version/date suffixes. The new presentation key retains numeric edition/version qualifiers and does not strip language, ruleset or volume labels. Relationships are attributed as `presentation_candidate`; matching labels never select a differing source or establish chronology.
+
 ## Reader, Sol, and user review
 
 ```bash
@@ -65,7 +67,9 @@ Candidate discovery compares normalized filenames library-wide and uses imported
 
 Every exported line contains a packet and a response template. Give factual reading to a simpler model. Give reasoning/judgment to Sol. The binary itself does not invoke models, so it cannot silently bill a provider or substitute a model. The operator is responsible for choosing the actual reader/judge; actor labels are an audit record, not authentication.
 
-Reader responses use the issued `packet_id` and a `claims` array. Each claim needs `claim_id`, `kind`, `value`, `source_id`, 1-based `page`, `quote`, `actor`, and `role: "reader"`. Quotations must match that packet and the extracted page; only whitespace differences are tolerated. A reader cannot select or exclude a book. Unsupported claims and conflicting reused claim IDs are refused.
+Reader responses use a `claims` array and omit packet IDs. Each claim needs `claim_id`, `kind`, `value`, `source_id`, 1-based `page`, `quote`, `actor`, and `role: "reader"`. Rust binds each claim to an issued reader excerpt using the source, page and exact supporting quote, verifies current group membership and source SHA-256, and records the packet link. Only whitespace differences are tolerated. Unsupported, stale and ambiguous citations are refused atomically. Identical re-exports of one fragment are aliases, while genuinely distinct matching fragments require a more specific quote. Empty `claims` arrays are harmless no-ops. Existing explicit-packet reader responses remain supported with their original strict checks. A reader cannot select or exclude a book, and literal quote matching does not prove that a claim's interpretation is correct.
+
+Reader exports carry source hashes on excerpts, omit mutable claim summaries to keep fragment boundaries stable across reader imports, and record issuance only after the JSONL file is published successfully. Old reader packets without excerpt hashes must be re-exported before using automatic binding. `evidence --source SOURCE_ID` includes current-source `citation_bindings`, preserving the initial mode/time when an identical claim is replayed. The binding audit remains separate from the claim and the Sol/user selection decision.
 
 After importing claims, export fresh Sol packets. A judgment response acknowledges all `packet_ids` for that group and includes the template's complete `decision`. Keep its group, membership, and evidence digests. Set a rationale and outcomes for every source. Sol exclusions need checked claim IDs in `evidence_refs`. A filename version, mtime, or text similarity alone never automatically chooses the newer book.
 
