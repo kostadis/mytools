@@ -195,3 +195,23 @@ pub fn path_bytes(path: &Path) -> Vec<u8> {
         path.as_os_str().as_encoded_bytes().to_vec()
     }
 }
+
+pub fn root_identity(root: &Path) -> Result<serde_json::Value> {
+    let meta = fs::metadata(root)?;
+    if !meta.is_dir() {
+        return Err(SelectionError::Invalid(
+            "library root is not a directory".into(),
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Ok(serde_json::json!({"device":meta.dev(),"inode":meta.ino()}))
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(
+            serde_json::json!({"created":meta.created().ok().and_then(|v|v.duration_since(UNIX_EPOCH).ok()).map(|v|v.as_nanos())}),
+        )
+    }
+}

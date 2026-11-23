@@ -76,6 +76,8 @@ fn export_packets(
         let packets = prepare_packets(group, &evidence, &sources, role.clone(), 32000)?;
         let ids: Vec<_> = packets.iter().map(|p| p.packet_id.clone()).collect();
         proposal.actor_role = role.clone();
+        proposal.packet_ids.clear();
+        proposal.evidence_digest = crate::review::evidence_digest(group, &evidence);
         proposal.actor = if role == ActorRole::User {
             "user"
         } else {
@@ -227,7 +229,7 @@ fn import(store: &mut Store, path: &Path) -> Result<ExitCode> {
                         store.save_evidence(ev)?;
                     }
                 }
-                (None, Some(decision)) => {
+                (None, Some(mut decision)) => {
                     if !matches!(first.role, ActorRole::Sol | ActorRole::User)
                         || decision.actor_role != first.role
                     {
@@ -248,6 +250,16 @@ fn import(store: &mut Store, path: &Path) -> Result<ExitCode> {
                             "decision belongs to another group".into(),
                         ));
                     }
+                    if selected.iter().any(|p| {
+                        p.membership_digest != group.membership_digest
+                            || p.evidence_digest != crate::review::evidence_digest(group, &evidence)
+                    }) || decision.evidence_digest != first.evidence_digest
+                    {
+                        return Err(SelectionError::Invalid(
+                            "stale judgment packet evidence".into(),
+                        ));
+                    }
+                    decision.packet_ids = ids.clone();
                     store.save_decision(&decision)?;
                     decisions_count += 1;
                 }

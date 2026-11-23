@@ -119,9 +119,15 @@ fn missing_root_is_an_error_and_removed_sources_disappear_from_current_inventory
     db.upsert_inventory(&scan_root(root.path()).unwrap())
         .unwrap();
     fs::remove_file(root.path().join("a.pdf")).unwrap();
+    fs::write(root.path().join("remaining.pdf"), b"remaining").unwrap();
     db.upsert_inventory(&scan_root(root.path()).unwrap())
         .unwrap();
-    assert!(db.sources().unwrap().is_empty());
+    assert_eq!(db.sources().unwrap().len(), 1);
+    assert!(
+        db.sources().unwrap()[0]
+            .relative_path
+            .ends_with("remaining.pdf")
+    );
 }
 
 #[cfg(unix)]

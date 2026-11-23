@@ -10,6 +10,67 @@ use rpg_source_select::{
 };
 use std::{fs, path::Path};
 use tempfile::tempdir;
+
+#[test]
+fn a_user_chosen_equivalent_path_does_not_bypass_confirmed_baseline_protection() {
+    let (root, _work, mut db) = library();
+    fs::copy(
+        root.path()
+            .join("Dungeon Masters Guild/Book/guild-book.pdf"),
+        root.path().join("Pub/Book/book.pdf"),
+    )
+    .unwrap();
+    let mut inv = scan_root(root.path()).unwrap();
+    inv.sources
+        .iter_mut()
+        .find(|s| s.publisher == "Dungeon Masters Guild")
+        .unwrap()
+        .baseline_established = true;
+    db.upsert_inventory(&inv).unwrap();
+    let group = build_groups(&inv.sources, &[], &mut db).unwrap().remove(0);
+    for source in inv.sources.iter().filter(|s| s.kind == SourceKind::Pdf) {
+        db.save_evidence(
+            &inspect_pdf(
+                &root.path().join(&source.relative_path),
+                source,
+                None,
+                &Reader,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    }
+    let evidence = db.evidence().unwrap();
+    let mut decision =
+        rpg_source_select::review::propose_decision(&group, &evidence, &inv.sources, None);
+    decision.actor_role = ActorRole::User;
+    decision.actor = "gm".into();
+    decision.rationale = "Choose the equivalent external path".into();
+    let external = inv
+        .sources
+        .iter()
+        .find(|s| s.publisher == "Pub")
+        .unwrap()
+        .source_id
+        .clone();
+    for outcome in &mut decision.outcomes {
+        if outcome.source_id == external {
+            outcome.status = Status::Selected;
+            outcome.representative_id = None;
+        } else {
+            outcome.status = Status::EquivalentPresentation;
+            outcome.representative_id = Some(external.clone());
+        }
+    }
+    db.save_decision(&decision).unwrap();
+    let snapshot = build_snapshot(&db).unwrap();
+    assert!(snapshot.queue.is_empty());
+    assert_eq!(snapshot.counts["baseline_reuse"], 1);
+    assert_eq!(
+        snapshot.baseline_findings[0]["representative_changed"],
+        true
+    );
+}
 struct Reader;
 impl TextExtractor for Reader {
     fn extract(&self, _: &Path, pages: &[u32]) -> Result<Vec<PageText>> {
@@ -27,14 +88,18 @@ impl TextExtractor for Reader {
 fn library() -> (tempfile::TempDir, tempfile::TempDir, Store) {
     let root = tempdir().unwrap();
     let work = tempdir().unwrap();
-    for name in ["Pub/Book/book.pdf", "Dungeon Masters Guild/Book/book.pdf"] {
+    for name in [
+        "Pub/Book/book.pdf",
+        "Dungeon Masters Guild/Book/guild-book.pdf",
+    ] {
         let p = root.path().join(name);
         fs::create_dir_all(p.parent().unwrap()).unwrap();
         common::pdf(&p, name, "D:20260101", false);
     }
     fs::write(root.path().join("bundle.zip"), b"archive").unwrap();
     fs::write(
-        root.path().join("Dungeon Masters Guild/Book/book.json"),
+        root.path()
+            .join("Dungeon Masters Guild/Book/guild-book.json"),
         b"{}",
     )
     .unwrap();

@@ -31,6 +31,10 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Commands {
+    Evidence {
+        #[arg(long)]
+        source: String,
+    },
     Scan(Scan),
     Inspect(Inspect),
     Review {
@@ -55,6 +59,8 @@ struct Scan {
 }
 #[derive(Args)]
 struct Inspect {
+    #[arg(long)]
+    retry_failed: bool,
     #[arg(long)]
     group: Option<String>,
     #[arg(long, default_value_t = 10)]
@@ -127,6 +133,16 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<ExitCode> {
             .ok_or_else(|| SelectionError::Invalid("scan first".into()))?,
     )?;
     validate_work_dir(&inventory.root, &work)?;
+    if let Commands::Evidence { source } = &cli.command {
+        let ev = ro
+            .evidence()?
+            .into_iter()
+            .find(|e| &e.source_id == source)
+            .ok_or_else(|| SelectionError::Usage("unknown inspected source ID".into()))?;
+        let src = ro.sources()?.into_iter().find(|s| &s.source_id == source);
+        print_json(&json!({"cached_evidence":true,"source":src,"evidence":ev}))?;
+        return Ok(ExitCode::SUCCESS);
+    }
     if matches!(cli.command, Commands::Status) {
         print_json(
             &json!({"root":inventory.root.to_string_lossy(),"scan_started":inventory.started,"scan_finished":inventory.finished,"sources":inventory.sources.len(),"coverage_errors":inventory.errors,"groups":ro.count_records("groups")?,"inspected_sources":ro.count_records("evidence")?,"stored_decisions":ro.count_records("decisions")?,"note":"Stored status only; export revalidates source bytes"}),

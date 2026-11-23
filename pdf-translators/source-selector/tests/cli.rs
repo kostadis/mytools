@@ -213,7 +213,12 @@ fn non_utf8_filenames_remain_lossless_in_the_json_manifest() {
     let p = root
         .path()
         .join(std::ffi::OsString::from_vec(b"book-\xff.pdf".to_vec()));
-    common::pdf(&p, "reference text", "D:20260101", false);
+    common::pdf(
+        &p,
+        "Reference text for a searchable source document.",
+        "D:20260101",
+        false,
+    );
     assert!(
         cli(
             work.path(),

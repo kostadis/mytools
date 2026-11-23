@@ -25,6 +25,8 @@ WORK=/tmp/rpg-source-selection-data
 
 `inspect` defaults to at most ten groups needing work. It fully reads competing versions and samples singleton books. Repeat to process more groups; unchanged evidence is reused. `--group GROUP_ID --pages 1-5,12` requests additional pages. `--pdftotext PATH --timeout-secs 120` selects the executable and per-range timeout. Failed PDFs are reported without preventing other inspections. An inspection run with failures exits 1, even when other books succeeded.
 
+Unchanged failures are deferred on ordinary subsequent runs so they cannot consume every bounded batch. Use `--retry-failed`, or target a particular `--group`, after fixing access or extraction problems. Sparse text and image-heavy cover labels stay pending rather than qualifying an entire scan for automatic selection. Use a persistent work directory for a full-library run; `/tmp` above is only a sample workspace.
+
 Archives remain uninspected containers. An empty text layer is an unresolved scan/OCR case, not proof that a PDF is a disposable map. A missing mount or a source change cannot replace an earlier published list with a falsely successful one.
 
 ## Existing scans and library metadata
@@ -50,6 +52,8 @@ The baseline manifest explicitly confirms source identity:
 
 Hashes are checked on import. Existing JSON alone does not establish baseline identity or Markdown completion. Artifact-bearing DM's Guild candidates stay out of the new-work queue pending confirmation; confirmed baseline sources are preserved as reuse records. No sidecars are regenerated. `.extract_skip` contents are retained as old workflow hints, not automatic Markdown exclusions.
 
+Candidate discovery compares normalized filenames library-wide and uses imported product/title relationships across publishers and folders. These broad relationships can increase review work; they never prove equivalence. Baseline protection follows the work's related sources, including an equivalent external path chosen by a user. Proposed baseline representative/successor changes are reported separately, not silently queued.
+
 ## Reader, Sol, and user review
 
 ```bash
@@ -68,6 +72,14 @@ After importing claims, export fresh Sol packets. A judgment response acknowledg
 For a human ruling, export `--role user` and edit its response template. The user can select a source, keep distinct works, identify a visual asset, or leave outcomes as `needs_review`. A user ruling with a reason is recorded as human authority; it does not assert that chronology was proved by the model. Selected sources receive work IDs if their `work_id` is null. Excluded equivalents need a selected `representative_id`; superseded revisions need a selected `successor_id`. Self references, chains, cycles, missing members, and arbitrary source IDs are refused.
 
 Packets declare inspected pages, total pages, offsets, and part counts. A long page is split without dropping text. All parts are required for a judgment. If the context itself exceeds the packet budget, the command asks for a smaller group rather than truncating it. Book text is untrusted reference data, never an instruction to tools or models.
+
+Source context and native comparison summaries are distributed across bounded parts. Packets include filesystem dates, changed-page counts/ranges, text overlap, and image/annotation differences. Repeated metadata and claim summaries are bounded with explicit truncation indicators and full-evidence references. Retrieve the original cached metadata, pages, and claims when needed:
+
+```bash
+"$SELECT" --work-dir "$WORK" evidence --source SOURCE_ID
+```
+
+That command returns stored evidence with its source hash; it does not claim that the current mount is unchanged. Judgment imports must match the issued packet set and current evidence. Packet IDs are persisted with the ruling. A current human ruling takes precedence over later model responses and remains authoritative when a reader adds facts about the same unchanged file bytes. Only another user ruling, or an actually changed source/group, can reopen that authority.
 
 Keep real packets private: they contain book excerpts and local paths. Commit only synthetic fixtures. Changed bytes, group membership, or inspected evidence reopen affected decisions. A lone `.old` copy is a possible fallback for review, not automatically selected or treated as established obsolete content.
 
@@ -88,6 +100,8 @@ The command prints paths and reconciled counts. `$WORK/exports/current.json` poi
 Unresolved, unreadable, stale, excluded, and superseded files do not enter the queue. Clear byte duplicates use one representative and retain links to the copies. Distinct works retain separate work IDs. Non-UTF-8 paths are preserved as raw bytes in JSON and omitted from TSV with an explicit report count. Older export generations remain available after an unsuccessful publication.
 
 `status` reads stored state without updating it; it does not claim that the mounted PDFs are unchanged. `export` rechecks current source fingerprints and inspected content hashes before publishing. Run `scan` and `inspect` again when sources change. This stage ends at the list; Markdown conversion and CampaignGenerator ingestion are later milestones.
+
+The selector also checks the observed root directory identity. A replaced/missing mount, an unreadable root, or a previously populated library becoming completely empty cannot overwrite prior inventory/export state. Verify the mount first. An intentional reset to a different or empty library needs a fresh work directory.
 
 Exit codes: 0 successful command (possibly with pending review), 1 operational failure, 2 usage/schema error. Always read the counts: a successful command does not mean every book is selected or every revision is resolved.
 

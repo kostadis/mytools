@@ -31,10 +31,27 @@ pub(super) fn run(store: &mut Store, args: Inspect) -> Result<ExitCode> {
     let mut worked_groups = 0;
     let mut remaining = 0;
     let mut bytes = 0u64;
+    let failures = store.keyed_records::<serde_json::Value>("inspection_errors")?;
+    let failed_before = |id: &String| {
+        sources
+            .iter()
+            .find(|s| &s.source_id == id)
+            .is_some_and(|s| {
+                failures.get(id).is_some_and(|f| {
+                    f["fingerprint"] == serde_json::to_value(&s.fingerprint).unwrap()
+                })
+            })
+    };
+    let retry = args.retry_failed || args.group.is_some();
+    let mut deferred = 0;
     for group in groups
         .iter()
         .filter(|g| args.group.as_ref().is_none_or(|id| &g.group_id == id))
     {
+        if !retry && group.source_ids.iter().all(&failed_before) {
+            deferred += group.source_ids.len();
+            continue;
+        }
         let complete = group.source_ids.iter().all(|id| {
             evidence.iter().any(|e| {
                 &e.source_id == id
@@ -52,6 +69,10 @@ pub(super) fn run(store: &mut Store, args: Inspect) -> Result<ExitCode> {
         }
         let mut group_work = false;
         for id in &group.source_ids {
+            if !retry && failed_before(id) {
+                deferred += 1;
+                continue;
+            }
             let source = sources.iter().find(|s| &s.source_id == id).unwrap();
             let result = (|| -> Result<Option<Evidence>> {
                 let path = checked_path(&inventory.root, &source.relative_path)?;
@@ -89,13 +110,9 @@ pub(super) fn run(store: &mut Store, args: Inspect) -> Result<ExitCode> {
                     }
                     fresh.pages.sort_by_key(|p| p.page);
                     fresh.claims = prior.claims.clone();
-                    if fresh
-                        .pages
-                        .iter()
-                        .any(|p| p.text.chars().any(char::is_alphabetic))
-                    {
-                        fresh.text_quality = "text".into();
-                    }
+                    fresh.text_quality =
+                        crate::evidence::classify_text_quality(&fresh.pages, fresh.page_count)
+                            .into();
                 }
                 Ok(Some(fresh))
             })();
@@ -114,7 +131,7 @@ pub(super) fn run(store: &mut Store, args: Inspect) -> Result<ExitCode> {
                     store.put_record(
                         "inspection_errors",
                         id,
-                        &format!("{}: {e}", source.relative_path.display()),
+                        &json!({"fingerprint":source.fingerprint,"error":format!("{}: {e}",source.relative_path.display()),"attempted_at":chrono::Utc::now().to_rfc3339()}),
                     )?;
                     eprintln!("inspect {}: {e}", source.relative_path.display());
                     failed += 1;
@@ -127,7 +144,7 @@ pub(super) fn run(store: &mut Store, args: Inspect) -> Result<ExitCode> {
         }
     }
     print_json(
-        &json!({"inspected_sources":inspected,"reused_sources":reused,"failed_sources":failed,"groups_remaining":remaining,"input_bytes_inspected":bytes,"model_calls":0}),
+        &json!({"inspected_sources":inspected,"reused_sources":reused,"failed_sources":failed,"deferred_failures":deferred,"groups_remaining":remaining,"input_bytes_inspected":bytes,"model_calls":0}),
     )?;
     Ok(ExitCode::from(if failed > 0 { 1 } else { 0 }))
 }

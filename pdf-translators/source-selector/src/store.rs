@@ -77,6 +77,23 @@ impl Store {
         Ok(store)
     }
     pub fn upsert_inventory(&mut self, result: &InventoryResult) -> Result<()> {
+        let observed_identity = crate::inventory::root_identity(&result.root)?;
+        if let Some(prior) = self.meta("root_identity")?
+            && prior != observed_identity
+        {
+            return Err(SelectionError::Invalid(
+                "library root identity changed; verify the mount before using fresh state".into(),
+            ));
+        }
+        if result.sources.is_empty()
+            && self
+                .meta("inventory")?
+                .is_some_and(|v| v["sources"].as_array().is_some_and(|s| !s.is_empty()))
+        {
+            return Err(SelectionError::Invalid(
+                "library became empty; prior inventory retained, verify the mount".into(),
+            ));
+        }
         let root = serde_json::to_value(result.root.to_string_lossy())?;
         let root_key = serde_json::json!(crate::inventory::path_bytes(&result.root));
         if let Some(prior) = self.meta("root_key")?
@@ -92,6 +109,7 @@ impl Store {
             tx.execute("INSERT INTO sources VALUES (?1,?2,1) ON CONFLICT(id) DO UPDATE SET body=excluded.body,active=1", params![source.source_id,serde_json::to_string(source)?])?;
         }
         for (key, value) in [
+            ("root_identity", observed_identity),
             ("root_key", root_key),
             ("root", root),
             ("inventory", serde_json::to_value(result)?),
@@ -109,7 +127,18 @@ impl Store {
             .conn
             .prepare("SELECT body FROM sources WHERE active=1 ORDER BY id")?;
         let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-        rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
+        let mut sources: Vec<Source> = rows
+            .map(|row| Ok(serde_json::from_str(&row?)?))
+            .collect::<Result<_>>()?;
+        let failures = self.keyed_records::<Value>("inspection_errors")?;
+        for source in &mut sources {
+            if let Some(failure) = failures.get(&source.source_id)
+                && failure.get("fingerprint") == Some(&serde_json::to_value(&source.fingerprint)?)
+            {
+                source.read_error = failure["error"].as_str().map(str::to_string);
+            }
+        }
+        Ok(sources)
     }
     pub fn get_cached(&self, id: &str, stage: &str, key: &str) -> Result<Option<Value>> {
         let body: Option<String> = self

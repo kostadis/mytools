@@ -131,6 +131,10 @@ pub struct Outcome {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Decision {
+    #[serde(default)]
+    pub packet_ids: Vec<String>,
+    #[serde(default)]
+    pub source_hashes: BTreeMap<String, String>,
     pub group_id: String,
     pub membership_digest: String,
     pub evidence_digest: String,

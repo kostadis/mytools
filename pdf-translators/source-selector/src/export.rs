@@ -61,6 +61,11 @@ pub fn build_snapshot(store: &Store) -> Result<SelectionSnapshot> {
             "library root unavailable; previous export retained".into(),
         ));
     }
+    if store.meta("root_identity")? != Some(crate::inventory::root_identity(&inventory.root)?) {
+        return Err(SelectionError::Invalid(
+            "library root identity is missing or changed; verify mount and rescan".into(),
+        ));
+    }
     let sources = store.sources()?;
     let groups: Vec<Group> = store.records("groups")?;
     let evidence = store.evidence()?;
@@ -70,10 +75,16 @@ pub fn build_snapshot(store: &Store) -> Result<SelectionSnapshot> {
     for kind in ["grouping_errors", "inspection_errors"] {
         errors.extend(
             store
-                .keyed_records::<String>(kind)?
+                .keyed_records::<Value>(kind)?
                 .into_iter()
                 .filter(|(id, _)| sources.iter().any(|s| &s.source_id == id))
-                .map(|(_, error)| error),
+                .map(|(_, error)| {
+                    error
+                        .as_str()
+                        .or_else(|| error["error"].as_str())
+                        .unwrap_or("unclassified inspection error")
+                        .to_string()
+                }),
         );
     }
     let mut decisions = vec![];
@@ -215,12 +226,26 @@ pub fn build_snapshot(store: &Store) -> Result<SelectionSnapshot> {
                 metadata,
                 artifact_references: source.artifacts.clone(),
             };
-            if source.baseline_established {
+            let linked: Vec<_> = sources
+                .iter()
+                .filter(|s| item.related_source_ids.contains(&s.source_id))
+                .collect();
+            let baseline_ids: Vec<_> = linked
+                .iter()
+                .filter(|s| s.baseline_established)
+                .map(|s| s.source_id.clone())
+                .collect();
+            let pending_ids: Vec<_> = linked
+                .iter()
+                .filter(|s| s.publisher == "Dungeon Masters Guild" && !s.artifacts.is_empty())
+                .map(|s| s.source_id.clone())
+                .collect();
+            if !baseline_ids.is_empty() {
                 increment(&mut counts, "baseline_reuse");
-                baseline.push(json!({"source_id":source.source_id,"work_id":item.work_id,"reason":"established baseline; preserved, not queued"}));
-            } else if source.publisher == "Dungeon Masters Guild" && !source.artifacts.is_empty() {
+                baseline.push(json!({"source_id":source.source_id,"work_id":item.work_id,"baseline_source_ids":baseline_ids,"representative_changed":!source.baseline_established,"reason":"baseline-linked work; preserve established outputs and handle representative/successor changes separately"}));
+            } else if !pending_ids.is_empty() {
                 increment(&mut counts, "baseline_pending");
-                baseline.push(json!({"source_id":source.source_id,"work_id":item.work_id,"reason":"artifact-bearing baseline candidate; confirm source identity before new conversion"}));
+                baseline.push(json!({"source_id":source.source_id,"work_id":item.work_id,"baseline_candidate_ids":pending_ids,"reason":"work includes an artifact-bearing baseline candidate; confirm identity before new conversion"}));
             } else {
                 queue.push(item.clone());
             }

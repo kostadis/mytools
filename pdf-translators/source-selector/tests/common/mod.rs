@@ -1,4 +1,19 @@
 #![allow(dead_code)]
+pub fn pages(path: &std::path::Path, count: usize) {
+    let mut doc = lopdf::Document::load(path).unwrap();
+    let first = *doc.get_pages().values().next().unwrap();
+    let page = doc.get_dictionary(first).unwrap().clone();
+    let parent = page.get(b"Parent").unwrap().as_reference().unwrap();
+    let mut kids = vec![first.into()];
+    for _ in 1..count {
+        let id = doc.add_object(page.clone());
+        kids.push(id.into());
+    }
+    let tree = doc.get_dictionary_mut(parent).unwrap();
+    tree.set("Kids", kids);
+    tree.set("Count", count as i64);
+    doc.save(path).unwrap();
+}
 use lopdf::{
     Document, Object, Stream,
     content::{Content, Operation},

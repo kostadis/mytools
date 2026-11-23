@@ -251,11 +251,7 @@ pub fn inspect_pdf(
             "source changed during inspection".into(),
         ));
     }
-    let quality = if text.iter().any(|p| p.text.chars().any(char::is_alphabetic)) {
-        "text"
-    } else {
-        "unknown"
-    };
+    let quality = classify_text_quality(&text, count);
     Ok(Evidence {
         source_id: source.source_id.clone(),
         sha256: sha,
@@ -268,6 +264,22 @@ pub fn inspect_pdf(
         text_quality: quality.into(),
         claims: vec![],
     })
+}
+
+pub fn classify_text_quality(pages: &[PageText], page_count: u32) -> &'static str {
+    if pages.is_empty() || pages.len() < (page_count.min(3) as usize) {
+        return "unknown";
+    }
+    let letters = |p: &PageText| p.text.chars().filter(|c| c.is_alphabetic()).count();
+    let total: usize = pages.iter().map(letters).sum();
+    let visual = pages.iter().any(|p| p.images != Some(0));
+    let threshold = if visual { 100 } else { 16 };
+    let informative = pages.iter().filter(|p| letters(p) >= threshold).count();
+    if total >= threshold && informative * 2 >= pages.len() {
+        "text"
+    } else {
+        "unknown"
+    }
 }
 
 pub fn normalize_whitespace(text: &str) -> String {

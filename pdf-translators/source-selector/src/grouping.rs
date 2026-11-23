@@ -108,18 +108,12 @@ pub fn build_groups(sources: &[Source], hints: &[Hint], store: &mut Store) -> Re
     let mut sets: Vec<usize> = (0..pdfs.len()).collect();
     let mut reasons = BTreeMap::<usize, BTreeSet<String>>::new();
     let mut sizes = BTreeMap::<u64, Vec<usize>>::new();
-    let mut keys = BTreeMap::<(String, String, String), Vec<usize>>::new();
+    let mut keys = BTreeMap::<String, Vec<usize>>::new();
     for (i, s) in pdfs.iter().enumerate() {
         if s.read_error.is_none() {
             sizes.entry(s.fingerprint.size).or_default().push(i);
         }
-        keys.entry((
-            normalized(&s.publisher),
-            normalized(&s.product_folder),
-            title_key(&s.relative_path),
-        ))
-        .or_default()
-        .push(i);
+        keys.entry(title_key(&s.relative_path)).or_default().push(i);
     }
     for bucket in sizes.values().filter(|v| v.len() > 1) {
         let mut hashes = BTreeMap::<String, Vec<usize>>::new();
@@ -146,6 +140,47 @@ pub fn build_groups(sources: &[Source], hints: &[Hint], store: &mut Store) -> Re
             .collect();
         if group.len() > 1 {
             join(&mut sets, &mut reasons, &group, "muse_candidate");
+        }
+    }
+    let mut relationships = BTreeMap::<String, Vec<usize>>::new();
+    for hint in hints.iter().filter(|h| h.origin == "rpglib") {
+        let members: Vec<_> = hint
+            .source_ids
+            .iter()
+            .filter_map(|id| indexes.get(id).copied())
+            .collect();
+        if let Some(product) = hint
+            .payload
+            .get("product_id")
+            .filter(|v| !v.is_null() && v.as_str() != Some(""))
+        {
+            relationships
+                .entry(format!("product:{product}"))
+                .or_default()
+                .extend(&members);
+        }
+        for field in ["display_title", "pdf_title", "title"] {
+            if let Some(title) = hint.payload[field]
+                .as_str()
+                .filter(|s| !s.trim().is_empty())
+            {
+                relationships
+                    .entry(format!("title:{}", normalized(title)))
+                    .or_default()
+                    .extend(&members);
+            }
+        }
+    }
+    for members in relationships.values_mut() {
+        members.sort();
+        members.dedup();
+        if members.len() > 1 {
+            join(
+                &mut sets,
+                &mut reasons,
+                members,
+                "rpglib_relationship_candidate",
+            );
         }
     }
     let mut components = BTreeMap::<usize, Vec<usize>>::new();
