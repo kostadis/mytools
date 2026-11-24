@@ -24,4 +24,3 @@ unicode-casefold = "0.2.0"
 
 [dev-dependencies]
 tempfile = "3"
-

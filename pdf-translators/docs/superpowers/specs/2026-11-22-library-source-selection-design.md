@@ -128,4 +128,3 @@ There may be no evidence that can establish the true publication order of some f
 ## Calls proposed by the designer
 
 Start with directly available PDFs, report archive-only coverage separately, and preserve all originals. Keep evidence and decisions in an independent manifest before integrating reliable outcomes back into rpg-lib. Prefer deterministic evidence over model calls. Leave the exact storage implementation, comparison thresholds, model IDs, review surface, and incremental implementation sequence to the implementation plan, subject to the acceptance criteria above.
-
