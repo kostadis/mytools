@@ -1,5 +1,7 @@
 # Google Drive CLI transport for searchable Markdown
 
+> **Status: shelved at the user’s request.** Retained for reference; resume only on explicit request. No CLI transport implementation was deployed. The unfinished test draft is archived privately under `source-selection-data/shelved-gdrive-cli-transport/`.
+
 ## Intent and agreed direction
 
 Use the existing, compiled and authorized Rust `gdrive-cli` as the Drive adapter for the Rust source selector. The user wants to remove as much mounted-drive dependence as possible. The destination remains searchable Markdown beside each selected PDF, plus a per-directory `current-documents.json`; 5etools remains deferred. Implement in two stages: PDF discovery/reads first, API publication second. This document covers both stages; each has an independent delivery and pilot.
