@@ -1279,3 +1279,83 @@ fn independent_works_sharing_extraction_keep_each_publications_space_reserved() 
     let log = fs::read_to_string(out.path().join("shared-extraction.log")).unwrap();
     assert_eq!(log.matches("conversion started:").count(), 1);
 }
+#[test]
+fn publisher_discovered_review_is_requeued_before_completion() {
+    use std::time::{Duration, Instant};
+    let (root, state, out) = fixture();
+    let db = Store::open_readonly(&state.path().join("selection.db")).unwrap();
+    let initial = selection::select(&db, out.path(), None).unwrap();
+    drop(db);
+    let c = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("markdown-convert")
+        .arg("--output")
+        .arg(out.path())
+        .output()
+        .unwrap();
+    assert!(c.status.success());
+    let gate = out.path().join("publisher-gate");
+    fs::write(&gate, "wait").unwrap();
+    let log = fs::File::create(out.path().join("publisher-discovered-review.log")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("--work-dir")
+        .arg(state.path())
+        .arg("markdown-continuous")
+        .arg("--output")
+        .arg(out.path())
+        .arg("--publication-gate")
+        .arg(&gate)
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(5) {
+        let s: serde_json::Value = fs::read(out.path().join("continuous-status.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        if s["publication_active"] == true && s["active"] == 0 && s["queued"] == 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let mut db = Store::open(&state.path().join("selection.db")).unwrap();
+    let group = db.records::<Group>("groups").unwrap().remove(0);
+    let d = Decision {
+        packet_ids: vec![],
+        source_hashes: Default::default(),
+        group_id: group.group_id.clone(),
+        membership_digest: group.membership_digest.clone(),
+        evidence_digest: rpg_source_select::review::evidence_digest(&group, &[]),
+        actor: "user".into(),
+        actor_role: ActorRole::User,
+        outcomes: group
+            .source_ids
+            .iter()
+            .map(|id| Outcome {
+                source_id: id.clone(),
+                status: Status::Selected,
+                work_id: Some("publisher-observed-work".into()),
+                representative_id: None,
+                successor_id: None,
+            })
+            .collect(),
+        rationale: "late fresh authority".into(),
+        evidence_refs: vec![],
+    };
+    db.put_record("decisions", &d.group_id, &d).unwrap();
+    fs::remove_file(gate).unwrap();
+    let exit = child.wait().unwrap();
+    assert!(
+        exit.success(),
+        "{}",
+        fs::read_to_string(out.path().join("publisher-discovered-review.log")).unwrap()
+    );
+    let m: serde_json::Value = serde_json::from_slice(
+        &fs::read(root.path().join("Pub/Book/current-documents.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(m["documents"][0]["work_id"], "publisher-observed-work");
+    assert_eq!(m["documents"][0]["status"], "published");
+    assert!(!initial.ready.is_empty());
+}

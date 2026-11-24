@@ -292,15 +292,19 @@ fn commit_group(
     candidates: Vec<Candidate>,
     run: &str,
     graph: &str,
+    prior: Option<&Resolution>,
 ) -> Result<Option<Resolution>> {
     let _gate = db.authority_guard()?;
     if graph_token(db)? != graph || !observations_current(&candidates, root) {
         return Ok(None);
     }
     let snapshot = selection::resolve_group(db, out, root, group, candidates, &Value::Null)?;
+    let publication = prior
+        .filter(|r| r.snapshot.snapshot_id == snapshot.snapshot_id)
+        .and_then(|r| r.publication.clone());
     let resolution = Resolution {
         snapshot,
-        publication: None,
+        publication,
     };
     ledger.put_record(
         "continuous_groups",
@@ -551,7 +555,14 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
         .jobs
         .retain(|id, _| id != "metadata" && lock(&out.join("leases"), id).is_err());
     use super::continuous_publication::{DiscoveryWorker, Outcome, PublishRequest, Publisher};
-    let publisher = Publisher::start(&work, &out, &engine, &graph, options.publication_gate)?;
+    let publisher = Publisher::start(
+        &work,
+        &out,
+        &engine,
+        &graph,
+        options.publication_gate,
+        _conversion.try_clone()?,
+    )?;
     let discovery_worker = DiscoveryWorker::start(&inv.root, &identity)?;
     let mut discovery: Option<adjacent::Discovery> = None;
     let mut publication_sequence = 0u64;
@@ -609,6 +620,9 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                             Ok(done) => {
                                 let changed = done.snapshot.snapshot_id != r.snapshot.snapshot_id;
                                 *r = *done;
+                                if r.publication.is_none() {
+                                    publication_retry.insert(id.clone());
+                                }
                                 if changed {
                                     dirty = 100;
                                 }
@@ -948,6 +962,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                             .collect(),
                         &run,
                         &graph,
+                        None,
                     )?;
                     let Some(r) = result else {
                         for id in &group.source_ids {
@@ -997,6 +1012,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                             r.snapshot.records[0].candidates.clone(),
                             &run,
                             &graph,
+                            Some(r),
                         )?;
                         let Some(current) = result else {
                             if graph_token(&db)? != graph {
@@ -1507,6 +1523,12 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
             if status.phase == "needs_regroup" {
                 break;
             }
+            if authority_token(&db)? != token {
+                reconciled = Instant::now()
+                    .checked_sub(Duration::from_secs(1))
+                    .unwrap_or(reconciled);
+                continue;
+            }
             if !capacity_blocked.is_empty() {
                 status.phase = "capacity_pending".into();
                 break;
@@ -1514,6 +1536,8 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
             if pending.is_empty()
                 && status.groups_pending == 0
                 && status.queued == 0
+                && publication_retry.is_empty()
+                && resolutions.values().all(|r| r.publication.is_some())
                 && status.manifest_discovery_complete
                 && reconciled_directories.len() == discovery.as_ref().unwrap().found.len()
             {

@@ -30,6 +30,7 @@ pub struct AdjacentReport {
 pub struct Session {
     scoped: bool,
     authority_db: Option<PathBuf>,
+    expected_authority: Option<String>,
     expected_graph: Option<String>,
     publication_fence: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     confirmed: BTreeSet<String>,
@@ -228,6 +229,7 @@ impl Session {
         Ok(Self {
             scoped,
             authority_db: None,
+            expected_authority: None,
             expected_graph: None,
             publication_fence: None,
             confirmed: BTreeSet::new(),
@@ -243,6 +245,7 @@ impl Session {
     }
     pub fn clear_authority_database(&mut self) {
         self.authority_db = None;
+        self.expected_authority = None;
         self.expected_graph = None;
         self.publication_fence = None;
     }
@@ -254,13 +257,66 @@ impl Session {
     }
     pub fn set_authority_database(&mut self, path: &Path) {
         self.authority_db = Some(path.to_path_buf());
+        self.expected_authority = None;
     }
-    fn authority_guard(&self, s: &Snapshot) -> Result<Option<File>> {
+    pub fn set_commit_authority(&mut self, path: &Path, revision: &str) {
+        self.authority_db = Some(path.into());
+        self.expected_authority = Some(revision.into());
+        self.expected_graph = None;
+    }
+    fn check_authority(
+        &self,
+        s: &Snapshot,
+    ) -> Result<Option<(crate::store::Store, Option<Value>)>> {
         let Some(path) = &self.authority_db else {
             return Ok(None);
         };
         let db = crate::store::Store::open_readonly(path)?;
+        let revision = db.meta("authority_revision")?;
+        if let Some(expected) = &self.expected_authority {
+            if digest_json(&revision) != *expected {
+                return Err(SelectionError::Invalid(
+                    "reconciliation authority changed before staging".into(),
+                ));
+            }
+        } else {
+            for record in &s.records {
+                let group = db
+                    .record::<crate::models::Group>("groups", &record.group_id)?
+                    .ok_or_else(|| {
+                        SelectionError::Invalid("group changed before publication".into())
+                    })?;
+                let fresh = super::selection::resolve_group(
+                    &db,
+                    self.path.parent().unwrap().parent().unwrap(),
+                    &self.root,
+                    &group,
+                    record.candidates.clone(),
+                    &Value::Null,
+                )?;
+                if fresh.snapshot_id != s.snapshot_id {
+                    return Err(SelectionError::Invalid(
+                        "selection authority changed before staging".into(),
+                    ));
+                }
+            }
+        }
+        Ok(Some((db, revision)))
+    }
+    fn lock_authority(
+        &self,
+        checked: &Option<(crate::store::Store, Option<Value>)>,
+        s: &Snapshot,
+    ) -> Result<Option<File>> {
+        let Some((db, revision)) = checked else {
+            return Ok(None);
+        };
         let guard = db.authority_guard()?;
+        if &db.meta("authority_revision")? != revision {
+            return Err(SelectionError::Invalid(
+                "selection authority changed before final commit".into(),
+            ));
+        }
         if self
             .publication_fence
             .as_ref()
@@ -280,32 +336,13 @@ impl Session {
             ));
         }
         for record in &s.records {
-            let group = db
-                .record::<crate::models::Group>("groups", &record.group_id)?
-                .ok_or_else(|| {
-                    SelectionError::Invalid("group changed before publication".into())
-                })?;
-            let fresh = super::selection::resolve_group(
-                &db,
-                self.path.parent().unwrap().parent().unwrap(),
-                &self.root,
-                &group,
-                record.candidates.clone(),
-                &Value::Null,
-            )?;
-            if fresh.snapshot_id != s.snapshot_id {
-                return Err(SelectionError::Invalid(
-                    "selection authority changed before manifest commit".into(),
-                ));
-            }
             for c in &record.candidates {
                 let observed = crate::inventory::checked_path(&self.root, &c.source.relative_path)
                     .and_then(|p| crate::inventory::fingerprint(&p));
-                let stable = match observed {
+                if !match observed {
                     Ok(fp) => fp == c.source.fingerprint,
                     Err(_) => c.error.is_some(),
-                };
-                if !stable {
+                } {
                     return Err(SelectionError::Invalid(
                         "competitor observation changed before manifest commit".into(),
                     ));
@@ -313,6 +350,35 @@ impl Session {
             }
         }
         Ok(Some(guard))
+    }
+    fn install_authorized(
+        &self,
+        s: &Snapshot,
+        dir: &files::Directory,
+        plan: &files::Plan,
+        expected: Option<&Value>,
+        pairs: impl Fn() -> Result<Value>,
+    ) -> Result<()> {
+        let checked = self.check_authority(s)?;
+        let proof = dir.prepare_install(plan)?;
+        let installed = (|| -> Result<()> {
+            let _authority = self.lock_authority(&checked, s)?;
+            if expected.is_some_and(|e| pairs().as_ref().ok() != Some(e)) {
+                return Err(SelectionError::Invalid(
+                    "source observations changed at authority gate".into(),
+                ));
+            }
+            dir.commit_prepared(plan, &proof)
+        })();
+        if let Err(error) = installed {
+            if let Err(recovery) = dir.abort_prepared(plan) {
+                return Err(SelectionError::Invalid(format!(
+                    "{error}; prepared files preserved for recovery: {recovery}"
+                )));
+            }
+            return Err(error);
+        }
+        dir.finish_install()
     }
     /// Reconcile an emptied/previously managed directory after bounded discovery.
     /// Current selected directories are handled by ordinary scoped publication.
@@ -729,8 +795,7 @@ impl Session {
                     };
                     self.ownership.operations.push(operation.clone());
                     self.ownership.save(&self.path)?;
-                    let _authority = self.authority_guard(s)?;
-                    dir.install(&operation.plan)?;
+                    self.install_authorized(s, &dir, &operation.plan, None, || Ok(Value::Null))?;
                 }
                 if dir
                     .hash(Path::new(r.relative_path.file_name().unwrap()))?
@@ -814,7 +879,13 @@ impl Session {
                 };
                 self.ownership.operations.push(operation.clone());
                 self.ownership.save(&self.path)?;
-                let before_verification = stamp(&dir)?;
+                let pair_stamp = || -> Result<Value> {
+                    let all = stamp(&dir)?;
+                    Ok(Value::Array(
+                        all.as_array().unwrap().iter().skip(1).cloned().collect(),
+                    ))
+                };
+                let before_verification = pair_stamp()?;
                 if verify_pairs(&dir, &mut results) {
                     dir.cleanup(&operation.plan)?;
                     self.ownership.operations.retain(|o| o != &operation);
@@ -831,18 +902,18 @@ impl Session {
                     }
                     continue;
                 }
-                if stamp(&dir)? != before_verification {
+                if pair_stamp()? != before_verification {
                     return Err(SelectionError::Invalid(
                         "source changed during final verification".into(),
                     ));
                 }
-                let _authority = self.authority_guard(s)?;
-                if stamp(&dir)? != before_verification {
-                    return Err(SelectionError::Invalid(
-                        "source observations changed at authority gate".into(),
-                    ));
-                }
-                dir.install(&operation.plan)?;
+                self.install_authorized(
+                    s,
+                    &dir,
+                    &operation.plan,
+                    Some(&before_verification),
+                    pair_stamp,
+                )?;
                 committed = true;
                 break;
             }
@@ -978,6 +1049,70 @@ mod commit_tests {
             assert!(verify_pairs(&dir, &mut entries));
             assert_ne!(entries[0]["status"], "published");
             dir.cleanup(&staged).unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod authority_io_tests {
+    use super::*;
+    #[test]
+    fn hashing_and_directory_flush_do_not_hold_the_authority_gate() {
+        for phase in ["prepare", "flush"] {
+            let root = tempfile::tempdir().unwrap();
+            let work = tempfile::tempdir().unwrap();
+            let out = tempfile::tempdir().unwrap();
+            let db = crate::store::Store::open(&work.path().join("selection.db")).unwrap();
+            drop(db.authority_guard().unwrap());
+            fs::write(root.path().join("notes.md"), b"old owned text").unwrap();
+            let identity = root_identity(root.path()).unwrap();
+            let mut dir = files::Directory::open(root.path(), &identity, Path::new("")).unwrap();
+            let plan = dir
+                .stage(
+                    Path::new("notes.md"),
+                    b"new generated text",
+                    Some(b"old owned text"),
+                )
+                .unwrap();
+            let snapshot = Snapshot {
+                schema_version: 1,
+                snapshot_id: "scope".into(),
+                policy: "test".into(),
+                created: String::new(),
+                source_root: root.path().into(),
+                root_identity: identity,
+                coverage_errors: vec![],
+                archives: 0,
+                ready: vec![],
+                records: vec![],
+            };
+            let mut session = Session::new_scoped(out.path(), &snapshot).unwrap();
+            session.set_authority_database(&work.path().join("selection.db"));
+            let (tx, rx) = std::sync::mpsc::channel();
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+            dir.pause = Some(files::TestPause {
+                phase,
+                started: tx,
+                release: barrier.clone(),
+            });
+            let task = std::thread::spawn(move || {
+                session.install_authorized(&snapshot, &dir, &plan, None, || Ok(Value::Null))
+            });
+            rx.recv_timeout(std::time::Duration::from_secs(3)).unwrap();
+            let probe = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(work.path().join("selection.db.authority.lock"))
+                .unwrap();
+            let free = probe.try_lock().is_ok();
+            drop(probe);
+            barrier.wait();
+            task.join().unwrap().unwrap();
+            assert!(free, "slow {phase} I/O held the coordinator authority lock");
+            assert_eq!(
+                fs::read(root.path().join("notes.md")).unwrap(),
+                b"new generated text"
+            );
         }
     }
 }

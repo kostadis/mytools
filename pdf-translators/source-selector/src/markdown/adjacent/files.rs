@@ -22,6 +22,18 @@ pub struct Directory {
     identity: serde_json::Value,
     file: File,
     unsupported_sync: Cell<bool>,
+    #[cfg(test)]
+    pub(super) pause: Option<TestPause>,
+}
+pub(super) struct PreparedInstall {
+    temporary: Option<serde_json::Value>,
+    backup: Option<serde_json::Value>,
+}
+#[cfg(test)]
+pub(super) struct TestPause {
+    pub phase: &'static str,
+    pub started: std::sync::mpsc::Sender<()>,
+    pub release: std::sync::Arc<std::sync::Barrier>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Plan {
@@ -96,6 +108,8 @@ impl Directory {
             relative: relative.into(),
             identity: identity.clone(),
             unsupported_sync: Cell::new(false),
+            #[cfg(test)]
+            pause: None,
         })
     }
     fn validate(&self) -> Result<()> {
@@ -277,7 +291,18 @@ impl Directory {
         }
         Ok(())
     }
+    #[cfg(test)]
+    fn pause_io(&self, phase: &str) {
+        if let Some(p) = &self.pause
+            && p.phase == phase
+        {
+            let _ = p.started.send(());
+            p.release.wait();
+        }
+    }
     fn flush(&self) -> Result<()> {
+        #[cfg(test)]
+        self.pause_io("flush");
         match self.file.sync_all() {
             Err(e)
                 if matches!(
@@ -294,30 +319,81 @@ impl Directory {
     pub fn sync_is_unsupported(&self) -> bool {
         self.unsupported_sync.get()
     }
-    pub fn install(&self, p: &Plan) -> Result<()> {
+    /// Bulk verification and rename-aside happen before the global authority gate.
+    pub(super) fn prepare_install(&self, p: &Plan) -> Result<PreparedInstall> {
+        #[cfg(test)]
+        self.pause_io("prepare");
         self.validate()?;
-        if self.hash(&p.target)? != p.before {
+        let temporary = self.stamp(&p.temporary)?;
+        if self.hash(&p.temporary)?.as_deref() != Some(p.after.as_str())
+            || self.stamp(&p.temporary)? != temporary
+        {
+            return Err(SelectionError::Invalid(
+                "staged output changed before install".into(),
+            ));
+        }
+        let before = self.stamp(&p.target)?;
+        if self.hash(&p.target)? != p.before || self.stamp(&p.target)? != before {
             return Err(SelectionError::Invalid(
                 "destination changed after staging; preserved".into(),
             ));
         }
+        let mut backup = None;
         if p.before.is_some() {
             self.rename(&p.target, &p.backup)?;
-            if self.hash(&p.backup)? != p.before {
-                let _ = self.rename(&p.backup, &p.target);
-                return Err(SelectionError::Invalid(format!(
-                    "concurrent edit preserved at {}",
-                    self.root.join(&self.relative).join(&p.backup).display()
-                )));
+            let check = (|| -> Result<_> {
+                let stamp = self.stamp(&p.backup)?;
+                if self.hash(&p.backup)? != p.before || self.stamp(&p.backup)? != stamp {
+                    return Err(SelectionError::Invalid(
+                        "displaced output changed; preserved".into(),
+                    ));
+                }
+                Ok(stamp)
+            })();
+            match check {
+                Ok(stamp) => backup = stamp,
+                Err(e) => {
+                    let _ = self.abort_prepared(p);
+                    return Err(e);
+                }
             }
         }
-        if let Err(e) = self.rename(&p.temporary, &p.target) {
-            if p.before.is_some() {
-                let _ = self.rename(&p.backup, &p.target);
-            }
-            return Err(e);
+        Ok(PreparedInstall { temporary, backup })
+    }
+    /// Only bounded identity checks and no-clobber mutation belong under authority.
+    pub(super) fn commit_prepared(&self, p: &Plan, proof: &PreparedInstall) -> Result<()> {
+        self.validate()?;
+        if self.stamp(&p.target)?.is_some()
+            || self.stamp(&p.temporary)? != proof.temporary
+            || self.stamp(&p.backup)? != proof.backup
+        {
+            return Err(SelectionError::Invalid(
+                "prepared output changed at final commit; preserved".into(),
+            ));
+        }
+        self.rename(&p.temporary, &p.target)
+    }
+    pub(super) fn abort_prepared(&self, p: &Plan) -> Result<()> {
+        self.validate()?;
+        if p.before.is_some()
+            && self.stamp(&p.target)?.is_none()
+            && self.stamp(&p.backup)?.is_some()
+        {
+            self.rename(&p.backup, &p.target)?;
         }
         self.flush()
+    }
+    pub(super) fn finish_install(&self) -> Result<()> {
+        self.flush()
+    }
+    #[cfg(test)]
+    pub fn install(&self, p: &Plan) -> Result<()> {
+        let proof = self.prepare_install(p)?;
+        if let Err(e) = self.commit_prepared(p, &proof) {
+            let _ = self.abort_prepared(p);
+            return Err(e);
+        }
+        self.finish_install()
     }
     fn remove_known(&self, name: &Path, sha: &str) -> Result<()> {
         match self.hash(name)? {
@@ -488,5 +564,33 @@ mod tests {
         std::os::unix::fs::symlink(outside.path(), root.path().join("Book")).unwrap();
         assert!(dir.install(&staged).is_err());
         assert!(!outside.path().join("notes.md").exists());
+    }
+}
+
+#[cfg(test)]
+mod prepared_tests {
+    use super::*;
+    #[test]
+    fn an_edit_to_the_displaced_file_is_restored_without_overwrite() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("notes.md"), b"old owned text").unwrap();
+        let id = crate::inventory::root_identity(root.path()).unwrap();
+        let dir = Directory::open(root.path(), &id, Path::new("")).unwrap();
+        let plan = dir
+            .stage(
+                Path::new("notes.md"),
+                b"new generated text",
+                Some(b"old owned text"),
+            )
+            .unwrap();
+        let proof = dir.prepare_install(&plan).unwrap();
+        fs::write(root.path().join(&plan.backup), b"late user edit").unwrap();
+        assert!(dir.commit_prepared(&plan, &proof).is_err());
+        dir.abort_prepared(&plan).unwrap();
+        dir.recover(&plan).unwrap();
+        assert_eq!(
+            fs::read(root.path().join("notes.md")).unwrap(),
+            b"late user edit"
+        );
     }
 }

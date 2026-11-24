@@ -62,6 +62,7 @@ impl Publisher {
         engine: &Engine,
         graph: &str,
         gate: Option<PathBuf>,
+        conversion_lease: File,
     ) -> Result<Self> {
         let (tx, rx) = mpsc::channel();
         let (results, result_rx) = mpsc::channel();
@@ -70,6 +71,7 @@ impl Publisher {
         let fence = Arc::new(AtomicBool::new(false));
         let active = Arc::new(AtomicU64::new(0));
         let owner = Worker {
+            _conversion_lease: conversion_lease,
             work: work.into(),
             output: output.into(),
             engine: engine.clone(),
@@ -158,6 +160,7 @@ impl Drop for Publisher {
     }
 }
 struct Worker {
+    _conversion_lease: File,
     work: PathBuf,
     output: PathBuf,
     engine: Engine,
@@ -231,7 +234,8 @@ impl Worker {
                     let session = session.as_mut().unwrap();
                     if request.withdrawal {
                         session.clear_authority_database();
-                        let _guard = db.authority_guard()?;
+                        let revision = crate::digest_json(&db.meta("authority_revision")?);
+                        session.set_commit_authority(db.path(), &revision);
                         resolution.publication = Some(publication::publish_snapshot(
                             &self.output,
                             &self.engine,
@@ -272,14 +276,20 @@ impl Worker {
                     if session.is_none() {
                         session = Some(adjacent::Session::new_scoped(&self.output, &r.snapshot)?);
                     }
-                    let _guard = db.authority_guard()?;
                     if crate::digest_json(&db.meta("authority_revision")?) != r.authority {
                         stale = true;
                         return Ok(0);
                     }
                     let session = session.as_mut().unwrap();
                     session.clear_authority_database();
-                    session.reconcile_discovered(&r.snapshot, &self.engine, &r.directory)
+                    session.set_commit_authority(db.path(), &r.authority);
+                    session.set_publication_fence(self.fence.clone());
+                    let result =
+                        session.reconcile_discovered(&r.snapshot, &self.engine, &r.directory);
+                    if crate::digest_json(&db.meta("authority_revision")?) != r.authority {
+                        stale = true;
+                    }
+                    result
                 })();
                 self.active.store(0, Ordering::Release);
                 if results
@@ -346,5 +356,78 @@ impl Drop for DiscoveryWorker {
         if self.handle.as_ref().is_some_and(|h| h.is_finished()) {
             let _ = self.handle.take().unwrap().join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn publisher_holds_shared_conversion_lease_without_its_coordinator() {
+        let work = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        Store::open(&work.path().join("selection.db")).unwrap();
+        let original = lock(out.path(), "conversion.lock").unwrap();
+        let engine = Engine {
+            id: "test".into(),
+            binary: "/bin/true".into(),
+            binary_sha256: String::new(),
+            provenance: Value::Null,
+            chunk_pages: 20,
+            timeout_secs: 120,
+        };
+        let gate = out.path().join("blocked");
+        fs::write(&gate, "blocked").unwrap();
+        let publisher = Publisher::start(
+            work.path(),
+            out.path(),
+            &engine,
+            "graph",
+            Some(gate.clone()),
+            original.try_clone().unwrap(),
+        )
+        .unwrap();
+        let snapshot = Snapshot {
+            schema_version: 1,
+            snapshot_id: "snapshot".into(),
+            policy: "test".into(),
+            created: String::new(),
+            source_root: root.path().into(),
+            root_identity: crate::inventory::root_identity(root.path()).unwrap(),
+            coverage_errors: vec![],
+            archives: 0,
+            ready: vec![],
+            records: vec![],
+        };
+        publisher
+            .submit(PublishRequest {
+                sequence: 1,
+                group: Group {
+                    group_id: "group".into(),
+                    source_ids: vec![],
+                    membership_digest: String::new(),
+                    reasons: vec![],
+                },
+                resolution: Resolution {
+                    snapshot,
+                    publication: None,
+                },
+                priority: 0,
+                withdrawal: false,
+            })
+            .unwrap();
+        let start = std::time::Instant::now();
+        while publisher.active_sequence() == 0 && start.elapsed() < Duration::from_secs(2) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        drop(original);
+        let overlaps = lock(out.path(), "conversion.lock").is_ok();
+        drop(publisher);
+        fs::remove_file(gate).unwrap();
+        assert!(
+            !overlaps,
+            "a batch publisher could enter while the detached source writer was alive"
+        );
     }
 }
