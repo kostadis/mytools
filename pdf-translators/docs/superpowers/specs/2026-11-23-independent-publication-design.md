@@ -1,5 +1,7 @@
 # Independent publication in the continuous Markdown pipeline
 
+Status: implemented, tested and deployed in `4ca9112`.
+
 The approved continuous pipeline is intended to keep resolution and extraction progressing while other stages perform slow I/O. The live implementation unnecessarily executes source publication on the coordinator: full PDF verification, mounted-directory writes and recovery journals block resolution and extraction capacity grants. A live sample caught the coordinator reading source PDFs through the VirtualBox mount; it had read over 26 GB while only a few hundred groups had been revisited.
 
 Keep Rust, the existing metadata process, two extraction processes, frozen whole groups, shared internal-date/review policy, semantic revisions, checkpoints and current-only output. Correct the scheduling defect without changing which files qualify.

@@ -30,17 +30,17 @@
 **Files:** Create src/markdown/continuous_publication.rs; modify src/markdown/{continuous,mod}.rs; tests/markdown_continuous.rs.
 **Interfaces:** nonblocking publication submit/poll, sequenced outcomes (published, superseded, reconciled), single worker-owned Session; discovery result via channel. Coordinator owns durable updates and reservations.
 
-- [ ] Write gated publication integration test: all six cached groups resolve and six extraction jobs finish while source publication remains blocked; coordinator stays running. Watch RED.
-- [ ] Implement worker/request coalescing, parent ingestion and durable scheduling; move discovery off the loop; reconcile through the publisher.
-- [ ] Add queued-hold and publisher-failure tests; retain short authority gates and source ownership.
-- [ ] Run full locked Rust suite, fmt, strict Clippy and release build; commit.
+- [x] Write gated publication integration test: all six cached groups resolve and six extraction jobs finish while source publication remains blocked; coordinator stays running. Watch RED.
+- [x] Implement worker/request coalescing, parent ingestion and durable scheduling; move discovery off the loop; reconcile through the publisher.
+- [x] Add queued-hold and publisher-failure tests; retain short authority gates and source ownership.
+- [x] Run full locked Rust suite, fmt, strict Clippy and release build; commit.
 
 ### Task 2: Review, pilot and controlled live replacement
 
 **Files:** Update operator/pilot documentation and private deployment records.
 **Interfaces:** Existing cached library inventory/output and source manifests.
 
-- [ ] One fresh Sol review of this change, one tested correction pass, no re-review.
-- [ ] Pilot the gated publisher and verify unchanged source PDF hashes and earlier Markdown stability.
-- [ ] Replace the live coordinator safely; confirm resolved groups advance independently while publication runs; record status and logs.
-- [ ] Commit documentation and leave the running rollout and branch in place.
+- [x] One fresh Sol review of this change, one tested correction pass, no re-review.
+- [x] Pilot the gated publisher and verify unchanged source PDF hashes and earlier Markdown stability.
+- [x] Replace the live coordinator safely; confirm resolved groups advance independently while publication runs; record status and logs.
+- [x] Commit documentation and leave the running rollout and branch in place.
