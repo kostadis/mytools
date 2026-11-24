@@ -111,3 +111,55 @@ fn fresh_inventory_cache_reuses_hash_after_record_inode_change() {
     let h = history::load(&f).unwrap();
     assert_eq!(h.verified_hashes["a"], "a".repeat(64));
 }
+fn rich_history(
+    t: &std::path::Path,
+    saved_inode: u64,
+    saved_hash: &str,
+    current_hash: Option<&str>,
+) {
+    let mut old = source("a", "a.pdf");
+    old["fingerprint"]["inode"] = json!(saved_inode);
+    record(
+        &t.join("history.db"),
+        "continuous_groups",
+        "new-one",
+        json!({"snapshot":{"policy":"internal-recency-v1","source_root":"G:/Library","ready":[{"source_id":"a","group_id":"one","relative_path":"a.pdf","sha256":saved_hash}],"records":[{"group_id":"one","status":"ready","candidates":[{"source":old,"sha256":saved_hash}]}]}}),
+    );
+    if let Some(h) = current_hash {
+        let c = rusqlite::Connection::open(t.join("old.db")).unwrap();
+        c.execute_batch("CREATE TABLE IF NOT EXISTS cache(id TEXT,stage TEXT,cache_key TEXT,body TEXT,PRIMARY KEY(id,stage,cache_key))").unwrap();
+        let fp: rpg_source_select::models::Fingerprint =
+            serde_json::from_value(source("a", "a.pdf")["fingerprint"].clone()).unwrap();
+        c.execute(
+            "INSERT INTO cache VALUES('a','hash',?1,?2)",
+            rusqlite::params![
+                rpg_source_select::digest_json(&(1, &fp)),
+                json!(h).to_string()
+            ],
+        )
+        .unwrap();
+    }
+}
+#[test]
+fn typed_equal_fingerprints_preserve_saved_hash_without_current_cache() {
+    let (t, c) = fixture();
+    rich_history(t.path(), 1, &"a".repeat(64), None);
+    let f = freeze(&serde_json::from_value(c).unwrap(), &t.path().join("run")).unwrap();
+    let h = history::load(&f).unwrap();
+    assert!(h.groups["one"].scorable);
+    assert_eq!(h.groups["one"].hashes["a"], "a".repeat(64));
+}
+#[test]
+fn changed_bytes_cannot_replace_saved_selection_hash() {
+    let (t, c) = fixture();
+    rich_history(t.path(), 2, &"a".repeat(64), Some(&"b".repeat(64)));
+    let f = freeze(&serde_json::from_value(c).unwrap(), &t.path().join("run")).unwrap();
+    let h = history::load(&f).unwrap();
+    assert!(!h.groups["one"].scorable);
+    assert_eq!(
+        h.groups["one"].selected[0].sha256.as_deref(),
+        Some("a".repeat(64).as_str())
+    );
+    assert_eq!(h.verified_hashes["a"], "b".repeat(64));
+    assert!(!h.groups["one"].hashes.contains_key("a"));
+}

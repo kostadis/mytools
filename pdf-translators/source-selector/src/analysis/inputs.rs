@@ -16,6 +16,11 @@ pub fn path_key(path: &str) -> String {
     path.replace('\\', "/").nfc().case_fold().nfc().collect()
 }
 pub fn normalize_windows_relative(path: &str, root: &str) -> Result<String> {
+    if path.chars().any(char::is_control) {
+        return Err(invalid(
+            "control character in Windows filename or ambiguous alternate-path list",
+        ));
+    }
     let p = path_key(path);
     let r = path_key(root).trim_end_matches('/').to_owned();
     let parts = p.split('/').collect::<Vec<_>>();

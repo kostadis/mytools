@@ -112,6 +112,7 @@ fn review_import_only_changes_derived_outputs() {
             .unwrap();
     let normalized = json!({"reviewId":m.review_id,"total":1,"scope_map":m.scope_map,"decisions":{},"picks":{},"notes":{},"unmarked":m.items["items"].as_array().unwrap().iter().map(|c|c["id"].clone()).collect::<Vec<_>>(),"discuss":[],"provenance":[]});
     write(&t.path().join("results.json"), &normalized);
+    let bundle = bundle_fixture(t.path(), &m, &t.path().join("results.json"));
     let before = std::fs::read(run.join("audit.json")).unwrap();
     let out = t.path().join("reviewed");
     let r = cli(&[
@@ -121,6 +122,8 @@ fn review_import_only_changes_derived_outputs() {
         run.to_str().unwrap(),
         "--manifest",
         export.join("review-manifest.json").to_str().unwrap(),
+        "--bundle",
+        bundle.to_str().unwrap(),
         "--results",
         t.path().join("results.json").to_str().unwrap(),
         "--output",
@@ -168,4 +171,106 @@ fn imported_evidence_is_visible_without_becoming_an_approval() {
         "Evidence must be preserved"
     );
     assert_eq!(audit["files"][0]["state"], "unresolved_retained");
+}
+#[test]
+fn symlink_parent_resolution_cannot_escape_output_guard() {
+    use std::os::unix::fs::symlink;
+    let t = tempfile::tempdir().unwrap();
+    let cfg: rpg_source_select::analysis::models::AnalysisConfig =
+        serde_json::from_value(setup(t.path())).unwrap();
+    let library = t.path().join("library");
+    std::fs::create_dir_all(library.join("child")).unwrap();
+    std::fs::create_dir(t.path().join("outside")).unwrap();
+    symlink(library.join("child"), t.path().join("outside/link")).unwrap();
+    let c = rusqlite::Connection::open(&cfg.old_inventory).unwrap();
+    c.execute(
+        "INSERT INTO meta VALUES('root',?1)",
+        [json!(library).to_string()],
+    )
+    .unwrap();
+    drop(c);
+    assert!(
+        rpg_source_select::analysis::workflow::guard_output(
+            &cfg,
+            &t.path().join("outside/link/../analysis")
+        )
+        .is_err()
+    );
+}
+#[test]
+fn derived_publication_is_atomic_and_retryable_after_failure() {
+    let t = tempfile::tempdir().unwrap();
+    let out = t.path().join("derived");
+    let r = rpg_source_select::analysis::workflow::publish_derived(&out, |stage| {
+        std::fs::write(stage.join("partial"), "partial")?;
+        Err(rpg_source_select::SelectionError::Invalid(
+            "injected interruption".into(),
+        ))
+    });
+    assert!(r.is_err());
+    assert!(!out.exists());
+    rpg_source_select::analysis::workflow::publish_derived(&out, |stage| {
+        std::fs::write(stage.join("complete"), "complete")?;
+        Ok(())
+    })
+    .unwrap();
+    assert!(out.join("complete").exists());
+    assert!(!out.join("partial").exists());
+}
+fn factual_fixture(stale: bool) -> (tempfile::TempDir, std::path::PathBuf) {
+    use rpg_source_select::{
+        models::{Evidence, PageText},
+        store::Store,
+    };
+    let t = tempfile::tempdir().unwrap();
+    let mut cfg = setup(t.path());
+    let mut s = source("a", "a.pdf");
+    s["fingerprint"]["sha256"] = json!("a".repeat(64));
+    insert_source(&t.path().join("old.db"), s.clone());
+    let mut store = Store::open(&t.path().join("old.db")).unwrap();
+    store
+        .save_evidence(&Evidence {
+            source_id: "a".into(),
+            sha256: if stale {
+                "b".repeat(64)
+            } else {
+                "a".repeat(64)
+            },
+            version: 1,
+            pdf_metadata: Default::default(),
+            pages: vec![PageText {
+                page: 1,
+                text: "Verified edition statement".into(),
+                images: None,
+                annotations: None,
+            }],
+            page_count: 1,
+            bookmarks: serde_json::Value::Null,
+            errors: vec![],
+            text_quality: "native".into(),
+            claims: vec![],
+        })
+        .unwrap();
+    drop(store);
+    let evidence = t.path().join("facts.json");
+    write(
+        &evidence,
+        &json!([{"source_id":"a","fingerprint":s["fingerprint"],"actor":"model","model":"reader-model","kind":"fact","method":"sampled_pages","scope":"page 1","provenance":"fixture native inspect","page":1,"quote":"Verified edition statement"}]),
+    );
+    cfg["evidence_imports"] = json!([evidence]);
+    let config = t.path().join("config.json");
+    write(&config, &cfg);
+    (t, config)
+}
+#[test]
+fn factual_import_reads_native_gzip_evidence_and_rejects_stale_hash() {
+    let (t, c) = factual_fixture(false);
+    let result = run(&c, &t.path().join("run"));
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let (t, c) = factual_fixture(true);
+    assert!(!run(&c, &t.path().join("run")).status.success());
 }

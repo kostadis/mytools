@@ -112,6 +112,14 @@ pub fn write(audit: &AuditResult, sample: &SampleManifest, out: &Path) -> Result
         let summary = json!({"schema_version":1,"policy_version":audit.policy_version,"provisional":audit.provisional,"input_receipt":audit.input_receipt,"counts":audit.counts,"proposal_states":states,"reference_evidence_methods":methods,"publisher_files":publishers,"metadata_breakdown":metadata_breakdown,"policy_comparison":comparison,"review_required":audit.relationships.iter().filter(|g|g.needs_review).count(),"sample":{"seed":sample.seed,"per_stratum":sample.per_stratum,"holdout_percent":sample.holdout_percent,"selected":sample.selected.len()},"warnings":audit.warnings,"limits":["Current availability is not a complete ownership catalog.","Candidate relationships are not counts of unique works.","Sampled and partial matches cannot prove complete equivalence.","Historical unprocessed and deferred groups measure coverage, not incorrect choices.","Publisher holdouts test transfer within this collection; unfamiliar dumps require calibration."]});
         write_json(&stage.join("summary.json"), &summary)?;
         write_json(
+            &stage.join("current-inventory-files.json"),
+            &audit.current_files,
+        )?;
+        write_json(
+            &stage.join("review-migrations.json"),
+            &audit.review_migrations,
+        )?;
+        write_json(
             &stage.join("supplemental-evidence.json"),
             &audit.supplemental_evidence,
         )?;
@@ -128,6 +136,8 @@ pub fn write(audit: &AuditResult, sample: &SampleManifest, out: &Path) -> Result
             "evidence_method",
             "outcome",
             "matched_sources",
+            "reported_sources",
+            "current_source_ids",
             "groups",
         ])?;
         for r in &audit.reference {
@@ -137,6 +147,8 @@ pub fn write(audit: &AuditResult, sample: &SampleManifest, out: &Path) -> Result
                 serde_json::to_string(&r.method)?,
                 r.outcome.clone(),
                 r.matched_sources.join("\n"),
+                r.reported_sources.join("\n"),
+                r.current_source_ids.join("\n"),
                 r.groups.join("\n"),
             ])?;
         }

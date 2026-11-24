@@ -143,6 +143,7 @@ impl ProposalState {
 pub struct PairEvidence {
     pub old_source_id: String,
     pub reference_row: usize,
+    pub reference_path: String,
     pub method: EvidenceMethod,
     pub scope: String,
     pub provenance: String,
@@ -152,6 +153,7 @@ pub struct PairEvidence {
 pub struct FileCoverage {
     pub source: Source,
     pub reference_rows: Vec<usize>,
+    pub reported_reference_rows: Vec<usize>,
     pub evidence: Vec<PairEvidence>,
     pub state: ProposalState,
     pub reason: String,
@@ -164,6 +166,8 @@ pub struct ReferenceOutcome {
     pub d_path: String,
     pub method: EvidenceMethod,
     pub matched_sources: Vec<String>,
+    pub reported_sources: Vec<String>,
+    pub current_source_ids: Vec<String>,
     pub groups: Vec<String>,
     pub outcome: String,
     pub selected_support_methods: Vec<EvidenceMethod>,
@@ -195,6 +199,9 @@ pub struct AuditResult {
     pub input_receipt: String,
     pub provisional: bool,
     pub files: Vec<FileCoverage>,
+    pub current_files: Vec<CurrentCoverage>,
+    #[serde(default)]
+    pub review_migrations: Vec<Value>,
     pub reference: Vec<ReferenceOutcome>,
     pub relationships: Vec<Relationship>,
     pub protected: Vec<ProtectedEdition>,
@@ -242,4 +249,13 @@ pub struct ReviewResults {
 
 fn policy_default() -> String {
     super::POLICY_VERSION.into()
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CurrentCoverage {
+    pub source: Source,
+    pub scope: String,
+    pub reference_rows: Vec<usize>,
+    pub size_agreement: Option<bool>,
+    pub provenance: String,
 }

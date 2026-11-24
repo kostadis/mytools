@@ -23,7 +23,7 @@ pub fn verify_manifest(m: &ReviewManifest) -> Result<()> {
     }
     Ok(())
 }
-pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
+pub fn prepare_cases(audit: &AuditResult) -> Result<ReviewManifest> {
     let files = audit
         .files
         .iter()
@@ -63,7 +63,12 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
             .collect::<Result<Vec<_>>>()?;
         let protected = candidates
             .iter()
-            .filter(|f| f.ruling.is_some())
+            .filter(|f| {
+                audit
+                    .protected
+                    .iter()
+                    .any(|p| p.bound && p.rule.source_id.as_ref() == Some(&f.source.source_id))
+            })
             .map(|f| f.source.source_id.clone())
             .collect::<BTreeSet<_>>();
         let all = g.source_ids.clone();
@@ -72,16 +77,20 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
         let mut add = |label: &str,
                        retain: Vec<String>,
                        omit: Vec<String>,
-                       classification: &str| {
+                       classification: &str,
+                       successor: Option<String>| {
             let readable = retain
                 .iter()
                 .filter(|id| files.get(id).is_some_and(|f| f.source.read_error.is_none()))
                 .cloned()
                 .collect::<Vec<_>>();
             texts.insert(label.into(),json!(format!("Retain: {}. Omit from the proposed list: {}. Readable retained candidates eligible for conversion: {}. Classification: {classification}. No PDFs are deleted and no conversion is started.",retain.iter().map(|id|files.get(id).unwrap().source.relative_path.to_string_lossy().into_owned()).collect::<Vec<_>>().join("; "),if omit.is_empty(){"none".into()}else{omit.iter().map(|id|files.get(id).unwrap().source.relative_path.to_string_lossy().into_owned()).collect::<Vec<_>>().join("; ")},readable.iter().map(|id|files.get(id).unwrap().source.relative_path.to_string_lossy().into_owned()).collect::<Vec<_>>().join("; "))));
+            if classification == "unresolved" {
+                texts.insert(label.into(),json!("Defer only the relationship decision. Preserve existing file dispositions and owner instructions exactly. Unresolved readable candidates stay eligible; verified duplicates stay collapsed. No conversion or source change is started."));
+            }
             actions.insert(
                 label.into(),
-                json!({"retain":retain,"omit":omit,"classification":classification}),
+                json!({"retain":retain,"omit":omit,"classification":classification,"successor":successor,"preserve_dispositions":classification=="unresolved"}),
             );
         };
         add(
@@ -89,6 +98,7 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
             all.clone(),
             vec![],
             "retained_editions",
+            None,
         );
         if all.len() > 1 {
             add(
@@ -96,6 +106,7 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
                 all.clone(),
                 vec![],
                 "separate_works",
+                None,
             );
             for f in candidates.iter().filter(|_| candidates.len() <= 9) {
                 if f.source.read_error.is_some() {
@@ -120,6 +131,7 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
                     keep.into_iter().collect(),
                     omit,
                     "owner_selected_supersession",
+                    Some(f.source.source_id.clone()),
                 );
             }
         }
@@ -128,14 +140,29 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
             all.clone(),
             vec![],
             "unresolved",
+            None,
         );
         let scope = json!({"scope":format!("Only the analysis proposal for relationship {} and the listed unchanged sources; no production mutations.",g.id),"relationship_id":g.id,"evidence_digest":g.evidence_digest,"candidates":candidates.iter().map(|f|json!({"source_id":f.source.source_id,"fingerprint":f.source.fingerprint})).collect::<Vec<_>>(),"picks":actions});
         let id = format!("case-{}", &digest_json(&scope)[..24]);
         let mut evidence = format!(
-            "<p>{}</p><p>Current reference rows: {:?}. Dates and filename versions alone do not establish succession. Unmatched may mean withdrawn, renamed, missing, or an obsolete draft.</p>",
+            "<p>{}</p><p>Current reference paths: {}. Dates and filename versions alone do not establish succession. Unmatched may mean withdrawn, renamed, missing, or an obsolete draft.</p>",
             escape(&g.reason),
-            g.reference_rows
+            escape(&serde_json::to_string(
+                &candidates
+                    .iter()
+                    .flat_map(|f| f.evidence.iter().map(|e| e.reference_path.clone()))
+                    .collect::<BTreeSet<_>>()
+            )?)
         );
+        for entry in audit
+            .review_migrations
+            .iter()
+            .filter(|e| e["relationship_id"].as_str() == Some(&g.id))
+        {
+            if let Some(note) = entry["note"].as_str() {
+                evidence.push_str(&format!("<p>Earlier owner note ({}; original scope preserved in the decision ledger): {}</p>",escape(entry["status"].as_str().unwrap_or("pending")),escape(note)));
+            }
+        }
         if candidates.len() > 9 {
             evidence.push_str("<p>This group has more than nine candidates. Keep all, identify separate works, or defer for focused review; leave any narrower edition-selection request as a note. Every candidate remains listed and no uncertain file is dropped.</p>");
         }
@@ -145,7 +172,12 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
                 escape(&f.source.relative_path.to_string_lossy()),
                 escape(&f.source.source_id),
                 escape(&f.reason),
-                escape(&serde_json::to_string(&f.evidence)?),
+                escape(&serde_json::to_string(
+                    &f.evidence
+                        .iter()
+                        .map(super::audit::stable_pair)
+                        .collect::<Vec<_>>()
+                )?),
                 escape(f.source.read_error.as_deref().unwrap_or("none recorded"))
             ));
         }
@@ -197,6 +229,10 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
         manifest_digest: String::new(),
     };
     m.manifest_digest = seal(&m);
+    Ok(m)
+}
+pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
+    let m = prepare_cases(audit)?;
     if out.exists() {
         let old: ReviewManifest = read_json(&out.join("review-manifest.json"))?;
         verify_manifest(&old)?;
@@ -223,9 +259,14 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
     }
     result
 }
-pub fn load_results(manifest: &ReviewManifest, normalized: &Path) -> Result<ReviewResults> {
+pub fn load_results(
+    manifest: &ReviewManifest,
+    bundle: &Path,
+    normalized: &Path,
+) -> Result<ReviewResults> {
     verify_manifest(manifest)?;
     let raw: Value = read_json(normalized)?;
+    verify_bundle_results(manifest, bundle, &raw)?;
     if raw["reviewId"].as_str() != Some(&manifest.review_id)
         || raw["scope_map"] != manifest.scope_map
         || raw["total"].as_u64()
@@ -264,10 +305,11 @@ pub fn load_results(manifest: &ReviewManifest, normalized: &Path) -> Result<Revi
             .get(&id)
             .map(|n| n.trim().to_lowercase())
             .unwrap_or_default();
-        let clear_keep = matches!(
-            note.as_str(),
-            "keep both" | "keep all" | "keep both." | "keep all."
-        );
+        let clear_keep = matches!(note.as_str(), "keep all" | "keep all.")
+            || (matches!(note.as_str(), "keep both" | "keep both.")
+                && manifest.scope_map[&id]["candidates"]
+                    .as_array()
+                    .is_some_and(|v| v.len() == 2));
         match decisions.get(&id).and_then(Value::as_str) {
             Some("approve" | "reject") => {
                 return Err(invalid("named-choice case cannot use a generic verdict"));
@@ -312,4 +354,186 @@ pub fn load_results(manifest: &ReviewManifest, normalized: &Path) -> Result<Revi
         notes,
         provenance: raw["provenance"].clone(),
     })
+}
+fn object(value: &Value) -> Result<&serde_json::Map<String, Value>> {
+    value
+        .as_object()
+        .ok_or_else(|| invalid("review object missing"))
+}
+fn ids(value: &Value) -> Result<BTreeSet<String>> {
+    let list = value
+        .as_array()
+        .ok_or_else(|| invalid("review ID list missing"))?;
+    let set = list
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| invalid("review ID must be text"))
+        })
+        .collect::<Result<BTreeSet<_>>>()?;
+    if set.len() != list.len() {
+        return Err(invalid("duplicate review IDs"));
+    }
+    Ok(set)
+}
+fn file_name(s: &str) -> Result<()> {
+    if s.is_empty() || s == "." || s == ".." || s.contains('/') || s.contains('\\') {
+        return Err(invalid("invalid review artifact path"));
+    }
+    Ok(())
+}
+fn verify_bundle_results(m: &ReviewManifest, bundle: &Path, raw: &Value) -> Result<()> {
+    let b: Value = read_json(&bundle.join("bundle.json"))?;
+    if b["schemaVersion"] != 1 || b["reviewId"].as_str() != Some(&m.review_id) {
+        return Err(invalid("bundle belongs to another review"));
+    }
+    let cards = m.items["items"]
+        .as_array()
+        .ok_or_else(|| invalid("missing original cards"))?
+        .iter()
+        .map(|c| (c["id"].as_str().unwrap_or("").to_owned(), c))
+        .collect::<BTreeMap<_, _>>();
+    let all = cards.keys().cloned().collect::<BTreeSet<_>>();
+    if b["total"].as_u64() != Some(all.len() as u64) {
+        return Err(invalid("bundle count differs from frozen review"));
+    }
+    let mut covered = BTreeSet::new();
+    let mut page_names = BTreeSet::new();
+    let mut page_ids = BTreeSet::new();
+    let mut decisions = serde_json::Map::new();
+    let mut picks = serde_json::Map::new();
+    let mut notes = serde_json::Map::new();
+    let mut expected_provenance = BTreeMap::new();
+    for page in b["pages"]
+        .as_array()
+        .ok_or_else(|| invalid("missing bundle pages"))?
+    {
+        let name = page["name"]
+            .as_str()
+            .ok_or_else(|| invalid("missing page name"))?;
+        file_name(name)?;
+        if !page_names.insert(name.to_owned()) {
+            return Err(invalid("duplicate bundle page"));
+        }
+        let folder = bundle.join(name);
+        let files = object(&page["files"])?;
+        for required in [
+            "review_items.json",
+            "review_map.json",
+            "scores.json",
+            "review.html",
+        ] {
+            let expected = files
+                .get(required)
+                .and_then(Value::as_str)
+                .ok_or_else(|| invalid("page receipt missing artifact hash"))?;
+            let actual = crate::digest(&std::fs::read(folder.join(required))?);
+            if actual != expected {
+                return Err(invalid("frozen review page artifact changed"));
+            }
+        }
+        if files.len() != 4 {
+            return Err(invalid("unexpected page artifact paths"));
+        }
+        let spec: Value = read_json(&folder.join("review_items.json"))?;
+        let scope: Value = read_json(&folder.join("review_map.json"))?;
+        let page_id = spec["reviewId"]
+            .as_str()
+            .ok_or_else(|| invalid("page review ID missing"))?;
+        if page["reviewId"].as_str() != Some(page_id) || !page_ids.insert(page_id.to_owned()) {
+            return Err(invalid("duplicate or mismatched page review ID"));
+        }
+        let mut members = BTreeSet::new();
+        for card in spec["items"]
+            .as_array()
+            .ok_or_else(|| invalid("page missing cards"))?
+        {
+            let id = card["id"]
+                .as_str()
+                .ok_or_else(|| invalid("card lacks ID"))?;
+            if cards.get(id).copied() != Some(card)
+                || scope[id] != m.scope_map[id]
+                || !covered.insert(id.to_owned())
+            {
+                return Err(invalid(
+                    "displayed question, consequences, or scope differ from frozen original",
+                ));
+            }
+            members.insert(id.to_owned());
+        }
+        if ids(&page["items"])? != members
+            || object(&scope)?.keys().cloned().collect::<BTreeSet<_>>() != members
+        {
+            return Err(invalid("page membership does not match frozen cards"));
+        }
+        let saved = folder.join("decisions.json");
+        if saved.exists() {
+            let data: Value = read_json(&saved)?;
+            if data["reviewId"].as_str() != Some(page_id) {
+                return Err(invalid("saved choices belong to another page"));
+            }
+            for (key, target) in [
+                ("decisions", &mut decisions),
+                ("picks", &mut picks),
+                ("notes", &mut notes),
+            ] {
+                if let Some(values) = data.get(key) {
+                    for (id, v) in object(values)? {
+                        if !members.contains(id) {
+                            return Err(invalid("saved page contains foreign case"));
+                        }
+                        target.insert(id.clone(), v.clone());
+                    }
+                }
+            }
+            expected_provenance.insert(name.to_owned(),serde_json::json!({"page":name,"reviewId":page_id,"savedAt":data["savedAt"],"decisions_sha256":crate::digest(&std::fs::read(&saved)?),"frozen_files":page["files"]}));
+        }
+    }
+    if covered != all {
+        return Err(invalid(
+            "bundle does not cover every frozen case exactly once",
+        ));
+    }
+    for (id, _) in &picks {
+        if decisions.get(id).and_then(Value::as_str) != Some("pick") {
+            return Err(invalid("named pick without matching verdict"));
+        }
+    }
+    if raw["decisions"] != Value::Object(decisions.clone())
+        || raw["picks"] != Value::Object(picks)
+        || raw["notes"] != Value::Object(notes)
+    {
+        return Err(invalid(
+            "normalized choices/notes differ from actual saved pages",
+        ));
+    }
+    let marked = decisions.keys().cloned().collect::<BTreeSet<_>>();
+    let unmarked = all.difference(&marked).cloned().collect::<BTreeSet<_>>();
+    let discuss = decisions
+        .iter()
+        .filter(|(_, v)| v.as_str() == Some("discuss"))
+        .map(|(id, _)| id.clone())
+        .collect::<BTreeSet<_>>();
+    if ids(&raw["unmarked"])? != unmarked || ids(&raw["discuss"])? != discuss {
+        return Err(invalid("contradictory marked, unmarked or discussion IDs"));
+    }
+    let mut supplied = BTreeMap::new();
+    for p in raw["provenance"]
+        .as_array()
+        .ok_or_else(|| invalid("missing page provenance"))?
+    {
+        let name = p["page"]
+            .as_str()
+            .ok_or_else(|| invalid("malformed page provenance"))?;
+        if supplied.insert(name.to_owned(), p.clone()).is_some() {
+            return Err(invalid("duplicate page provenance"));
+        }
+    }
+    if supplied != expected_provenance {
+        return Err(invalid(
+            "page provenance does not match saved files and frozen membership",
+        ));
+    }
+    Ok(())
 }

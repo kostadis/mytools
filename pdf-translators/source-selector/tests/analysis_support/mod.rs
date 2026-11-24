@@ -72,3 +72,56 @@ pub fn audit_fixture() -> (
     let a = rpg_source_select::analysis::audit::compare(&f, &h, &[]).unwrap();
     (t, a)
 }
+pub fn bundle_fixture(
+    root: &Path,
+    m: &rpg_source_select::analysis::models::ReviewManifest,
+    results: &Path,
+) -> std::path::PathBuf {
+    let bundle = root.join("fixture-bundle");
+    let page = bundle.join("page-001");
+    std::fs::create_dir_all(&page).unwrap();
+    let mut spec = m.items.clone();
+    spec["reviewId"] = json!("fixture-page");
+    write(&page.join("review_items.json"), &spec);
+    write(&page.join("review_map.json"), &m.scope_map);
+    write(&page.join("scores.json"), &json!([]));
+    std::fs::write(page.join("review.html"), "fixture displayed cards").unwrap();
+    let files: [&str; 4] = [
+        "review_items.json",
+        "review_map.json",
+        "scores.json",
+        "review.html",
+    ];
+    let hashes = files
+        .iter()
+        .map(|name| {
+            (
+                (*name).to_owned(),
+                json!(rpg_source_select::digest(
+                    &std::fs::read(page.join(name)).unwrap()
+                )),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    let ids = m.items["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].clone())
+        .collect::<Vec<_>>();
+    let manifest = json!({"schemaVersion":1,"reviewId":m.review_id,"total":ids.len(),"pages":[{"name":"page-001","reviewId":"fixture-page","items":ids,"files":hashes}]});
+    write(&bundle.join("bundle.json"), &manifest);
+    let mut normalized: Value = serde_json::from_slice(&std::fs::read(results).unwrap()).unwrap();
+    let saved = !normalized["decisions"].as_object().unwrap().is_empty()
+        || !normalized["notes"].as_object().unwrap().is_empty();
+    if saved {
+        let raw = json!({"schemaVersion":1,"reviewId":"fixture-page","savedAt":"2026-11-24T00:00:00Z","decisions":normalized["decisions"],"picks":normalized["picks"],"notes":normalized["notes"],"unmarked":normalized["unmarked"]});
+        write(&page.join("decisions.json"), &raw);
+        normalized["provenance"] = json!([{"page":"page-001","reviewId":"fixture-page","savedAt":"2026-11-24T00:00:00Z","decisions_sha256":rpg_source_select::digest(&std::fs::read(page.join("decisions.json")).unwrap()),"frozen_files":hashes}]);
+    } else {
+        let _ = std::fs::remove_file(page.join("decisions.json"));
+        normalized["provenance"] = json!([]);
+    }
+    write(results, &normalized);
+    bundle
+}

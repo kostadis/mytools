@@ -24,6 +24,8 @@ pub enum Command {
         #[arg(long)]
         manifest: PathBuf,
         #[arg(long)]
+        bundle: PathBuf,
+        #[arg(long)]
         results: PathBuf,
         #[arg(long)]
         output: PathBuf,
@@ -47,10 +49,11 @@ pub fn execute(command: &Command) -> Result<ExitCode> {
         Command::ReviewImport {
             run,
             manifest,
+            bundle,
             results,
             output,
         } => {
-            let a = workflow::import(run, manifest, results, output)?;
+            let a = workflow::import(run, manifest, bundle, results, output)?;
             super::print_json(&serde_json::json!({"counts":a.counts,"output":output}))?;
         }
     }

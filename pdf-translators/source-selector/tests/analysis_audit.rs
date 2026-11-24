@@ -278,3 +278,91 @@ fn sampling_accounts_for_document_roles_and_evidence_methods() {
     assert!(g.stratum.contains("handout"));
     assert!(g.stratum.contains("sampled_bytes"));
 }
+#[test]
+fn disjoint_current_inventory_is_reconciled_per_path() {
+    let (_t, mut f, h) = fixture();
+    f.current_sources = vec![serde_json::from_value(source("current", "unrelated.pdf")).unwrap()];
+    let a = audit::compare(&f, &h, &[]).unwrap();
+    assert_eq!(a.counts["csv_paths_missing_current_inventory"], 1);
+    assert_eq!(a.current_files[0].scope, "current_only");
+    assert!(a.current_files[0].reference_rows.is_empty());
+}
+#[test]
+fn candidate_added_to_reused_group_was_not_processed() {
+    let (_t, mut f, mut h) = fixture();
+    f.current_sources = vec![serde_json::from_value(source("current", "Replacement.pdf")).unwrap()];
+    h.groups.insert(
+        "g".into(),
+        HistoricalObservation {
+            group_id: "g".into(),
+            run_id: "old".into(),
+            policy: "internal-recency-v1".into(),
+            status: "ready".into(),
+            reason: "old choice".into(),
+            selected: vec![HistoricalChoice {
+                source_id: "a".into(),
+                relative_path: f.old_sources[0]
+                    .relative_path
+                    .to_string_lossy()
+                    .into_owned(),
+                sha256: None,
+                detail: json!({}),
+            }],
+            hashes: Default::default(),
+            scorable: true,
+            record: json!({"candidates":[{"source":{"source_id":"a"}}]}),
+        },
+    );
+    let a = audit::compare(&f, &h, &[]).unwrap();
+    assert_eq!(a.reference[0].outcome, "group_not_processed");
+}
+#[test]
+fn partial_and_unspecified_associations_remain_visible_without_strong_credit() {
+    let (_t, mut f, mut h) = fixture();
+    f.reference[0].method = EvidenceMethod::PartialReference;
+    let a = audit::compare(&f, &h, &[]).unwrap();
+    let b = a.files.iter().find(|x| x.source.source_id == "b").unwrap();
+    assert_eq!(b.evidence[0].method, EvidenceMethod::PartialReference);
+    assert!(b.reference_rows.is_empty());
+    f.reference[0].method = EvidenceMethod::ExactBytes;
+    f.reference[0].other_paths = vec![f.reference[0].g_path.take().unwrap()];
+    f.reference[0].g_path = Some("missing-primary.pdf".into());
+    f.current_sources = vec![serde_json::from_value(source("current", "Replacement.pdf")).unwrap()];
+    h.groups.insert(
+        "g".into(),
+        HistoricalObservation {
+            group_id: "g".into(),
+            run_id: "old".into(),
+            policy: "internal-recency-v1".into(),
+            status: "ready".into(),
+            reason: "old choice".into(),
+            selected: vec![HistoricalChoice {
+                source_id: "b".into(),
+                relative_path: "b.pdf".into(),
+                sha256: None,
+                detail: json!({}),
+            }],
+            hashes: Default::default(),
+            scorable: true,
+            record: json!({"candidates":[{"source":{"source_id":"b"}}]}),
+        },
+    );
+    let a = audit::compare(&f, &h, &[]).unwrap();
+    assert_eq!(
+        a.reference[0].outcome,
+        "reported_alternate_selection_unverified"
+    );
+}
+#[test]
+fn inserting_unrelated_csv_row_preserves_case_scope_and_display() {
+    let (t, mut f, h) = fixture();
+    let a = audit::compare(&f, &h, &[]).unwrap();
+    let before =
+        rpg_source_select::analysis::review::export_cases(&a, &t.path().join("before")).unwrap();
+    f.reference[0].row += 1;
+    let b = audit::compare(&f, &h, &[]).unwrap();
+    let after =
+        rpg_source_select::analysis::review::export_cases(&b, &t.path().join("after")).unwrap();
+    assert_eq!(before.scope_map, after.scope_map);
+    assert_eq!(before.items["items"], after.items["items"]);
+}

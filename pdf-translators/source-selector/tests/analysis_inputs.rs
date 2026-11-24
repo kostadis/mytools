@@ -104,3 +104,11 @@ fn unsupported_analysis_policy_is_rejected() {
     c["analysis_policy"] = serde_json::json!("future-policy");
     assert!(freeze(&serde_json::from_value(c).unwrap(), &t.path().join("run")).is_err());
 }
+#[test]
+fn embedded_newline_in_a_windows_filename_is_not_silently_split() {
+    assert!(normalize_windows_relative("G:/Library/name\nrest.pdf", "G:/Library").is_err());
+    let t = tempfile::tempdir().unwrap();
+    let c = setup(t.path());
+    std::fs::write(t.path().join("matches.csv"),"D file,G file,Status,Evidence,Other matching G files\nD:/Download/a.pdf,,unknown,,\"G:/Library/name\nrest.pdf\"\n").unwrap();
+    assert!(freeze(&serde_json::from_value(c).unwrap(), &t.path().join("run")).is_err());
+}

@@ -110,21 +110,32 @@ pub fn load(inputs: &FrozenInputs) -> Result<HistoricalView> {
                 .ok_or_else(|| invalid("historical record lacks group ID"))?
                 .to_owned();
             let mut hashes = BTreeMap::new();
-            for candidate in record["candidates"].as_array().into_iter().flatten() {
+            let mut record_scorable = scorable;
+            let candidates = record["candidates"].as_array().cloned().unwrap_or_default();
+            for candidate in &candidates {
                 let sid = candidate["source"]["source_id"].as_str().unwrap_or("");
-                let fresh = sources.get(&sid.to_owned()).is_some_and(|s| {
-                    digest_json(&s.fingerprint) == digest_json(&candidate["source"]["fingerprint"])
+                let saved = full_hash(&candidate["sha256"]);
+                let fresh = sources.get(&sid.to_owned()).is_some_and(|source| {
+                    serde_json::from_value::<crate::models::Fingerprint>(
+                        candidate["source"]["fingerprint"].clone(),
+                    )
+                    .is_ok_and(|fp| fp == source.fingerprint)
                 });
-                if let Some(hash) = verified_hashes.get(sid) {
-                    hashes.insert(sid.to_owned(), hash.clone());
-                } else if fresh {
-                    if let Some(hash) = candidate["sha256"].as_str() {
-                        hashes.insert(sid.to_owned(), hash.to_owned());
+                let conflict = saved
+                    .as_ref()
+                    .zip(verified_hashes.get(sid))
+                    .is_some_and(|(a, b)| a != b);
+                let proven = (fresh && !conflict)
+                    || saved
+                        .as_ref()
+                        .zip(verified_hashes.get(sid))
+                        .is_some_and(|(a, b)| a == b);
+                if proven {
+                    if let Some(hash) = saved {
+                        hashes.insert(sid.to_owned(), hash);
                     }
                 } else {
-                    warnings.push(format!(
-                        "stale or missing candidate {sid} in {id}; cached hash not reused"
-                    ));
+                    warnings.push(format!("historical content unverified for {sid} in {id}; saved hash not substituted by current bytes"));
                 }
             }
             let mut selected = vec![];
@@ -141,15 +152,39 @@ pub fn load(inputs: &FrozenInputs) -> Result<HistoricalView> {
                 {
                     continue;
                 }
-                if !sources.contains_key(&sid.to_owned()) {
-                    warnings.push(format!(
-                        "selected source {sid} is absent from current old inventory"
-                    ));
+                let candidate = candidates
+                    .iter()
+                    .find(|c| c["source"]["source_id"].as_str() == Some(sid));
+                let historical_hash = full_hash(&ready["sha256"])
+                    .or_else(|| candidate.and_then(|c| full_hash(&c["sha256"])));
+                let fresh = candidate.is_some_and(|candidate| {
+                    sources.get(&sid.to_owned()).is_some_and(|source| {
+                        serde_json::from_value::<crate::models::Fingerprint>(
+                            candidate["source"]["fingerprint"].clone(),
+                        )
+                        .is_ok_and(|fp| fp == source.fingerprint)
+                    })
+                });
+                let conflict = historical_hash
+                    .as_ref()
+                    .zip(verified_hashes.get(sid))
+                    .is_some_and(|(a, b)| a != b);
+                let proven = sources.contains_key(&sid.to_owned())
+                    && ((fresh && !conflict)
+                        || historical_hash
+                            .as_ref()
+                            .zip(verified_hashes.get(sid))
+                            .is_some_and(|(a, b)| a == b));
+                if !proven {
+                    record_scorable = false;
+                    warnings.push(format!("selected historical source {sid} is unverified against current inventory; observation unscored"));
+                } else if let Some(hash) = &historical_hash {
+                    hashes.insert(sid.to_owned(), hash.clone());
                 }
                 selected.push(HistoricalChoice {
                     source_id: sid.into(),
                     relative_path: ready["relative_path"].as_str().unwrap_or("").into(),
-                    sha256: hashes.get(sid).cloned(),
+                    sha256: historical_hash,
                     detail: ready.clone(),
                 });
             }
@@ -161,7 +196,7 @@ pub fn load(inputs: &FrozenInputs) -> Result<HistoricalView> {
                 reason: record["reason"].as_str().unwrap_or("").into(),
                 selected,
                 hashes,
-                scorable,
+                scorable: record_scorable,
                 record: record.clone(),
             };
             if ranked
@@ -194,4 +229,11 @@ pub fn load(inputs: &FrozenInputs) -> Result<HistoricalView> {
         unprocessed_groups,
         warnings,
     })
+}
+
+fn full_hash(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .filter(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+        .map(str::to_owned)
 }

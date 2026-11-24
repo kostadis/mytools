@@ -8,27 +8,22 @@ use serde_json::{Value, json};
 use std::path::{Component, Path, PathBuf};
 fn resolved(path: &Path) -> Result<PathBuf> {
     let absolute = std::path::absolute(path)?;
-    let mut clean = PathBuf::new();
+    let mut current = PathBuf::new();
     for part in absolute.components() {
         match part {
             Component::ParentDir => {
-                clean.pop();
+                current.pop();
             }
             Component::CurDir => {}
-            other => clean.push(other),
+            other => {
+                current.push(other);
+                if std::fs::symlink_metadata(&current).is_ok() {
+                    current = current.canonicalize()?;
+                }
+            }
         }
     }
-    if clean.exists() {
-        return Ok(clean.canonicalize()?);
-    }
-    let parent = clean
-        .parent()
-        .ok_or_else(|| invalid("invalid output path"))?;
-    Ok(resolved(parent)?.join(
-        clean
-            .file_name()
-            .ok_or_else(|| invalid("invalid output name"))?,
-    ))
+    Ok(current)
 }
 pub fn guard_output(config: &AnalysisConfig, out: &Path) -> Result<()> {
     let out = resolved(out)?;
@@ -61,29 +56,45 @@ pub fn guard_output(config: &AnalysisConfig, out: &Path) -> Result<()> {
     Ok(())
 }
 fn validate_imports(f: &FrozenInputs) -> Result<Vec<Value>> {
-    let ids = f
+    let sources = f
         .old_sources
         .iter()
-        .map(|s| (&s.source_id, &s.fingerprint))
+        .chain(f.current_sources.iter())
+        .map(|s| (&s.source_id, s))
         .collect::<std::collections::BTreeMap<_, _>>();
     let mut normalized = vec![];
     for batch in &f.imported_evidence {
         for item in batch
             .as_array()
-            .ok_or_else(|| invalid("evidence imports must be arrays of source-bound records"))?
+            .ok_or_else(|| invalid("evidence imports must be arrays"))?
         {
             let sid = item["source_id"].as_str().unwrap_or("");
-            let method = item["method"].as_str().unwrap_or("unknown");
-            let bound = ids.get(&sid.to_owned()).is_some_and(|fp| {
-                serde_json::to_value(fp).ok().as_ref() == Some(&item["fingerprint"])
-            });
-            if !bound
+            let source = sources
+                .get(&sid.to_owned())
+                .ok_or_else(|| invalid("unbound evidence source"))?;
+            if serde_json::to_value(&source.fingerprint)? != item["fingerprint"]
                 || item["scope"].as_str().is_none_or(str::is_empty)
                 || item["provenance"].as_str().is_none_or(str::is_empty)
             {
                 return Err(invalid(
-                    "evidence import lacks verified source binding, scope, or provenance",
+                    "evidence lacks source fingerprint, scope or provenance",
                 ));
+            }
+            let method = item["method"].as_str().unwrap_or("unknown");
+            if item["kind"] == "comparison"
+                || matches!(method, "exact_bytes" | "all_rendered_pages")
+            {
+                let other = item["other_source_id"].as_str().ok_or_else(|| {
+                    invalid("pairwise comparisons require both source identities")
+                })?;
+                let second = sources
+                    .get(&other.to_owned())
+                    .ok_or_else(|| invalid("unbound comparison counterpart"))?;
+                if serde_json::to_value(&second.fingerprint)? != item["other_fingerprint"]
+                    || other == sid
+                {
+                    return Err(invalid("comparison counterpart fingerprint invalid"));
+                }
             }
             if item["actor"] == "model" {
                 if item["model"].as_str().is_none_or(str::is_empty) {
@@ -95,34 +106,52 @@ fn validate_imports(f: &FrozenInputs) -> Result<Vec<Value>> {
                 if item["kind"] == "fact" {
                     let page = item["page"]
                         .as_u64()
+                        .and_then(|p| u32::try_from(p).ok())
                         .filter(|p| *p > 0)
-                        .ok_or_else(|| invalid("fact needs page citation"))?;
+                        .ok_or_else(|| invalid("fact needs positive page citation"))?;
                     let quote = item["quote"]
                         .as_str()
-                        .filter(|s| !s.is_empty())
+                        .filter(|s| !s.trim().is_empty())
                         .ok_or_else(|| invalid("fact needs quotation"))?;
-                    let db = Connection::open_with_flags(
-                        f.snapshot_root.join("old.db"),
-                        OpenFlags::SQLITE_OPEN_READ_ONLY,
-                    )?;
-                    let mut stmt = db.prepare("SELECT body FROM records WHERE kind='evidence'")?;
-                    let bodies = stmt.query_map([], |r| r.get::<_, String>(0))?;
-                    let mut checked = false;
-                    for b in bodies {
-                        let v: Value = serde_json::from_str(&b?)?;
-                        if v["source_id"] == sid
-                            && v["pages"].as_array().into_iter().flatten().any(|p| {
-                                p["page"].as_u64() == Some(page)
-                                    && p["text"].as_str().is_some_and(|t| t.contains(quote))
-                            })
-                        {
-                            checked = true;
-                            break;
-                        }
-                    }
-                    if !checked {
+                    let db = if f.old_sources.iter().any(|s| s.source_id == sid) {
+                        "old.db"
+                    } else {
+                        "current.db"
+                    };
+                    let store = crate::store::Store::open_readonly(&f.snapshot_root.join(db))?;
+                    let key = digest_json(&(1, &source.fingerprint));
+                    let current_hash = source.fingerprint.sha256.clone().or(store
+                        .get_cached(sid, "hash", &key)?
+                        .and_then(|v| v.as_str().map(str::to_owned)));
+                    let current_hash = if current_hash.is_some() {
+                        current_hash
+                    } else {
+                        let history = crate::store::Store::open_readonly(
+                            &f.snapshot_root.join("history.db"),
+                        )?;
+                        history
+                            .get_cached(sid, "verified_hash", &key)?
+                            .and_then(|v| v.as_str().map(str::to_owned))
+                    };
+                    let current_hash = current_hash.ok_or_else(|| {
+                        invalid("factual source has no current fingerprint-bound hash")
+                    })?;
+                    let claim = crate::models::Claim {
+                        claim_id: "analysis-import".into(),
+                        kind: "fact".into(),
+                        value: quote.into(),
+                        source_id: sid.into(),
+                        page,
+                        quote: quote.into(),
+                        actor: item["model"].as_str().unwrap().into(),
+                        role: crate::models::ActorRole::Reader,
+                    };
+                    let saved = store.group_evidence(&[sid.to_owned()])?;
+                    if !saved.iter().any(|e| {
+                        e.sha256 == current_hash && crate::evidence::validate_claim(&claim, e)
+                    }) {
                         return Err(invalid(
-                            "model quote not verified against saved page evidence",
+                            "model quote not verified against current native page evidence",
                         ));
                     }
                 }
@@ -141,11 +170,11 @@ fn validate_imports(f: &FrozenInputs) -> Result<Vec<Value>> {
             normalized.push(entry);
         }
     }
-    // Imports remain attributed evidence only: they cannot become owner approvals or automatically exclude files.
-    // Keep the immutable FrozenInputs receipt untouched; consumers use this validated view separately.
     Ok(normalized)
 }
 pub fn run(config: &AnalysisConfig, out: &Path) -> Result<AuditResult> {
+    let canonical_output = resolved(out)?;
+    let out = canonical_output.as_path();
     guard_output(config, out)?;
     eprintln!("Freezing read-only inputs; no PDFs are read.");
     let f = inputs::freeze(config, out)?;
@@ -234,12 +263,22 @@ pub fn read_audit(run: &Path) -> Result<AuditResult> {
     Ok(audit)
 }
 pub fn export(run: &Path, out: &Path) -> Result<ReviewManifest> {
+    let canonical_output = resolved(out)?;
+    let out = canonical_output.as_path();
     let f: FrozenInputs = read_json(&run.join("inputs.json"))?;
     guard_output(&f.config, out)?;
     inputs::verify_snapshots(&f, &f.snapshot_root)?;
     review::export_cases(&read_audit(run)?, out)
 }
-pub fn import(run: &Path, manifest: &Path, results: &Path, out: &Path) -> Result<AuditResult> {
+pub fn import(
+    run: &Path,
+    manifest: &Path,
+    bundle: &Path,
+    results: &Path,
+    out: &Path,
+) -> Result<AuditResult> {
+    let canonical_output = resolved(out)?;
+    let out = canonical_output.as_path();
     if out.exists() {
         return Err(invalid("review import needs a fresh derived run directory"));
     }
@@ -253,18 +292,42 @@ pub fn import(run: &Path, manifest: &Path, results: &Path, out: &Path) -> Result
     }
     let audit = read_audit(run)?;
     let m: ReviewManifest = read_json(manifest)?;
-    let rulings = review::load_results(&m, results)?;
+    let rulings = review::load_results(&m, bundle, results)?;
     let next = audit::with_rulings(&audit, &rulings)?;
     let sample: SampleManifest = read_json(&run.join("sample.json"))?;
-    std::fs::create_dir_all(out)?;
-    write_json(&out.join("inputs.json"), &f)?;
-    write_json(&out.join("audit.json"), &next)?;
-    write_json(
-        &out.join("audit-receipt.json"),
-        &json!({"audit_digest":digest_json(&next),"parent":run_abs}),
-    )?;
-    write_json(&out.join("sample.json"), &sample)?;
-    write_json(&out.join("review-results.json"), &rulings)?;
-    report::write(&next, &sample, &out.join("report"))?;
+    publish_derived(out, |stage| {
+        write_json(&stage.join("inputs.json"), &f)?;
+        write_json(&stage.join("audit.json"), &next)?;
+        write_json(&stage.join("sample.json"), &sample)?;
+        write_json(&stage.join("review-results.json"), &rulings)?;
+        report::write(&next, &sample, &stage.join("report"))?;
+        write_json(
+            &stage.join("audit-receipt.json"),
+            &json!({"audit_digest":digest_json(&next),"parent":run_abs}),
+        )?;
+        Ok(())
+    })?;
     Ok(next)
+}
+pub fn publish_derived(out: &Path, build: impl FnOnce(&Path) -> Result<()>) -> Result<()> {
+    if out.exists() {
+        return Err(invalid("derived output already exists"));
+    }
+    let parent = out
+        .parent()
+        .ok_or_else(|| invalid("derived output needs parent"))?;
+    std::fs::create_dir_all(parent)?;
+    let stage = super::new_stage(parent, "analysis-import")?;
+    let result = (|| {
+        build(&stage)?;
+        if out.exists() {
+            return Err(invalid("derived output appeared during publication"));
+        }
+        std::fs::rename(&stage, out)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_dir_all(stage);
+    }
+    result
 }

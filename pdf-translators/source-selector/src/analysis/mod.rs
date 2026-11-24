@@ -1,5 +1,5 @@
 //! Independent, read-only selection analysis; never applies production decisions.
-pub const POLICY_VERSION: &str = "library-selection-analysis-v1";
+pub const POLICY_VERSION: &str = "library-selection-analysis-v2";
 pub mod audit;
 pub mod history;
 pub mod inputs;
@@ -30,4 +30,13 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     file.sync_all()?;
     std::fs::rename(&tmp, path)?;
     Ok(())
+}
+pub(crate) fn new_stage(parent: &Path, kind: &str) -> Result<std::path::PathBuf> {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| invalid("clock predates epoch"))?
+        .as_nanos();
+    let stage = parent.join(format!(".{kind}-{}-{nonce}", std::process::id()));
+    std::fs::create_dir(&stage)?;
+    Ok(stage)
 }
