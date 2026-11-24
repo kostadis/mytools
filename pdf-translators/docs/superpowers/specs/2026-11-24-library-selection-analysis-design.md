@@ -1,6 +1,6 @@
 # PDF library selection analysis, with Clef review
 
-Status: proposed design for owner review. This document authorizes no production selection changes or new conversion run.
+Status: approved by the owner on 2026-11-24. This document authorizes no production selection changes or new conversion run.
 
 ## Intent
 
