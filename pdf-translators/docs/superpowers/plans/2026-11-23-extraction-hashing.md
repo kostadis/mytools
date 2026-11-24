@@ -23,7 +23,7 @@
 - [x] Add a Linux regression using a large PDF and extractor wrapper reporting worker read counts; assert no full-file read between page ranges. Watch it fail.
 - [x] Update worker staging to avoid the original pre-read when copying; replace range hashes with fingerprint comparisons, retaining final hash.
 - [x] Run conversion tests and whole cargo suite, fmt, clippy, release build. Existing mutation/resume/source-change tests must pass.
-- [ ] Commit, obtain one fresh Sol review, address important findings once, verify, then restart continuous rollout on an immutable binary preserving caches and publication records. Record deployment evidence.
+- [x] Commit, obtain one fresh Sol review, address important findings once, verify, then restart continuous rollout on an immutable binary preserving caches and publication records. Record deployment evidence.
 
 ## Verification and final review
 
@@ -31,3 +31,4 @@
 - One fresh Sol review found that the existing-cache fingerprint must be captured before cached SHA verification and carried through the live-original check into extraction. Fixed in one pass. A Linux file-lease regression deterministically pauses the original read, edits the cached PDF without changing its size, and asserts that no unverified range is checkpointed. RED (unverified content checkpointed) → GREEN.
 - Final whole suite: 157 passed, 2 optional tests ignored. All 16 conversion tests passed. fmt, diff-check, clippy with warnings denied and release build passed.
 - Runtime audit found previous controller absent, without a terminal log entry; no cause established. All rollout locks free. Existing state retained: 820 staged PDFs, 3,407 page ranges, 370 ownership receipts. Resume through a user service so the process is independent of the chat terminal; no automatic retry policy added.
+- Deployed code commit `18c7204`, immutable binary `continuous-selector-18c7204`, SHA-256 `9b2290cc2dc0ae0e8a3bce7c01358baa156ad120f1b7a1edf637f25a6354f441`. User service `rpg-markdown-continuous.service` active, reusing page checkpoints. Private evidence: `source-selection-data/full-library-markdown/reduced-hashing-transition.json` and `deployment.json`. The optional Poppler test also passed.
