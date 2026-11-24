@@ -1,5 +1,6 @@
 use super::{inputs::path_key, models::*};
 use crate::{Result, digest_json};
+use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 pub fn compare(
     inputs: &FrozenInputs,
@@ -363,4 +364,129 @@ fn make_relationship(
         }
         .into(),
     }
+}
+pub fn with_rulings(audit: &AuditResult, results: &ReviewResults) -> Result<AuditResult> {
+    super::review::verify_manifest(&results.manifest)?;
+    if results.manifest.audit_digest != digest_json(audit) {
+        return Err(super::invalid(
+            "audit changed since review; rebind affected cases in a new bundle",
+        ));
+    }
+    let mut next = audit.clone();
+    next.review_notes.extend(results.notes.clone());
+    let mut applied: BTreeMap<String, (bool, String, String)> = BTreeMap::new();
+    for (case, pick) in &results.picks {
+        let scope = &results.manifest.scope_map[case];
+        let relation = scope["relationship_id"]
+            .as_str()
+            .ok_or_else(|| super::invalid("review scope missing relationship"))?;
+        let current = next
+            .relationships
+            .iter()
+            .find(|g| g.id == relation)
+            .ok_or_else(|| super::invalid("relationship removed since review"))?;
+        if scope["evidence_digest"].as_str() != Some(&current.evidence_digest) {
+            return Err(super::invalid("relationship evidence changed since review"));
+        }
+        let action = &scope["picks"][pick];
+        let class = action["classification"]
+            .as_str()
+            .ok_or_else(|| super::invalid("missing named action"))?
+            .to_owned();
+        for (key, retain) in [("retain", true), ("omit", false)] {
+            for id in action[key]
+                .as_array()
+                .ok_or_else(|| super::invalid("missing exact outcome list"))?
+            {
+                let id = id
+                    .as_str()
+                    .ok_or_else(|| super::invalid("invalid source ID in action"))?;
+                if !current.source_ids.iter().any(|s| s == id) {
+                    return Err(super::invalid("action outside relationship scope"));
+                }
+                if applied
+                    .get(id)
+                    .is_some_and(|(previous, _, _)| *previous != retain)
+                {
+                    return Err(super::invalid(
+                        "conflicting rulings for overlapping candidate groups",
+                    ));
+                }
+                applied.insert(id.into(), (retain, case.clone(), class.clone()));
+            }
+        }
+        let g = next
+            .relationships
+            .iter_mut()
+            .find(|g| g.id == relation)
+            .unwrap();
+        g.classification = class.clone();
+        g.needs_review = class == "unresolved";
+    }
+    for f in &mut next.files {
+        if let Some((retain, case, class)) = applied.get(&f.source.source_id) {
+            if !retain
+                && (f.state == ProposalState::ExplicitlyRetained
+                    || audit
+                        .protected
+                        .iter()
+                        .any(|p| p.bound && p.rule.source_id.as_ref() == Some(&f.source.source_id)))
+            {
+                return Err(super::invalid(
+                    "ruling conflicts with explicit owner retention",
+                ));
+            }
+            if *retain {
+                f.state = if f.source.read_error.is_some() {
+                    ProposalState::UnreadableRetained
+                } else if class == "unresolved" {
+                    ProposalState::UnresolvedRetained
+                } else {
+                    ProposalState::ExplicitlyRetained
+                };
+                f.representative = None;
+            } else {
+                let scope = &results.manifest.scope_map[case];
+                let pick = &results.picks[case];
+                let retain = scope["picks"][pick]["retain"].as_array().unwrap();
+                let representative = retain
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .find(|id| next_source_readable(audit, id))
+                    .ok_or_else(|| {
+                        super::invalid("exclusion has no readable retained successor")
+                    })?;
+                f.state = ProposalState::Superseded;
+                f.representative = Some(representative.into());
+            }
+            f.ruling = Some(case.clone());
+            f.reason =
+                format!("Owner Clef choice: {class}; exact scope recorded in review results");
+        }
+    }
+    // A retained representative may not itself be omitted by a different group ruling.
+    for f in &next.files {
+        if let Some(rep) = &f.representative {
+            if !next
+                .files
+                .iter()
+                .any(|p| &p.source.source_id == rep && p.state.retained())
+            {
+                return Err(super::invalid(
+                    "excluded source has no retained representative",
+                ));
+            }
+        }
+    }
+    next.counts
+        .insert("review_rulings_applied".into(), results.picks.len());
+    next.counts
+        .insert("review_cases_unresolved".into(), results.unresolved.len());
+    Ok(next)
+}
+fn next_source_readable(audit: &AuditResult, id: &str) -> bool {
+    audit
+        .files
+        .iter()
+        .any(|f| f.source.source_id == id && f.source.read_error.is_none())
 }

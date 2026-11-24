@@ -224,3 +224,11 @@ pub struct ReviewManifest {
     pub scope_map: Value,
     pub manifest_digest: String,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReviewResults {
+    pub manifest: ReviewManifest,
+    pub picks: BTreeMap<String, String>,
+    pub unresolved: Vec<String>,
+    pub notes: BTreeMap<String, String>,
+    pub provenance: Value,
+}

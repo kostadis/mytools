@@ -185,3 +185,93 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
     }
     result
 }
+pub fn load_results(manifest: &ReviewManifest, normalized: &Path) -> Result<ReviewResults> {
+    verify_manifest(manifest)?;
+    let raw: Value = read_json(normalized)?;
+    if raw["reviewId"].as_str() != Some(&manifest.review_id)
+        || raw["scope_map"] != manifest.scope_map
+        || raw["total"].as_u64()
+            != Some(
+                manifest.items["items"]
+                    .as_array()
+                    .ok_or_else(|| invalid("missing review items"))?
+                    .len() as u64,
+            )
+    {
+        return Err(invalid("foreign or stale review results"));
+    }
+    let ids = manifest
+        .scope_map
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let decisions = raw["decisions"]
+        .as_object()
+        .ok_or_else(|| invalid("missing decisions object"))?;
+    let raw_picks = raw["picks"]
+        .as_object()
+        .ok_or_else(|| invalid("missing named picks"))?;
+    let notes: BTreeMap<String, String> = serde_json::from_value(raw["notes"].clone())?;
+    for id in decisions.keys().chain(raw_picks.keys()).chain(notes.keys()) {
+        if !ids.contains(id) {
+            return Err(invalid("unknown item in review results"));
+        }
+    }
+    let mut picks = BTreeMap::new();
+    let mut unresolved = vec![];
+    for id in ids {
+        let note = notes
+            .get(&id)
+            .map(|n| n.trim().to_lowercase())
+            .unwrap_or_default();
+        let clear_keep = matches!(
+            note.as_str(),
+            "keep both" | "keep all" | "keep both." | "keep all."
+        );
+        match decisions.get(&id).and_then(Value::as_str) {
+            Some("approve" | "reject") => {
+                return Err(invalid("named-choice case cannot use a generic verdict"));
+            }
+            Some("pick") => {
+                let pick = raw_picks
+                    .get(&id)
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| invalid("pick lacks named outcome"))?;
+                if !manifest.scope_map[&id]["picks"]
+                    .as_object()
+                    .unwrap()
+                    .contains_key(pick)
+                {
+                    return Err(invalid("unoffered named outcome"));
+                }
+                if note.is_empty() {
+                    picks.insert(id, pick.into());
+                } else if clear_keep {
+                    picks.insert(id, "Keep all listed editions".into());
+                } else {
+                    unresolved.push(id);
+                }
+            }
+            Some("discuss") | None => {
+                if clear_keep {
+                    picks.insert(id, "Keep all listed editions".into());
+                } else {
+                    unresolved.push(id);
+                }
+            }
+            _ => return Err(invalid("unsupported review verdict")),
+        }
+    }
+    if !picks.is_empty() && raw["provenance"].as_array().is_none_or(Vec::is_empty) {
+        return Err(invalid("marked rulings require validated page provenance"));
+    }
+    Ok(ReviewResults {
+        manifest: manifest.clone(),
+        picks,
+        unresolved,
+        notes,
+        provenance: raw["provenance"].clone(),
+    })
+}

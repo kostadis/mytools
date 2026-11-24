@@ -198,3 +198,28 @@ fn exact_duplicates_have_retained_representatives() {
     assert!(representative.state.retained());
     assert!(!duplicate.state.eligible());
 }
+#[test]
+fn report_separates_files_groups_relationships_and_coverage() {
+    let (t, f, h) = fixture();
+    let a = audit::compare(&f, &h, &[]).unwrap();
+    let sample = sampling::select(&a, &f.config).unwrap();
+    let out = t.path().join("report");
+    rpg_source_select::analysis::report::write(&a, &sample, &out).unwrap();
+    let s: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join("summary.json")).unwrap()).unwrap();
+    assert_eq!(s["counts"]["old_pdf_files"], 3);
+    assert_eq!(s["counts"]["reference_pdf_rows"], 1);
+    assert_eq!(s["provisional"], true);
+    assert!(s.get("accuracy").is_none());
+    for name in [
+        "report.md",
+        "reference-rows.csv",
+        "old-library-files.csv",
+        "relationships.jsonl",
+        "proposed-conversion-list.json",
+        "protected-editions.json",
+        "sample-manifest.json",
+    ] {
+        assert!(out.join(name).exists(), "{name}");
+    }
+}

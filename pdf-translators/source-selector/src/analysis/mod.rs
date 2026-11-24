@@ -3,6 +3,7 @@ pub mod audit;
 pub mod history;
 pub mod inputs;
 pub mod models;
+pub mod report;
 pub mod review;
 pub mod sampling;
 use crate::{Result, SelectionError};

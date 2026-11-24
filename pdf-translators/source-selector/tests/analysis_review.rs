@@ -84,3 +84,60 @@ fn installed_builder_accepts_export_and_paginates() {
         assert!(page["items"].as_array().unwrap().len() <= 100);
     }
 }
+fn normalized(m: &ReviewManifest) -> serde_json::Value {
+    serde_json::json!({"reviewId":m.review_id,"total":m.items["items"].as_array().unwrap().len(),"scope_map":m.scope_map,"decisions":{},"picks":{},"notes":{},"unmarked":m.items["items"].as_array().unwrap().iter().map(|c|c["id"].clone()).collect::<Vec<_>>(),"discuss":[],"provenance":[]})
+}
+#[test]
+fn foreign_or_stale_picks_are_rejected() {
+    let (t, a) = audit_fixture();
+    let m = review::export_cases(&a, &t.path().join("review")).unwrap();
+    let p = t.path().join("results.json");
+    let mut n = normalized(&m);
+    n["reviewId"] = serde_json::json!("foreign");
+    write(&p, &n);
+    assert!(review::load_results(&m, &p).is_err());
+    let mut n = normalized(&m);
+    let id = m.items["items"][0]["id"].as_str().unwrap();
+    n["scope_map"][id]["evidence_digest"] = serde_json::json!("stale");
+    write(&p, &n);
+    assert!(review::load_results(&m, &p).is_err());
+    let mut n = normalized(&m);
+    n["decisions"][id] = serde_json::json!("approve");
+    write(&p, &n);
+    assert!(review::load_results(&m, &p).is_err());
+}
+#[test]
+fn discuss_unmarked_and_notes_preserve_uncertainty() {
+    let (t, a) = audit_fixture();
+    let m = review::export_cases(&a, &t.path().join("review")).unwrap();
+    let p = t.path().join("results.json");
+    let mut n = normalized(&m);
+    let id = m.items["items"][0]["id"].as_str().unwrap();
+    n["notes"][id] = serde_json::json!("  Need to inspect the maps.\n");
+    write(&p, &n);
+    let results = review::load_results(&m, &p).unwrap();
+    let next = rpg_source_select::analysis::audit::with_rulings(&a, &results).unwrap();
+    assert_eq!(next.review_notes[id], "  Need to inspect the maps.\n");
+    assert!(next.files.iter().all(|f| f.state.retained()));
+    assert!(next.relationships[0].needs_review);
+}
+#[test]
+fn named_ruling_applies_only_to_unchanged_analysis() {
+    let (t, a) = audit_fixture();
+    let m = review::export_cases(&a, &t.path().join("review")).unwrap();
+    let p = t.path().join("results.json");
+    let mut n = normalized(&m);
+    let id = m.items["items"][0]["id"].as_str().unwrap();
+    n["decisions"][id] = serde_json::json!("pick");
+    n["picks"][id] = serde_json::json!("Keep all listed editions");
+    n["unmarked"] = serde_json::json!([]);
+    n["provenance"] = serde_json::json!([{"page":"page-001","reviewId":"fixture-page","savedAt":"fixture","decisions_sha256":"fixture","frozen_files":{}}]);
+    write(&p, &n);
+    let results = review::load_results(&m, &p).unwrap();
+    let next = rpg_source_select::analysis::audit::with_rulings(&a, &results).unwrap();
+    assert!(next.files.iter().all(|f| f.ruling.is_some()));
+    assert!(!next.relationships[0].needs_review);
+    let mut changed = a.clone();
+    changed.files[0].source.fingerprint.size += 1;
+    assert!(rpg_source_select::analysis::audit::with_rulings(&changed, &results).is_err());
+}
