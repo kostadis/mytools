@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Pages"
+  short_description: "Exact-text review pages with saved decisions"
+  default_prompt: "Use $review-pages to build and serve this workflow's review questions, then return validated saved decisions to its apply procedure."

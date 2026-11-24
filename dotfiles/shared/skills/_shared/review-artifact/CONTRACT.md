@@ -27,10 +27,12 @@ which ran a real `/staged-consistency` pass this way. Do not reauthor it.
 ## The loop
 
 1. **Ask first.** The GM chooses *artifact (batch)* or *shell (one at a time)*
-   with an explicit `AskUserQuestion` — at the start of the run in
+   with an explicit chat choice — at the start of the run in
    `staged-consistency`, `session-summary-consistency` and `vtt-spell-pass`, and
-   once the queue is long enough to need it in `voice-smooth`. Never default to
-   the page. Shell is the existing behaviour and must stay intact.
+   once the queue is long enough to need it in `voice-smooth`. Reuse an explicit
+   routing choice already established for this conversation/run; do not re-ask
+   at each chapter. Shell remains available when chosen. Use the owning skill's
+   question-count threshold and any explicit user override.
 2. **Apply what needs no ruling.** Only genuine judgement calls become items.
    Everything mechanical is applied and named in the `footer`.
 3. **Build and publish.** Name the files per **File names** below.
@@ -83,13 +85,16 @@ convention, and it is the caller's to keep.
 
 - **A run that publishes one page** uses the plain names: `review_items.json`,
   `review.html`, `decisions.json`. `session-summary-consistency` and
-  `vtt-spell-pass` are one-page runs.
+  `vtt-spell-pass` may use this shape when the complete queue fits one page.
 - **A run that publishes more than one page** — `staged-consistency`, one page
   per stage; `voice-smooth`, one page per review round — suffixes the items file and the
   decisions file with that page's own key: `review_items_stage2.json`,
   `decisions_stage2.json`. **The `--out` html stays on one path for the whole
   run:** the artifact URL follows the `file_path`, so renaming it per page would
-  claim a new URL and give up the single page the pattern is built on.
+  claim a new URL and give up the single-page artifact pattern. A paginated local
+  server instead keeps a stable index/capability, with one immutable items file,
+  review ID and decisions destination per numbered page; do not overwrite an
+  earlier page to simulate pagination.
 
 **Why the items file is the one that must not collide.** A multi-page run
 republishes over its own page, so the wording of an earlier page — the question
@@ -126,8 +131,10 @@ test holds it to that.
   `reviewId` and a `savedAt` stamped by the GM's own gesture. `picks` is added
   when the page has any pick card, and `extraVerdicts` (the declared keys) when
   it has any extra verdict.
-- The page keeps no browser storage: a reload loses unsaved marks and a
-  re-review never opens with an earlier run's marks ticked.
+- The page keeps no browser storage: a reload loses unsaved marks. Fresh queues
+  start unmarked. A hosted return to the exact same frozen queue may hydrate
+  its validated saved decisions, notes and picks; this restores GM state, not
+  predictions or earlier-run approvals. See [SERVING.md](SERVING.md).
 - The default `reviewId` is the slugged title, capped at 128 (reproducible, so
   `read_decisions.py --in --items` can check it). The artifact default also
   appends the build time. A `reviewId` is 1-128 chars of `[A-Za-z0-9_.:@-]`; to
@@ -225,6 +232,15 @@ yours to use. That also means any literal `<` or `&` in quoted transcript text
 must be escaped by the caller. The builder refuses to emit a page containing
 an unescaped `</script`.
 
+### Audio evidence on a card
+
+For a ruling about uncertain recorded wording, prefer a short original-audio
+player beside the transcript readings and exact proposed edit when matching
+audio is available (GM preference, Hillsfar chapter 38, 2026-11-17). Follow
+[AUDIO.md](AUDIO.md); `attach_audio.py` adds a self-contained player to `ev`
+and source/clip hashes and times to `audio_evidence`. The existing builder,
+Tailscale save transport, and verdict semantics are unchanged.
+
 ### Card standard (GM, 2026-10-19; mytools #85)
 
 The GM is dyslexic and rules on dozens of cards per stage. Every card a skill
@@ -311,6 +327,11 @@ exits 2 rather than being passed through.
 ## Rules
 
 - **Never poll.** Publish, hand over the link, stop — see **Pickup**.
+- Preserve every checked note/aside when combining chapter queues. A collapsed,
+  readable evidence section is appropriate; silently dropping non-card findings
+  is not. Notes remain notes unless explicitly presented and ruled as decisions.
+- A named-choice card needs the offered pick. Generic approval and model scores
+  do not select a name; retain explicit pick→edit mapping and layer scope.
 - **Never auto-apply something you put on the page.** Anything that reaches
   the page is the GM's call by construction.
 - **Shell mode is untouched.** Artifact mode is strictly additive.
@@ -390,8 +411,10 @@ Tests: `python3 -m pytest tests/` in this directory.
 python $KIT/serve_review.py --page review.html --items review_items.json --out decisions.json
 ```
 
-It binds to `0.0.0.0:8765` by default and prints the machine's Tailscale IPv4
-address when the `tailscale` CLI is available. It serves one HTML file at an
+The script's default bind is broad; for Tailscale delivery explicitly pass
+`--host <current-tailscale-ipv4>` rather than relying on that default. Use loopback
+only for local tests. Read [SERVING.md](SERVING.md) for durable lifecycle and
+saved-state checks before a multi-page or multi-turn review. It serves one HTML file at an
 unguessable `/r/<token>/` URL and accepts `PUT` only at that URL's `decisions`
 endpoint. It exposes no directory listing, arbitrary file read or
 caller-selected write path. Keep it in the foreground while the page is in use

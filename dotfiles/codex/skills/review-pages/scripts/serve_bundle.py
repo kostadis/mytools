@@ -1,0 +1,1 @@
+../../../../shared/skills/review-pages/scripts/serve_bundle.py

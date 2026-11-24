@@ -22,7 +22,14 @@ The user's stated invariant: *"I know all the NPCs. If a proper name appears
 in a transcript that isn't in our notes, it's a misspelling."* The skill
 operationalises that: the unknown set IS the candidate-misspelling set.
 
-**Where this sits:** after `/speaker-attribution` (or `/transcript-rebuild`), before `/staged-consistency` phase 0 and `enhance_summary`. Run it on the **unlabelled** tape, never on a `.speakers.vtt` — the glossary's player→PC rows would rewrite the speaker labels — then re-apply the approved speaker mapping to the `.cleaned.vtt`. Full order: `~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
+**Where this sits:** after `/speaker-attribution` (or `/transcript-rebuild`), before
+`/staged-consistency` phase 0 and `enhance_summary`. For an unlabelled archive with a
+separate attributed `.speakers.vtt`, run the glossary against the unlabelled archive and
+carry the approved labels onto the generated cleaned tape. Native Zoom archives may
+already contain human display-name labels; retain those archive labels and apply
+corrections only to cue bodies. Do not run player→PC rows over speaker prefixes or
+manufacture an extra speaker layer merely to fit a filename convention. Full order:
+`~/src/CampaignGenerator/docs/design/SkillPipelineOrder.md`.
 
 ## Codex compatibility
 
@@ -224,14 +231,18 @@ Detect or ask:
 
 ### Phase -1 — choose the review mode
 
-Before anything else, ask in chat:
+Resolve the review mode from the current run's explicit choices first. If none
+applies, ask in chat:
 
 > **Review the candidates interactively here, or in a batch review page?**
 > - **Interactive** — one cluster at a time in chat.
 > - **Batch page** — one standalone web page containing every pair that needs
 >   a ruling, with Accept, Reject, and Discuss controls.
 
-Ask this every run; do not remember a default. If they choose the batch page,
+Reuse an explicit choice already made for the current conversation/batch, including the
+Tailscale threshold; do not ask again solely because another chapter or stage starts. If
+no applicable choice exists, ask. Do not infer a permanent preference for unrelated
+runs. If they choose the batch page,
 Phases 0–2.5 run exactly as written and **Batch review page** below replaces
 Phase 3. Phases 4–7 are shared.
 
@@ -312,6 +323,13 @@ It reports three things that change the rest of the run:
   midpoint split: one split or merged utterance shifts everything after it and
   makes a 99.8%-identical duplicate look ~60% similar. The script anchors on
   the repeated first line and aligns with difflib.
+
+For a native labelled archive, build any glossary candidate in scratch without
+rewriting its speaker prefixes: use a body-only transformation or restore the
+original prefix on each matching cue before import. Compare every candidate cue's
+index, timing and prefix with the immutable archive, then review the body diff
+through the correction record. A globally safe spelling row is not permission
+to turn a human display name into a PC label.
 
 ### Phase 1 — gather candidates (deterministic, no LLM)
 
@@ -425,8 +443,11 @@ right before narration).
 
 ### Phase 2 — pre-classify candidates (LLM judgment, MINIMAL filtering)
 
-Use the prep for this session to identify misspellings and support proposed
-canonical spellings. For any low-confidence candidate, read the surrounding
+Use only the approved prep/evidence set for this session to identify misspellings and
+support proposed canonical spellings. If the GM says no prep exists, record none and
+proceed from tape and canon. Keep any separately authorized bounded prep/module lookup
+distinct from generation prep; such text supports spelling or context, never restoration
+of absent speech. For any low-confidence candidate, read the surrounding
 transcript context and propose a specific correction option for the GM to
 review; do not present only a fuzzy-match score or an unexplained unknown.
 
@@ -663,7 +684,93 @@ The same timeline also speeds up Phase 2.5. Restrict each `sibling_context`
 lookup to the sibling cues within ±90 s of the candidate's own cue. A
 whole-file search is quadratic and also matches the wrong span.
 
-### Phase 3 — ask the user, one CLUSTER at a time, ALWAYS
+### Phase 2.7 — complete-utterance coverage and merged previews
+
+A successful name replacement is not proof that the passage is repaired. Read
+the whole transcript for obvious ASR corruption beyond capitalised candidates,
+including lowercase spell/ability names and mangled ordinary phrases. Preserve
+actual spoken grammar, false starts, self-corrections and numbers; this is not
+a prose rewrite. Use the independent sibling and original audio to support
+repairs, and explicitly retain uncertain words when no defensible reading exists.
+
+Confirm the referent before choosing a recognised name: nearby explicit
+introductions, attendance and role matter more than a close spelling match.
+An accompanying warrior must not become a distant archwizard merely because
+an independent ASR also printed that wizard's name. Agreement between ASRs
+corroborates a reading, not its canonical identity. When a GM role correction
+exposes this kind of collision, census already-approved substitutions as well
+as pending ones, quarantine the affected edits, and distinguish unsupported
+name insertions from genuine recorded slips before proposing a repair.
+
+For every affected cue, compose its vetted glossary baseline and already
+approved peer corrections before displaying a proposal. Show the full raw cue
+and the complete proposed cue, with the new changes clearly identified. If
+several pending cards share it, show their combined candidate and state exactly
+which pending changes this approval covers, or bundle the remaining repairs
+into one explicit cue-level decision. Preserve existing rulings as history;
+rejecting a new proposal must not silently undo them. Approval is not evidence
+that the proposed replacement was correct. If a systemic review defect or the
+user's concern calls earlier proposals into question, re-audit those replacements
+and every targeted occurrence without assuming the approved wording is true.
+Separate a correct fix with leftover corruption from a wrong or unsupported
+replacement. Hold questionable edits out of application, show the raw wording,
+previous ruling and new evidence together, and obtain a fresh ruling under a
+new review ID before changing an earlier decision. A newly challenged baseline
+also requires checking dependent passage proposals and their scores.
+
+Keep label identity and wording scope separate: a native display-name alias resolves a
+human participant, not the fictional speaker of every line. A character name chosen only
+for derived prose is not a transcript correction, registry alias, or instruction to
+rewrite historical names globally.
+
+Keep the source of a prior disposition explicit. An agent’s ignored, benign or
+false-positive classification is not a saved GM keep-verbatim ruling. Recheck
+those dismissed spans against the recording when the complete-utterance audit
+exposes a possible error; disclose any corrected interpretation. Require a
+prior-ruling conflict only when proposing to change an actual GM decision.
+
+Check the entire proposed utterance for leftover corruption. For example,
+Dion→Daein does not finish a sentence still containing “mass healing boards”
+and “told the dud”. Each remaining suspect span must be covered by a linked
+pending repair or explicitly marked unresolved/keep-verbatim. Do not label a
+partially repaired excerpt as the final corrected passage.
+
+When using a decision scorer, score the full proposal actually shown, including
+its complete cue and exact new-write scope. A score for one word pair cannot be
+reused as approval confidence for a larger sentence repair. If a handed-off
+proposal's edit scope changes, preserve its earlier question and rulings and
+issue a new review ID. After decisions, compose approved changes once per cue
+and verify that the applied text equals that merged result.
+
+### Phase 3 — review every cluster
+
+Count the complete pending set before choosing the review channel. Use
+Tailscale for more than three questions; do not split a larger set into small
+chat groups to avoid that threshold. For sets of three or fewer, interactive
+chat review can proceed one cluster at a time.
+
+**Limit every review page to 100 decision items.** For larger queues, split
+into numbered pages with an index and previous/next links. Keep requested
+Clef batches ahead of individual cases, retaining separate score-group bulk
+buttons when a page contains more than one group. Scores must still cover the
+actual complete-passage proposal; pagination does not change its edit scope.
+Give each page a unique review ID, its exact item subset and its own decisions
+file. Preserve item IDs and maintain a manifest proving that the pages cover
+the full pending queue exactly once. Show per-page saved progress and restore
+saved decisions when returning to a page. Save before navigating away.
+
+Keep saved decisions on durable storage and host long reviews with the lifecycle and
+hydration checks in [SERVING.md](../_shared/review-artifact/SERVING.md). A fresh page
+starts unmarked; a return to the same frozen queue may restore its validated saved
+decisions, picks and notes, never unsaved guesses.
+
+Validate each saved export against that page's item subset before merging
+rulings into the full queue. A finished page does not complete the spell pass:
+missing pages, unmarked items and unresolved Discuss notes remain open. Do not
+apply corrections or advance to consistency/enhancement until the complete
+queue resolves. If earlier approvals are challenged, keep their history,
+quarantine questionable replacements and hold dependent pages until their
+wording and scores have been revalidated.
 
 For interactive review, enumerate the clusters with `update_plan` when useful
 and walk them one at a time in chat as multiple choice. Wait for the user's
@@ -1016,8 +1123,12 @@ python "$SKILL_DIR/state.py" \
   processed <vtt-path>
 ```
 
-**Then carry the speaker labels onto the cleaned tape.** The `.cleaned.vtt` is
-unlabelled, like its raw. Build `transcript.cleaned.speakers.vtt` cue by cue:
+**Then verify the applicable speaker path.** For native labelled archives, assert
+unchanged cue count, timing lines and every speaker prefix after regeneration; do not
+reassign humans or PCs. If the archive is unlabelled and has a separately approved
+speaker layer, carry those labels onto the cleaned tape as follows. In that path the
+`.cleaned.vtt` is unlabelled, like its raw. Build `transcript.cleaned.speakers.vtt` cue
+by cue:
 the timing line from `.speakers.vtt`, its label, and the cleaned cue's text.
 The two files must have the same cue count and identical timing lines; stop if
 not. Copy the `.speakers.vtt` header `NOTE` and add one line naming the cleaned
@@ -1050,18 +1161,22 @@ python "$SKILL_DIR/render_review.py" \
 
 `render_review.py` is a VTT-specific adapter over the shared review-artifact
 renderer. The HTML is standalone, keeps no browser storage (a reload loses
-unsaved marks), always opens unmarked, and exports the shared decision schema
+unsaved marks), opens unmarked unless the hosted page restores validated decisions from
+this same frozen queue, and exports the shared decision schema
 through Copy output or Save output. Prefer serving it with the shared
 `serve_review.py`, configured to write `$REVIEW/decisions.json`; summarize the
 counts, hand over the capability URL, and keep the server running. Fall back to
 the HTML path when the VM is unreachable. Do not modify the glossary or
 transcript while the page is awaiting review.
 
-### The consent unit is the PAIR, never the cluster
+### The consent unit: pair or explicit complete-cue repair
 
-Use one queue item per `(token → canonical)` pair. Group items by canonical in
-queue order so the GM reads a canonical's members together, but never merge
-them into a single item and never let approving one member imply another.
+Use one queue item per `(token → canonical)` pair for independent name decisions. Phase
+2.7 also permits an explicitly bundled complete-cue repair; list every changed span and
+its exact write scope as that one consent unit. Do not turn an unrelated canonical
+cluster into one blanket approval. Group independent pair items by canonical in queue
+order so the GM reads its members together, but never let approving one independent pair
+imply another.
 Every member must retain its own count, context, and sibling verdict; collapsing
 a group into one yes/no can approve hallucinated members invisibly.
 
@@ -1119,7 +1234,9 @@ and non-alphanumerics collapsed to `_`, and keep a sidecar map in
 reject_as}`. The page exports generic `approve`, `reject`, and `discuss`
 verdicts; map them back to the VTT decisions below. Accept the exported JSON
 either pasted into chat or from the downloaded `decisions.json` file, and save
-it as `spell_review/decisions.json`.
+it as `spell_review/decisions.json`. For paginated reviews, first retain and
+validate each page export separately; this file is the validated full-queue
+merge, with page IDs and source decision files recorded in the manifest.
 
 `decision` and `note` exist to carry a ruling recorded in an earlier run. The
 page shows them as text on the card, never as a pre-marked verdict — the GM
@@ -1130,9 +1247,10 @@ is the exact failure the pair-consent rule exists to prevent.
 
 ### Hand off, then stop
 
-Give the user the rendered HTML path and stop. Resume only when the user pastes
-the exported decisions or points to the saved decisions file. Validate it
-against the queue the page was built from:
+Give the user the Tailscale index/page URL (or HTML path for an explicitly
+requested local review) and wait for saved rulings. For paginated queues, read
+each page as it is saved and report remaining pages without inferring that
+they are approved. Validate every export against the exact page subset:
 
 ```bash
 REVIEW_PAGE="${CODEX_HOME:-$HOME/.codex}/skills/_shared/review-artifact"
