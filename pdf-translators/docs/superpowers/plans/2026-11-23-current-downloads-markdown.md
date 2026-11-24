@@ -4,7 +4,7 @@
 
 **Goal:** Convert every PDF under `/mnt/winshare` to searchable sibling Markdown, preserving source files and manual outputs.
 
-**Design / user requirement:** The owner re-downloaded the library and says these are the most recent delivered files. Treat each PDF as a current input, including multiple publisher-supplied variants. Do not apply historical date/duplicate exclusion. Reuse the existing Rust continuous converter, publication journals, range checksums, two workers, 20 GiB floor and no-text/OCR exception policy. Existing `current-documents.json` semantics and source links remain. Archives and non-PDF files are outside this run. The gdrive CLI design stays shelved.
+**Design / user requirement:** The owner re-downloaded the library and says these are the most recent delivered files. Treat each PDF as a current input, including multiple publisher-supplied variants. Do not apply historical date/duplicate exclusion. Reuse the existing Rust continuous converter, publication journals, range checksums, configurable workers (four requested for this run), 20 GiB floor and no-text/OCR exception policy. Existing `current-documents.json` semantics and source links remain. Archives and non-PDF files are outside this run. The gdrive CLI design stays shelved.
 
 **Approach:** Add explicit `scan --current-library` policy, producing one group per PDF. Resolve those groups from the owner's current-download assertion instead of embedded recency, while preserving any explicit review/hold and normal output ownership checks. Normal scans retain their existing behavior. Use new private state/output namespaces for this different root; copy prior metadata and content-addressed extraction caches without importing old selection/ownership authority.
 
@@ -34,3 +34,7 @@
 One fresh Sol review found three important issues, fixed in one pass with RED→GREEN regressions: colliding sibling filenames, explicitly confirmed baselines, and concurrent scan policy/progress races. The full suite passed 163 tests (2 optional ignored); the optional mounted CIFS probe passed separately. fmt, clippy with warnings denied and release build passed.
 
 Deferred minor: historical MuSe hints spanning groups can trigger `needs_regroup` in current-library mode. The fresh CIFS inventory has no hints and does not use those import flags.
+
+## Worker-count steering
+
+The owner requested four converters after initial deployment. Added positive `markdown-continuous --workers` (default two), a gated integration test proving four distinct extractors are active concurrently, and retained aggregate capacity reservations. Four-worker test RED→GREEN; final whole suite 164 passed / 2 optional ignored; fmt/clippy/release passed. Production output is on a disk with roughly 304 GiB available and the host has roughly 41 GiB available RAM.

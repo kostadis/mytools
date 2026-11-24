@@ -21,6 +21,9 @@ use std::{
 pub struct Options {
     #[arg(long)]
     pub output: PathBuf,
+    /// Maximum simultaneous PDF extraction workers.
+    #[arg(long, default_value_t = 2)]
+    pub workers: usize,
     #[arg(long, default_value_t = 300)]
     pub metadata_timeout_secs: u64,
     #[arg(long, hide = true)]
@@ -441,6 +444,11 @@ fn current_view(
 }
 
 pub fn run(work: &Path, options: Options) -> Result<Status> {
+    if options.workers == 0 {
+        return Err(SelectionError::Usage(
+            "positive worker count required".into(),
+        ));
+    }
     if options.metadata_timeout_secs == 0 {
         return Err(SelectionError::Usage(
             "positive metadata timeout required".into(),
@@ -487,7 +495,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
         expected_selection: None,
         publish_every: 100,
         publish_next_to_source: true,
-        workers: 2,
+        workers: options.workers,
         chunk_pages: 20,
         timeout_secs: 120,
         job_timeout_secs: 1800,
@@ -1139,7 +1147,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
             // for changed groups. OS leases prevent adopting orphaned writers.
             for r in resolutions.values() {
                 for ready in &r.snapshot.ready {
-                    if active.len() >= 2 {
+                    if active.len() >= options.workers {
                         break;
                     }
                     let id = job_id(ready, &engine);

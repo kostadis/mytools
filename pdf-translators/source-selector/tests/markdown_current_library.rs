@@ -272,3 +272,79 @@ fn concurrent_scan_is_rejected_before_overwriting_progress_or_policy() {
         "active scan checkpoint\n"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn continuous_conversion_can_run_four_isolated_workers() {
+    use std::{
+        os::unix::fs::PermissionsExt,
+        process::Stdio,
+        time::{Duration, Instant},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    // /tmp is a small tmpfs; four extraction windows must preserve the real
+    // 20 GiB floor. Use the same disk-backed location as the deployed cache.
+    let out = tempfile::tempdir_in(Path::new(env!("CARGO_MANIFEST_DIR")).join("target")).unwrap();
+    let dir = root.path().join("Publisher/Book");
+    fs::create_dir_all(&dir).unwrap();
+    for i in 0..4 {
+        common::pdf(
+            &dir.join(format!("Book_{i}.pdf")),
+            &format!("Distinct native reference number {i}."),
+            "",
+            false,
+        );
+    }
+    run(
+        state.path(),
+        &[
+            "scan",
+            "--root",
+            root.path().to_str().unwrap(),
+            "--current-library",
+        ],
+    );
+    let gate = out.path().join("release");
+    let wrapper = out.path().join("extractor");
+    fs::write(&wrapper,format!("#!/bin/sh\nif [ \"$1\" = '-v' ]; then exec /usr/bin/pdftotext \"$@\"; fi\ntouch '{}/started-'$$\nwhile [ ! -e '{}' ]; do sleep 0.02; done\nexec /usr/bin/pdftotext \"$@\"\n",out.path().display(),gate.display())).unwrap();
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+    let log = fs::File::create(out.path().join("run.log")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .arg("--work-dir")
+        .arg(state.path())
+        .args(["markdown-continuous", "--workers", "4", "--output"])
+        .arg(out.path())
+        .arg("--pdftotext")
+        .arg(wrapper)
+        .stdout(Stdio::piped())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    let mut count = 0;
+    while start.elapsed() < Duration::from_secs(10) {
+        count = fs::read_dir(out.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().starts_with("started-"))
+            .count();
+        if count == 4 || child.try_wait().unwrap().is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    fs::write(gate, "").unwrap();
+    let result = child.wait_with_output().unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        fs::read_to_string(out.path().join("run.log")).unwrap()
+    );
+    assert_eq!(
+        count, 4,
+        "four different extractors must be active before release"
+    );
+    let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["published"], 4);
+}

@@ -16,6 +16,21 @@ rg -i 'search phrase' "$OUTPUT/corpus/current/books" --glob '*.md'
 
 Both state and output must be outside the PDF library. Output is a dedicated managed directory: its contents must not be symlinks, except the managed `corpus/current` view. Keep private source caches and generated book text out of Git.
 
+## Re-downloaded current libraries
+
+When the owner confirms that the delivered PDFs are current and wants every file converted, use a separate scan state with `--current-library`:
+
+```bash
+"$SELECT" --work-dir "$STATE" scan --root /mnt/winshare --current-library
+"$SELECT" --work-dir "$STATE" markdown-continuous --output "$OUTPUT" --workers 4
+```
+
+This policy creates one group per PDF, including publisher-supplied variants and identical bytes at different paths. Embedded dates remain provenance and do not exclude files. The selection basis is `owner_confirmed_current_download`; source hashing, full-page extraction, explicit holds/confirmed baselines, output ownership and OCR exceptions still apply. Colliding sibling filenames are deferred. Historical date/duplicate selection remains the default for other scan states; rescanning an existing state with a different policy is refused. Continue to pass `--current-library` on later scans of this state. Do not combine this mode with historical MuSe hint imports: a hint spanning its independent groups can require regrouping.
+
+The refreshed CIFS rollout uses `/mnt/winshare`, private scan state `source-selection-data/winshare-current-state`, output `source-selection-data/winshare-current-markdown`, and user service `rpg-markdown-winshare.service`. Its initial inventory contains 6,391 PDFs and 1,442 archives (143.42 GiB of PDFs); archives and non-PDF files are not converted in this pass. The old Drive library and its state remain separate. Content-addressed caches are reused without importing old selection or ownership authority.
+
+Progress is in the new output's `continuous-status.json` and append-only `continuous.log`; worker diagnostics are under `logs/`, and `deployment.json` records the immutable executable/PID. Inspect the service with `systemctl --user status rpg-markdown-winshare.service`. Generated Markdown and `current-documents.json` live beside the PDFs; the confirmed local search corpus remains under `corpus/current/books`.
+
 ## Publish beside the PDFs
 
 Add `--publish-next-to-source` to use the integrated source-adjacent workflow:
@@ -57,7 +72,7 @@ source-selector/target/release/rpg-source-select \
   > source-selection-data/full-library-markdown/continuous.log 2>&1
 ```
 
-One bounded metadata process, two extraction processes and a dedicated publication thread run concurrently. Slow PDF verification, mounted-directory writes and ownership journals run on the single publication thread, so they do not block group resolution or extraction capacity grants. Manifest discovery runs on a separate read-only worker. Cache-complete groups become eligible immediately; an incomplete candidate group cannot produce an automatic winner. Each completed nonempty book publishes its PDF-stem Markdown and schema-2 `current-documents.json` beside the PDF. Current local search is refreshed every 100 events or 30 seconds and at exit under `corpus/current/books/`.
+One bounded metadata process, configurable extraction workers (two by default; `--workers 4` for the CIFS rollout) and a dedicated publication thread run concurrently. Slow PDF verification, mounted-directory writes and ownership journals run on the single publication thread, so they do not block group resolution or extraction capacity grants. Manifest discovery runs on a separate read-only worker. Cache-complete groups become eligible immediately; an incomplete candidate group cannot produce an automatic winner. Each completed nonempty book publishes its PDF-stem Markdown and schema-2 `current-documents.json` beside the PDF. Current local search is refreshed every 100 events or 30 seconds and at exit under `corpus/current/books/`.
 
 The metadata deadline is 300 seconds per PDF. `continuous.db` atomically records group revisions and eligibility, and `metadata.db`, `markdown.db`, `cache/`, `results/`, ownership receipts and journals retain completed work. Restart the same command after interruption. Terminal metadata/extraction failures require `--retry-failed`; extraction failures retain the three-attempt limit. Cached extraction is validated and reused. Source PDFs and edited/unowned Markdown are preserved.
 
@@ -67,7 +82,7 @@ The deployed full-library run is managed by the user service `rpg-markdown-conti
 
 Selections have their own semantic revisions, so resolving an unrelated group or adding an unrelated book in a later inventory does not rewrite existing Markdown. Scoped directory records retain unchecked neighbors as unverified. A confirmed hold withdraws current authority and updates search even if the result is an empty view with pending coverage. Historical Markdown remains on disk.
 
-Local jobs reserve missing PDF staging, a bounded extraction window and assembly/artifact space from cached checkpoint sizes across both workers while preserving 20 GiB free. Workers request additional grants before allocating range output; cached complete books reserve assembly space without a per-page worst case. Destination space is checked separately. Oversized jobs can remain pending while smaller jobs proceed. `capacity_pending`, `needs_regroup` and `authority_pending` exit with status 75 and are incomplete, resumable outcomes. Same-byte observation changes are refreshed; changed known PDF bytes or grouping hints require a refreshed inventory/group graph before new authority can publish.
+Local jobs reserve missing PDF staging, a bounded extraction window and assembly/artifact space from cached checkpoint sizes across configured workers while preserving 20 GiB free. Workers request additional grants before allocating range output; cached complete books reserve assembly space without a per-page worst case. Destination space is checked separately. Oversized jobs can remain pending while smaller jobs proceed. `capacity_pending`, `needs_regroup` and `authority_pending` exit with status 75 and are incomplete, resumable outcomes. Same-byte observation changes are refreshed; changed known PDF bytes or grouping hints require a refreshed inventory/group graph before new authority can publish.
 
 Stop an old `markdown-rollout` controller before stopping its metadata producer and starting this command. Preserve SQLite/WAL files and caches; never leave both publishers active. The older `markdown-select` → `markdown-convert` snapshot workflow and `scripts/run_markdown_rollout.sh` remain available for deliberate batch operation.
 
