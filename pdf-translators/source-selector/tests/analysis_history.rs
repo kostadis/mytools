@@ -1,0 +1,93 @@
+mod analysis_support;
+use analysis_support::*;
+use rpg_source_select::analysis::{history, inputs::freeze, models::*};
+use serde_json::json;
+fn fixture() -> (tempfile::TempDir, serde_json::Value) {
+    let t = tempfile::tempdir().unwrap();
+    let c = setup(t.path());
+    for (id, ids) in [
+        ("one", vec!["a", "b"]),
+        ("two", vec!["c"]),
+        ("three", vec!["d"]),
+        ("pending", vec!["e"]),
+    ] {
+        record(
+            &t.path().join("old.db"),
+            "groups",
+            id,
+            json!({"group_id":id,"source_ids":ids,"membership_digest":"m","reasons":[]}),
+        );
+    }
+    for (id, path) in [
+        ("a", "a.pdf"),
+        ("b", "b.pdf"),
+        ("c", "c.pdf"),
+        ("d", "d.pdf"),
+        ("e", "e.pdf"),
+    ] {
+        insert_source(&t.path().join("old.db"), source(id, path));
+    }
+    (t, c)
+}
+fn observation(
+    t: &std::path::Path,
+    run: &str,
+    group: &str,
+    selected: &str,
+    policy: &str,
+    status: &str,
+) {
+    record(
+        &t.join("history.db"),
+        "continuous_groups",
+        &format!("{run}-{group}"),
+        json!({"snapshot":{"policy":policy,"source_root":"G:/Library","ready":if selected.is_empty(){json!([])}else{json!([{"source_id":selected,"relative_path":format!("{selected}.pdf"),"sha256":"hash"}])},"records":[{"group_id":group,"status":status,"reason":"reason","candidates":[]}]}}),
+    );
+}
+#[test]
+fn latest_saved_group_overlays_older_without_double_vote() {
+    let (t, c) = fixture();
+    observation(t.path(), "old", "one", "a", "internal-recency-v1", "ready");
+    observation(t.path(), "new", "one", "b", "internal-recency-v1", "ready");
+    observation(t.path(), "old", "two", "c", "internal-recency-v1", "ready");
+    let f = freeze(&serde_json::from_value(c).unwrap(), &t.path().join("run")).unwrap();
+    let h = history::load(&f).unwrap();
+    assert_eq!(h.groups.len(), 2);
+    assert_eq!(h.groups["one"].run_id, "new");
+    assert_eq!(h.groups["one"].selected[0].source_id, "b");
+    assert_eq!(h.groups["two"].run_id, "old");
+    assert_eq!(h.unprocessed_groups, vec!["pending", "three"]);
+}
+#[test]
+fn unprocessed_and_deferred_are_not_bad_choices() {
+    let (t, c) = fixture();
+    observation(
+        t.path(),
+        "new",
+        "one",
+        "",
+        "internal-recency-v1",
+        "baseline_deferred",
+    );
+    observation(t.path(), "new", "two", "c", "alien-policy", "ready");
+    let f = freeze(&serde_json::from_value(c).unwrap(), &t.path().join("run")).unwrap();
+    let h = history::load(&f).unwrap();
+    assert!(h.groups["one"].selected.is_empty());
+    assert!(!h.groups["two"].scorable);
+    assert!(!h.warnings.is_empty());
+    assert_eq!(h.unprocessed_groups.len(), 2);
+}
+#[test]
+fn unknown_run_order_is_rejected() {
+    let (t, c) = fixture();
+    observation(
+        t.path(),
+        "unlisted",
+        "one",
+        "a",
+        "internal-recency-v1",
+        "ready",
+    );
+    let f = freeze(&serde_json::from_value(c).unwrap(), &t.path().join("run")).unwrap();
+    assert!(history::load(&f).is_err());
+}

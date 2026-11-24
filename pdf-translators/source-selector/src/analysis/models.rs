@@ -65,6 +65,7 @@ pub struct InputReceipt {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FrozenInputs {
     pub schema_version: u32,
+    pub snapshot_root: PathBuf,
     pub receipt_id: String,
     pub config: AnalysisConfig,
     pub receipts: Vec<InputReceipt>,
@@ -86,4 +87,30 @@ pub struct RetentionRule {
     pub fingerprint: Option<crate::models::Fingerprint>,
     #[serde(default)]
     pub action: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HistoricalChoice {
+    pub source_id: String,
+    pub relative_path: String,
+    pub sha256: Option<String>,
+    pub detail: Value,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HistoricalObservation {
+    pub group_id: String,
+    pub run_id: String,
+    pub policy: String,
+    pub status: String,
+    pub reason: String,
+    pub selected: Vec<HistoricalChoice>,
+    pub hashes: BTreeMap<String, String>,
+    pub scorable: bool,
+    pub record: Value,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HistoricalView {
+    pub groups: BTreeMap<String, HistoricalObservation>,
+    pub unprocessed_groups: Vec<String>,
+    pub warnings: Vec<String>,
 }

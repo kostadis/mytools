@@ -246,6 +246,11 @@ pub fn freeze(config: &AnalysisConfig, output: &Path) -> Result<FrozenInputs> {
             .collect::<Result<Vec<_>>>()?;
         let mut frozen = FrozenInputs {
             schema_version: 1,
+            snapshot_root: parent.canonicalize()?.join(
+                output
+                    .file_name()
+                    .ok_or_else(|| invalid("output requires directory name"))?,
+            ),
             receipt_id: String::new(),
             config: config.clone(),
             receipts,

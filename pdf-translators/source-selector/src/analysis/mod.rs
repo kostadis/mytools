@@ -1,4 +1,5 @@
 //! Independent, read-only selection analysis; never applies production decisions.
+pub mod history;
 pub mod inputs;
 pub mod models;
 use crate::{Result, SelectionError};
