@@ -27,5 +27,5 @@ cargo run -- --json --seed 7
 ## Rules
 
 - Males draw only male or single-form elements. Females draw female or single-form elements, plus male ones with `--cross`.
-- Rows printed with a single form are treated as usable by either sex; `import` lists them.
+- Rows printed with a single form are usable by either sex (decided 2026-11-24 after review of all 32); `import` lists them.
 - Typos in the source are kept verbatim.
