@@ -1,0 +1,384 @@
+use crate::{
+    Result, SelectionError, digest_json,
+    inventory::{checked_path, fingerprint},
+    models::*,
+    store::Store,
+};
+use regex::Regex;
+use sha2::{Digest, Sha256};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    io::Read,
+    path::Path,
+    sync::LazyLock,
+};
+
+pub fn hash_source(path: &Path) -> Result<String> {
+    let before = fingerprint(path)?;
+    let mut input = fs::File::open(path)?;
+    let mut hash = Sha256::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        let n = input.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        hash.update(&buffer[..n]);
+    }
+    if before != fingerprint(path)? {
+        return Err(SelectionError::Invalid(format!(
+            "source changed while hashing: {}",
+            path.display()
+        )));
+    }
+    Ok(format!("{:x}", hash.finalize()))
+}
+
+pub fn cached_hash(root: &Path, source: &Source, store: &mut Store) -> Result<String> {
+    let path = checked_path(root, &source.relative_path)?;
+    if fingerprint(&path)? != source.fingerprint {
+        return Err(SelectionError::Invalid(format!(
+            "source changed since inventory: {}",
+            path.display()
+        )));
+    }
+    let key = digest_json(&(1, &source.fingerprint));
+    if let Some(v) = store.get_cached(&source.source_id, "hash", &key)?
+        && let Some(s) = v.as_str()
+    {
+        return Ok(s.into());
+    }
+    let hash = hash_source(&path)?;
+    store.put_cached(&source.source_id, "hash", &key, &serde_json::json!(hash))?;
+    Ok(hash)
+}
+
+/// Warm hashes outside the inventory publication transaction. Each successful
+/// cache write commits independently, so interrupted scans retain completed work.
+pub fn warm_candidate_hashes(root: &Path, sources: &[Source], store: &mut Store) -> Result<()> {
+    let mut sizes = BTreeMap::<u64, usize>::new();
+    for source in sources.iter().filter(|s| s.kind == SourceKind::Pdf) {
+        *sizes.entry(source.fingerprint.size).or_default() += 1;
+    }
+    let candidates: Vec<_> = sources
+        .iter()
+        .filter(|s| s.kind == SourceKind::Pdf && s.read_error.is_none())
+        .filter(|s| sizes[&s.fingerprint.size] > 1)
+        .collect();
+    let mut reused = 0;
+    let mut failed = 0;
+    eprintln!(
+        "{} hashes: starting {} candidates; completed hashes commit immediately",
+        chrono::Utc::now().to_rfc3339(),
+        candidates.len()
+    );
+    for (index, source) in candidates.iter().enumerate() {
+        let key = digest_json(&(1, &source.fingerprint));
+        let cached = store.get_cached(&source.source_id, "hash", &key)?.is_some();
+        match cached_hash(root, source, store) {
+            Ok(_) => reused += usize::from(cached),
+            Err(e) => {
+                failed += 1;
+                eprintln!(
+                    "{} hash error: {:?}: {e}",
+                    chrono::Utc::now().to_rfc3339(),
+                    source.relative_path
+                );
+            }
+        }
+        let completed = index + 1;
+        if completed.is_multiple_of(100) || completed == candidates.len() {
+            eprintln!(
+                "{} hashes: {completed}/{} checked, {reused} reused, {failed} failed; last={:?}",
+                chrono::Utc::now().to_rfc3339(),
+                candidates.len(),
+                source.relative_path
+            );
+        }
+    }
+    Ok(())
+}
+
+fn normalized(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+fn source_stem(path: &Path) -> String {
+    static OLD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\.old-\d+").unwrap());
+    static ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{5,}[-_ ]+").unwrap());
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    let s = OLD.replace_all(&stem, "");
+    ID.replace(&s, "").into_owned()
+}
+pub fn title_key(path: &Path) -> String {
+    static VERSION: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)(?:^|[ _.-])v(?:er(?:sion)?)?[ _.-]*\d+(?:[._]\d+)*").unwrap()
+    });
+    static DOTTED: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?:^|[ _-])\d+\.\d+(?:\.\d+)*(?:$|[ _()-])").unwrap());
+    static FORMAT: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"(?i)printer[ _-]*friendly|print[ _-]*friendly|optimized[ _-]*pdf|full[ _-]*res|quick[ _-]*load",
+        )
+        .unwrap()
+    });
+    let s = source_stem(path);
+    let s = VERSION.replace_all(&s, " ");
+    let s = DOTTED.replace_all(&s, " ");
+    normalized(&FORMAT.replace_all(&s, " "))
+}
+
+pub(crate) fn presentation_key(path: &Path) -> String {
+    static LABEL: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+        r"(?:^| )(?:no ?backgrounds?|black and white|black white|b and w|b w|bw|colou?red|colou?r|(?:colou?r|bw|b w) print|digital|interactive|(?:form )?fillable|printer ?friendly|print ?friendly|optimized pdf|full res|quick load)(?: (?:version|pdf))?(?: (?P<tail>v(?:er(?:sion)?)? ?\d[a-z0-9 ]*|\d+(?: \d+)*|\d{1,2}(?:st|nd|rd|th)? [a-z]+ \d{4}|final))?$"
+    ).unwrap()
+    });
+    // Keep edition/version numbers in this new comparison key: removing them
+    // would collapse distinct rulesets such as D&D 3.0 and D&D 3.5.
+    let mut key = normalized(&source_stem(path));
+    loop {
+        let next = LABEL.replace(&key, " $tail").trim().to_string();
+        if next == key {
+            return key;
+        }
+        key = next;
+    }
+}
+
+pub fn build_current_groups(sources: &[Source], store: &mut Store) -> Result<Vec<Group>> {
+    let target = |s: &Source| -> Vec<u8> {
+        crate::inventory::path_bytes(&s.relative_path.with_extension("md"))
+            .into_iter()
+            .map(|b| b.to_ascii_lowercase())
+            .collect()
+    };
+    let mut target_counts = BTreeMap::<Vec<u8>, usize>::new();
+    for s in sources.iter().filter(|s| s.kind == SourceKind::Pdf) {
+        *target_counts.entry(target(s)).or_default() += 1;
+    }
+    let groups: Vec<_> = sources
+        .iter()
+        .filter(|s| s.kind == SourceKind::Pdf)
+        .map(|s| {
+            let ids = vec![s.source_id.clone()];
+            let mut reasons = vec!["owner_confirmed_current_download".into()];
+            if target_counts[&target(s)] > 1 {
+                reasons.push("ambiguous_sibling_markdown_target".into());
+            }
+            Group {
+                group_id: format!("g{}", &digest_json(&ids)[..20]),
+                source_ids: ids,
+                membership_digest: digest_json(&vec![(&s.source_id, &s.fingerprint)]),
+                reasons,
+            }
+        })
+        .collect();
+    store.reconcile_groups(&groups)
+}
+
+pub fn build_groups(sources: &[Source], hints: &[Hint], store: &mut Store) -> Result<Vec<Group>> {
+    let inv: InventoryResult = serde_json::from_value(
+        store
+            .meta("inventory")?
+            .ok_or_else(|| SelectionError::Invalid("scan first".into()))?,
+    )?;
+    let pdfs: Vec<_> = sources
+        .iter()
+        .filter(|s| s.kind == SourceKind::Pdf)
+        .collect();
+    let indexes: BTreeMap<_, _> = pdfs
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.source_id.clone(), i))
+        .collect();
+    let mut sets: Vec<usize> = (0..pdfs.len()).collect();
+    let mut reasons = BTreeMap::<usize, BTreeSet<String>>::new();
+    let mut sizes = BTreeMap::<u64, Vec<usize>>::new();
+    let mut keys = BTreeMap::<String, Vec<usize>>::new();
+    let mut presentations = BTreeMap::<String, Vec<usize>>::new();
+    let mut styled = BTreeSet::new();
+    for (i, s) in pdfs.iter().enumerate() {
+        if s.read_error.is_none() {
+            sizes.entry(s.fingerprint.size).or_default().push(i);
+        }
+        keys.entry(title_key(&s.relative_path)).or_default().push(i);
+        let key = presentation_key(&s.relative_path);
+        if key != normalized(&source_stem(&s.relative_path)) {
+            styled.insert(i);
+        }
+        if !key.is_empty() {
+            presentations.entry(key).or_default().push(i);
+        }
+    }
+    for bucket in sizes.values().filter(|v| v.len() > 1) {
+        let mut hashes = BTreeMap::<String, Vec<usize>>::new();
+        for i in bucket {
+            match cached_hash(&inv.root, pdfs[*i], store) {
+                Ok(hash) => hashes.entry(hash).or_default().push(*i),
+                Err(e) => {
+                    store.put_record("grouping_errors", &pdfs[*i].source_id, &e.to_string())?;
+                }
+            }
+        }
+        for group in hashes.values().filter(|g| g.len() > 1) {
+            join(&mut sets, &mut reasons, group, "exact_bytes");
+        }
+    }
+    for group in keys.values().filter(|g| g.len() > 1) {
+        join(&mut sets, &mut reasons, group, "title_candidate");
+    }
+    for group in presentations.values().filter(|g| g.len() > 1) {
+        if group.iter().any(|i| styled.contains(i)) {
+            join(&mut sets, &mut reasons, group, "presentation_candidate");
+        }
+    }
+    for hint in hints.iter().filter(|h| h.origin == "muse") {
+        let group: Vec<_> = hint
+            .source_ids
+            .iter()
+            .filter_map(|id| indexes.get(id).copied())
+            .collect();
+        if group.len() > 1 {
+            join(&mut sets, &mut reasons, &group, "muse_candidate");
+        }
+    }
+    let mut relationships = BTreeMap::<String, Vec<usize>>::new();
+    for hint in hints.iter().filter(|h| h.origin == "rpglib") {
+        let members: Vec<_> = hint
+            .source_ids
+            .iter()
+            .filter_map(|id| indexes.get(id).copied())
+            .collect();
+        if let Some(product) = hint
+            .payload
+            .get("product_id")
+            .filter(|v| !v.is_null() && v.as_str() != Some(""))
+        {
+            relationships
+                .entry(format!("product:{product}"))
+                .or_default()
+                .extend(&members);
+        }
+        for field in ["display_title", "pdf_title", "title"] {
+            if let Some(title) = hint.payload[field]
+                .as_str()
+                .filter(|s| !s.trim().is_empty())
+            {
+                relationships
+                    .entry(format!("title:{}", normalized(title)))
+                    .or_default()
+                    .extend(&members);
+            }
+        }
+    }
+    for members in relationships.values_mut() {
+        members.sort();
+        members.dedup();
+        if members.len() > 1 {
+            join(
+                &mut sets,
+                &mut reasons,
+                members,
+                "rpglib_relationship_candidate",
+            );
+        }
+    }
+    let mut components = BTreeMap::<usize, Vec<usize>>::new();
+    for i in 0..pdfs.len() {
+        let parent = find(&mut sets, i);
+        components.entry(parent).or_default().push(i);
+    }
+    let mut groups = vec![];
+    for members in components.values() {
+        let mut ids: Vec<_> = members.iter().map(|i| pdfs[*i].source_id.clone()).collect();
+        ids.sort();
+        let mut rs = BTreeSet::new();
+        for i in members {
+            if let Some(r) = reasons.get(i) {
+                rs.extend(r.iter().cloned());
+            }
+        }
+        let fp: Vec<_> = ids
+            .iter()
+            .map(|id| {
+                let s = pdfs[indexes[id]];
+                (id, &s.fingerprint)
+            })
+            .collect();
+        let membership_digest = digest_json(&fp);
+        groups.push(Group {
+            group_id: format!("g{}", &digest_json(&ids)[..20]),
+            source_ids: ids,
+            membership_digest,
+            reasons: rs.into_iter().collect(),
+        });
+    }
+    store.reconcile_groups(&groups)
+}
+fn find(sets: &mut [usize], i: usize) -> usize {
+    if sets[i] != i {
+        sets[i] = find(sets, sets[i]);
+    }
+    sets[i]
+}
+fn join(
+    sets: &mut [usize],
+    reasons: &mut BTreeMap<usize, BTreeSet<String>>,
+    group: &[usize],
+    reason: &str,
+) {
+    let p = find(sets, group[0]);
+    for i in group {
+        let q = find(sets, *i);
+        sets[q] = p;
+        reasons.entry(*i).or_default().insert(reason.into());
+    }
+}
+
+impl Store {
+    pub fn reconcile_groups(&mut self, groups: &[Group]) -> Result<Vec<Group>> {
+        let prior: Vec<Group> = self.records("groups")?;
+        let mut used = BTreeSet::new();
+        let mut next = vec![];
+        for group in groups {
+            let mut g = group.clone();
+            let old = prior
+                .iter()
+                .filter(|p| !used.contains(&p.group_id))
+                .filter_map(|p| {
+                    let n = p
+                        .source_ids
+                        .iter()
+                        .filter(|id| g.source_ids.contains(id))
+                        .count();
+                    if n > 0 { Some((n, p)) } else { None }
+                })
+                .max_by(|a, b| a.0.cmp(&b.0).then_with(|| b.1.group_id.cmp(&a.1.group_id)));
+            if let Some((_, p)) = old {
+                g.group_id = p.group_id.clone();
+            }
+            used.insert(g.group_id.clone());
+            next.push(g);
+        }
+        self.replace_records(
+            "groups",
+            &next
+                .iter()
+                .map(|g| Ok((g.group_id.clone(), serde_json::to_value(g)?)))
+                .collect::<Result<Vec<_>>>()?,
+        )?;
+        Ok(next)
+    }
+}

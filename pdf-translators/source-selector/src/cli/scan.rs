@@ -1,0 +1,178 @@
+use super::*;
+use crate::{
+    digest_json,
+    grouping::{build_current_groups, build_groups, hash_source, warm_candidate_hashes},
+    hints::{legacy_hints, read_muse, read_rpglib},
+    inventory::{checked_path, scan_root_with_progress},
+    models::{Hint, Source},
+};
+use std::io::{BufWriter, Write};
+
+pub(super) fn run(work: &Path, args: Scan) -> Result<ExitCode> {
+    let root = args.root.canonicalize()?;
+    let work = validate_work_dir(&root, work)?;
+    fs::create_dir_all(&work)?;
+    refuse_symlink_database(&work.join("scan.lock"))?;
+    let _scan = crate::markdown::lock(&work, "scan.lock")?;
+    refuse_symlink_database(&work.join("selection.db"))?;
+    let mut store = Store::open(&work.join("selection.db"))?;
+    check_policy(&store, args.current_library)?;
+    let journal_path = work.join("inventory-progress.jsonl");
+    refuse_symlink_database(&journal_path)?;
+    let mut journal = BufWriter::new(fs::File::create(&journal_path)?);
+    writeln!(
+        journal,
+        "{}",
+        json!({"type":"inventory-start", "root":root, "started":chrono::Utc::now().to_rfc3339(), "root_identity":crate::inventory::root_identity(&root)?})
+    )?;
+    journal.flush()?;
+    journal.get_ref().sync_data()?;
+    let mut saved = 0;
+    eprintln!(
+        "{} inventory: starting {:?}; checkpoints every 100 sources",
+        chrono::Utc::now().to_rfc3339(),
+        root
+    );
+    let mut inventory = scan_root_with_progress(&root, |inventory| {
+        for source in &inventory.sources[saved..] {
+            serde_json::to_writer(&mut journal, &json!({"type":"source", "source":source}))?;
+            writeln!(journal)?;
+        }
+        saved = inventory.sources.len();
+        if !inventory.finished.is_empty() {
+            writeln!(
+                journal,
+                "{}",
+                json!({"type":"inventory-finished", "sources":saved, "finished":inventory.finished, "errors":inventory.errors})
+            )?;
+        }
+        journal.flush()?;
+        journal.get_ref().sync_data()?;
+        eprintln!(
+            "{} inventory: {saved} sources, {} errors; checkpoint saved; last={:?}",
+            chrono::Utc::now().to_rfc3339(),
+            inventory.errors.len(),
+            inventory.sources.last().map(|s| &s.relative_path)
+        );
+        Ok(())
+    })?;
+    if args.twins_json.is_some() && args.muse_csv.is_none() {
+        return Err(SelectionError::Usage(
+            "--twins-json requires --muse-csv".into(),
+        ));
+    }
+    let mut hints = legacy_hints(&inventory.root, &inventory.sources);
+    if let Some(path) = &args.muse_csv {
+        hints.extend(read_muse(
+            path,
+            &inventory.sources,
+            args.twins_json.as_deref(),
+        )?);
+    }
+    if let Some(path) = &args.rpglib_json {
+        hints.extend(read_rpglib(path, &inventory.sources)?);
+    }
+    if let Some(path) = &args.baseline_manifest {
+        hints.extend(baseline(path, &inventory.root, &mut inventory.sources)?);
+    }
+    fs::create_dir_all(&work)?;
+    if let Some(previous) = store.meta("inventory")? {
+        let previous: InventoryResult = serde_json::from_value(previous)?;
+        for source in &mut inventory.sources {
+            if previous.sources.iter().any(|p| {
+                p.source_id == source.source_id
+                    && p.fingerprint == source.fingerprint
+                    && p.baseline_established
+            }) {
+                source.baseline_established = true;
+            }
+        }
+    }
+    for old in store.records::<Hint>("hints")? {
+        if (old.origin == "muse" && args.muse_csv.is_none())
+            || (old.origin == "rpglib" && args.rpglib_json.is_none())
+            || (old.origin == "baseline" && args.baseline_manifest.is_none())
+        {
+            hints.push(old);
+        }
+    }
+    if !args.current_library {
+        warm_candidate_hashes(&inventory.root, &inventory.sources, &mut store)?;
+    }
+    eprintln!(
+        "{} scan: publishing inventory and candidate groups",
+        chrono::Utc::now().to_rfc3339()
+    );
+    let result = store.scan_transaction(|store| {
+        check_policy(store, args.current_library)?;
+        store.upsert_inventory(&inventory)?;
+        store.set_meta("current_library", &json!(args.current_library))?;
+        store.replace_records("grouping_errors", &[])?;
+        store.replace_records(
+            "hints",
+            &hints
+                .iter()
+                .map(|h| Ok((digest_json(h), serde_json::to_value(h)?)))
+                .collect::<Result<Vec<_>>>()?,
+        )?;
+        if args.current_library {
+            build_current_groups(&inventory.sources, store)
+        } else {
+            build_groups(&inventory.sources, &hints, store)
+        }
+    })?;
+    print_json(
+        &json!({"sources":inventory.sources.len(),"groups":result.len(),"coverage_errors":inventory.errors,"hint_rows":hints.len(),"unmatched_hints":hints.iter().map(|h|h.unmatched_references.len()).sum::<usize>(),"model_calls":0}),
+    )?;
+    Ok(ExitCode::SUCCESS)
+}
+fn check_policy(store: &Store, current_library: bool) -> Result<()> {
+    if store.meta("inventory")?.is_some()
+        && store.meta("current_library")?.unwrap_or(json!(false)) != json!(current_library)
+    {
+        return Err(SelectionError::Usage(
+            "library policy changed; use separate scan state for current-library mode".into(),
+        ));
+    }
+    Ok(())
+}
+fn baseline(path: &Path, root: &Path, sources: &mut [Source]) -> Result<Vec<Hint>> {
+    let value = read_json(path)?;
+    let rows = value
+        .get("sources")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| {
+            SelectionError::Usage(
+                "baseline manifest requires sources array with relative_path and sha256".into(),
+            )
+        })?;
+    let mut hints = vec![];
+    for row in rows {
+        let relative = row["relative_path"].as_str().ok_or_else(|| {
+            SelectionError::Usage("baseline relative_path must be UTF-8 string".into())
+        })?;
+        let sha = row["sha256"]
+            .as_str()
+            .or_else(|| row["fingerprint"]["sha256"].as_str())
+            .ok_or_else(|| SelectionError::Usage("baseline source requires SHA-256".into()))?;
+        let source = sources
+            .iter_mut()
+            .find(|s| s.relative_path == Path::new(relative))
+            .ok_or_else(|| {
+                SelectionError::Usage(format!("baseline source not in inventory: {relative}"))
+            })?;
+        if hash_source(&checked_path(root, &source.relative_path)?)? != sha {
+            return Err(SelectionError::Invalid(format!(
+                "baseline source hash mismatch: {relative}"
+            )));
+        }
+        source.baseline_established = true;
+        hints.push(Hint {
+            origin: "baseline".into(),
+            source_ids: vec![source.source_id.clone()],
+            payload: row.clone(),
+            unmatched_references: vec![],
+        });
+    }
+    Ok(hints)
+}

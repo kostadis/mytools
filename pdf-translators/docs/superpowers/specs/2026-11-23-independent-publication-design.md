@@ -1,0 +1,17 @@
+# Independent publication in the continuous Markdown pipeline
+
+Status: implemented, tested and deployed in `4ca9112`.
+
+The approved continuous pipeline is intended to keep resolution and extraction progressing while other stages perform slow I/O. The live implementation unnecessarily executes source publication on the coordinator: full PDF verification, mounted-directory writes and recovery journals block resolution and extraction capacity grants. A live sample caught the coordinator reading source PDFs through the VirtualBox mount; it had read over 26 GB while only a few hundred groups had been revisited.
+
+Keep Rust, the existing metadata process, two extraction processes, frozen whole groups, shared internal-date/review policy, semantic revisions, checkpoints and current-only output. Correct the scheduling defect without changing which files qualify.
+
+Use one dedicated publication thread in the coordinator process. It exclusively owns the source-adjacent Session, its ownership/recovery state and source-directory commits. The coordinator exclusively owns the streaming ledger, extraction scheduling, space reservations and progress. Requests/results pass through nonblocking channels; requests carry group identity, semantic revision, graph token and a monotonic request sequence. Coalesce queued requests by group, retaining the latest, and prioritize completed extraction and revocations. A stale result cannot replace newer group authority. Lost requests after a crash are reconstructed from durable resolutions and compatible byte caches. No competing source publisher is introduced.
+
+Publication reruns the existing fresh-policy/graph/observation checks and final authority gate. A confirmed revocation still invalidates the default search pointer promptly on the coordinator, even while the publisher is busy. Slow hashing, source-directory writing and journals run outside resolution. Keep reservations through assembly/publication and release them only when neither extraction nor publication still needs them. Publisher failures remain durable exceptions; they cannot count as completed publication.
+
+Move read-only manifest discovery to a separate bounded worker as well, so directory enumeration does not block the coordinator. Its complete result supplies the same conservative final reconciliation; unverified lineage remains pending. Final directory reconciliation runs through the single publisher and completion waits for its results. Preserve pending/current corpus behavior and read-only artifacts.
+
+Shutdown drains publication on normal completion. Failure/regroup paths stop further dispatch; the existing source journals recover interrupted writes, and the publication lease prevents overlapping owners. A publisher failure is surfaced explicitly. The existing live rollout stays running until tests and review prove the replacement, then a controlled replacement preserves caches, leases, published bytes and modification times.
+
+Acceptance: hold publication behind a gate and prove that independent cached groups all resolve and multiple extraction jobs complete while that gate remains closed; no sibling publication occurs until release. Revoke a queued selection and prove the stale request cannot install it. Preserve existing tests for cached metadata, whole-group selection, manual files, semantic stability, late reviews, capacity, OCR, missing sources and recovery. Verify on the pilot and then observe the real library's resolution progress alongside a busy publisher.

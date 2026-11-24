@@ -1,0 +1,1118 @@
+//! Coordinator-only publication into the source tree. Directory manifests are
+//! commit records; private receipts/intents establish ownership after a crash.
+mod discovery;
+mod files;
+pub use discovery::Discovery;
+mod state;
+use super::worker::Engine;
+use super::*;
+use crate::{digest, digest_json, inventory::root_identity};
+pub(crate) use files::Directory as ControlDirectory;
+use state::{Operation, Ownership, Receipt};
+use std::collections::{BTreeMap, BTreeSet};
+const NAME: &str = "current-documents.json";
+const OWNER: &str = "rpg-source-select";
+#[derive(Clone)]
+pub struct Book {
+    pub ready: Ready,
+    pub markdown: String,
+    pub metadata: Value,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AdjacentReport {
+    pub published: Vec<String>,
+    pub errors: Vec<String>,
+    pub directories: usize,
+    pub complete: bool,
+    pub states: BTreeMap<String, Value>,
+    pub warnings: Vec<String>,
+}
+pub struct Session {
+    scoped: bool,
+    authority_db: Option<PathBuf>,
+    expected_authority: Option<String>,
+    expected_graph: Option<String>,
+    publication_fence: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    confirmed: BTreeSet<String>,
+    root: PathBuf,
+    identity: Value,
+    path: PathBuf,
+    ownership: Ownership,
+    directories: BTreeSet<PathBuf>,
+    discovery_errors: Vec<String>,
+    warnings: BTreeSet<String>,
+    verified: BTreeMap<PathBuf, VerifiedDirectory>,
+}
+struct VerifiedDirectory {
+    signature: String,
+    stamps: Value,
+    entries: Vec<Value>,
+}
+fn cache_verified(
+    cache: &mut BTreeMap<PathBuf, VerifiedDirectory>,
+    relative: &Path,
+    signature: String,
+    before: Option<Value>,
+    after: Option<Value>,
+    entries: &[Value],
+) {
+    if before.is_some()
+        && before == after
+        && entries.iter().all(|e| {
+            e["status"].as_str().is_some_and(|s| {
+                ["published", "pending", "needs_ocr_or_visual_review"].contains(&s)
+            })
+        })
+    {
+        cache.insert(
+            relative.into(),
+            VerifiedDirectory {
+                signature,
+                stamps: after.unwrap(),
+                entries: entries.to_vec(),
+            },
+        );
+    } else {
+        cache.remove(relative);
+    }
+}
+fn owned(v: &Value) -> bool {
+    v["generator"] == OWNER
+}
+fn check_manifest(v: &Value) -> Result<()> {
+    if !owned(v)
+        || !matches!(v["schema_version"].as_u64(), Some(1 | 2))
+        || !v["documents"].is_array()
+    {
+        return Err(SelectionError::Invalid(
+            "foreign, invalid or unsupported directory record".into(),
+        ));
+    }
+    if v["selection_id"].as_str().is_none_or(str::is_empty) {
+        return Err(SelectionError::Invalid(
+            "directory record has no selection identity".into(),
+        ));
+    }
+    let mut ids = BTreeSet::new();
+    for d in v["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| owned(v))
+    {
+        let valid_hash = |v: &Value| {
+            v.as_str()
+                .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+        };
+        if ["source_id", "selection_id", "selection_basis"]
+            .iter()
+            .any(|key| d[*key].as_str().is_none_or(str::is_empty))
+            || !valid_hash(&d["pdf_sha256"])
+            || !d["status"].as_str().is_some_and(|s| {
+                [
+                    "pending",
+                    "published",
+                    "needs_ocr_or_visual_review",
+                    "failed",
+                    "running",
+                    "source_changed",
+                    "source_unavailable",
+                    "output_conflict",
+                ]
+                .contains(&s)
+            })
+            || (d["status"] == "published" && !valid_hash(&d["markdown_sha256"]))
+        {
+            return Err(SelectionError::Invalid(
+                "incomplete or invalid owned manifest entry".into(),
+            ));
+        }
+        let id = d["work_id"]
+            .as_str()
+            .ok_or_else(|| SelectionError::Invalid("manifest entry has no work ID".into()))?;
+        safe_id(id)?;
+        if !ids.insert(id) {
+            return Err(SelectionError::Invalid("duplicate manifest work ID".into()));
+        }
+        let pdf = files::filename(&d["pdf"])?;
+        let md = files::filename(&d["markdown"])?;
+        if md.extension() != Some(std::ffi::OsStr::new("md")) || pdf == md {
+            return Err(SelectionError::Invalid(
+                "invalid manifest Markdown destination".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+/// A generated sibling is not a preexisting Dungeon Masters Guild baseline.
+/// The exact checksum/source identity is required; other artifacts stay protected.
+pub fn managed_markdown(output: &Path, root: &Path, source: &crate::models::Source) -> bool {
+    (|| -> Result<bool> {
+        let identity = root_identity(root)?;
+        let dir = files::Directory::open(
+            root,
+            &identity,
+            source.relative_path.parent().unwrap_or(Path::new("")),
+        )?;
+        let target = source.relative_path.with_extension("md");
+        if let Some(sha) = dir.hash(Path::new(target.file_name().unwrap()))? {
+            let key = digest_json(&(&identity, crate::inventory::path_bytes(root)));
+            if let Ok(state) =
+                read_json::<Ownership>(&output.join("adjacent").join(format!("{key}.json")))
+                && state.schema_version == 1
+                && state.root == root
+                && state.root_identity == identity
+                && state.owns(&target, &sha)
+            {
+                return Ok(true);
+            }
+        }
+        let Some(bytes) = dir.read(Path::new(NAME))? else {
+            return Ok(false);
+        };
+        let manifest: Value = serde_json::from_slice(&bytes)?;
+        check_manifest(&manifest)?;
+        for entry in manifest["documents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| {
+                owned(e) && e["status"] == "published" && e["source_id"] == source.source_id
+            })
+        {
+            if files::filename(&entry["pdf"])?
+                == Path::new(source.relative_path.file_name().unwrap())
+                && dir.hash(&files::filename(&entry["markdown"])?)?.as_deref()
+                    == entry["markdown_sha256"].as_str()
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    })()
+    .unwrap_or(false)
+}
+impl Session {
+    pub fn new(output: &Path, s: &Snapshot) -> Result<Self> {
+        Self::open(output, s, false)
+    }
+    pub fn new_scoped(output: &Path, s: &Snapshot) -> Result<Self> {
+        Self::open(output, s, true)
+    }
+    fn open(output: &Path, s: &Snapshot, scoped: bool) -> Result<Self> {
+        files::Directory::open(&s.source_root, &s.root_identity, Path::new(""))?;
+        if root_identity(&s.source_root)? != s.root_identity {
+            return Err(SelectionError::Invalid(
+                "source root changed before adjacent publication".into(),
+            ));
+        }
+        let key = digest_json(&(
+            &s.root_identity,
+            crate::inventory::path_bytes(&s.source_root),
+        ));
+        let path = output.join("adjacent").join(format!("{key}.json"));
+        let ownership = Ownership::open(&path, s)?;
+        let (dirs, discovery_errors) = if scoped {
+            (vec![], vec![])
+        } else {
+            files::discover(&s.source_root)
+        };
+        let mut directories: BTreeSet<_> = dirs.into_iter().collect();
+        for r in ownership.receipts.iter().chain(&ownership.intents) {
+            if let Some(parent) = r.target.parent() {
+                directories.insert(parent.to_path_buf());
+            }
+        }
+        for operation in &ownership.operations {
+            directories.insert(operation.directory.clone());
+        }
+        Ok(Self {
+            scoped,
+            authority_db: None,
+            expected_authority: None,
+            expected_graph: None,
+            publication_fence: None,
+            confirmed: BTreeSet::new(),
+            root: s.source_root.clone(),
+            identity: s.root_identity.clone(),
+            path,
+            ownership,
+            directories,
+            discovery_errors,
+            warnings: BTreeSet::new(),
+            verified: BTreeMap::new(),
+        })
+    }
+    pub fn clear_authority_database(&mut self) {
+        self.authority_db = None;
+        self.expected_authority = None;
+        self.expected_graph = None;
+        self.publication_fence = None;
+    }
+    pub fn set_publication_fence(&mut self, fence: std::sync::Arc<std::sync::atomic::AtomicBool>) {
+        self.publication_fence = Some(fence);
+    }
+    pub fn set_graph_token(&mut self, token: &str) {
+        self.expected_graph = Some(token.into());
+    }
+    pub fn set_authority_database(&mut self, path: &Path) {
+        self.authority_db = Some(path.to_path_buf());
+        self.expected_authority = None;
+    }
+    pub fn set_commit_authority(&mut self, path: &Path, revision: &str) {
+        self.authority_db = Some(path.into());
+        self.expected_authority = Some(revision.into());
+        self.expected_graph = None;
+    }
+    fn check_authority(
+        &self,
+        s: &Snapshot,
+    ) -> Result<Option<(crate::store::Store, Option<Value>)>> {
+        let Some(path) = &self.authority_db else {
+            return Ok(None);
+        };
+        let db = crate::store::Store::open_readonly(path)?;
+        let revision = db.meta("authority_revision")?;
+        if let Some(expected) = &self.expected_authority {
+            if digest_json(&revision) != *expected {
+                return Err(SelectionError::Invalid(
+                    "reconciliation authority changed before staging".into(),
+                ));
+            }
+        } else {
+            for record in &s.records {
+                let group = db
+                    .record::<crate::models::Group>("groups", &record.group_id)?
+                    .ok_or_else(|| {
+                        SelectionError::Invalid("group changed before publication".into())
+                    })?;
+                let fresh = super::selection::resolve_group(
+                    &db,
+                    self.path.parent().unwrap().parent().unwrap(),
+                    &self.root,
+                    &group,
+                    record.candidates.clone(),
+                    &Value::Null,
+                )?;
+                if fresh.snapshot_id != s.snapshot_id {
+                    return Err(SelectionError::Invalid(
+                        "selection authority changed before staging".into(),
+                    ));
+                }
+            }
+        }
+        Ok(Some((db, revision)))
+    }
+    fn lock_authority(
+        &self,
+        checked: &Option<(crate::store::Store, Option<Value>)>,
+        s: &Snapshot,
+    ) -> Result<Option<File>> {
+        let Some((db, revision)) = checked else {
+            return Ok(None);
+        };
+        let guard = db.authority_guard()?;
+        if &db.meta("authority_revision")? != revision {
+            return Err(SelectionError::Invalid(
+                "selection authority changed before final commit".into(),
+            ));
+        }
+        if self
+            .publication_fence
+            .as_ref()
+            .is_some_and(|f| f.load(std::sync::atomic::Ordering::Acquire))
+        {
+            return Err(SelectionError::Invalid(
+                "publication fenced; regroup required".into(),
+            ));
+        }
+        if self.expected_graph.as_ref().is_some_and(|g| {
+            db.meta("graph_revision")
+                .map(|v| digest_json(&v) != *g)
+                .unwrap_or(true)
+        }) {
+            return Err(SelectionError::Invalid(
+                "group graph changed before source install".into(),
+            ));
+        }
+        for record in &s.records {
+            for c in &record.candidates {
+                let observed = crate::inventory::checked_path(&self.root, &c.source.relative_path)
+                    .and_then(|p| crate::inventory::fingerprint(&p));
+                if !match observed {
+                    Ok(fp) => fp == c.source.fingerprint,
+                    Err(_) => c.error.is_some(),
+                } {
+                    return Err(SelectionError::Invalid(
+                        "competitor observation changed before manifest commit".into(),
+                    ));
+                }
+            }
+        }
+        Ok(Some(guard))
+    }
+    fn install_authorized(
+        &self,
+        s: &Snapshot,
+        dir: &files::Directory,
+        plan: &files::Plan,
+        expected: Option<&Value>,
+        pairs: impl Fn() -> Result<Value>,
+    ) -> Result<()> {
+        let checked = self.check_authority(s)?;
+        let proof = dir.prepare_install(plan)?;
+        let installed = (|| -> Result<()> {
+            let _authority = self.lock_authority(&checked, s)?;
+            if expected.is_some_and(|e| pairs().as_ref().ok() != Some(e)) {
+                return Err(SelectionError::Invalid(
+                    "source observations changed at authority gate".into(),
+                ));
+            }
+            dir.commit_prepared(plan, &proof)
+        })();
+        if let Err(error) = installed {
+            if let Err(recovery) = dir.abort_prepared(plan) {
+                return Err(SelectionError::Invalid(format!(
+                    "{error}; prepared files preserved for recovery: {recovery}"
+                )));
+            }
+            return Err(error);
+        }
+        dir.finish_install()
+    }
+    /// Reconcile an emptied/previously managed directory after bounded discovery.
+    /// Current selected directories are handled by ordinary scoped publication.
+    pub fn reconcile_discovered(
+        &mut self,
+        s: &Snapshot,
+        engine: &Engine,
+        relative: &Path,
+    ) -> Result<usize> {
+        let dir = files::Directory::open(&self.root, &self.identity, relative)?;
+        if s.ready
+            .iter()
+            .any(|r| r.relative_path.parent() == Some(relative))
+        {
+            let record = dir
+                .read(Path::new(NAME))?
+                .map(|b| serde_json::from_slice::<Value>(&b))
+                .transpose()?;
+            return Ok(record
+                .as_ref()
+                .and_then(|r| r["unverified_work_ids"].as_array())
+                .map_or(0, |v| v.len()));
+        }
+        let mut local = s.clone();
+        let old = dir
+            .read(Path::new(NAME))?
+            .map(|b| serde_json::from_slice::<Value>(&b))
+            .transpose()?
+            .unwrap_or(Value::Null);
+        local.records.retain(|r| {
+            r.candidates.iter().any(|c| {
+                c.source.relative_path.parent() == Some(relative)
+                    || old["documents"].as_array().is_some_and(|docs| {
+                        docs.iter().any(|d| d["source_id"] == c.source.source_id)
+                    })
+            })
+        });
+        local.snapshot_id = digest_json(
+            &local
+                .records
+                .iter()
+                .map(|r| (&r.group_id, &r.selection_revision))
+                .collect::<Vec<_>>(),
+        );
+        let s = &local;
+        self.sync_directory(
+            relative,
+            s,
+            engine,
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &BTreeMap::new(),
+            s.coverage_errors.is_empty(),
+        )?;
+        let dir = files::Directory::open(&self.root, &self.identity, relative)?;
+        let record = dir
+            .read(Path::new(NAME))?
+            .map(|b| serde_json::from_slice::<Value>(&b))
+            .transpose()?;
+        Ok(record
+            .as_ref()
+            .and_then(|r| r["unverified_work_ids"].as_array())
+            .map_or(0, |v| v.len()))
+    }
+    pub fn sync(
+        &mut self,
+        s: &Snapshot,
+        engine: &Engine,
+        books: &[Book],
+        states: &BTreeMap<String, Value>,
+    ) -> AdjacentReport {
+        let mut report = AdjacentReport {
+            complete: s.coverage_errors.is_empty()
+                && self.discovery_errors.is_empty()
+                && (!self.scoped
+                    || s.records
+                        .iter()
+                        .all(|r| r.candidates.iter().all(|c| c.error.is_none()))),
+            errors: self.discovery_errors.clone(),
+            ..AdjacentReport::default()
+        };
+        if self.root != s.source_root
+            || self.identity != s.root_identity
+            || root_identity(&self.root).ok().as_ref() != Some(&self.identity)
+        {
+            report.complete = false;
+            report
+                .errors
+                .push("source root changed; adjacent publication refused".into());
+            return report;
+        }
+        if self.scoped {
+            self.directories.clear();
+            for record in &s.records {
+                for c in &record.candidates {
+                    self.directories.insert(
+                        c.source
+                            .relative_path
+                            .parent()
+                            .unwrap_or(Path::new(""))
+                            .to_path_buf(),
+                    );
+                }
+            }
+        }
+        for record in &s.records {
+            if record.candidates.iter().all(|c| c.error.is_none()) {
+                self.confirmed.insert(record.group_id.clone());
+            }
+        }
+        for ready in &s.ready {
+            self.directories.insert(
+                ready
+                    .relative_path
+                    .parent()
+                    .unwrap_or(Path::new(""))
+                    .to_path_buf(),
+            );
+        }
+        let mut targets: BTreeMap<PathBuf, usize> = BTreeMap::new();
+        for ready in &s.ready {
+            *targets
+                .entry(ready.relative_path.with_extension("md"))
+                .or_default() += 1;
+        }
+        let coverage_complete = report.complete;
+        let progress = super::progress::Progress::new("adjacent reconciliation");
+        for relative in self.directories.clone() {
+            let members: Vec<_> = s
+                .ready
+                .iter()
+                .filter(|r| r.relative_path.parent().unwrap_or(Path::new("")) == relative)
+                .collect();
+            match self.sync_directory(
+                &relative,
+                s,
+                engine,
+                books,
+                states,
+                &members,
+                &targets,
+                coverage_complete,
+            ) {
+                Ok(entries) => {
+                    report.directories += 1;
+                    for entry in entries {
+                        if let Some(id) = entry["work_id"].as_str() {
+                            if entry["status"] == "published" {
+                                report.published.push(id.to_string());
+                            } else {
+                                report.complete = false;
+                                if let Some(e) = entry["error"].as_str() {
+                                    report.errors.push(format!("{id}: {e}"));
+                                }
+                            }
+                            report.states.insert(id.into(), entry);
+                        }
+                    }
+                }
+                Err(e) => {
+                    report.complete = false;
+                    report
+                        .errors
+                        .push(format!("{}: {e}", self.root.join(&relative).display()));
+                    for r in members {
+                        report.states.insert(r.work_id.clone(),serde_json::json!({"work_id":r.work_id,"status":"output_conflict","error":e.to_string()}));
+                    }
+                }
+            }
+            progress.tick();
+        }
+        // Full reconciliation coverage is independent of outstanding jobs, but
+        // the overall report remains pending until every selected book publishes.
+        report.published.sort();
+        report.published.dedup();
+        report.warnings = self.warnings.iter().cloned().collect();
+        report
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn sync_directory(
+        &mut self,
+        relative: &Path,
+        s: &Snapshot,
+        engine: &Engine,
+        books: &[Book],
+        states: &BTreeMap<String, Value>,
+        members: &[&Ready],
+        targets: &BTreeMap<PathBuf, usize>,
+        coverage_complete: bool,
+    ) -> Result<Vec<Value>> {
+        let dir = match files::Directory::open(&self.root, &self.identity, relative) {
+            Err(SelectionError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(vec![]);
+            }
+            other => other?,
+        };
+        let _guard = dir.lock()?;
+        let inputs: Vec<_> = members
+            .iter()
+            .map(|r| {
+                (
+                    &r.work_id,
+                    states.get(&r.work_id),
+                    books
+                        .iter()
+                        .find(|b| b.ready.work_id == r.work_id)
+                        .map(|b| digest(b.markdown.as_bytes())),
+                )
+            })
+            .collect();
+        let signature = digest_json(&(
+            &s.snapshot_id,
+            &engine.id,
+            coverage_complete,
+            members,
+            inputs,
+        ));
+        let stamp = |dir: &files::Directory| -> Result<Value> {
+            let mut stamps = vec![dir.stamp(Path::new(NAME))?];
+            for r in members {
+                stamps.push(dir.stamp(Path::new(r.relative_path.file_name().unwrap()))?);
+                stamps.push(dir.stamp(Path::new(
+                    r.relative_path.with_extension("md").file_name().unwrap(),
+                ))?);
+            }
+            Ok(serde_json::to_value(stamps)?)
+        };
+        let observed_before = stamp(&dir).ok();
+        if !self
+            .ownership
+            .operations
+            .iter()
+            .any(|o| o.directory == relative)
+            && let Some(cached) = self.verified.get(relative)
+            && cached.signature == signature
+            && observed_before.as_ref() == Some(&cached.stamps)
+        {
+            return Ok(cached.entries.clone());
+        }
+        let pending: Vec<_> = self
+            .ownership
+            .operations
+            .iter()
+            .filter(|o| o.directory == relative)
+            .cloned()
+            .collect();
+        for operation in pending {
+            dir.recover(&operation.plan)?;
+            self.ownership.operations.retain(|o| o != &operation);
+        }
+        self.ownership.save(&self.path)?;
+        let original = dir.read(Path::new(NAME))?;
+        if members.is_empty() && original.is_none() {
+            return Ok(vec![]);
+        }
+        if let Some(bytes) = &original {
+            check_manifest(&serde_json::from_slice::<Value>(bytes)?)?;
+        }
+        if dir.read(Path::new(NAME))? != original {
+            return Err(SelectionError::Invalid(
+                "directory record changed concurrently; retry".into(),
+            ));
+        }
+        let old: Value = original
+            .as_ref()
+            .map(|b| serde_json::from_slice(b))
+            .transpose()?
+            .unwrap_or_else(
+                || serde_json::json!({"schema_version":1,"generator":OWNER,"documents":[]}),
+            );
+        // Rebuild ownership only from exact matching bytes, never from a name.
+        for entry in old["documents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|v| owned(v) && v["status"] == "published")
+        {
+            let target = relative.join(files::filename(&entry["markdown"])?);
+            if let Some(sha) = entry["markdown_sha256"].as_str()
+                && let Ok(Some(bytes)) = dir.read(target.file_name().unwrap().as_ref())
+                && digest(&bytes) == sha
+            {
+                self.ownership.remember(Receipt {
+                    target,
+                    sha256: sha.into(),
+                    work_id: entry["work_id"].as_str().unwrap().into(),
+                    source_sha256: entry["pdf_sha256"].as_str().unwrap_or("").into(),
+                });
+            }
+        }
+        self.ownership.save(&self.path)?;
+        let mut documents: Vec<Value> = old["documents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|v| !owned(v))
+            .cloned()
+            .collect();
+        let mut unresolved = vec![];
+        if !coverage_complete || self.scoped {
+            for entry in old["documents"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|v| owned(v))
+            {
+                if !s
+                    .ready
+                    .iter()
+                    .any(|r| Some(r.work_id.as_str()) == entry["work_id"].as_str())
+                {
+                    let proven = self.scoped
+                        && s.records.iter().any(|r| {
+                            let complete = r.status == "source_changed"
+                                || r.candidates.iter().all(|c| c.error.is_none());
+                            complete
+                                && (entry["group_id"] == r.group_id
+                                    || r.candidates.iter().any(|c| {
+                                        entry["source_id"] == c.source.source_id
+                                            && (r.status == "source_changed" || c.sha256.is_some())
+                                    }))
+                        });
+                    let disappeared = self.scoped
+                        && files::filename(&entry["pdf"])
+                            .ok()
+                            .is_some_and(|p| matches!(dir.stamp(&p), Ok(None)));
+                    if !proven && !disappeared {
+                        documents.push(entry.clone());
+                        if !entry["group_id"]
+                            .as_str()
+                            .is_some_and(|g| self.confirmed.contains(g))
+                        {
+                            unresolved.push(entry["work_id"].clone());
+                        }
+                    }
+                }
+            }
+        }
+        let mut results = vec![];
+        for r in members {
+            let target = r.relative_path.with_extension("md");
+            let mut entry = serde_json::json!({"generator":OWNER,"work_id":r.work_id,"source_id":r.source_id,"selection_id":super::publication::revision(s,r),"pdf":files::path_value(Path::new(r.relative_path.file_name().unwrap())),"pdf_sha256":r.sha256,"markdown":files::path_value(Path::new(target.file_name().unwrap())),"selection_basis":r.selection_basis,"internal_date":r.date,"engine_id":engine.id,"status":states.get(&r.work_id).and_then(|v|v["status"].as_str()).unwrap_or("pending")});
+            if self.scoped {
+                entry["group_id"] = Value::String(r.group_id.clone());
+                entry["selection_revision"] =
+                    Value::String(super::publication::revision(s, r).into());
+            }
+            if let Some(error) = states.get(&r.work_id).and_then(|v| v.get("error")) {
+                entry["error"] = error.clone();
+            }
+            let attempt = (|| -> Result<()> {
+                if targets[&target] != 1 {
+                    return Err(SelectionError::Invalid(
+                        "multiple selected works target the same Markdown filename".into(),
+                    ));
+                }
+                let dest = Path::new(target.file_name().unwrap());
+                let existing = dir.read(dest)?;
+                if let Some(bytes) = &existing
+                    && !self.ownership.owns(&target, &digest(bytes))
+                {
+                    return Err(SelectionError::Invalid(
+                        "existing Markdown is unowned or user-edited; preserved".into(),
+                    ));
+                }
+                let Some(book) = books
+                    .iter()
+                    .find(|b| b.ready.work_id == r.work_id && b.ready.sha256 == r.sha256)
+                else {
+                    return Ok(());
+                };
+                if dir
+                    .hash(Path::new(r.relative_path.file_name().unwrap()))?
+                    .as_deref()
+                    != Some(r.sha256.as_str())
+                {
+                    entry["status"] = Value::String("source_changed".into());
+                    entry["error"] = Value::String("selected PDF changed or is unavailable".into());
+                    return Ok(());
+                }
+                let markdown = super::render::sibling(&book.markdown, r, s);
+                let bytes = markdown.as_bytes();
+                if dir.available_bytes()?
+                    < (bytes.len() as u64)
+                        .saturating_mul(2)
+                        .saturating_add(1024 * 1024)
+                {
+                    return Err(SelectionError::Invalid(
+                        "destination space insufficient; publication pending".into(),
+                    ));
+                }
+                let sha = digest(bytes);
+                let receipt = Receipt {
+                    target: target.clone(),
+                    sha256: sha.clone(),
+                    work_id: r.work_id.clone(),
+                    source_sha256: r.sha256.clone(),
+                };
+                if existing.as_deref() != Some(bytes) {
+                    if !self.ownership.intents.contains(&receipt) {
+                        self.ownership.intents.push(receipt.clone());
+                    }
+                    self.ownership.save(&self.path)?;
+                    if dir.read(dest)? != existing {
+                        return Err(SelectionError::Invalid(
+                            "Markdown changed concurrently; preserved".into(),
+                        ));
+                    }
+                    let plan = dir.stage(dest, bytes, existing.as_deref())?;
+                    let operation = Operation {
+                        directory: relative.into(),
+                        plan,
+                    };
+                    self.ownership.operations.push(operation.clone());
+                    self.ownership.save(&self.path)?;
+                    self.install_authorized(s, &dir, &operation.plan, None, || Ok(Value::Null))?;
+                }
+                if dir
+                    .hash(Path::new(r.relative_path.file_name().unwrap()))?
+                    .as_deref()
+                    != Some(r.sha256.as_str())
+                {
+                    entry["status"] = Value::String("source_changed".into());
+                    entry["error"] =
+                        Value::String("selected PDF changed before record commit".into());
+                    return Ok(());
+                }
+                entry["status"] = Value::String("published".into());
+                entry["markdown_sha256"] = Value::String(sha);
+                entry["quality"] = serde_json::json!({"empty_pages":book.metadata["empty_pages"],"sparse_pages":book.metadata["sparse_pages"],"warnings":book.metadata["warnings"]});
+                Ok(())
+            })();
+            if let Err(e) = attempt {
+                entry["status"] = Value::String("output_conflict".into());
+                entry["error"] = Value::String(e.to_string());
+            }
+            documents.push(entry.clone());
+            results.push(entry);
+        }
+        verify_pairs(&dir, &mut results);
+        for result in &results {
+            if let Some(entry) = documents
+                .iter_mut()
+                .find(|e| owned(e) && e["work_id"] == result["work_id"])
+            {
+                *entry = result.clone();
+            }
+        }
+        documents.sort_by_key(|v| v["work_id"].as_str().unwrap_or("").to_string());
+        let mut record = old.clone();
+        record["schema_version"] = Value::from(if self.scoped { 2 } else { 1 });
+        record["generator"] = Value::String(OWNER.into());
+        if self.scoped {
+            let mut coverage = old["group_coverage"]
+                .as_object()
+                .cloned()
+                .unwrap_or_default();
+            for r in &s.records {
+                coverage.insert(r.group_id.clone(), serde_json::json!({"revision":r.selection_revision.as_deref().unwrap_or(&s.snapshot_id),"status":r.status,"sources":r.candidates.iter().map(|c| &c.source.source_id).collect::<Vec<_>>()}));
+            }
+            record["group_coverage"] = Value::Object(coverage.clone());
+            record["selection_id"] = Value::String(digest_json(&coverage));
+        } else {
+            record["selection_id"] = Value::String(s.snapshot_id.clone());
+        }
+        record["documents"] = Value::Array(documents);
+        record["reconciliation_status"] = Value::String(
+            if coverage_complete && unresolved.is_empty() {
+                "complete"
+            } else {
+                "partial"
+            }
+            .into(),
+        );
+        record["unverified_work_ids"] = Value::Array(unresolved);
+        let mut comparable = record.clone();
+        let mut prior = old.clone();
+        comparable.as_object_mut().unwrap().remove("updated_at");
+        prior.as_object_mut().unwrap().remove("updated_at");
+        if comparable != prior {
+            if dir.read(Path::new(NAME))? != original {
+                return Err(SelectionError::Invalid(
+                    "directory record changed concurrently; preserved".into(),
+                ));
+            }
+            record["updated_at"] = Value::String(chrono::Utc::now().to_rfc3339());
+            let mut committed = false;
+            for _ in 0..3 {
+                let plan = dir.stage(
+                    Path::new(NAME),
+                    &serde_json::to_vec_pretty(&record)?,
+                    original.as_deref(),
+                )?;
+                let operation = Operation {
+                    directory: relative.into(),
+                    plan,
+                };
+                self.ownership.operations.push(operation.clone());
+                self.ownership.save(&self.path)?;
+                let pair_stamp = || -> Result<Value> {
+                    let all = stamp(&dir)?;
+                    Ok(Value::Array(
+                        all.as_array().unwrap().iter().skip(1).cloned().collect(),
+                    ))
+                };
+                let before_verification = pair_stamp()?;
+                if verify_pairs(&dir, &mut results) {
+                    dir.cleanup(&operation.plan)?;
+                    self.ownership.operations.retain(|o| o != &operation);
+                    self.ownership.save(&self.path)?;
+                    for result in &results {
+                        if let Some(entry) = record["documents"]
+                            .as_array_mut()
+                            .unwrap()
+                            .iter_mut()
+                            .find(|e| owned(e) && e["work_id"] == result["work_id"])
+                        {
+                            *entry = result.clone();
+                        }
+                    }
+                    continue;
+                }
+                if pair_stamp()? != before_verification {
+                    return Err(SelectionError::Invalid(
+                        "source changed during final verification".into(),
+                    ));
+                }
+                self.install_authorized(
+                    s,
+                    &dir,
+                    &operation.plan,
+                    Some(&before_verification),
+                    pair_stamp,
+                )?;
+                committed = true;
+                break;
+            }
+            if !committed {
+                return Err(SelectionError::Invalid(
+                    "published files changed repeatedly before directory commit; retry".into(),
+                ));
+            }
+        }
+        // Only after the manifest commits is an intent promoted to a receipt.
+        for e in &results {
+            if e["status"] == "published" {
+                let target = relative.join(files::filename(&e["markdown"])?);
+                let receipt = Receipt {
+                    target,
+                    sha256: e["markdown_sha256"].as_str().unwrap().into(),
+                    work_id: e["work_id"].as_str().unwrap().into(),
+                    source_sha256: e["pdf_sha256"].as_str().unwrap().into(),
+                };
+                self.ownership.remember(receipt.clone());
+                self.ownership.intents.retain(|r| r != &receipt);
+            }
+        }
+        let committed: Vec<_> = self
+            .ownership
+            .operations
+            .iter()
+            .filter(|o| o.directory == relative)
+            .cloned()
+            .collect();
+        for operation in committed {
+            dir.cleanup(&operation.plan)?;
+            self.ownership.operations.retain(|o| o != &operation);
+        }
+        if dir.sync_is_unsupported() {
+            self.warnings.insert(format!("{}: directory fsync unsupported; file flushes and durable private recovery journal used",self.root.join(relative).display()));
+        }
+        self.ownership.save(&self.path)?;
+        cache_verified(
+            &mut self.verified,
+            relative,
+            signature,
+            observed_before,
+            stamp(&dir).ok(),
+            &results,
+        );
+        Ok(results)
+    }
+}
+
+fn verify_pairs(dir: &files::Directory, entries: &mut [Value]) -> bool {
+    let mut changed = false;
+    for entry in entries.iter_mut().filter(|e| e["status"] == "published") {
+        let check = (|| -> Result<Option<&str>> {
+            let pdf = files::filename(&entry["pdf"])?;
+            let md = files::filename(&entry["markdown"])?;
+            if dir.hash(&pdf)?.as_deref() != entry["pdf_sha256"].as_str() {
+                return Ok(Some("source_changed"));
+            }
+            if dir.hash(&md)?.as_deref() != entry["markdown_sha256"].as_str() {
+                return Ok(Some("output_conflict"));
+            }
+            Ok(None)
+        })();
+        if let Some(status) = match check {
+            Ok(s) => s,
+            Err(_) => Some("output_conflict"),
+        } {
+            changed = true;
+            entry["status"] = Value::String(status.into());
+            entry["error"] = Value::String(
+                "source or Markdown changed before directory commit; preserved".into(),
+            );
+            entry.as_object_mut().unwrap().remove("markdown_sha256");
+        }
+    }
+    changed
+}
+
+#[cfg(test)]
+mod commit_tests {
+    use super::*;
+    #[test]
+    fn verification_cache_does_not_attest_to_an_edit_after_the_byte_read() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("A.md"), b"verified bytes").unwrap();
+        let id = root_identity(root.path()).unwrap();
+        let dir = files::Directory::open(root.path(), &id, Path::new("")).unwrap();
+        let before = Some(serde_json::to_value(dir.stamp(Path::new("A.md")).unwrap()).unwrap());
+        assert_eq!(
+            dir.hash(Path::new("A.md")).unwrap(),
+            Some(digest(b"verified bytes"))
+        );
+        fs::write(root.path().join("A.md"), b"late user edits").unwrap();
+        let after = Some(serde_json::to_value(dir.stamp(Path::new("A.md")).unwrap()).unwrap());
+        let mut cache = BTreeMap::new();
+        cache_verified(
+            &mut cache,
+            Path::new(""),
+            "key".into(),
+            before,
+            after.clone(),
+            &[serde_json::json!({"status":"published"})],
+        );
+        assert!(cache.is_empty());
+        cache_verified(
+            &mut cache,
+            Path::new(""),
+            "key".into(),
+            after.clone(),
+            after,
+            &[serde_json::json!({"status":"output_conflict"})],
+        );
+        assert!(cache.is_empty());
+    }
+    #[test]
+    fn final_pair_check_rejects_earlier_source_or_markdown_changes_after_staging() {
+        for source in [true, false] {
+            let root = tempfile::tempdir().unwrap();
+            fs::write(root.path().join("A.pdf"), b"pdf").unwrap();
+            fs::write(root.path().join("A.md"), b"markdown").unwrap();
+            let id = root_identity(root.path()).unwrap();
+            let dir = files::Directory::open(root.path(), &id, Path::new("")).unwrap();
+            let mut entries = vec![
+                serde_json::json!({"status":"published","pdf":"A.pdf","pdf_sha256":digest(b"pdf"),"markdown":"A.md","markdown_sha256":digest(b"markdown")}),
+            ];
+            let staged = dir.stage(Path::new(NAME), b"new manifest", None).unwrap();
+            fs::write(
+                root.path().join(if source { "A.pdf" } else { "A.md" }),
+                b"changed",
+            )
+            .unwrap();
+            assert!(verify_pairs(&dir, &mut entries));
+            assert_ne!(entries[0]["status"], "published");
+            dir.cleanup(&staged).unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod authority_io_tests {
+    use super::*;
+    #[test]
+    fn hashing_and_directory_flush_do_not_hold_the_authority_gate() {
+        for phase in ["prepare", "flush"] {
+            let root = tempfile::tempdir().unwrap();
+            let work = tempfile::tempdir().unwrap();
+            let out = tempfile::tempdir().unwrap();
+            let db = crate::store::Store::open(&work.path().join("selection.db")).unwrap();
+            drop(db.authority_guard().unwrap());
+            fs::write(root.path().join("notes.md"), b"old owned text").unwrap();
+            let identity = root_identity(root.path()).unwrap();
+            let mut dir = files::Directory::open(root.path(), &identity, Path::new("")).unwrap();
+            let plan = dir
+                .stage(
+                    Path::new("notes.md"),
+                    b"new generated text",
+                    Some(b"old owned text"),
+                )
+                .unwrap();
+            let snapshot = Snapshot {
+                schema_version: 1,
+                snapshot_id: "scope".into(),
+                policy: "test".into(),
+                created: String::new(),
+                source_root: root.path().into(),
+                root_identity: identity,
+                coverage_errors: vec![],
+                archives: 0,
+                ready: vec![],
+                records: vec![],
+            };
+            let mut session = Session::new_scoped(out.path(), &snapshot).unwrap();
+            session.set_authority_database(&work.path().join("selection.db"));
+            let (tx, rx) = std::sync::mpsc::channel();
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+            dir.pause = Some(files::TestPause {
+                phase,
+                started: tx,
+                release: barrier.clone(),
+            });
+            let task = std::thread::spawn(move || {
+                session.install_authorized(&snapshot, &dir, &plan, None, || Ok(Value::Null))
+            });
+            rx.recv_timeout(std::time::Duration::from_secs(3)).unwrap();
+            let probe = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(work.path().join("selection.db.authority.lock"))
+                .unwrap();
+            let free = probe.try_lock().is_ok();
+            drop(probe);
+            barrier.wait();
+            task.join().unwrap().unwrap();
+            assert!(free, "slow {phase} I/O held the coordinator authority lock");
+            assert_eq!(
+                fs::read(root.path().join("notes.md")).unwrap(),
+                b"new generated text"
+            );
+        }
+    }
+}
