@@ -22,3 +22,17 @@ The native tool is libarchive-tools3.8.5, matching installed libarchive3.8.5. It
 A bounded real-root pilot uses separate private pilot state. Its exact per-source receipts/logs are migrated into the full output before launch; its limited `jobs.json` is not copied. This lets the unlimited scope reuse the pilot's published directories without confusing them with unowned manual outputs. Production and pilot coordinators do not run concurrently on this library.
 
 Deferred minors from the single final review: the full job manifest is rewritten after each successful archive even when no children were added; and the inventory's reserved staging-name exclusion currently applies at every directory depth rather than only at the library root. Neither blocks this rollout. No additional legacy PDF/Markdown selection authority is imported or modified.
+
+## Deployed batch
+
+Code `53fbbe3` is deployed as immutable `archive-selector-53fbbe3` (SHA-256 `b8e72e8c2e601914893397a93a1db52e0458de4089aa207f7c101cd2ff5429a6`), paired with private `bsdtar-3.8.5` (SHA-256 `a160f970a1ba6e6fe4ee3300f1bb8536fb5e8af04daf862cea97f79918964826`). The full Rust suite passed167 tests (9 optional ignored); all8 archive integration cases, including native and low-space cases, passed separately. Format, clippy and release build passed. Important review findings were fixed in one pass with failing regressions; minor followups remain above.
+
+The real CIFS pilot completed4 archives,96 files and6 PDF entries without errors/conflicts; a second run reused all4. Its completion records/logs were copied into the unlimited output, excluding the bounded manifest. User service `rpg-archive-extraction.service` runs four native decoders independently of the chat terminal and restarts on abnormal termination. Sustained progress past one minute was verified with66 completed archives,4 active workers,223 PDF entries and zero failures/conflicts. Total job count grows as nested archives are queued. This is an active batch, not a claim that all archives have finished.
+
+```bash
+systemctl --user status rpg-archive-extraction.service
+watch -n 5 cat /home/kostadis/.codex/worktrees/rpg-source-selection/mytools/pdf-translators/source-selection-data/winshare-archive-extraction/status.json
+tail -f /home/kostadis/.codex/worktrees/rpg-source-selection/mytools/pdf-translators/source-selection-data/winshare-archive-extraction/extraction.log
+```
+
+Private `deployment.json`, `pilot-verification.json`, `preflight.json`, per-source `records/` and per-entry `logs/` retain the verification and recovery evidence.
