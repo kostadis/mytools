@@ -5,6 +5,8 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AnalysisConfig {
+    #[serde(default = "policy_default")]
+    pub analysis_policy: String,
     pub schema_version: u32,
     pub csv: PathBuf,
     pub d_root: String,
@@ -110,6 +112,8 @@ pub struct HistoricalObservation {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HistoricalView {
+    #[serde(default)]
+    pub verified_hashes: BTreeMap<String, String>,
     pub groups: BTreeMap<String, HistoricalObservation>,
     pub unprocessed_groups: Vec<String>,
     pub warnings: Vec<String>,
@@ -186,6 +190,7 @@ pub struct ProtectedEdition {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuditResult {
+    pub policy_version: String,
     pub schema_version: u32,
     pub input_receipt: String,
     pub provisional: bool,
@@ -197,6 +202,8 @@ pub struct AuditResult {
     pub counts: BTreeMap<String, usize>,
     #[serde(default)]
     pub review_notes: BTreeMap<String, String>,
+    #[serde(default)]
+    pub supplemental_evidence: Vec<Value>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SampleMember {
@@ -231,4 +238,8 @@ pub struct ReviewResults {
     pub unresolved: Vec<String>,
     pub notes: BTreeMap<String, String>,
     pub provenance: Value,
+}
+
+fn policy_default() -> String {
+    super::POLICY_VERSION.into()
 }

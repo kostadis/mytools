@@ -1,11 +1,14 @@
 //! Independent, read-only selection analysis; never applies production decisions.
+pub const POLICY_VERSION: &str = "library-selection-analysis-v1";
 pub mod audit;
 pub mod history;
 pub mod inputs;
 pub mod models;
+pub mod progress;
 pub mod report;
 pub mod review;
 pub mod sampling;
+pub mod workflow;
 use crate::{Result, SelectionError};
 use serde::{Serialize, de::DeserializeOwned};
 use std::path::Path;

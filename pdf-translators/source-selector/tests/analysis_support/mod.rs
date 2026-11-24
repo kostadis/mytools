@@ -64,6 +64,7 @@ pub fn audit_fixture() -> (
     )
     .unwrap();
     let h = rpg_source_select::analysis::models::HistoricalView {
+        verified_hashes: Default::default(),
         groups: Default::default(),
         unprocessed_groups: vec!["g".into()],
         warnings: vec![],

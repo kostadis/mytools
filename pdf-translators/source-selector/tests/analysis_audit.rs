@@ -21,6 +21,7 @@ fn fixture() -> (tempfile::TempDir, FrozenInputs, HistoricalView) {
     std::fs::write(t.path().join("matches.csv"),"D file,G file,Status,Evidence,Other matching G files\nD:/Download/Replacement.pdf,G:/Library/Publisher/Nulb/Replacement.pdf,Sampled byte match,samples,\n").unwrap();
     let f = freeze(&serde_json::from_value(c).unwrap(), &t.path().join("run")).unwrap();
     let h = HistoricalView {
+        verified_hashes: Default::default(),
         groups: Default::default(),
         unprocessed_groups: vec!["g".into()],
         warnings: vec![],
@@ -222,4 +223,58 @@ fn report_separates_files_groups_relationships_and_coverage() {
     ] {
         assert!(out.join(name).exists(), "{name}");
     }
+}
+#[test]
+fn unrelated_snapshot_identity_does_not_reopen_unchanged_case() {
+    let (t, mut f, h) = fixture();
+    let a = audit::compare(&f, &h, &[]).unwrap();
+    let first =
+        rpg_source_select::analysis::review::export_cases(&a, &t.path().join("review-a")).unwrap();
+    f.receipt_id = "new snapshot, unchanged row evidence".into();
+    let b = audit::compare(&f, &h, &[]).unwrap();
+    let second =
+        rpg_source_select::analysis::review::export_cases(&b, &t.path().join("review-b")).unwrap();
+    assert_eq!(first.scope_map, second.scope_map);
+}
+#[test]
+fn old_only_historical_choice_is_not_flagged_as_disagreement() {
+    let (_t, mut f, mut h) = fixture();
+    f.reference.clear();
+    h.groups.insert(
+        "g".into(),
+        HistoricalObservation {
+            group_id: "g".into(),
+            run_id: "old".into(),
+            policy: "internal-recency-v1".into(),
+            status: "ready".into(),
+            reason: "most recent metadata".into(),
+            selected: vec![HistoricalChoice {
+                source_id: "a".into(),
+                relative_path: "a.pdf".into(),
+                sha256: None,
+                detail: json!({}),
+            }],
+            hashes: Default::default(),
+            scorable: true,
+            record: json!({}),
+        },
+    );
+    let a = audit::compare(&f, &h, &[]).unwrap();
+    assert!(a.relationships.iter().all(|g| !g.flagged));
+}
+#[test]
+fn sampling_accounts_for_document_roles_and_evidence_methods() {
+    let (_t, mut f, h) = fixture();
+    f.old_sources[0]
+        .metadata
+        .insert("document_role".into(), json!("handout"));
+    let a = audit::compare(&f, &h, &[]).unwrap();
+    let s = sampling::select(&a, &f.config).unwrap();
+    let g = s
+        .membership
+        .iter()
+        .find(|m| m.relationship_id == "g")
+        .unwrap();
+    assert!(g.stratum.contains("handout"));
+    assert!(g.stratum.contains("sampled_bytes"));
 }

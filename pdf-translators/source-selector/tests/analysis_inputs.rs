@@ -82,3 +82,25 @@ fn sqlite_wal_changes_are_detected_on_resume() {
     insert_source(&cfg.old_inventory, source("new", "new.pdf"));
     assert!(freeze(&cfg, &run).is_err());
 }
+#[test]
+fn wal_cache_changes_are_detected_on_resume() {
+    let t = tempfile::tempdir().unwrap();
+    let cfg: AnalysisConfig = serde_json::from_value(setup(t.path())).unwrap();
+    let conn = rusqlite::Connection::open(&cfg.old_inventory).unwrap();
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;CREATE TABLE cache(id TEXT,stage TEXT,cache_key TEXT,body TEXT)",
+    )
+    .unwrap();
+    let out = t.path().join("run");
+    freeze(&cfg, &out).unwrap();
+    conn.execute("INSERT INTO cache VALUES('s','hash','key','new hash')", [])
+        .unwrap();
+    assert!(freeze(&cfg, &out).is_err());
+}
+#[test]
+fn unsupported_analysis_policy_is_rejected() {
+    let t = tempfile::tempdir().unwrap();
+    let mut c = setup(t.path());
+    c["analysis_policy"] = serde_json::json!("future-policy");
+    assert!(freeze(&serde_json::from_value(c).unwrap(), &t.path().join("run")).is_err());
+}

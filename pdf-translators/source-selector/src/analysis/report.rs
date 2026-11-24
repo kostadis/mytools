@@ -109,13 +109,17 @@ pub fn write(audit: &AuditResult, sample: &SampleManifest, out: &Path) -> Result
             );
         }
         let comparison = json!({"scope":"Only inventoried sources in scorable historical groups with a saved selection; file counts are not quality scores","relationship_count":comparable.len(),"source_count":source_ids.len(),"exact_byte_baseline_representatives":exact_keys.len(),"historical_selected_inventoried_sources":historical_ids.len(),"conservative_retained_sources":audit.files.iter().filter(|f|source_ids.contains(&f.source.source_id)&&f.state.retained()).count(),"limits":"No omission is confirmed wrong merely because an unresolved candidate is retained. Reviewed desired-content findings must be reported with their evidence and owner rulings."});
-        let summary = json!({"schema_version":1,"provisional":audit.provisional,"input_receipt":audit.input_receipt,"counts":audit.counts,"proposal_states":states,"reference_evidence_methods":methods,"publisher_files":publishers,"metadata_breakdown":metadata_breakdown,"policy_comparison":comparison,"review_required":audit.relationships.iter().filter(|g|g.needs_review).count(),"sample":{"seed":sample.seed,"per_stratum":sample.per_stratum,"holdout_percent":sample.holdout_percent,"selected":sample.selected.len()},"warnings":audit.warnings,"limits":["Current availability is not a complete ownership catalog.","Candidate relationships are not counts of unique works.","Sampled and partial matches cannot prove complete equivalence.","Historical unprocessed and deferred groups measure coverage, not incorrect choices.","Publisher holdouts test transfer within this collection; unfamiliar dumps require calibration."]});
+        let summary = json!({"schema_version":1,"policy_version":audit.policy_version,"provisional":audit.provisional,"input_receipt":audit.input_receipt,"counts":audit.counts,"proposal_states":states,"reference_evidence_methods":methods,"publisher_files":publishers,"metadata_breakdown":metadata_breakdown,"policy_comparison":comparison,"review_required":audit.relationships.iter().filter(|g|g.needs_review).count(),"sample":{"seed":sample.seed,"per_stratum":sample.per_stratum,"holdout_percent":sample.holdout_percent,"selected":sample.selected.len()},"warnings":audit.warnings,"limits":["Current availability is not a complete ownership catalog.","Candidate relationships are not counts of unique works.","Sampled and partial matches cannot prove complete equivalence.","Historical unprocessed and deferred groups measure coverage, not incorrect choices.","Publisher holdouts test transfer within this collection; unfamiliar dumps require calibration."]});
         write_json(&stage.join("summary.json"), &summary)?;
+        write_json(
+            &stage.join("supplemental-evidence.json"),
+            &audit.supplemental_evidence,
+        )?;
         write_json(&stage.join("sample-manifest.json"), sample)?;
         write_json(&stage.join("protected-editions.json"), &audit.protected)?;
         write_json(
             &stage.join("proposed-conversion-list.json"),
-            &json!({"schema_version":1,"provisional":audit.provisional,"input_receipt":audit.input_receipt,"files":audit.files,"notes":audit.review_notes}),
+            &json!({"schema_version":1,"policy_version":audit.policy_version,"provisional":audit.provisional,"input_receipt":audit.input_receipt,"files":audit.files,"notes":audit.review_notes}),
         )?;
         let mut refs = csv::Writer::from_path(stage.join("reference-rows.csv"))?;
         refs.write_record([

@@ -157,7 +157,10 @@ fn sources(db: &Path) -> Result<Vec<Source>> {
         .collect())
 }
 pub fn freeze(config: &AnalysisConfig, output: &Path) -> Result<FrozenInputs> {
-    if config.schema_version != 1 || config.holdout_percent > 100 {
+    if config.schema_version != 1
+        || config.holdout_percent > 100
+        || config.analysis_policy != super::POLICY_VERSION
+    {
         return Err(invalid("unsupported config schema or holdout percentage"));
     }
     if config.reference_complete
@@ -188,7 +191,17 @@ pub fn freeze(config: &AnalysisConfig, output: &Path) -> Result<FrozenInputs> {
                     output.join(&receipt.snapshot),
                     OpenFlags::SQLITE_OPEN_READ_ONLY,
                 )?;
-                for table in ["meta", "sources", "records"] {
+                for table in ["meta", "sources", "records", "cache"] {
+                    if table == "cache" {
+                        let has:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='cache' AND type='table')",[],|r|r.get(0))?;
+                        let had:bool=snapshot.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='cache' AND type='table')",[],|r|r.get(0))?;
+                        if has != had {
+                            return Err(invalid("database cache schema changed"));
+                        }
+                        if !has {
+                            continue;
+                        }
+                    }
                     let sql = format!("SELECT * FROM {table} ORDER BY 1,2");
                     if db_values(&c, &sql)? != db_values(&snapshot, &sql)? {
                         return Err(invalid("database changed; use a new run directory"));

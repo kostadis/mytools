@@ -31,7 +31,26 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
         .collect::<BTreeMap<_, _>>();
     let mut cards = vec![];
     let mut map = serde_json::Map::new();
-    for g in audit.relationships.iter().filter(|g| g.needs_review) {
+    let disagreements = audit
+        .reference
+        .iter()
+        .filter(|r| r.outcome == "selected_candidate_not_confirmed_by_reference")
+        .flat_map(|r| r.groups.iter())
+        .collect::<BTreeSet<_>>();
+    let mut pending = audit
+        .relationships
+        .iter()
+        .filter(|g| g.needs_review)
+        .collect::<Vec<_>>();
+    pending.sort_by_key(|g| {
+        (
+            !disagreements.contains(&g.id),
+            !g.flagged,
+            g.reference_rows.is_empty(),
+            g.id.clone(),
+        )
+    });
+    for g in pending {
         let candidates = g
             .source_ids
             .iter()
@@ -59,7 +78,7 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
                 .filter(|id| files.get(id).is_some_and(|f| f.source.read_error.is_none()))
                 .cloned()
                 .collect::<Vec<_>>();
-            texts.insert(label.into(),json!(format!("Retain: {}. Omit from the proposed list: {}. Readable retained candidates eligible for conversion: {}. Classification: {classification}. No PDFs are deleted and no conversion is started.",retain.join(", "),if omit.is_empty(){"none".into()}else{omit.join(", ")},readable.join(", "))));
+            texts.insert(label.into(),json!(format!("Retain: {}. Omit from the proposed list: {}. Readable retained candidates eligible for conversion: {}. Classification: {classification}. No PDFs are deleted and no conversion is started.",retain.iter().map(|id|files.get(id).unwrap().source.relative_path.to_string_lossy().into_owned()).collect::<Vec<_>>().join("; "),if omit.is_empty(){"none".into()}else{omit.iter().map(|id|files.get(id).unwrap().source.relative_path.to_string_lossy().into_owned()).collect::<Vec<_>>().join("; ")},readable.iter().map(|id|files.get(id).unwrap().source.relative_path.to_string_lossy().into_owned()).collect::<Vec<_>>().join("; "))));
             actions.insert(
                 label.into(),
                 json!({"retain":retain,"omit":omit,"classification":classification}),
@@ -78,7 +97,7 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
                 vec![],
                 "separate_works",
             );
-            for f in &candidates {
+            for f in candidates.iter().filter(|_| candidates.len() <= 9) {
                 if f.source.read_error.is_some() {
                     continue;
                 }
@@ -117,6 +136,9 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
             escape(&g.reason),
             g.reference_rows
         );
+        if candidates.len() > 9 {
+            evidence.push_str("<p>This group has more than nine candidates. Keep all, identify separate works, or defer for focused review; leave any narrower edition-selection request as a note. Every candidate remains listed and no uncertain file is dropped.</p>");
+        }
         for f in &candidates {
             evidence.push_str(&format!(
                 "<p><b>{}</b> ({}) — {}. Reference evidence: {}. Read warning: {}.</p>",
@@ -127,7 +149,23 @@ pub fn export_cases(audit: &AuditResult, out: &Path) -> Result<ReviewManifest> {
                 escape(f.source.read_error.as_deref().unwrap_or("none recorded"))
             ));
         }
+        for extra in audit.supplemental_evidence.iter().filter(|e| {
+            e["source_id"]
+                .as_str()
+                .is_some_and(|id| g.source_ids.iter().any(|s| s == id))
+        }) {
+            evidence.push_str(&format!(
+                "<p>Supplemental evidence (not an approval): {}</p>",
+                escape(&serde_json::to_string(extra)?)
+            ));
+        }
         if let Some(h) = &g.historical {
+            for candidate in h.record["candidates"].as_array().into_iter().flatten() {
+                let sid = candidate["source"]["source_id"].as_str().unwrap_or("");
+                if g.source_ids.iter().any(|s| s == sid) {
+                    evidence.push_str(&format!("<p>Historical metadata for {} (not a newly verified edition statement): {}. Saved page count: {}.</p>",escape(sid),escape(&serde_json::to_string(&candidate["dates"])?),escape(&candidate["page_count"].to_string())));
+                }
+            }
             evidence.push_str(&format!(
                 "<p>Historical policy {} ({}) selected {}. Reason: {}</p>",
                 escape(&h.policy),

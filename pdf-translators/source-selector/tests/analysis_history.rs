@@ -1,6 +1,6 @@
 mod analysis_support;
 use analysis_support::*;
-use rpg_source_select::analysis::{history, inputs::freeze, models::*};
+use rpg_source_select::analysis::{history, inputs::freeze};
 use serde_json::json;
 fn fixture() -> (tempfile::TempDir, serde_json::Value) {
     let t = tempfile::tempdir().unwrap();
@@ -90,4 +90,24 @@ fn unknown_run_order_is_rejected() {
     );
     let f = freeze(&serde_json::from_value(c).unwrap(), &t.path().join("run")).unwrap();
     assert!(history::load(&f).is_err());
+}
+#[test]
+fn fresh_inventory_cache_reuses_hash_after_record_inode_change() {
+    let (t, c) = fixture();
+    let s = source("a", "a.pdf");
+    let fp: rpg_source_select::models::Fingerprint =
+        serde_json::from_value(s["fingerprint"].clone()).unwrap();
+    let key = rpg_source_select::digest_json(&(1, &fp));
+    let conn = rusqlite::Connection::open(t.path().join("old.db")).unwrap();
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS cache(id TEXT,stage TEXT,cache_key TEXT,body TEXT,PRIMARY KEY(id,stage,cache_key))").unwrap();
+    conn.execute(
+        "INSERT INTO cache VALUES('a','hash',?1,?2)",
+        rusqlite::params![key, json!("a".repeat(64)).to_string()],
+    )
+    .unwrap();
+    drop(conn);
+    observation(t.path(), "new", "one", "a", "internal-recency-v1", "ready");
+    let f = freeze(&serde_json::from_value(c).unwrap(), &t.path().join("run")).unwrap();
+    let h = history::load(&f).unwrap();
+    assert_eq!(h.verified_hashes["a"], "a".repeat(64));
 }

@@ -5,7 +5,7 @@ use super::{
     read_json,
 };
 use crate::{Result, digest_json};
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 pub fn load(inputs: &FrozenInputs) -> Result<HistoricalView> {
@@ -27,6 +27,44 @@ pub fn load(inputs: &FrozenInputs) -> Result<HistoricalView> {
     let mut stmt =
         c.prepare("SELECT id,body FROM records WHERE kind='continuous_groups' ORDER BY id")?;
     let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut verified_hashes = BTreeMap::new();
+    let inventory = Connection::open_with_flags(
+        inputs.snapshot_root.join("old.db"),
+        OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )?;
+    let root: Option<String> = inventory
+        .query_row("SELECT body FROM meta WHERE key='root'", [], |r| r.get(0))
+        .optional()?;
+    let root = root.and_then(|r| serde_json::from_str::<String>(&r).ok());
+    for db in [&inventory, &c] {
+        let has_cache: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='cache')",
+            [],
+            |r| r.get(0),
+        )?;
+        if !has_cache {
+            continue;
+        }
+        let mut query=db.prepare("SELECT body FROM cache WHERE id=?1 AND stage IN ('hash','verified_hash') AND cache_key=?2")?;
+        for source in &inputs.old_sources {
+            let key = digest_json(&(1, &source.fingerprint));
+            let rows = query.query_map(rusqlite::params![source.source_id, key], |r| {
+                r.get::<_, String>(0)
+            })?;
+            for row in rows {
+                let hash: String = serde_json::from_str(&row?)?;
+                if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    return Err(invalid("invalid cached full hash"));
+                }
+                if verified_hashes
+                    .insert(source.source_id.clone(), hash.clone())
+                    .is_some_and(|old| old != hash)
+                {
+                    return Err(invalid("conflicting current-fingerprint hash caches"));
+                }
+            }
+        }
+    }
     let mut ranked = BTreeMap::new();
     let mut warnings = vec![];
     let sources = inputs
@@ -52,14 +90,6 @@ pub fn load(inputs: &FrozenInputs) -> Result<HistoricalView> {
             != path_key(&inputs.config.g_root).trim_end_matches('/')
         {
             // Older saved snapshots may use the POSIX mount path instead of the CSV Windows root.
-            let inv = Connection::open_with_flags(
-                inputs.snapshot_root.join("old.db"),
-                OpenFlags::SQLITE_OPEN_READ_ONLY,
-            )?;
-            let root: Option<String> = inv
-                .query_row("SELECT body FROM meta WHERE key='root'", [], |r| r.get(0))
-                .ok();
-            let root = root.and_then(|r| serde_json::from_str::<String>(&r).ok());
             if root.as_deref() != snap["source_root"].as_str() {
                 return Err(invalid(
                     "historical snapshot belongs to a different library root",
@@ -85,7 +115,9 @@ pub fn load(inputs: &FrozenInputs) -> Result<HistoricalView> {
                 let fresh = sources.get(&sid.to_owned()).is_some_and(|s| {
                     digest_json(&s.fingerprint) == digest_json(&candidate["source"]["fingerprint"])
                 });
-                if fresh {
+                if let Some(hash) = verified_hashes.get(sid) {
+                    hashes.insert(sid.to_owned(), hash.clone());
+                } else if fresh {
                     if let Some(hash) = candidate["sha256"].as_str() {
                         hashes.insert(sid.to_owned(), hash.to_owned());
                     }
@@ -157,6 +189,7 @@ pub fn load(inputs: &FrozenInputs) -> Result<HistoricalView> {
         .collect::<Vec<_>>();
     unprocessed_groups.sort();
     Ok(HistoricalView {
+        verified_hashes,
         groups,
         unprocessed_groups,
         warnings,

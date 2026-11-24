@@ -141,3 +141,53 @@ fn named_ruling_applies_only_to_unchanged_analysis() {
     changed.files[0].source.fingerprint.size += 1;
     assert!(rpg_source_select::analysis::audit::with_rulings(&changed, &results).is_err());
 }
+#[test]
+fn saved_chronology_is_presented_as_historical_evidence() {
+    let (t, mut a) = audit_fixture();
+    a.relationships[0].historical = Some(HistoricalObservation {
+        group_id: "g".into(),
+        run_id: "old".into(),
+        policy: "internal-recency-v1".into(),
+        status: "ready".into(),
+        reason: "date fallback".into(),
+        selected: vec![],
+        hashes: Default::default(),
+        scorable: true,
+        record: serde_json::json!({"candidates":[{"source":{"source_id":"a"},"page_count":5,"dates":{"effective":{"field":"pdf_info.CreationDate","utc":"2023-03-16"},"fields":{"pdf_info.CreationDate":"D:20230316"}}}]}),
+    });
+    let m = review::export_cases(&a, &t.path().join("review")).unwrap();
+    assert!(
+        m.items["items"][0]["ev"]
+            .as_str()
+            .unwrap()
+            .contains("pdf_info.CreationDate")
+    );
+}
+#[test]
+fn large_groups_keep_all_candidates_without_exceeding_pick_limit() {
+    let (t, mut a) = audit_fixture();
+    let source = a.files[0].clone();
+    a.files.clear();
+    a.relationships[0].source_ids.clear();
+    for i in 0..25 {
+        let mut f = source.clone();
+        f.source.source_id = format!("s{i}");
+        f.source.relative_path = format!("large/file-{i}.pdf").into();
+        a.relationships[0]
+            .source_ids
+            .push(f.source.source_id.clone());
+        a.files.push(f);
+    }
+    let m = review::export_cases(&a, &t.path().join("review")).unwrap();
+    let card = &m.items["items"][0];
+    assert!(card["picks"].as_array().unwrap().len() <= 12);
+    let id = card["id"].as_str().unwrap();
+    assert_eq!(
+        m.scope_map[id]["picks"]["Defer; retain all candidates"]["retain"]
+            .as_array()
+            .unwrap()
+            .len(),
+        25
+    );
+    assert!(card["ev"].as_str().unwrap().contains("focused review"));
+}

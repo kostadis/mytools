@@ -13,6 +13,7 @@ use std::{
     path::{Path, PathBuf},
     process::ExitCode,
 };
+mod analysis;
 mod inspect;
 mod markdown_rollout;
 mod review;
@@ -32,6 +33,11 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Commands {
+    /// Read-only audit and owner review of library selection.
+    Analysis {
+        #[command(subcommand)]
+        command: analysis::Command,
+    },
     /// Extract inventoried ZIP/RAR files and nested archives into separate sibling directories.
     ArchiveExtract(crate::archive::Options),
     /// Continuously select complete groups and publish Markdown while metadata continues.
@@ -153,6 +159,7 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<ExitCode> {
         }
     };
     match &cli.command {
+        Commands::Analysis { command } => return analysis::execute(command),
         Commands::ArchiveExtract(options) => {
             let work = cli
                 .work_dir

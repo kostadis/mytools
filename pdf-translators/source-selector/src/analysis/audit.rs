@@ -7,6 +7,14 @@ pub fn compare(
     history: &HistoricalView,
     rules: &[RetentionRule],
 ) -> Result<AuditResult> {
+    compare_with_progress(inputs, history, rules, |_, _, _| Ok(()))
+}
+pub fn compare_with_progress(
+    inputs: &FrozenInputs,
+    history: &HistoricalView,
+    rules: &[RetentionRule],
+    mut progress: impl FnMut(&str, usize, usize) -> Result<()>,
+) -> Result<AuditResult> {
     let mut files: Vec<FileCoverage> = inputs
         .old_sources
         .iter()
@@ -62,7 +70,7 @@ pub fn compare(
             },
         });
     }
-    let mut hashes = BTreeMap::new();
+    let mut hashes = history.verified_hashes.clone();
     for h in history.groups.values() {
         for (s, hash) in &h.hashes {
             if hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -88,7 +96,8 @@ pub fn compare(
         aliases.entry(h.clone()).or_default().push(s.clone());
     }
     let mut reference = vec![];
-    for row in &inputs.reference {
+    for (row_index, row) in inputs.reference.iter().enumerate() {
+        progress("reference", row_index, inputs.reference.len())?;
         let confirmed = !matches!(
             row.method,
             EvidenceMethod::PartialReference | EvidenceMethod::Unconfirmed
@@ -129,7 +138,11 @@ pub fn compare(
                     _ => "sampled portions only",
                 }
                 .into(),
-                provenance: format!("CSV row {} from {}", row.row, inputs.receipt_id),
+                provenance: format!(
+                    "CSV row {} with raw-row SHA-256 {}",
+                    row.row,
+                    digest_json(&row.raw)
+                ),
                 raw_evidence: row.raw.get("Evidence").cloned().unwrap_or_default(),
             });
             for g in &inputs.groups {
@@ -226,9 +239,11 @@ pub fn compare(
             }
         }
     }
+    progress("reference", inputs.reference.len(), inputs.reference.len())?;
     let mut relationships = vec![];
     let mut covered = BTreeSet::new();
-    for group in &inputs.groups {
+    for (group_index, group) in inputs.groups.iter().enumerate() {
+        progress("relationships", group_index, inputs.groups.len())?;
         let ids = group
             .source_ids
             .iter()
@@ -247,6 +262,7 @@ pub fn compare(
             history,
         ));
     }
+    progress("relationships", inputs.groups.len(), inputs.groups.len())?;
     for f in &files {
         if !covered.contains(&f.source.source_id) {
             relationships.push(make_relationship(
@@ -299,6 +315,7 @@ pub fn compare(
     warnings.sort();
     warnings.dedup();
     Ok(AuditResult {
+        policy_version: super::POLICY_VERSION.into(),
         schema_version: 1,
         input_receipt: inputs.receipt_id.clone(),
         provisional: !inputs.config.reference_complete,
@@ -309,6 +326,7 @@ pub fn compare(
         warnings,
         counts,
         review_notes: BTreeMap::new(),
+        supplemental_evidence: vec![],
     })
 }
 fn make_relationship(
@@ -331,15 +349,16 @@ fn make_relationship(
             .iter()
             .any(|f| f.ruling.is_none() && f.state == ProposalState::UnresolvedRetained);
     let historical = history.groups.get(id).cloned();
-    let flagged = historical.as_ref().is_some_and(|h| {
-        !h.selected.is_empty()
-            && h.selected.iter().all(|s| {
-                candidates
-                    .iter()
-                    .filter(|f| !f.reference_rows.is_empty())
-                    .all(|f| f.source.source_id != s.source_id)
-            })
-    });
+    let flagged = !rows.is_empty()
+        && historical.as_ref().is_some_and(|h| {
+            !h.selected.is_empty()
+                && h.selected.iter().all(|s| {
+                    candidates
+                        .iter()
+                        .filter(|f| !f.reference_rows.is_empty())
+                        .all(|f| f.source.source_id != s.source_id)
+                })
+        });
     let evidence_digest = digest_json(&(id, &candidates, &historical));
     Relationship {
         id: id.into(),
