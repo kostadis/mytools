@@ -36,3 +36,11 @@ tail -f /home/kostadis/.codex/worktrees/rpg-source-selection/mytools/pdf-transla
 ```
 
 Private `deployment.json`, `pilot-verification.json`, `preflight.json`, per-source `records/` and per-entry `logs/` retain the verification and recovery evidence.
+
+## Automatic PDF conversion after extraction
+
+At the owner's request, `scripts/run_markdown_after_archives.sh` sequences the existing Rust scan and conversion commands after the archive batch. User service `rpg-library-after-archives.service` waits until extraction reports `completed` or `completed_with_exceptions`, with zero active and queued jobs, and the archive service has stopped. It acquires the archive lease before rescanning, so an archive retry cannot add PDFs mid-conversion. Capacity pauses and unfinished extraction do not trigger conversion. Invalid archives are recorded exceptions; successfully extracted folders remain eligible.
+
+The follow-up refreshes the same current-library inventory at `/mnt/winshare`, then starts `rpg-markdown-winshare.service` with four workers and the existing `winshare-current-markdown` cache/output. It uses the immutable selector from archive code `53fbbe3` so incomplete staging is excluded. Matching page checkpoints are reused; current outputs retain normal ownership protections. The existing library is revalidated alongside the newly extracted PDFs. It waits for any existing converter before scanning and avoids starting a duplicate service.
+
+The sequence is one-shot and persists its phase in `winshare-archive-extraction/markdown-followup.json`, with events in `markdown-followup.log`. Conversion progress remains in `winshare-current-markdown/continuous-status.json` and `continuous.log`. The follow-up service monitors conversion through its terminal status; an abnormal restart during conversion resumes monitoring. It does not classify native-empty PDFs as successful Markdown or automatically perform OCR.
