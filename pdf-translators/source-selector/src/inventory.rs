@@ -114,6 +114,10 @@ fn walk(
             }
         };
         let path = entry.path();
+        // Incomplete native archive output is never an input PDF/asset corpus.
+        if entry.file_name() == crate::archive::STAGING {
+            continue;
+        }
         let kind = match entry.file_type() {
             Ok(v) => v,
             Err(e) => {

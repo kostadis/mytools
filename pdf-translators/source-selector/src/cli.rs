@@ -32,6 +32,8 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Commands {
+    /// Extract inventoried ZIP/RAR files and nested archives into separate sibling directories.
+    ArchiveExtract(crate::archive::Options),
     /// Continuously select complete groups and publish Markdown while metadata continues.
     MarkdownContinuous(crate::markdown::continuous::Options),
     #[command(hide = true)]
@@ -151,6 +153,20 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<ExitCode> {
         }
     };
     match &cli.command {
+        Commands::ArchiveExtract(options) => {
+            let work = cli
+                .work_dir
+                .as_ref()
+                .ok_or_else(|| SelectionError::Usage("--work-dir required".into()))?;
+            let status = crate::archive::run(work, options.clone())?;
+            let incomplete = status.incomplete();
+            print_json(&status)?;
+            return Ok(if incomplete {
+                ExitCode::from(75)
+            } else {
+                ExitCode::SUCCESS
+            });
+        }
         Commands::MarkdownMetadataWorker { request } => {
             crate::markdown::continuous::metadata_worker(request)?;
             return Ok(ExitCode::SUCCESS);
