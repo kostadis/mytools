@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     digest_json,
-    grouping::{build_groups, hash_source, warm_candidate_hashes},
+    grouping::{build_current_groups, build_groups, hash_source, warm_candidate_hashes},
     hints::{legacy_hints, read_muse, read_rpglib},
     inventory::{checked_path, scan_root_with_progress},
     models::{Hint, Source},
@@ -12,6 +12,11 @@ pub(super) fn run(work: &Path, args: Scan) -> Result<ExitCode> {
     let root = args.root.canonicalize()?;
     let work = validate_work_dir(&root, work)?;
     fs::create_dir_all(&work)?;
+    refuse_symlink_database(&work.join("scan.lock"))?;
+    let _scan = crate::markdown::lock(&work, "scan.lock")?;
+    refuse_symlink_database(&work.join("selection.db"))?;
+    let mut store = Store::open(&work.join("selection.db"))?;
+    check_policy(&store, args.current_library)?;
     let journal_path = work.join("inventory-progress.jsonl");
     refuse_symlink_database(&journal_path)?;
     let mut journal = BufWriter::new(fs::File::create(&journal_path)?);
@@ -71,8 +76,6 @@ pub(super) fn run(work: &Path, args: Scan) -> Result<ExitCode> {
         hints.extend(baseline(path, &inventory.root, &mut inventory.sources)?);
     }
     fs::create_dir_all(&work)?;
-    refuse_symlink_database(&work.join("selection.db"))?;
-    let mut store = Store::open(&work.join("selection.db"))?;
     if let Some(previous) = store.meta("inventory")? {
         let previous: InventoryResult = serde_json::from_value(previous)?;
         for source in &mut inventory.sources {
@@ -93,13 +96,17 @@ pub(super) fn run(work: &Path, args: Scan) -> Result<ExitCode> {
             hints.push(old);
         }
     }
-    warm_candidate_hashes(&inventory.root, &inventory.sources, &mut store)?;
+    if !args.current_library {
+        warm_candidate_hashes(&inventory.root, &inventory.sources, &mut store)?;
+    }
     eprintln!(
         "{} scan: publishing inventory and candidate groups",
         chrono::Utc::now().to_rfc3339()
     );
     let result = store.scan_transaction(|store| {
+        check_policy(store, args.current_library)?;
         store.upsert_inventory(&inventory)?;
+        store.set_meta("current_library", &json!(args.current_library))?;
         store.replace_records("grouping_errors", &[])?;
         store.replace_records(
             "hints",
@@ -108,12 +115,26 @@ pub(super) fn run(work: &Path, args: Scan) -> Result<ExitCode> {
                 .map(|h| Ok((digest_json(h), serde_json::to_value(h)?)))
                 .collect::<Result<Vec<_>>>()?,
         )?;
-        build_groups(&inventory.sources, &hints, store)
+        if args.current_library {
+            build_current_groups(&inventory.sources, store)
+        } else {
+            build_groups(&inventory.sources, &hints, store)
+        }
     })?;
     print_json(
         &json!({"sources":inventory.sources.len(),"groups":result.len(),"coverage_errors":inventory.errors,"hint_rows":hints.len(),"unmatched_hints":hints.iter().map(|h|h.unmatched_references.len()).sum::<usize>(),"model_calls":0}),
     )?;
     Ok(ExitCode::SUCCESS)
+}
+fn check_policy(store: &Store, current_library: bool) -> Result<()> {
+    if store.meta("inventory")?.is_some()
+        && store.meta("current_library")?.unwrap_or(json!(false)) != json!(current_library)
+    {
+        return Err(SelectionError::Usage(
+            "library policy changed; use separate scan state for current-library mode".into(),
+        ));
+    }
+    Ok(())
 }
 fn baseline(path: &Path, root: &Path, sources: &mut [Source]) -> Result<Vec<Hint>> {
     let value = read_json(path)?;

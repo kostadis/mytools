@@ -157,6 +157,37 @@ pub(crate) fn presentation_key(path: &Path) -> String {
     }
 }
 
+pub fn build_current_groups(sources: &[Source], store: &mut Store) -> Result<Vec<Group>> {
+    let target = |s: &Source| -> Vec<u8> {
+        crate::inventory::path_bytes(&s.relative_path.with_extension("md"))
+            .into_iter()
+            .map(|b| b.to_ascii_lowercase())
+            .collect()
+    };
+    let mut target_counts = BTreeMap::<Vec<u8>, usize>::new();
+    for s in sources.iter().filter(|s| s.kind == SourceKind::Pdf) {
+        *target_counts.entry(target(s)).or_default() += 1;
+    }
+    let groups: Vec<_> = sources
+        .iter()
+        .filter(|s| s.kind == SourceKind::Pdf)
+        .map(|s| {
+            let ids = vec![s.source_id.clone()];
+            let mut reasons = vec!["owner_confirmed_current_download".into()];
+            if target_counts[&target(s)] > 1 {
+                reasons.push("ambiguous_sibling_markdown_target".into());
+            }
+            Group {
+                group_id: format!("g{}", &digest_json(&ids)[..20]),
+                source_ids: ids,
+                membership_digest: digest_json(&vec![(&s.source_id, &s.fingerprint)]),
+                reasons,
+            }
+        })
+        .collect();
+    store.reconcile_groups(&groups)
+}
+
 pub fn build_groups(sources: &[Source], hints: &[Hint], store: &mut Store) -> Result<Vec<Group>> {
     let inv: InventoryResult = serde_json::from_value(
         store

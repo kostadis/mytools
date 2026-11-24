@@ -8,6 +8,17 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+pub fn policy(store: &Store) -> Result<String> {
+    Ok(
+        if store.meta("current_library")? == Some(serde_json::json!(true)) {
+            "owner-confirmed-current-library-v1"
+        } else {
+            "internal-recency-v1"
+        }
+        .into(),
+    )
+}
+
 pub fn select(store: &Store, output: &Path, provenance: Option<&Path>) -> Result<Snapshot> {
     let inv: InventoryResult = serde_json::from_value(
         store
@@ -36,7 +47,7 @@ pub fn select(store: &Store, output: &Path, provenance: Option<&Path>) -> Result
     let mut snapshot = Snapshot {
         schema_version: 1,
         snapshot_id: String::new(),
-        policy: "internal-recency-v1".into(),
+        policy: policy(store)?,
         created: chrono::Utc::now().to_rfc3339(),
         source_root: inv.root.clone(),
         root_identity: identity,
@@ -246,6 +257,12 @@ pub fn resolve_group(
     candidates: Vec<Candidate>,
     provenance: &Value,
 ) -> Result<Snapshot> {
+    let current_library = store.meta("current_library")? == Some(serde_json::json!(true));
+    if current_library && group.source_ids.len() != 1 {
+        return Err(SelectionError::Invalid(
+            "current-library requires one PDF per group".into(),
+        ));
+    }
     let expected: BTreeSet<_> = group.source_ids.iter().cloned().collect();
     let actual: BTreeSet<_> = candidates
         .iter()
@@ -272,7 +289,7 @@ pub fn resolve_group(
     let mut snapshot = Snapshot {
         schema_version: 1,
         snapshot_id: String::new(),
-        policy: "internal-recency-v1".into(),
+        policy: policy(store)?,
         created: String::new(),
         source_root: root.to_path_buf(),
         root_identity: crate::inventory::root_identity(root)?,
@@ -307,6 +324,12 @@ pub fn resolve_group(
         })
         .collect();
     let baseline = members.iter().any(|s| {
+        if s.baseline_established {
+            return true;
+        }
+        if current_library {
+            return false;
+        }
         let generated = !s.artifacts.is_empty()
             && s.publisher.to_lowercase().contains("dungeon")
             && super::adjacent::managed_markdown(output, root, s);
@@ -314,14 +337,20 @@ pub fn resolve_group(
         let protected_artifacts = s.artifacts.iter().any(|artifact| {
             !(generated && md.file_name().and_then(|n| n.to_str()) == Some(artifact.as_str()))
         });
-        s.baseline_established
-            || (protected_artifacts && s.publisher.to_lowercase().contains("dungeon"))
+        protected_artifacts && s.publisher.to_lowercase().contains("dungeon")
     });
     let mut choices: Vec<(String, String, String)> = vec![];
     if baseline {
         record.status = "existing_or_baseline".into();
         record.reason =
             "baseline requires separate reconciliation; JSON is not Markdown coverage".into();
+    } else if current_library
+        && group
+            .reasons
+            .iter()
+            .any(|r| r == "ambiguous_sibling_markdown_target")
+    {
+        record.reason = "multiple current PDFs claim the same sibling Markdown target".into();
     } else if !authority.is_empty() {
         record.reason =
             "adopted review or hold preserved; changed membership requires review".into();
@@ -346,6 +375,12 @@ pub fn resolve_group(
                     .collect();
             }
         }
+    } else if current_library {
+        choices.push((
+            record.candidates[0].source.source_id.clone(),
+            work_id.clone(),
+            "owner_confirmed_current_download".into(),
+        ));
     } else {
         let conflict = [
             "ruleset",

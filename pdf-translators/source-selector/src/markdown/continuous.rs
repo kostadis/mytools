@@ -811,7 +811,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                         let mut withdrawal = Snapshot {
                             schema_version: 1,
                             snapshot_id: digest_json(&("invalidated", &c)),
-                            policy: "internal-recency-v1".into(),
+                            policy: selection::policy(&db)?,
                             created: String::new(),
                             source_root: inv.root.clone(),
                             root_identity: identity.clone(),
@@ -1120,13 +1120,16 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
                 result.reused_ranges,
                 result.extracted_ranges
             );
-            if resolutions.get(&item.job.ready.group_id).is_some_and(|r| {
-                r.snapshot
+            // One SHA/engine job can serve several current PDFs at distinct
+            // paths. Every consumer needs publication when that job finishes.
+            for (group_id, r) in &resolutions {
+                if r.snapshot
                     .ready
                     .iter()
                     .any(|ready| job_id(ready, &engine) == item.job.id)
-            }) {
-                publish_ids.insert(item.job.ready.group_id.clone());
+                {
+                    publish_ids.insert(group_id.clone());
+                }
             }
             // Keep the reservation through source/artifact assembly and publication.
             dirty += 1;
@@ -1432,7 +1435,7 @@ pub fn run(work: &Path, options: Options) -> Result<Status> {
             let snapshot = Snapshot {
                 schema_version: 1,
                 snapshot_id: digest_json(&("reconcile", &run)),
-                policy: "internal-recency-v1".into(),
+                policy: selection::policy(&db)?,
                 created: String::new(),
                 source_root: inv.root.clone(),
                 root_identity: identity.clone(),

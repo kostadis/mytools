@@ -75,6 +75,9 @@ enum Commands {
 struct Scan {
     #[arg(long)]
     root: PathBuf,
+    /// Every delivered PDF is current; convert variants independently of internal dates.
+    #[arg(long)]
+    current_library: bool,
     #[arg(long)]
     muse_csv: Option<PathBuf>,
     #[arg(long)]
