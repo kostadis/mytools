@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import weakref
 
 import converters.pdf_to_5etools_v2 as v2
 import converters.extract_monsters as _mon
@@ -14,6 +15,32 @@ from lib.pdf_utils import (
     _match_toc_line, build_toc_from_printed,
     _dedupe_toc_entries, _canonical_toc_title,
 )
+
+
+def test_split_releases_discarded_parent_text_before_building_children():
+    """Oversized ancestors must not retain full text while descendants allocate."""
+    class Text(str):
+        pass
+
+    leaf = TocNode(3, "Room", 3, 3)
+    chapter = TocNode(2, "Chapter", 2, 3, [leaf])
+    root = TocNode(1, "Book", 1, 3, [chapter])
+    alive = weakref.WeakValueDictionary()
+
+    def body(node):
+        if node is chapter:
+            assert "Book" not in alive
+        if node is leaf:
+            assert "Book" not in alive and "Chapter" not in alive
+        text = Text("prose" if not node.children else "oversized" * 10)
+        if node.children:
+            alive[node.title] = text
+        return text
+
+    chunks = v2.split_oversized([root], body, max_chars=20)
+    assert [(c.target_node.title, c.is_prose_stub, c.body) for c in chunks] == [
+        ("Book", True, "prose"), ("Chapter", True, "prose"), ("Room", False, "prose"),
+    ]
 
 
 # ---------------------------------------------------------------------------

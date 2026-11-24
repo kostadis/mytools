@@ -51,6 +51,7 @@ import lib.cli_args as _cli
 import lib.claude_api as _api
 import converters.extract_monsters as _mon
 import lib.llm_backend as _lb
+from lib.native_heading_parser import load_parser as _load_native_heading_parser
 from lib.adventure_model import (
     BuildContext, SectionEntry, EntriesEntry, parse_entry,
     HomebrewAdventure,
@@ -341,6 +342,11 @@ def _split_into_chunks(
         return [ChunkSpec(root=root, target_node=node,
                           is_prose_stub=False, body=body)]
 
+    # This full parent body is discarded when splitting. Release it before
+    # descendants allocate their bodies, rather than retaining one copy per
+    # ancestor in the recursion stack.
+    del body
+
     chunks: list[ChunkSpec] = []
     # Parent's own prose: text between node start and first child start.
     first_child = min(node.children, key=lambda c: c.start_page)
@@ -436,6 +442,11 @@ def parse_markdown_headings(md_text: str) -> tuple[list[MdHeading], list[str]]:
                 line_no=i,
             ))
     return headings, lines
+
+
+# Keep the reference implementation available for equivalence tests and benchmarks.
+_python_parse_markdown_headings = parse_markdown_headings
+parse_markdown_headings = _load_native_heading_parser(MdHeading) or parse_markdown_headings
 
 
 def normalise_numbered_rooms(headings: list[MdHeading]) -> list[MdHeading]:

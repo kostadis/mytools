@@ -1,8 +1,10 @@
 # Rust heading parser with a memory acceptance gate
 
-The Python PDF/5etools converter should use less peak memory. CPU time is
-secondary. The user selected trying fast-anything's Rust heading-parser port
-first, before broader changes to retained document text.
+The Python PDF/5etools converter should use less peak memory. The user selected
+trying fast-anything's Rust heading-parser port first, before broader changes
+to retained document text. After reviewing measurements, the user accepted
+the small memory cost for the CPU benefit and requested automatic Rust use
+when available, with Python fallback. Memory optimization follows separately.
 
 ## Approaches
 
@@ -33,11 +35,14 @@ larger, explicitly synthetic stress input. Measure peak RSS and Python traced
 allocations separately, with repeated runs to distinguish allocator noise.
 Include Rust import/build integration in the end-to-end RSS measurement.
 
-The port must preserve parsed output and must show a repeatable reduction in
-peak RSS on the large-input workload without a material regression on the real
-document. CPU results are secondary. If it fails this gate, leave it disabled
-and report the result; a faster parser alone is insufficient. Do not claim
-these offline measurements cover Marker model memory or live inference.
+The port must preserve parsed output. The original activation gate required
+lower peak RSS; measurements failed that gate. The user's subsequent decision
+permits the measured roughly 0.3–0.5 MiB RSS increase for the parser speedup.
+Use Rust automatically when the optional durable extension can load. Retain
+Python when the extension is missing, cannot load, or FAST_ANYTHING_DISABLE
+is set. Runtime parsing errors must propagate normally. Bind the caller's
+MdHeading class explicitly. Do not claim offline measurements cover Marker
+model memory or live inference.
 
 ## Initial measurements
 
@@ -45,4 +50,4 @@ The offline 166-page Markdown conversion used 70,428 KiB peak RSS in one run.
 A separate run tracing allocations after imports peaked at 4,393,711 bytes.
 These measure different things and are preliminary, not repeated baselines.
 Fast-anything attributed 5.2% of runtime to heading parsing and recommended it
-as a port candidate. No Rust implementation has been written or enabled yet.
+as a port candidate. These were design-time measurements before implementation.

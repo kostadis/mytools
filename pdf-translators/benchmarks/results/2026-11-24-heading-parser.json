@@ -1,0 +1,89 @@
+{
+  "all_outputs_equal": true,
+  "runs": 5,
+  "synthetic_mib": 32,
+  "python": "3.14.4 (main, Aug 20 2026, 10:41:58) [GCC 15.2.0]",
+  "platform": "linux",
+  "summaries": [
+    {
+      "workload": "real",
+      "phase": "parser",
+      "mode": "python",
+      "rss_median_kib": 66368,
+      "rss_min_kib": 66284,
+      "rss_max_kib": 66420,
+      "seconds_median": 0.00758955700439401,
+      "python_peak_median_bytes": 2975017
+    },
+    {
+      "workload": "real",
+      "phase": "parser",
+      "mode": "native",
+      "rss_median_kib": 66804,
+      "rss_min_kib": 66736,
+      "rss_max_kib": 66844,
+      "seconds_median": 0.004192088003037497,
+      "python_peak_median_bytes": 2989248
+    },
+    {
+      "workload": "real",
+      "phase": "pipeline",
+      "mode": "python",
+      "rss_median_kib": 67184,
+      "rss_min_kib": 67084,
+      "rss_max_kib": 67324,
+      "seconds_median": 0.0352895499963779,
+      "python_peak_median_bytes": 4368764
+    },
+    {
+      "workload": "real",
+      "phase": "pipeline",
+      "mode": "native",
+      "rss_median_kib": 67580,
+      "rss_min_kib": 67496,
+      "rss_max_kib": 67584,
+      "seconds_median": 0.0328989219997311,
+      "python_peak_median_bytes": 4384299
+    },
+    {
+      "workload": "synthetic",
+      "phase": "parser",
+      "mode": "python",
+      "rss_median_kib": 230880,
+      "rss_min_kib": 230812,
+      "rss_max_kib": 231004,
+      "seconds_median": 0.15517801999521907,
+      "python_peak_median_bytes": 201503229
+    },
+    {
+      "workload": "synthetic",
+      "phase": "parser",
+      "mode": "native",
+      "rss_median_kib": 231228,
+      "rss_min_kib": 231216,
+      "rss_max_kib": 231284,
+      "seconds_median": 0.13339505300973542,
+      "python_peak_median_bytes": 201503229
+    },
+    {
+      "workload": "synthetic",
+      "phase": "pipeline",
+      "mode": "python",
+      "rss_median_kib": 361616,
+      "rss_min_kib": 361404,
+      "rss_max_kib": 361664,
+      "seconds_median": 0.3781514770089416,
+      "python_peak_median_bytes": 304386672
+    },
+    {
+      "workload": "synthetic",
+      "phase": "pipeline",
+      "mode": "native",
+      "rss_median_kib": 361960,
+      "rss_min_kib": 361916,
+      "rss_max_kib": 361972,
+      "seconds_median": 0.3594747929892037,
+      "python_peak_median_bytes": 304390170
+    }
+  ]
+}

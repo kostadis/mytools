@@ -1,4 +1,6 @@
 __pycache__/
+.fast/
+native-heading-parser/target/
 source-selector/target/
 source-selection-data/
 *.pyc
