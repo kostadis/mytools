@@ -1,7 +1,9 @@
 //! Independent, read-only selection analysis; never applies production decisions.
+pub mod audit;
 pub mod history;
 pub mod inputs;
 pub mod models;
+pub mod sampling;
 use crate::{Result, SelectionError};
 use serde::{Serialize, de::DeserializeOwned};
 use std::path::Path;

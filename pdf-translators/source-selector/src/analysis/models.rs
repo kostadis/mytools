@@ -114,3 +114,104 @@ pub struct HistoricalView {
     pub unprocessed_groups: Vec<String>,
     pub warnings: Vec<String>,
 }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProposalState {
+    Selected,
+    ExplicitlyRetained,
+    UnresolvedRetained,
+    Duplicate,
+    Superseded,
+    UnreadableRetained,
+}
+impl ProposalState {
+    pub fn eligible(&self) -> bool {
+        matches!(
+            self,
+            Self::Selected | Self::ExplicitlyRetained | Self::UnresolvedRetained
+        )
+    }
+    pub fn retained(&self) -> bool {
+        self.eligible() || *self == Self::UnreadableRetained
+    }
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PairEvidence {
+    pub old_source_id: String,
+    pub reference_row: usize,
+    pub method: EvidenceMethod,
+    pub scope: String,
+    pub provenance: String,
+    pub raw_evidence: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FileCoverage {
+    pub source: Source,
+    pub reference_rows: Vec<usize>,
+    pub evidence: Vec<PairEvidence>,
+    pub state: ProposalState,
+    pub reason: String,
+    pub representative: Option<String>,
+    pub ruling: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReferenceOutcome {
+    pub row: usize,
+    pub d_path: String,
+    pub method: EvidenceMethod,
+    pub matched_sources: Vec<String>,
+    pub groups: Vec<String>,
+    pub outcome: String,
+    pub selected_support_methods: Vec<EvidenceMethod>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Relationship {
+    pub id: String,
+    pub source_ids: Vec<String>,
+    pub reference_rows: Vec<usize>,
+    pub publisher: String,
+    pub product_folder: String,
+    pub historical: Option<HistoricalObservation>,
+    pub needs_review: bool,
+    pub flagged: bool,
+    pub evidence_digest: String,
+    pub reason: String,
+    pub classification: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProtectedEdition {
+    pub rule: RetentionRule,
+    pub bound: bool,
+    pub warning: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AuditResult {
+    pub schema_version: u32,
+    pub input_receipt: String,
+    pub provisional: bool,
+    pub files: Vec<FileCoverage>,
+    pub reference: Vec<ReferenceOutcome>,
+    pub relationships: Vec<Relationship>,
+    pub protected: Vec<ProtectedEdition>,
+    pub warnings: Vec<String>,
+    pub counts: BTreeMap<String, usize>,
+    #[serde(default)]
+    pub review_notes: BTreeMap<String, String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SampleMember {
+    pub relationship_id: String,
+    pub publisher: String,
+    pub partition_key: String,
+    pub holdout: bool,
+    pub stratum: String,
+    pub flagged: bool,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SampleManifest {
+    pub seed: String,
+    pub per_stratum: usize,
+    pub holdout_percent: u8,
+    pub membership: Vec<SampleMember>,
+    pub selected: Vec<String>,
+}
