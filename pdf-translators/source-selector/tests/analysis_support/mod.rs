@@ -40,3 +40,34 @@ pub fn setup(root: &Path) -> Value {
     .unwrap();
     json!({"schema_version":1,"csv":root.join("matches.csv"),"d_root":"D:/Download","g_root":"G:/Library","old_inventory":root.join("old.db"),"current_inventory":root.join("current.db"),"history":root.join("history.db"),"history_status":root.join("status.json"),"historical_runs":["old","new"],"owner_rulings":root.join("rules.json"),"reference_complete":false,"sample_seed":"test","sample_per_stratum":5,"holdout_percent":20})
 }
+pub fn audit_fixture() -> (
+    tempfile::TempDir,
+    rpg_source_select::analysis::models::AuditResult,
+) {
+    let t = tempfile::tempdir().unwrap();
+    let c = setup(t.path());
+    for (id, path) in [
+        ("a", "Publisher/Book<v3>.pdf"),
+        ("b", "Publisher/Book&new.pdf"),
+    ] {
+        insert_source(&t.path().join("old.db"), source(id, path));
+    }
+    record(
+        &t.path().join("old.db"),
+        "groups",
+        "g",
+        json!({"group_id":"g","source_ids":["a","b"],"membership_digest":"m","reasons":[]}),
+    );
+    let f = rpg_source_select::analysis::inputs::freeze(
+        &serde_json::from_value(c).unwrap(),
+        &t.path().join("run"),
+    )
+    .unwrap();
+    let h = rpg_source_select::analysis::models::HistoricalView {
+        groups: Default::default(),
+        unprocessed_groups: vec!["g".into()],
+        warnings: vec![],
+    };
+    let a = rpg_source_select::analysis::audit::compare(&f, &h, &[]).unwrap();
+    (t, a)
+}

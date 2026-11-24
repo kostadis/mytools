@@ -215,3 +215,12 @@ pub struct SampleManifest {
     pub membership: Vec<SampleMember>,
     pub selected: Vec<String>,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReviewManifest {
+    pub schema_version: u32,
+    pub review_id: String,
+    pub audit_digest: String,
+    pub items: Value,
+    pub scope_map: Value,
+    pub manifest_digest: String,
+}
