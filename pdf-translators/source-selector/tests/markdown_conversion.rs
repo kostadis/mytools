@@ -115,6 +115,132 @@ fn source_mutation_during_extraction_never_publishes_or_caches_invalid_ranges() 
 }
 #[cfg(target_os = "linux")]
 #[test]
+fn cache_edit_while_validating_original_cannot_poison_checkpoints() {
+    use std::{
+        os::fd::AsRawFd,
+        time::{Duration, Instant},
+    };
+    let (root, _state, out) = fixture("Searchable amber dragon words.", 2);
+    convert(out.path(), &[]);
+    fs::remove_dir_all(out.path().join("cache/pages")).unwrap();
+    fs::remove_dir_all(out.path().join("cache/completions")).unwrap();
+    let cached = files(&out.path().join("cache/sources"), "pdf")[0].clone();
+    let request = files(&out.path().join("jobs"), "json")[0].clone();
+    let job: Value = serde_json::from_slice(&fs::read(&request).unwrap()).unwrap();
+    let original = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(root.path().join("Pub/Book/Book.pdf"))
+        .unwrap();
+    let fd = original.as_raw_fd();
+    // A lease blocks the worker's original-file open after it has verified
+    // the local cache. SIGURG's default disposition is ignore. Dropping this
+    // file releases the lease, including on an assertion failure.
+    unsafe {
+        // Linux UAPI F_SETSIG (not exported by this libc crate version).
+        assert_eq!(libc::fcntl(fd, 10, libc::SIGURG), 0);
+        assert_eq!(libc::fcntl(fd, libc::F_SETLEASE, libc::F_WRLCK), 0);
+    }
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rpg-source-select"))
+        .args(["markdown-worker", "--job", request.to_str().unwrap()])
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while unsafe { libc::fcntl(fd, libc::F_GETLEASE) } == libc::F_WRLCK {
+        assert!(
+            Instant::now() < deadline,
+            "worker did not attempt to validate original"
+        );
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "worker exited before original check"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let mut bytes = fs::read(&cached).unwrap();
+    let pos = bytes.windows(5).position(|s| s == b"amber").unwrap();
+    bytes[pos..pos + 5].copy_from_slice(b"ochre");
+    fs::write(cached, bytes).unwrap();
+    drop(original);
+    assert!(child.wait().unwrap().success());
+    let result: Value = serde_json::from_slice(
+        &fs::read(
+            out.path()
+                .join("results")
+                .join(format!("{}.json", job["id"].as_str().unwrap())),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(result["status"], "failed");
+    let pages = out.path().join("cache/pages");
+    assert!(
+        !pages.exists() || files(&pages, "json").is_empty(),
+        "unverified cache content was checkpointed"
+    );
+}
+#[cfg(target_os = "linux")]
+#[test]
+fn extraction_does_not_reread_the_whole_pdf_between_ranges() {
+    use std::os::unix::fs::PermissionsExt;
+    let (root, state, out) = fixture("Searchable amber dragon words.", 3);
+    let pdf = root.path().join("Pub/Book/Book.pdf");
+    let mut doc = lopdf::Document::load(&pdf).unwrap();
+    // An uncompressed, unused object makes full-file reads measurable without
+    // asking Poppler to process a large page or relying on wall-clock timing.
+    doc.add_object(lopdf::Stream::new(
+        lopdf::Dictionary::new(),
+        vec![b'x'; 8 * 1024 * 1024],
+    ));
+    doc.save(&pdf).unwrap();
+    assert!(
+        cli(&[
+            "--work-dir",
+            state.path().to_str().unwrap(),
+            "scan",
+            "--root",
+            root.path().to_str().unwrap()
+        ])
+        .status
+        .success()
+    );
+    selection::select(
+        &Store::open_readonly(&state.path().join("selection.db")).unwrap(),
+        out.path(),
+        None,
+    )
+    .unwrap();
+    let wrapper = out.path().join("extractor");
+    let reads = out.path().join("worker-reads");
+    fs::write(&wrapper, format!(
+        "#!/bin/sh\nif [ \"$1\" != '-v' ]; then awk '/^rchar:/ {{print $2}}' /proc/$PPID/io >> '{}'; fi\nexec /usr/bin/pdftotext \"$@\"\n", reads.display()
+    )).unwrap();
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+    let r = convert(out.path(), &["--pdftotext", wrapper.to_str().unwrap()]);
+    assert_eq!(r["published_books"], 1);
+    let counts: Vec<u64> = fs::read_to_string(reads)
+        .unwrap()
+        .lines()
+        .map(|s| s.parse().unwrap())
+        .collect();
+    assert_eq!(counts.len(), 3);
+    let bytes = fs::metadata(pdf).unwrap().len();
+    assert!(
+        counts[0] < bytes * 2,
+        "staging read {} bytes for a {bytes}-byte PDF",
+        counts[0]
+    );
+    eprintln!("{bytes}-byte PDF: worker read counts at range starts {counts:?}");
+    for pair in counts.windows(2) {
+        assert!(
+            pair[1] - pair[0] < bytes / 2,
+            "worker read {} bytes between ranges of a {bytes}-byte PDF",
+            pair[1] - pair[0]
+        );
+    }
+}
+#[cfg(target_os = "linux")]
+#[test]
 fn job_deadline_terminates_the_separate_extractor_process_group() {
     use std::os::unix::fs::PermissionsExt;
     let (_root, _state, out) = fixture("Frozen searchable amber dragon words.", 1);

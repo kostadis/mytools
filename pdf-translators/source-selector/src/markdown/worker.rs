@@ -3,7 +3,7 @@ use crate::{
     digest_json,
     evidence::{PopplerExtractor, TextExtractor},
     grouping::hash_source,
-    inventory::checked_path,
+    inventory::{checked_path, fingerprint},
     models::PageText,
 };
 use sha2::{Digest, Sha256};
@@ -129,18 +129,28 @@ fn raw_chunks(output: &Path, ready: &Ready, engine: &Engine) -> Result<Vec<Chunk
     }
     Ok(chunks)
 }
-fn stage(job: &Job) -> Result<PathBuf> {
-    if live_source_matches(&job.source_root, &job.ready)? == Some(false) {
-        return Err(SelectionError::Invalid(
-            "accessible original changed; rescan/reselect".into(),
-        ));
-    }
+fn stage(job: &Job) -> Result<(PathBuf, crate::models::Fingerprint)> {
     let dest = job
         .output
         .join("cache/sources")
         .join(format!("{}.pdf", job.ready.sha256));
-    if dest.exists() && hash_source(&dest)? == job.ready.sha256 {
-        return Ok(dest);
+    let cached_fingerprint = dest.exists().then(|| fingerprint(&dest)).transpose()?;
+    if let Some(cached_fingerprint) = cached_fingerprint
+        && hash_source(&dest)? == job.ready.sha256
+    {
+        // Reusing a local cache must not conceal a changed original. New
+        // staging already verifies the original while copying it below.
+        if live_source_matches(&job.source_root, &job.ready)? == Some(false) {
+            return Err(SelectionError::Invalid(
+                "accessible original changed; rescan/reselect".into(),
+            ));
+        }
+        if fingerprint(&dest)? != cached_fingerprint {
+            return Err(SelectionError::Invalid(
+                "cached source changed during verification".into(),
+            ));
+        }
+        return Ok((dest, cached_fingerprint));
     }
     let source = checked_path(&job.source_root, &job.ready.relative_path)?;
     capacity::request(
@@ -170,7 +180,7 @@ fn stage(job: &Job) -> Result<PathBuf> {
             ));
         }
         fs::rename(&tmp, &dest)?;
-        Ok(dest.clone())
+        Ok((dest.clone(), fingerprint(&dest)?))
     })();
     if result.is_err() {
         let _ = fs::remove_file(tmp);
@@ -191,7 +201,7 @@ pub fn run(path: &Path) -> Result<()> {
                 "extractor changed since dispatch".into(),
             ));
         }
-        let path = stage(&job)?;
+        let (path, staged_fingerprint) = stage(&job)?;
         let extractor = PopplerExtractor::new(
             job.engine.binary.clone(),
             Duration::from_secs(job.engine.timeout_secs),
@@ -209,7 +219,9 @@ pub fn run(path: &Path) -> Result<()> {
                     job.ready.source_id, job.ready.page_count
                 );
                 let pages = extractor.extract(&path, &(first..=last).collect::<Vec<_>>())?;
-                if hash_source(&path)? != job.ready.sha256 {
+                // This is private working storage. Detect ordinary edits or
+                // replacement cheaply; verify all bytes once at completion.
+                if fingerprint(&path)? != staged_fingerprint {
                     return Err(SelectionError::Invalid(
                         "cached source changed during range extraction".into(),
                     ));
