@@ -36,3 +36,5 @@ ocr-three-map.json
 
 # Scratch backups of OCR extract/markdown output.
 scratchpad-*-backup/
+
+pdf-reader/target/
