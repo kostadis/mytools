@@ -43,9 +43,9 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-import fitz  # PyMuPDF
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from lib.pdf_backend import RustDocument
 
 import lib.cli_args as _cli
 import lib.claude_api as _api
@@ -57,7 +57,7 @@ from lib.adventure_model import (
     HomebrewAdventure,
 )
 from lib.pdf_utils import (
-    TocNode, get_toc_tree, extract_pdf_toc, _decode_pdf_string,
+    TocNode, parse_toc_tree, _decode_pdf_string,
     detect_printed_toc, build_toc_from_printed,
 )
 
@@ -176,6 +176,7 @@ class InputProfile:
     page_count: int
     printed_toc_entries: list = None
     printed_toc_pages: list = None
+    document: RustDocument | None = None
 
     def __post_init__(self):
         if self.printed_toc_entries is None:
@@ -196,54 +197,34 @@ class InputProfile:
 
 
 def profile_pdf(pdf_path: Path) -> InputProfile:
-    """Inspect a PDF to decide the pipeline.
-
-    Order of preference:
-      1. Embedded bookmarks → PyMuPDF fast path (cheapest, most accurate)
-      2. Printed ToC page + selectable text → PyMuPDF + printed-ToC path
-         (near-free, author-provided structure)
-      3. Everything else → Marker path (GPU, slower, more expensive)
-    """
-    doc = fitz.open(str(pdf_path))
+    """Inspect through Rust, sharing sampled pages with subsequent extraction."""
+    doc = RustDocument(pdf_path)
     try:
         pages = doc.page_count
         has_bookmarks = bool(doc.get_toc())
-
-        # Sample up to 10 pages; if most yield real text, it's digital.
         sample_ixs = [i * max(1, pages // 10) for i in range(min(10, pages))]
-        chars_found = 0
-        for ix in sample_ixs:
-            try:
-                chars_found += len(doc.load_page(ix).get_text("text"))
-            except Exception:
-                pass
-        avg_chars = chars_found / max(1, len(sample_ixs))
-        has_selectable_text = avg_chars >= SELECTABLE_TEXT_MIN_CHARS
-    finally:
+        doc.read_pages([i + 1 for i in sample_ixs])
+        chars_found = sum(len(doc.load_page(i).get_text("text")) for i in sample_ixs)
+        has_selectable_text = chars_found / max(1, len(sample_ixs)) >= SELECTABLE_TEXT_MIN_CHARS
+        printed_entries, printed_pages = [], []
+        if not has_bookmarks and has_selectable_text:
+            doc.read_all()
+            printed_entries, printed_pages = detect_printed_toc(pdf_path, document=doc)
+        return InputProfile(
+            has_bookmarks=has_bookmarks, has_selectable_text=has_selectable_text,
+            page_count=pages, printed_toc_entries=printed_entries,
+            printed_toc_pages=printed_pages, document=doc,
+        )
+    except BaseException:
         doc.close()
-
-    # Only scan for a printed ToC when we'd actually use it (no embedded
-    # bookmarks, text is selectable). Saves a few hundred ms on PDFs that
-    # already have bookmarks.
-    printed_entries: list = []
-    printed_pages: list = []
-    if not has_bookmarks and has_selectable_text:
-        printed_entries, printed_pages = detect_printed_toc(pdf_path)
-
-    return InputProfile(
-        has_bookmarks=has_bookmarks,
-        has_selectable_text=has_selectable_text,
-        page_count=pages,
-        printed_toc_entries=printed_entries,
-        printed_toc_pages=printed_pages,
-    )
+        raise
 
 
 # ---------------------------------------------------------------------------
 # PyMuPDF fast path: bookmarked digital PDFs
 # ---------------------------------------------------------------------------
 
-def extract_page_text(doc: fitz.Document, page_num: int) -> str:
+def extract_page_text(doc: RustDocument, page_num: int) -> str:
     """Plain text for page_num (1-indexed). Merges hyphenated line breaks."""
     text = doc.load_page(page_num - 1).get_text("text")
     # Merge hyphenated line breaks: "adven-\nture" -> "adventure"
@@ -251,7 +232,7 @@ def extract_page_text(doc: fitz.Document, page_num: int) -> str:
     return text
 
 
-def _node_body_pymupdf(node: TocNode, doc: fitz.Document) -> str:
+def _node_body_pymupdf(node: TocNode, doc: RustDocument) -> str:
     """Join all page texts for a node's page range."""
     pages_text = []
     for p in range(node.start_page, node.end_page + 1):
@@ -371,7 +352,7 @@ def _split_into_chunks(
 
 def build_chunks_from_toc(
     toc_roots: list[TocNode],
-    doc: fitz.Document,
+    doc: RustDocument,
 ) -> list[ChunkSpec]:
     """One chunk per top-level section; oversized sections split by children."""
     return split_oversized(toc_roots, lambda n: _node_body_pymupdf(n, doc))
@@ -1138,23 +1119,18 @@ def _derive_ids(pdf_path: Path, short_id: str | None) -> tuple[str, str]:
 
 def _fast_structure(pdf_path: Path, profile: "InputProfile", *,
                     use_printed_toc: bool, verbose: bool):
-    """PyMuPDF structural extraction (fast or printed-ToC). Returns
-    ``(roots, units)`` with ``units[p-1]`` = page p's text (1-indexed)."""
-    doc = fitz.open(str(pdf_path))
+    """Reuse Rust metadata/samples and extract missing pages in one request."""
+    doc = profile.document or RustDocument(pdf_path)
     try:
         if use_printed_toc:
             toc_roots = build_toc_from_printed(
-                profile.printed_toc_entries, total_pages=profile.page_count,
-            )
-            if not toc_roots:
-                raise RuntimeError(
-                    "printed-ToC path selected but no TocNode tree produced")
+                profile.printed_toc_entries, total_pages=profile.page_count)
         else:
-            toc_roots = get_toc_tree(pdf_path, max_level=3)
-            if not toc_roots:
-                raise RuntimeError(
-                    "fast path selected but get_toc_tree returned no roots")
+            toc_roots = parse_toc_tree(doc.get_toc(), doc.page_count, max_level=3)
+        if not toc_roots:
+            raise RuntimeError("Rust extraction produced no usable ToC roots")
         toc_roots = _unwrap_singleton_root(toc_roots, verbose)
+        doc.read_all()
         units = [extract_page_text(doc, p) for p in range(1, doc.page_count + 1)]
     finally:
         doc.close()
@@ -1318,7 +1294,11 @@ def extract_structure(
         return toc_roots, lines, "lines", meta
 
     # ---- Route ----
-    profile = profile_pdf(pdf_path)
+    if force_ocr:
+        doc = RustDocument(pdf_path)
+        profile = InputProfile(bool(doc.get_toc()), False, doc.page_count, document=doc)
+    else:
+        profile = profile_pdf(pdf_path)
     use_fast = profile.use_fast_path and not force_ocr
     use_printed_toc = (
         not use_fast
@@ -1326,9 +1306,9 @@ def extract_structure(
         and not force_ocr
     )
     if use_fast:
-        route_label = "fast-path (PyMuPDF + bookmarks)"
+        route_label = "fast-path (Rust + bookmarks)"
     elif use_printed_toc:
-        route_label = (f"printed-ToC path (PyMuPDF, "
+        route_label = (f"printed-ToC path (Rust, "
                        f"{len(profile.printed_toc_entries)} ToC entries from "
                        f"pages {profile.printed_toc_pages})")
     else:
@@ -1350,6 +1330,8 @@ def extract_structure(
             kind = "lines"
         source_kind = "printed-toc" if use_printed_toc else "fast"
     else:
+        if profile.document is not None:
+            profile.document.close()
         if not allow_marker:
             raise NeedsOcrError(
                 f"{pdf_path.name} routes to the OCR path; deferred")
@@ -1369,6 +1351,8 @@ def extract_structure(
         "page_count": profile.page_count,
         "source_kind": source_kind,
     }
+    if source_kind in {"fast", "printed-toc"}:
+        meta["pdf_backend"] = profile.document.backend if profile.document else {"name": "rust-pdf-reader/1", "version": "0.1.0", "protocol": 1}
     return toc_roots, units, kind, meta
 
 
