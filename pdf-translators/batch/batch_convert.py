@@ -54,6 +54,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from lib.batch_state import StateDB
+from lib.chunk_cache import extract_path as _extract_artifact
 
 CONVERTER = HERE.parent / "converters" / "pdf_to_5etools_v2.py"
 
@@ -291,14 +292,12 @@ def classify_pdf(path_str: str, root_str: str):
 
     # Open and measure extractable text.
     try:
-        import fitz  # PyMuPDF
-        doc = fitz.open(path_str)
-        pages = doc.page_count
-        text_chars = 0
-        scanned = min(pages, SCAN_PAGE_CAP)
-        for i in range(scanned):
-            text_chars += len(doc[i].get_text("text"))
-        doc.close()
+        from lib.pdf_backend import RustDocument
+        with RustDocument(path_str) as doc:
+            pages = doc.page_count
+            scanned = min(pages, SCAN_PAGE_CAP)
+            doc.read_pages(range(1, scanned + 1))
+            text_chars = sum(len(doc.load_page(i).get_text("text")) for i in range(scanned))
     except Exception as e:  # noqa: BLE001 - never let one PDF kill the scan
         return rel, {"status": "skipped", "reason": f"scan_error: {type(e).__name__}",
                      "size": size, "mtime": mtime, "pages": 0, "text_chars": 0}
@@ -364,7 +363,7 @@ def build_manifest(root: Path, prior: dict, workers: int) -> dict:
             continue
         ent = prior.get(rel)
         if ent and ent.get("size") == st.st_size and ent.get("mtime") == int(st.st_mtime) \
-           and "text_chars" in ent:
+           and "text_chars" in ent and not ent.get("reason", "").startswith("scan_error"):
             # Reuse classification; status is recomputed at dispatch (json on disk).
             docs[rel] = ent
             reused += 1
@@ -373,6 +372,8 @@ def build_manifest(root: Path, prior: dict, workers: int) -> dict:
 
     print(f"[scan] reusing {reused} cached entries, scanning {len(to_scan)} ...")
     if to_scan:
+        from lib.pdf_backend import check_worker
+        check_worker()
         done = 0
         with ProcessPoolExecutor(max_workers=workers) as ex:
             futs = {ex.submit(classify_pdf, p, str(root)): p for p in to_scan}
@@ -535,7 +536,7 @@ def _extract_one(path_str: str, root_str: str, output_type: str, force: bool):
     Returns ``(rel, {"extract": status, ...})``."""
     rel = os.path.relpath(path_str, root_str)
     pdf = Path(path_str)
-    extract_path = pdf.with_name(pdf.stem + "-extract.json")
+    extract_path = _extract_artifact(pdf)
     if extract_path.exists() and not force:
         return rel, {"extract": "exists"}
     try:
@@ -543,6 +544,7 @@ def _extract_one(path_str: str, root_str: str, output_type: str, force: bool):
         import lib.chunk_cache as cc
         roots, units, kind, meta = v2.extract_structure(
             pdf, output_type=output_type, allow_marker=False)
+        extract_path = _extract_artifact(pdf, write=True)
         cc.serialize_extract(extract_path, roots, units, kind, meta)
     except Exception as e:  # noqa: BLE001 — never let one PDF kill the pool
         if type(e).__name__ == "NeedsOcrError":
@@ -619,8 +621,7 @@ class Dispatcher:
             # Encode phase only runs docs that have a structural extract on disk;
             # docs still awaiting the fast/Marker extract pass are deferred (not
             # failed) and picked up by a later encode run.
-            if require_extract and not pdf.with_name(
-                    pdf.stem + "-extract.json").exists():
+            if require_extract and not _extract_artifact(pdf).exists():
                 self.counts["no_extract"] += 1
                 continue
             ent["status"] = "pending"
@@ -641,7 +642,7 @@ class Dispatcher:
     def run_doc(self, rel: str, ep: Endpoint):
         pdf = self.root / rel
         out = pdf.with_suffix(".json")
-        extract_path = pdf.with_name(pdf.stem + "-extract.json")
+        extract_path = _extract_artifact(pdf)
         log = self.logdir / (re.sub(r"[^\w.-]+", "_", rel) + ".log")
         # Split for THIS endpoint's context window: a doc too big for a small box
         # gets chunked finer here — free, no PDF — instead of being pinned to the
@@ -944,7 +945,7 @@ def run_extract_phase(disp: "Dispatcher", args) -> Counter:
         pdf = root / rel
         if pdf.with_suffix(".json").exists() and not args.force:
             continue  # already converted
-        extract_path = pdf.with_name(pdf.stem + "-extract.json")
+        extract_path = _extract_artifact(pdf)
         if extract_path.exists() and not args.force:
             ent["extract"] = "done"
             continue

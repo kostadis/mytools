@@ -610,166 +610,118 @@ def _model_tier(model: str) -> str:
 # Batch API
 # ---------------------------------------------------------------------------
 
+def _batch_ids(count, request_ids):
+    ids = tuple(request_ids) if request_ids is not None else tuple(f"chunk-{i:04d}" for i in range(count))
+    if len(ids) != count or any(not isinstance(cid, str) or not cid for cid in ids) or len(set(ids)) != count:
+        raise ValueError("Batch request IDs must be unique and match the prompt count")
+    return ids
+
+
+def _batch_entries(result, *, strict, verbose, debug_dir, validate=True):
+    cid = result.custom_id
+    if result.result.type != "succeeded":
+        if debug_dir:
+            (debug_dir / f"{cid}-api-error.txt").write_text(str(result.result))
+        print(f"    [WARN] {cid} failed: {result.result.type}", flush=True)
+        return None if strict else []
+    msg = result.result.message
+    raw = "".join(b.text for b in msg.content if b.type == "text")
+    entries, parsed = _parse_claude_response(raw, verbose, debug_dir=debug_dir, chunk_id=cid)
+    if strict and (not parsed or msg.stop_reason not in {"end_turn", "stop_sequence", "stop"}
+                   or (validate and entries and validate_entries(entries, cid))):
+        return None
+    return entries
+
+
+def _batch_raw_directory(directory, batch_id, strict):
+    if directory is None:
+        return None
+    directory = Path(directory)
+    if strict:
+        from lib.response_binding import batch_record_path
+        # Keep failed/truncated raw responses out of the canonical cache.
+        batch_record_path(directory, batch_id)  # validate the identifier
+        directory = directory / "batch-raw" / batch_id
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
 def fetch_claude_batch_results(
-    backend: "Backend",
-    batch_id: str,
-    num_chunks: int,
-    *,
-    verbose: bool = False,
-    debug_dir: Path | None = None,
-) -> list[list[Any]]:
-    """Fetch results from an already-completed batch by ID.
+    backend: "Backend", batch_id: str, num_chunks: int, *, verbose: bool = False,
+    debug_dir: Path | None = None, request_ids: list[str] | None = None,
+) -> list:
+    """Fetch ordered results; strict bound requests use None for failed/missing items.
 
-    Returns results in the same shape as :func:`call_claude_batch` —
-    one list of parsed entries per input chunk, ordered by custom_id
-    ``chunk-NNNN``.
-
-    Use when a batch run completed its API calls but crashed before the
-    caller could consume them (network, post-processing bug, etc.).
-    Anthropic retains batch results for ~29 days, so recovery within
-    that window is free. Anthropic-only — the Batch API has no DGX equivalent.
+    Passing request_ids binds each result to its actual remote custom_id. The
+    legacy ordinal-ID behavior remains available for historical extraction runs.
     """
+    ids = _batch_ids(num_chunks, request_ids)
+    strict = request_ids is not None
     client = _require_anthropic(backend, "the Batch API")
-    print(f"  Fetching results from existing batch {batch_id}...", flush=True)
     batch = client.messages.batches.retrieve(batch_id)
-    status = batch.processing_status
-    if status != "ended":
-        raise RuntimeError(
-            f"batch {batch_id} is not complete (status={status}); "
-            f"wait for it to finish before resuming"
-        )
-    counts = batch.request_counts
-    print(f"    succeeded={counts.succeeded} errored={counts.errored}",
-          flush=True)
-    if debug_dir:
-        debug_dir.mkdir(parents=True, exist_ok=True)
-
-    results_map: dict[str, list[Any]] = {}
+    if batch.processing_status != "ended":
+        raise RuntimeError(f"batch {batch_id} is not complete (status={batch.processing_status})")
+    raw_dir = _batch_raw_directory(debug_dir, batch_id, strict)
+    results = {}
     for result in client.messages.batches.results(batch_id):
         cid = result.custom_id
-        if result.result.type == "succeeded":
-            msg = result.result.message
-            if msg.stop_reason == "max_tokens":
-                print(f"    [WARN] {cid} hit max_tokens — response may be truncated.",
-                      flush=True)
-            results_map[cid], _ = _parse_claude_response(
-                "".join(b.text for b in msg.content if b.type == "text"), verbose, debug_dir=debug_dir, chunk_id=cid
-            )
-        else:
-            print(f"    [WARN] {cid} failed: {result.result.type}", flush=True)
-            if debug_dir:
-                (debug_dir / f"{cid}-api-error.txt").write_text(
-                    str(result.result), encoding="utf-8"
-                )
-            results_map[cid] = []
-
-    return [results_map.get(f"chunk-{i:04d}", []) for i in range(num_chunks)]
+        if strict and (cid not in ids or cid in results):
+            raise RuntimeError("Batch returned unexpected or duplicate request IDs")
+        results[cid] = _batch_entries(result, strict=strict, verbose=verbose, debug_dir=raw_dir)
+    return [results.get(cid, None if strict else []) for cid in ids]
 
 
 def call_claude_batch(
-    backend: "Backend",
-    chunks: list[str],
-    model: str,
-    system_prompt: str,
-    verbose: bool,
-    debug_dir: Path | None = None,
-    validate: bool = True,
-) -> list[list[Any]]:
-    """Submit all chunks as a single Batch API request (50% cheaper, async).
+    backend: "Backend", chunks: list[str], model: str, system_prompt: str, verbose: bool,
+    debug_dir: Path | None = None, validate: bool = True,
+    request_ids: list[str] | None = None,
+) -> list:
+    """Submit prompts with immutable in-memory request IDs and resumable association.
 
-    Polls until complete, then returns results in chunk order.
-
-    Anthropic-only — vLLM/DGX has no Batch API. See :func:`call_claude` for the
-    ``validate`` parameter — pass ``validate=False`` for bestiary monster
-    payloads whose ``type`` field is a dict.
+    Strict request_ids mode distinguishes remote failures from successful empty
+    lists. Raw responses never become canonical bound responses until the caller
+    validates success and writes them. Legacy callers retain ordinal IDs.
     """
     import time as _time
-
+    ids = _batch_ids(len(chunks), request_ids)
+    strict = request_ids is not None
     client = _require_anthropic(backend, "the Batch API")
-    print(f"  Submitting {len(chunks)} requests to Batch API...", flush=True)
-
-    if debug_dir:
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        for i, text in enumerate(chunks):
-            (debug_dir / f"chunk-{i:04d}-input.txt").write_text(text, encoding="utf-8")
-        print(f"  [DEBUG] Saved {len(chunks)} chunk inputs to {debug_dir}/", flush=True)
-
-    requests = [
-        {
-            "custom_id": f"chunk-{i:04d}",
-            "params": {
-                "model": model,
-                "max_tokens": MAX_OUTPUT_TOKENS,
-                "system": system_prompt,
-                "messages": [{"role": "user", "content": text}],
-            },
-        }
-        for i, text in enumerate(chunks)
-    ]
-
+    requests = [{"custom_id": cid, "params": {"model": model,
+                 "max_tokens": MAX_OUTPUT_TOKENS, "system": system_prompt,
+                 "messages": [{"role": "user", "content": prompt}]}}
+                for cid, prompt in zip(ids, chunks)]
     batch = client.messages.batches.create(requests=requests)
     batch_id = batch.id
+    if debug_dir:
+        from lib.response_binding import atomic_json, save_batch_record
+        if strict:
+            save_batch_record(debug_dir, batch_id, ids)
+        else:
+            atomic_json(Path(debug_dir) / "batch-id.json", {"id": batch_id, "cids": None})
     print(f"  Batch ID: {batch_id}", flush=True)
-    print("  Waiting for batch to complete (polls every 15 s)...", flush=True)
-
+    raw_dir = _batch_raw_directory(debug_dir, batch_id, strict)
+    if raw_dir:
+        for cid, prompt in zip(ids, chunks):
+            (raw_dir / f"{cid}-input.txt").write_text(prompt, encoding="utf-8")
     while True:
         batch = client.messages.batches.retrieve(batch_id)
-        status = batch.processing_status
-        counts = batch.request_counts
-        print(
-            f"    status={status}  "
-            f"processing={counts.processing}  "
-            f"succeeded={counts.succeeded}  "
-            f"errored={counts.errored}",
-            flush=True,
-        )
-        if status == "ended":
+        if batch.processing_status == "ended":
             break
+        print(f"  Batch {batch_id}: {batch.processing_status}", flush=True)
         _time.sleep(15)
-
-    results_map: dict[str, list[Any]] = {}
+    results = {}
     for result in client.messages.batches.results(batch_id):
         cid = result.custom_id
-        if result.result.type == "succeeded":
-            msg = result.result.message
-            if msg.stop_reason == "max_tokens":
-                print(f"    [WARN] {cid} hit max_tokens — response may be truncated. "
-                      f"Try --pages-per-chunk with a smaller value.", flush=True)
-            results_map[cid], _ = _parse_claude_response(
-                "".join(b.text for b in msg.content if b.type == "text"), verbose, debug_dir=debug_dir, chunk_id=cid
-            )
-        else:
-            print(f"    [WARN] {cid} failed: {result.result.type}", flush=True)
-            if debug_dir:
-                (debug_dir / f"{cid}-api-error.txt").write_text(
-                    str(result.result), encoding="utf-8"
-                )
-            results_map[cid] = []
-
-    ordered = [results_map.get(f"chunk-{i:04d}", []) for i in range(len(chunks))]
-
-    print(f"\n  Chunk results summary:", flush=True)
-    total_validation_errors = 0
-    for i, entries in enumerate(ordered):
-        cid = f"chunk-{i:04d}"
-        flag = "  ← EMPTY — check debug files" if not entries else ""
-        # Validate entries (skipped for non-adventure payloads like bestiary)
+        if strict and (cid not in ids or cid in results):
+            raise RuntimeError("Batch returned unexpected or duplicate request IDs")
+        results[cid] = _batch_entries(result, strict=strict, verbose=verbose,
+                                      debug_dir=raw_dir, validate=validate)
+    ordered = [results.get(cid, None if strict else []) for cid in ids]
+    for cid, entries in zip(ids, ordered):
         if validate and entries:
             errors = validate_entries(entries, cid)
             if errors:
-                flag = f"  ← {len(errors)} validation error(s)"
-                total_validation_errors += len(errors)
-                if debug_dir:
-                    (debug_dir / f"{cid}-validation-errors.txt").write_text(
-                        "\n".join(errors), encoding="utf-8"
-                    )
-        print(f"    {cid}: {len(entries)} entries{flag}", flush=True)
-    if total_validation_errors:
-        print(f"\n  [VALIDATE] {total_validation_errors} total validation error(s) across "
-              f"batch results. Re-run without --batch to enable automatic retry.",
-              flush=True)
-    print(flush=True)
-
+                print(f"    [VALIDATE] {cid}: {len(errors)} error(s)", flush=True)
     return ordered
 
 

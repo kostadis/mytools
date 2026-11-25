@@ -1,0 +1,19 @@
+[package]
+name = "rpg-pdf-reader"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+[dependencies]
+lopdf = { version = "=0.47.0", default-features = false }
+pdf-extract = { path = "vendor/pdf-extract" }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
+[dev-dependencies]
+tempfile = "3"
+[workspace]
+exclude = ["vendor/lopdf", "vendor/pdf-extract"]
+
+[patch.crates-io]
+lopdf = { path = "vendor/lopdf" }

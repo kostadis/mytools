@@ -6,10 +6,12 @@ Unlike v1 (three separate heuristic scripts — see [README_v1.md](README_v1.md)
 
 | PDF type | Path | Speed |
 |---|---|---|
-| Digital, bookmarked, selectable text | **PyMuPDF fast path** — chunks by the bookmark tree | ~100× faster |
+| Digital, bookmarked, selectable text | **Rust PDF reader fast path** — chunks by the bookmark tree | Native CPU extraction |
 | Scans, OCR'd modules, un-bookmarked digital | **Marker path** — ML layout/heading extraction, then synthesised TOC | ~5 s/page (GPU) |
 
 The key design change: **structure extraction happens before Claude runs.** Marker (or the PDF's own bookmarks) produces an authoritative heading tree, so Claude only *renders prose inside pre-built structure* rather than inferring document structure from font heuristics. This eliminates the `[H1]`/`[ROOM-KEY-N]` annotations, the post-conversion repair scripts, and the content-filter trigger substitutions that v1 needed.
+
+See [Rust reader build, protocol and cache migration](pdf-reader/README.md). Markdown-only runs do not load a PDF engine.
 
 A browser-based UI (`editors/app.py`) wraps the converter so you never have to touch the command line.
 
@@ -50,7 +52,8 @@ pdf-translators/
 ### Core converter (fast path + UI)
 
 ```bash
-pip install pymupdf anthropic flask
+pip install anthropic flask
+cargo build --release --locked --manifest-path pdf-reader/Cargo.toml
 ```
 
 ### Marker path (scans, un-bookmarked PDFs)
@@ -206,7 +209,7 @@ The unified pipeline (`converters/pdf_to_5etools_v2.py`):
 2. **Extract structure**
    - *Fast path:* `get_toc_tree()` reads the PDF bookmark outline into a `TocNode` tree.
    - *Marker path:* `run_marker()` shells out to `marker_single` to produce markdown with `#`/`##`/`###` headings; `parse_markdown_headings()` extracts them with line offsets; `normalise_numbered_rooms()` flattens keyed-room patterns (e.g. `101. ARMORY`) to a common level; `build_synthetic_toc()` reuses the same tree builder with line numbers standing in for page numbers.
-3. **Chunk** — one chunk per top-level `TocNode`. Fast path pulls page text via PyMuPDF; Marker path slices the markdown between heading line numbers.
+3. **Chunk** — one chunk per top-level `TocNode`. Fast path pulls page text through the Rust worker; Marker path slices the markdown between heading line numbers.
 4. **Claude pass** — `build_prompt()` attaches sub-section hints from the node's children; `claude_api.call_claude` owns all retry / validation / recovery. The PDF's bookmark outline is prepended to each chunk as an authoritative section hint (disable with `--no-toc-hint`). Batch mode via `call_claude_batch`.
 5. **Assemble** — `assemble_adventure()` wraps each chunk's `entries[]` in a `SectionEntry` and calls `HomebrewAdventure.build()`, which auto-assigns IDs and builds the TOC from the section tree.
 6. **Write** — `.to_json()` writes the final document.
@@ -305,7 +308,7 @@ pytest tests/test_adventure_editor.py -v      # adventure editor
 pytest tests/test_validate_adventure.py -v    # JSON validator (includes all official adventures)
 ```
 
-Tests mock all external dependencies (PyMuPDF, Anthropic API) — no API key or system packages required.
+Offline tests mock provider calls and worker processes. Build the Rust reader to enable the additional real-worker acceptance test; no API key is used.
 
 ---
 

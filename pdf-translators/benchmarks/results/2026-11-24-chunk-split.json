@@ -1,0 +1,24 @@
+{
+  "all_outputs_equal": true,
+  "baseline_ref": "76c6229",
+  "runs": 5,
+  "lines": 65536,
+  "summaries": [
+    {
+      "mode": "baseline",
+      "rss_median_kib": 238144,
+      "rss_min_kib": 238092,
+      "rss_max_kib": 238236,
+      "seconds_median": 0.08127707400126383,
+      "python_peak_median_bytes": 139722208
+    },
+    {
+      "mode": "current",
+      "rss_median_kib": 136080,
+      "rss_min_kib": 136000,
+      "rss_max_kib": 136104,
+      "seconds_median": 0.07967323799675796,
+      "python_peak_median_bytes": 35389936
+    }
+  ]
+}

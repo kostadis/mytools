@@ -1,4 +1,6 @@
 __pycache__/
+.fast/
+native-heading-parser/target/
 source-selector/target/
 source-selection-data/
 *.pyc
@@ -34,3 +36,5 @@ ocr-three-map.json
 
 # Scratch backups of OCR extract/markdown output.
 scratchpad-*-backup/
+
+pdf-reader/target/

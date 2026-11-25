@@ -43,20 +43,22 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-import fitz  # PyMuPDF
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from lib.pdf_backend import RustDocument
 
 import lib.cli_args as _cli
 import lib.claude_api as _api
 import converters.extract_monsters as _mon
 import lib.llm_backend as _lb
+from lib.native_heading_parser import load_parser as _load_native_heading_parser
+from lib.response_binding import response_directory, atomic_json, batch_record_path
 from lib.adventure_model import (
     BuildContext, SectionEntry, EntriesEntry, parse_entry,
     HomebrewAdventure,
 )
 from lib.pdf_utils import (
-    TocNode, get_toc_tree, extract_pdf_toc, _decode_pdf_string,
+    TocNode, parse_toc_tree, _decode_pdf_string,
     detect_printed_toc, build_toc_from_printed,
 )
 
@@ -175,6 +177,7 @@ class InputProfile:
     page_count: int
     printed_toc_entries: list = None
     printed_toc_pages: list = None
+    document: RustDocument | None = None
 
     def __post_init__(self):
         if self.printed_toc_entries is None:
@@ -195,54 +198,34 @@ class InputProfile:
 
 
 def profile_pdf(pdf_path: Path) -> InputProfile:
-    """Inspect a PDF to decide the pipeline.
-
-    Order of preference:
-      1. Embedded bookmarks → PyMuPDF fast path (cheapest, most accurate)
-      2. Printed ToC page + selectable text → PyMuPDF + printed-ToC path
-         (near-free, author-provided structure)
-      3. Everything else → Marker path (GPU, slower, more expensive)
-    """
-    doc = fitz.open(str(pdf_path))
+    """Inspect through Rust, sharing sampled pages with subsequent extraction."""
+    doc = RustDocument(pdf_path)
     try:
         pages = doc.page_count
         has_bookmarks = bool(doc.get_toc())
-
-        # Sample up to 10 pages; if most yield real text, it's digital.
         sample_ixs = [i * max(1, pages // 10) for i in range(min(10, pages))]
-        chars_found = 0
-        for ix in sample_ixs:
-            try:
-                chars_found += len(doc.load_page(ix).get_text("text"))
-            except Exception:
-                pass
-        avg_chars = chars_found / max(1, len(sample_ixs))
-        has_selectable_text = avg_chars >= SELECTABLE_TEXT_MIN_CHARS
-    finally:
+        doc.read_pages([i + 1 for i in sample_ixs])
+        chars_found = sum(len(doc.load_page(i).get_text("text")) for i in sample_ixs)
+        has_selectable_text = chars_found / max(1, len(sample_ixs)) >= SELECTABLE_TEXT_MIN_CHARS
+        printed_entries, printed_pages = [], []
+        if not has_bookmarks and has_selectable_text:
+            doc.read_all()
+            printed_entries, printed_pages = detect_printed_toc(pdf_path, document=doc)
+        return InputProfile(
+            has_bookmarks=has_bookmarks, has_selectable_text=has_selectable_text,
+            page_count=pages, printed_toc_entries=printed_entries,
+            printed_toc_pages=printed_pages, document=doc,
+        )
+    except BaseException:
         doc.close()
-
-    # Only scan for a printed ToC when we'd actually use it (no embedded
-    # bookmarks, text is selectable). Saves a few hundred ms on PDFs that
-    # already have bookmarks.
-    printed_entries: list = []
-    printed_pages: list = []
-    if not has_bookmarks and has_selectable_text:
-        printed_entries, printed_pages = detect_printed_toc(pdf_path)
-
-    return InputProfile(
-        has_bookmarks=has_bookmarks,
-        has_selectable_text=has_selectable_text,
-        page_count=pages,
-        printed_toc_entries=printed_entries,
-        printed_toc_pages=printed_pages,
-    )
+        raise
 
 
 # ---------------------------------------------------------------------------
 # PyMuPDF fast path: bookmarked digital PDFs
 # ---------------------------------------------------------------------------
 
-def extract_page_text(doc: fitz.Document, page_num: int) -> str:
+def extract_page_text(doc: RustDocument, page_num: int) -> str:
     """Plain text for page_num (1-indexed). Merges hyphenated line breaks."""
     text = doc.load_page(page_num - 1).get_text("text")
     # Merge hyphenated line breaks: "adven-\nture" -> "adventure"
@@ -250,7 +233,7 @@ def extract_page_text(doc: fitz.Document, page_num: int) -> str:
     return text
 
 
-def _node_body_pymupdf(node: TocNode, doc: fitz.Document) -> str:
+def _node_body_pymupdf(node: TocNode, doc: RustDocument) -> str:
     """Join all page texts for a node's page range."""
     pages_text = []
     for p in range(node.start_page, node.end_page + 1):
@@ -341,6 +324,11 @@ def _split_into_chunks(
         return [ChunkSpec(root=root, target_node=node,
                           is_prose_stub=False, body=body)]
 
+    # This full parent body is discarded when splitting. Release it before
+    # descendants allocate their bodies, rather than retaining one copy per
+    # ancestor in the recursion stack.
+    del body
+
     chunks: list[ChunkSpec] = []
     # Parent's own prose: text between node start and first child start.
     first_child = min(node.children, key=lambda c: c.start_page)
@@ -365,7 +353,7 @@ def _split_into_chunks(
 
 def build_chunks_from_toc(
     toc_roots: list[TocNode],
-    doc: fitz.Document,
+    doc: RustDocument,
 ) -> list[ChunkSpec]:
     """One chunk per top-level section; oversized sections split by children."""
     return split_oversized(toc_roots, lambda n: _node_body_pymupdf(n, doc))
@@ -436,6 +424,11 @@ def parse_markdown_headings(md_text: str) -> tuple[list[MdHeading], list[str]]:
                 line_no=i,
             ))
     return headings, lines
+
+
+# Keep the reference implementation available for equivalence tests and benchmarks.
+_python_parse_markdown_headings = parse_markdown_headings
+parse_markdown_headings = _load_native_heading_parser(MdHeading) or parse_markdown_headings
 
 
 def normalise_numbered_rooms(headings: list[MdHeading]) -> list[MdHeading]:
@@ -1127,23 +1120,18 @@ def _derive_ids(pdf_path: Path, short_id: str | None) -> tuple[str, str]:
 
 def _fast_structure(pdf_path: Path, profile: "InputProfile", *,
                     use_printed_toc: bool, verbose: bool):
-    """PyMuPDF structural extraction (fast or printed-ToC). Returns
-    ``(roots, units)`` with ``units[p-1]`` = page p's text (1-indexed)."""
-    doc = fitz.open(str(pdf_path))
+    """Reuse Rust metadata/samples and extract missing pages in one request."""
+    doc = profile.document or RustDocument(pdf_path)
     try:
         if use_printed_toc:
             toc_roots = build_toc_from_printed(
-                profile.printed_toc_entries, total_pages=profile.page_count,
-            )
-            if not toc_roots:
-                raise RuntimeError(
-                    "printed-ToC path selected but no TocNode tree produced")
+                profile.printed_toc_entries, total_pages=profile.page_count)
         else:
-            toc_roots = get_toc_tree(pdf_path, max_level=3)
-            if not toc_roots:
-                raise RuntimeError(
-                    "fast path selected but get_toc_tree returned no roots")
+            toc_roots = parse_toc_tree(doc.get_toc(), doc.page_count, max_level=3)
+        if not toc_roots:
+            raise RuntimeError("Rust extraction produced no usable ToC roots")
         toc_roots = _unwrap_singleton_root(toc_roots, verbose)
+        doc.read_all()
         units = [extract_page_text(doc, p) for p in range(1, doc.page_count + 1)]
     finally:
         doc.close()
@@ -1307,7 +1295,11 @@ def extract_structure(
         return toc_roots, lines, "lines", meta
 
     # ---- Route ----
-    profile = profile_pdf(pdf_path)
+    if force_ocr:
+        doc = RustDocument(pdf_path)
+        profile = InputProfile(bool(doc.get_toc()), False, doc.page_count, document=doc)
+    else:
+        profile = profile_pdf(pdf_path)
     use_fast = profile.use_fast_path and not force_ocr
     use_printed_toc = (
         not use_fast
@@ -1315,9 +1307,9 @@ def extract_structure(
         and not force_ocr
     )
     if use_fast:
-        route_label = "fast-path (PyMuPDF + bookmarks)"
+        route_label = "fast-path (Rust + bookmarks)"
     elif use_printed_toc:
-        route_label = (f"printed-ToC path (PyMuPDF, "
+        route_label = (f"printed-ToC path (Rust, "
                        f"{len(profile.printed_toc_entries)} ToC entries from "
                        f"pages {profile.printed_toc_pages})")
     else:
@@ -1339,6 +1331,8 @@ def extract_structure(
             kind = "lines"
         source_kind = "printed-toc" if use_printed_toc else "fast"
     else:
+        if profile.document is not None:
+            profile.document.close()
         if not allow_marker:
             raise NeedsOcrError(
                 f"{pdf_path.name} routes to the OCR path; deferred")
@@ -1358,6 +1352,8 @@ def extract_structure(
         "page_count": profile.page_count,
         "source_kind": source_kind,
     }
+    if source_kind in {"fast", "printed-toc"}:
+        meta["pdf_backend"] = profile.document.backend if profile.document else {"name": "rust-pdf-reader/1", "version": "0.1.0", "protocol": 1}
     return toc_roots, units, kind, meta
 
 
@@ -1445,13 +1441,35 @@ def encode_chunks(
         return pdf_path  # nothing written
 
     # ---- 4. Claude pass ----
+    rust_bound = bool(meta.get("pdf_backend", {}).get("name", "").startswith("rust-pdf-reader/"))
+    if rust_bound:
+        def bound_directory(base, *, create):
+            return response_directory(
+                base, ((_chunk_cid(i, c), build_prompt(c.target_node, c.body))
+                       for i, c in enumerate(chunks)), system=SYSTEM_PROMPT,
+                model=model, backend=meta["pdf_backend"], create=create,
+                settings={"provider": backend.kind,
+                          "max_output_tokens": _api.MAX_OUTPUT_TOKENS})
+        if replay_responses:
+            replay_responses = bound_directory(Path(replay_responses), create=False)
+            debug_dir = replay_responses
+        else:
+            debug_dir = bound_directory(debug_dir, create=not bool(resume_batch))
+        print(f"[responses] bound Rust requests in {debug_dir}")
+
     chunk_results: list[tuple[ChunkSpec, list | None]] = []
     if replay_responses:
         # Rebuild from previously saved {cid}-response.txt files instead of
         # calling Claude. Chunking above is deterministic, so each chunk's
         # file can be addressed by its own id. Use this to recover a run
         # after a parser fix without re-billing the API.
-        resp_files = _replay_response_files(Path(replay_responses), chunks)
+        if rust_bound:
+            resp_files = [Path(replay_responses) / f"{_chunk_cid(i, c)}-response.txt"
+                          for i, c in enumerate(chunks)]
+            if not all(p.is_file() for p in resp_files):
+                raise RuntimeError("Rust replay requires complete bound responses by chunk id")
+        else:
+            resp_files = _replay_response_files(Path(replay_responses), chunks)
         print(f"[replay] rebuilding from {len(resp_files)} saved responses in "
               f"{replay_responses} — no Claude calls")
         for spec, rf in zip(chunks, resp_files):
@@ -1463,12 +1481,33 @@ def encode_chunks(
     elif resume_batch:
         print(f"[resume] skipping Claude submission — fetching batch "
               f"{resume_batch}")
-        batch = _api.fetch_claude_batch_results(
-            backend, resume_batch, len(chunks),
-            verbose=verbose, debug_dir=debug_dir,
-        )
-        for spec, entries in zip(chunks, batch):
-            chunk_results.append((spec, entries))
+        if rust_bound:
+            association = batch_record_path(debug_dir, resume_batch)
+            try:
+                association = json.loads(association.read_text())
+            except (OSError, ValueError) as error:
+                raise RuntimeError("Rust batch resume requires its saved request binding") from error
+            cids = [_chunk_cid(i, c) for i, c in enumerate(chunks)]
+            submitted = association.get("cids")
+            if (association.get("id") != resume_batch or not isinstance(submitted, list)
+                    or not submitted or any(not isinstance(c, str) for c in submitted)
+                    or len(set(submitted)) != len(submitted) or not set(submitted) <= set(cids)):
+                raise RuntimeError("Rust batch ID does not match the bound requests")
+            batch = _api.fetch_claude_batch_results(
+                backend, resume_batch, len(submitted), verbose=verbose, debug_dir=debug_dir, request_ids=submitted)
+            if len(batch) != len(submitted):
+                raise RuntimeError("Incomplete Rust batch result count")
+            fetched = dict(zip(submitted, batch))
+            for cid, spec in zip(cids, chunks):
+                entries = fetched.get(cid) if cid in fetched else _load_cached_response(cid, debug_dir, verbose)
+                if entries is not None:
+                    atomic_json(debug_dir / f"{cid}-response.txt", entries)
+                chunk_results.append((spec, entries))
+        else:
+            batch = _api.fetch_claude_batch_results(
+                backend, resume_batch, len(chunks), verbose=verbose, debug_dir=debug_dir)
+            for spec, entries in zip(chunks, batch):
+                chunk_results.append((spec, entries))
     elif use_batch:
         # --reuse-responses on the batch path: load any chunk that already has a
         # usable saved {cid}-response.txt, and submit only the missing ones to
@@ -1490,12 +1529,17 @@ def encode_chunks(
         batched: list = []
         if todo:
             prompts = [build_prompt(c.target_node, c.body) for _, c in todo]
+            binding = {"request_ids": [_chunk_cid(i, c) for i, c in todo]} if rust_bound else {}
             batched = _api.call_claude_batch(
-                backend, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
+                backend, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir, **binding,
             )
+            if rust_bound and len(batched) != len(todo):
+                raise RuntimeError("Incomplete Rust batch result count")
         batch_iter = iter(batched)
         for i, spec in enumerate(chunks):
             entries = cached[i] if i in cached else next(batch_iter)
+            if rust_bound and entries is not None:
+                atomic_json(debug_dir / f"{_chunk_cid(i, spec)}-response.txt", entries)
             chunk_results.append((spec, entries))
     else:
         def _run_chunk(i: int, spec: ChunkSpec) -> list | None:
@@ -1530,7 +1574,14 @@ def encode_chunks(
             if verbose:
                 print(f"[chunk {cid}] calling {backend.kind} ({len(spec.body)} chars)")
             try:
-                return call_claude_for_chunk(backend, prompt, model, verbose, debug_dir, cid)
+                raw_dir = debug_dir
+                if rust_bound:
+                    raw_dir = debug_dir / "stream-raw" / cid
+                    raw_dir.mkdir(parents=True, exist_ok=True)
+                entries = call_claude_for_chunk(backend, prompt, model, verbose, raw_dir, cid)
+                if rust_bound and entries is not None:
+                    atomic_json(debug_dir / f"{cid}-response.txt", entries)
+                return entries
             except Exception as e:
                 # Fail-and-continue: a chunk that errors out (e.g. a DGX read
                 # timeout — generation exceeded the budget) is reported and
@@ -1563,6 +1614,11 @@ def encode_chunks(
                 f"--reuse-responses to finish this doc.")
         for spec, entries in zip(chunks, results):
             chunk_results.append((spec, entries))
+
+    if rust_bound and any(entries is None for _, entries in chunk_results):
+        raise PartialConversionError(
+            "Incomplete Rust-bound responses; successful chunks are cached. "
+            "Re-run with --reuse-responses to retry failed chunks.")
 
     # ---- 5. Assemble ----
     doc = assemble_adventure(

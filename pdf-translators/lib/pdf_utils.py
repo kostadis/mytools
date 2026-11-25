@@ -12,10 +12,10 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-try:
-    import fitz  # PyMuPDF
-except ImportError:
-    sys.exit("PyMuPDF is required.  Install with:  pip install pymupdf")
+def _open_legacy_pdf(path):
+    """Compatibility for older entrypoints; never import a PDF engine eagerly."""
+    import fitz
+    return fitz.open(str(path))
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ def extract_pdf_toc(pdf_path: Path | str, max_level: int = 3) -> str | None:
     Level 4+ items (Treasure, XP Award, Development…) are omitted to keep the
     hint compact.
     """
-    doc = fitz.open(str(pdf_path))
+    doc = _open_legacy_pdf(pdf_path)
     try:
         raw: list[list] = doc.get_toc(simple=True)  # [[level, title, page], …]
     finally:
@@ -218,7 +218,7 @@ def get_toc_tree(pdf_path: Path | str, max_level: int = 99,
     Convenience wrapper combining ``doc.get_toc()`` + ``parse_toc_tree()``.
     Returns an empty list if the PDF has no bookmarks.
     """
-    doc = fitz.open(str(pdf_path))
+    doc = _open_legacy_pdf(pdf_path)
     try:
         raw = doc.get_toc(simple=True)
         total = doc.page_count
@@ -423,6 +423,7 @@ def detect_printed_toc(
     *,
     max_scan_pages: int = 20,
     min_entries_per_page: int = 5,
+    document=None,
 ) -> tuple[list[tuple[str, int]], list[int]]:
     """Scan the front of the PDF for a printed Table of Contents.
 
@@ -439,7 +440,7 @@ def detect_printed_toc(
 
     Returns ``([], [])`` if no printed ToC was detected.
     """
-    doc = fitz.open(str(pdf_path))
+    doc = document if document is not None else _open_legacy_pdf(pdf_path)
     try:
         all_entries: list[tuple[str, int]] = []
         toc_pages: list[int] = []
@@ -501,7 +502,8 @@ def detect_printed_toc(
 
         return entries, toc_pages
     finally:
-        doc.close()
+        if document is None:
+            doc.close()
 
 
 _XREF_SUFFIX_RE = re.compile(r"\s*\(\d+\)\s*$")

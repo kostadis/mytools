@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import weakref
 
 import converters.pdf_to_5etools_v2 as v2
 import converters.extract_monsters as _mon
@@ -14,6 +15,32 @@ from lib.pdf_utils import (
     _match_toc_line, build_toc_from_printed,
     _dedupe_toc_entries, _canonical_toc_title,
 )
+
+
+def test_split_releases_discarded_parent_text_before_building_children():
+    """Oversized ancestors must not retain full text while descendants allocate."""
+    class Text(str):
+        pass
+
+    leaf = TocNode(3, "Room", 3, 3)
+    chapter = TocNode(2, "Chapter", 2, 3, [leaf])
+    root = TocNode(1, "Book", 1, 3, [chapter])
+    alive = weakref.WeakValueDictionary()
+
+    def body(node):
+        if node is chapter:
+            assert "Book" not in alive
+        if node is leaf:
+            assert "Book" not in alive and "Chapter" not in alive
+        text = Text("prose" if not node.children else "oversized" * 10)
+        if node.children:
+            alive[node.title] = text
+        return text
+
+    chunks = v2.split_oversized([root], body, max_chars=20)
+    assert [(c.target_node.title, c.is_prose_stub, c.body) for c in chunks] == [
+        ("Book", True, "prose"), ("Chapter", True, "prose"), ("Room", False, "prose"),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +230,7 @@ class TestProfilePdfPrintedToc:
     def test_bookmark_takes_precedence_over_printed_toc(self):
         """If bookmarks exist, we never bother scanning for a printed ToC."""
         doc = self._mock_doc(page_count=100, has_toc=True, chars_per_page=5000)
-        with patch("converters.pdf_to_5etools_v2.fitz.open", return_value=doc):
+        with patch("converters.pdf_to_5etools_v2.RustDocument", return_value=doc):
             with patch("converters.pdf_to_5etools_v2.detect_printed_toc") as m:
                 profile = v2.profile_pdf("fake.pdf")
         m.assert_not_called()
@@ -212,7 +239,7 @@ class TestProfilePdfPrintedToc:
 
     def test_printed_toc_used_when_no_bookmarks(self):
         doc = self._mock_doc(page_count=100, has_toc=False, chars_per_page=5000)
-        with patch("converters.pdf_to_5etools_v2.fitz.open", return_value=doc):
+        with patch("converters.pdf_to_5etools_v2.RustDocument", return_value=doc):
             with patch("converters.pdf_to_5etools_v2.detect_printed_toc") as m:
                 m.return_value = (
                     [("Ch 1", 5), ("Ch 2", 20), ("Ch 3", 40),
@@ -226,7 +253,7 @@ class TestProfilePdfPrintedToc:
 
     def test_marker_fallback_when_no_printed_toc(self):
         doc = self._mock_doc(page_count=100, has_toc=False, chars_per_page=5000)
-        with patch("converters.pdf_to_5etools_v2.fitz.open", return_value=doc):
+        with patch("converters.pdf_to_5etools_v2.RustDocument", return_value=doc):
             with patch("converters.pdf_to_5etools_v2.detect_printed_toc") as m:
                 m.return_value = ([], [])
                 profile = v2.profile_pdf("fake.pdf")
@@ -236,7 +263,7 @@ class TestProfilePdfPrintedToc:
     def test_below_threshold_falls_through_to_marker(self):
         """A handful of accidentally-matching lines shouldn't trip the path."""
         doc = self._mock_doc(page_count=100, has_toc=False, chars_per_page=5000)
-        with patch("converters.pdf_to_5etools_v2.fitz.open", return_value=doc):
+        with patch("converters.pdf_to_5etools_v2.RustDocument", return_value=doc):
             with patch("converters.pdf_to_5etools_v2.detect_printed_toc") as m:
                 # Only 3 entries — below the 5-entry minimum in use_printed_toc_path
                 m.return_value = ([("A", 1), ("B", 2), ("C", 3)], [1])
@@ -837,7 +864,7 @@ class TestProfilePdf:
 
     def test_digital_with_bookmarks_uses_fast_path(self):
         doc = self._mock_doc(page_count=100, has_toc=True, chars_per_page=5000)
-        with patch("converters.pdf_to_5etools_v2.fitz.open", return_value=doc):
+        with patch("converters.pdf_to_5etools_v2.RustDocument", return_value=doc):
             profile = v2.profile_pdf("fake.pdf")
         assert profile.has_bookmarks
         assert profile.has_selectable_text
@@ -845,7 +872,7 @@ class TestProfilePdf:
 
     def test_scan_with_no_bookmarks_uses_marker(self):
         doc = self._mock_doc(page_count=100, has_toc=False, chars_per_page=2)
-        with patch("converters.pdf_to_5etools_v2.fitz.open", return_value=doc):
+        with patch("converters.pdf_to_5etools_v2.RustDocument", return_value=doc):
             profile = v2.profile_pdf("fake.pdf")
         assert not profile.has_bookmarks
         assert not profile.has_selectable_text
@@ -854,7 +881,7 @@ class TestProfilePdf:
     def test_bookmarked_but_image_only_pdf_uses_marker(self):
         """Bookmarks alone are not enough; need selectable text too."""
         doc = self._mock_doc(page_count=100, has_toc=True, chars_per_page=2)
-        with patch("converters.pdf_to_5etools_v2.fitz.open", return_value=doc):
+        with patch("converters.pdf_to_5etools_v2.RustDocument", return_value=doc):
             profile = v2.profile_pdf("fake.pdf")
         assert profile.has_bookmarks
         assert not profile.has_selectable_text
@@ -863,7 +890,7 @@ class TestProfilePdf:
     def test_digital_without_bookmarks_uses_marker(self):
         """Text-only with no bookmarks has no structure — Marker extracts it."""
         doc = self._mock_doc(page_count=100, has_toc=False, chars_per_page=5000)
-        with patch("converters.pdf_to_5etools_v2.fitz.open", return_value=doc):
+        with patch("converters.pdf_to_5etools_v2.RustDocument", return_value=doc):
             profile = v2.profile_pdf("fake.pdf")
         assert not profile.use_fast_path
 
