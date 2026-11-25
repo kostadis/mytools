@@ -99,3 +99,85 @@ from converters import pdf_to_5etools_v2 as c
 assert c.parse_markdown_headings('# Searchable')[0][0].title=='Searchable'
 '''
     subprocess.run([sys.executable,'-c',code],env={**os.environ,'PYTHONPATH':str(project)},capture_output=True,check=True)
+
+
+def test_batch_classifier_uses_rust_and_batches_sampled_pages(tmp_path,monkeypatch):
+    import lib.pdf_backend as backend
+    from batch import batch_convert
+    calls=[]
+    class Document:
+        page_count=2
+        def __init__(self,path):pass
+        def __enter__(self):return self
+        def __exit__(self,*args):calls.append('closed')
+        def read_pages(self,pages):calls.append(list(pages))
+        def load_page(self,index):return self
+        def get_text(self,kind):return 'x'*500
+    monkeypatch.setattr(backend,'RustDocument',Document)
+    pdf=tmp_path/'book.pdf';pdf.write_bytes(b'fixture')
+    rel,result=batch_convert.classify_pdf(str(pdf),str(tmp_path))
+    assert result['status']=='pending'
+    assert calls==[[1,2],'closed']
+
+
+@pytest.mark.parametrize('bad', ['duplicate','unexpected','missing','error','invalid-text','boolean-page'])
+def test_failed_extraction_does_not_commit_partial_pages(tmp_path,monkeypatch,bad):
+    extra=f'''
+doc={DOC!r}
+if sys.argv[1]=='inspect':
+ print(json.dumps(doc));print(json.dumps({END!r}))
+else:
+ doc['requested']=[1,2];print(json.dumps(doc))
+ print(json.dumps({{'type':'page','page':1,'text':'partial'}}))
+ bad={bad!r}
+ if bad=='error':print(json.dumps({{'type':'error','code':'unsupported_content','message':'bad glyph'}}))
+ elif bad=='duplicate':print(json.dumps({{'type':'page','page':1,'text':'duplicate'}}))
+ elif bad=='unexpected':print(json.dumps({{'type':'page','page':3,'text':'unexpected'}}))
+ elif bad=='invalid-text':print(json.dumps({{'type':'page','page':2,'text':None}}))
+ elif bad=='boolean-page':print(json.dumps({{'type':'page','page':True,'text':'bad'}}))
+ print(json.dumps({{'type':'end','complete':True,'requested':2,'emitted':2,'failed':0}}))
+'''
+    pdf=worker(tmp_path,monkeypatch,extra=extra)
+    doc=RustDocument(pdf)
+    with pytest.raises(PdfBackendError):doc.read_all()
+    assert doc.pages=={}
+
+
+def test_real_worker_v2_dry_run_without_python_pdf_engine(tmp_path):
+    from lib.pdf_backend import executable
+    try:
+        binary=executable()
+    except PdfBackendError:
+        pytest.skip('build Rust reader for end-to-end acceptance')
+    text=b'BT /F1 12 Tf 20 700 Td '+b'(Searchable content 17.) Tj 0 -20 Td '*6+b'ET'
+    objects=[
+        b'<< /Type /Catalog /Pages 2 0 R /Outlines 7 0 R >>',
+        b'<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>',
+        b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>',
+        b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>',
+        b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+        b'<< /Length '+str(len(text)).encode()+b' >>\nstream\n'+text+b'\nendstream',
+        b'<< /Type /Outlines /First 8 0 R /Last 8 0 R /Count 1 >>',
+        b'<< /Title (Chapter) /Parent 7 0 R /Dest [3 0 R /Fit] >>',
+    ]
+    data=bytearray(b'%PDF-1.4\n');offsets=[0]
+    for n,obj in enumerate(objects,1):
+        offsets.append(len(data));data.extend(f'{n} 0 obj\n'.encode()+obj+b'\nendobj\n')
+    xref=len(data);data.extend(f'xref\n0 {len(offsets)}\n0000000000 65535 f \n'.encode())
+    for off in offsets[1:]:data.extend(f'{off:010d} 00000 n \n'.encode())
+    data.extend(f'trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n'.encode())
+    pdf=tmp_path/'source.pdf';pdf.write_bytes(data)
+    project=Path(__file__).resolve().parents[1]
+    code='''
+import sys,importlib.abc
+class Block(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'fitz','pymupdf'}:raise AssertionError('legacy PDF engine imported')
+sys.meta_path.insert(0,Block())
+from converters import pdf_to_5etools_v2 as c
+roots,units,kind,meta=c.extract_structure(__import__('pathlib').Path(sys.argv[1]),output_type='adventure',allow_marker=False)
+assert len(units)==2 and all('Searchable content 17.' in unit for unit in units)
+assert meta['pdf_backend']['name']=='rust-pdf-reader/1'
+assert c.main([sys.argv[1],'--provider','claude-code','--dry-run'])==0
+'''
+    subprocess.run([sys.executable,'-c',code,str(pdf)],env={**os.environ,'RPG_PDF_READER':binary,'PYTHONPATH':str(project)},check=True,capture_output=True)

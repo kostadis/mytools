@@ -709,6 +709,11 @@ def call_claude_batch(
 
     batch = client.messages.batches.create(requests=requests)
     batch_id = batch.id
+    if debug_dir:
+        from lib.response_binding import atomic_json
+        cids_path = debug_dir / "batch-cids.json"
+        cids = json.loads(cids_path.read_text()) if cids_path.exists() else None
+        atomic_json(debug_dir / "batch-id.json", {"id": batch_id, "cids": cids})
     print(f"  Batch ID: {batch_id}", flush=True)
     print("  Waiting for batch to complete (polls every 15 s)...", flush=True)
 

@@ -30,6 +30,16 @@ import json
 from pathlib import Path
 
 from lib.pdf_utils import TocNode
+from lib.response_binding import atomic_json
+
+
+def extract_path(pdf: Path, *, write: bool = False) -> Path:
+    """Prefer Rust artifacts while preserving loadable historical extracts."""
+    pdf = Path(pdf)
+    rust = pdf.with_name(pdf.stem + "-extract-rust-v1.json")
+    legacy = pdf.with_name(pdf.stem + "-extract.json")
+    return rust if write or rust.exists() else legacy
+
 
 # Bump when the on-disk shape changes incompatibly.
 FORMAT_VERSION = 1
@@ -98,7 +108,7 @@ def serialize_extract(path: Path, roots: list[TocNode], units: list[str],
         "roots": [tocnode_to_dict(r, keys) for r in roots],
         "units": units,
     }
-    Path(path).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    atomic_json(path, data)
 
 
 def load_extract(path: Path) -> tuple[list[TocNode], list[str], str, dict]:

@@ -52,6 +52,7 @@ import lib.claude_api as _api
 import converters.extract_monsters as _mon
 import lib.llm_backend as _lb
 from lib.native_heading_parser import load_parser as _load_native_heading_parser
+from lib.response_binding import response_directory, atomic_json
 from lib.adventure_model import (
     BuildContext, SectionEntry, EntriesEntry, parse_entry,
     HomebrewAdventure,
@@ -1440,13 +1441,35 @@ def encode_chunks(
         return pdf_path  # nothing written
 
     # ---- 4. Claude pass ----
+    rust_bound = bool(meta.get("pdf_backend", {}).get("name", "").startswith("rust-pdf-reader/"))
+    if rust_bound:
+        def bound_directory(base, *, create):
+            return response_directory(
+                base, ((_chunk_cid(i, c), build_prompt(c.target_node, c.body))
+                       for i, c in enumerate(chunks)), system=SYSTEM_PROMPT,
+                model=model, backend=meta["pdf_backend"], create=create,
+                settings={"provider": backend.kind,
+                          "max_output_tokens": _api.MAX_OUTPUT_TOKENS})
+        if replay_responses:
+            replay_responses = bound_directory(Path(replay_responses), create=False)
+            debug_dir = replay_responses
+        else:
+            debug_dir = bound_directory(debug_dir, create=not bool(resume_batch))
+        print(f"[responses] bound Rust requests in {debug_dir}")
+
     chunk_results: list[tuple[ChunkSpec, list | None]] = []
     if replay_responses:
         # Rebuild from previously saved {cid}-response.txt files instead of
         # calling Claude. Chunking above is deterministic, so each chunk's
         # file can be addressed by its own id. Use this to recover a run
         # after a parser fix without re-billing the API.
-        resp_files = _replay_response_files(Path(replay_responses), chunks)
+        if rust_bound:
+            resp_files = [Path(replay_responses) / f"{_chunk_cid(i, c)}-response.txt"
+                          for i, c in enumerate(chunks)]
+            if not all(p.is_file() for p in resp_files):
+                raise RuntimeError("Rust replay requires complete bound responses by chunk id")
+        else:
+            resp_files = _replay_response_files(Path(replay_responses), chunks)
         print(f"[replay] rebuilding from {len(resp_files)} saved responses in "
               f"{replay_responses} — no Claude calls")
         for spec, rf in zip(chunks, resp_files):
@@ -1458,12 +1481,34 @@ def encode_chunks(
     elif resume_batch:
         print(f"[resume] skipping Claude submission — fetching batch "
               f"{resume_batch}")
-        batch = _api.fetch_claude_batch_results(
-            backend, resume_batch, len(chunks),
-            verbose=verbose, debug_dir=debug_dir,
-        )
-        for spec, entries in zip(chunks, batch):
-            chunk_results.append((spec, entries))
+        if rust_bound:
+            association = debug_dir / "batch-id.json"
+            try:
+                association = json.loads(association.read_text())
+            except (OSError, ValueError) as error:
+                raise RuntimeError("Rust batch resume requires its saved request binding") from error
+            cids = [_chunk_cid(i, c) for i, c in enumerate(chunks)]
+            submitted = association.get("cids")
+            if (association.get("id") != resume_batch or not isinstance(submitted, list)
+                    or not submitted or any(not isinstance(c, str) for c in submitted)
+                    or len(set(submitted)) != len(submitted) or not set(submitted) <= set(cids)):
+                raise RuntimeError("Rust batch ID does not match the bound requests")
+            batch = _api.fetch_claude_batch_results(
+                backend, resume_batch, len(submitted), verbose=verbose, debug_dir=debug_dir)
+            if len(batch) != len(submitted):
+                raise RuntimeError("Incomplete Rust batch result count")
+            fetched = dict(zip(submitted, batch))
+            for cid, spec in zip(cids, chunks):
+                entries = fetched.get(cid) if cid in fetched else _load_cached_response(cid, debug_dir, verbose)
+                if entries is None:
+                    raise RuntimeError(f"Missing bound response for {cid}")
+                atomic_json(debug_dir / f"{cid}-response.txt", entries)
+                chunk_results.append((spec, entries))
+        else:
+            batch = _api.fetch_claude_batch_results(
+                backend, resume_batch, len(chunks), verbose=verbose, debug_dir=debug_dir)
+            for spec, entries in zip(chunks, batch):
+                chunk_results.append((spec, entries))
     elif use_batch:
         # --reuse-responses on the batch path: load any chunk that already has a
         # usable saved {cid}-response.txt, and submit only the missing ones to
@@ -1485,12 +1530,16 @@ def encode_chunks(
         batched: list = []
         if todo:
             prompts = [build_prompt(c.target_node, c.body) for _, c in todo]
+            if rust_bound:
+                atomic_json(debug_dir / "batch-cids.json", [_chunk_cid(i, c) for i, c in todo])
             batched = _api.call_claude_batch(
                 backend, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
             )
         batch_iter = iter(batched)
         for i, spec in enumerate(chunks):
             entries = cached[i] if i in cached else next(batch_iter)
+            if rust_bound:
+                atomic_json(debug_dir / f"{_chunk_cid(i, spec)}-response.txt", entries)
             chunk_results.append((spec, entries))
     else:
         def _run_chunk(i: int, spec: ChunkSpec) -> list | None:
