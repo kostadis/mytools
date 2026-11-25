@@ -87,13 +87,11 @@ fn run(args: Args) -> std::io::Result<i32> {
                 emitted += 1
             }
             other => {
-                let message = match other {
+                let (code, message) = match other {
                     Ok(Err(e)) => e,
-                    _ => "content extractor panicked".into(),
+                    _ => ("unsupported_content", "content extractor panicked".into()),
                 };
-                protocol::emit(
-                    json!({"type":"error","code":"unsupported_content","page":page,"message":message}),
-                )?;
+                protocol::emit(json!({"type":"error","code":code,"page":page,"message":message}))?;
                 failed += 1
             }
         }

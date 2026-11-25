@@ -968,6 +968,44 @@ fn get_unicode_map<'a>(doc: &'a Document, font: &'a Dictionary) -> Option<HashMa
 }
 
 
+
+// Recover CID text only when the embedded font supplies an unambiguous Unicode
+// cmap. This is needed for form fields whose PDF omits ToUnicode entirely.
+fn embedded_cid_unicode(doc: &Document, cid: &Dictionary) -> Option<HashMap<u32, String>> {
+    let descriptor = maybe_get_obj(doc, cid, b"FontDescriptor")?.as_dict().ok()?;
+    let stream = maybe_get_obj(doc, descriptor, b"FontFile2")?.as_stream().ok()?;
+    let bytes = get_contents(stream);
+    let face = ttf_parser::RawFace::parse(&bytes, 0).ok()?;
+    let cmap = ttf_parser::cmap::Table::parse(face.table(ttf_parser::Tag::from_bytes(b"cmap"))?)?;
+    let mut inverse: HashMap<u16, Option<char>> = HashMap::new();
+    for table in cmap.subtables {
+        if !table.is_unicode() { continue; }
+        table.codepoints(|point| {
+            let Some(ch) = char::from_u32(point).filter(|c| !c.is_control()) else { return; };
+            let Some(glyph) = table.glyph_index(point).filter(|g| g.0 != 0) else { return; };
+            inverse.entry(glyph.0).and_modify(|existing| {
+                if let Some(prior) = *existing {
+                    if !prior.to_string().nfkc().eq(ch.to_string().nfkc()) { *existing = None; }
+                }
+            }).or_insert(Some(ch));
+        });
+    }
+    let mut result = HashMap::new();
+    match maybe_get_obj(doc, cid, b"CIDToGIDMap") {
+        Some(Object::Stream(s)) => {
+            for (code, pair) in get_contents(s).chunks_exact(2).enumerate() {
+                let glyph = u16::from_be_bytes([pair[0], pair[1]]);
+                if let Some(Some(ch)) = inverse.get(&glyph) { result.insert(code as u32, ch.to_string()); }
+            }
+        }
+        None | Some(Object::Name(_)) => {
+            for (glyph, ch) in inverse { if let Some(ch) = ch { result.insert(glyph as u32, ch.to_string()); } }
+        }
+        _ => return None,
+    }
+    Some(result)
+}
+
 impl<'a> PdfCIDFont<'a> {
     fn new(doc: &'a Document, font: &'a Dictionary) -> PdfCIDFont<'a> {
         let base_name = get_name_string(doc, font, b"BaseFont");
@@ -999,7 +1037,11 @@ impl<'a> PdfCIDFont<'a> {
         // We should also look inside the truetype data to see if there's a cmap table. It will help us convert as well.
         // This won't work if the cmap has been subsetted. A better approach might be to hash glyph contents and use that against
         // a global library of glyph hashes
-        let unicode_map = get_unicode_map(doc, font);
+        let mut unicode_map = get_unicode_map(doc, font);
+        if let Some(recovered) = embedded_cid_unicode(doc, ciddict) {
+            let map = unicode_map.get_or_insert_with(HashMap::new);
+            for (code, text) in recovered { map.entry(code).or_insert(text); }
+        }
 
         dlog!("descendents {:?} {:?}", descendants, ciddict);
 
@@ -1084,7 +1126,7 @@ impl<'a> PdfFont for PdfCIDFont<'a> {
             s.clone()
         } else {
             dlog!("Unknown character {:?} in {:?} {:?}", char, self.font, self.to_unicode);
-            "".to_string()
+            "\u{fffd}".to_string()
         }
     }
 }
@@ -1569,7 +1611,7 @@ fn make_colorspace<'a>(doc: &'a Document, name: &[u8], resources: &'a Dictionary
 }
 
 struct Processor<'a> {
-    font_table: HashMap<Vec<u8>, Rc<dyn PdfFont + 'a>>,
+    font_table: HashMap<usize, Rc<dyn PdfFont + 'a>>,
     _none: PhantomData<&'a ()>,
 }
 
@@ -1578,9 +1620,10 @@ impl<'a> Processor<'a> {
         Processor { font_table: HashMap::new(), _none: PhantomData }
     }
 
-    fn process_stream(&mut self, doc: &'a Document, content: Vec<u8>, resources: &'a Dictionary, media_box: &MediaBox, output: &mut dyn OutputDev, page_num: u32) -> Result<(), OutputError> {
+    fn process_stream(&mut self, doc: &'a Document, content: Vec<u8>, resources: &'a Dictionary, media_box: &MediaBox, output: &mut dyn OutputDev, page_num: u32, depth: usize, inherited: Option<GraphicsState<'a>>) -> Result<(), OutputError> {
+        if depth > 64 { return Err(OutputError::PdfError(lopdf::Error::RecursionLimit)); }
         let content = Content::decode_strict(&content).map_err(OutputError::PdfError)?;
-        let mut gs: GraphicsState = GraphicsState {
+        let mut gs: GraphicsState = inherited.unwrap_or_else(|| GraphicsState {
             ts: TextState {
                 font: None,
                 font_size: std::f64::NAN,
@@ -1598,7 +1641,7 @@ impl<'a> Processor<'a> {
             line_width: 1.,
             ctm: Transform2D::identity(),
             smask: None
-        };
+        });
         //let mut ts = &mut gs.ts;
         let mut gs_stack = Vec::new();
         let mut mc_stack = Vec::new();
@@ -1709,7 +1752,10 @@ impl<'a> Processor<'a> {
                 "Tf" => {
                     let fonts: &Dictionary = get(&doc, resources, b"Font");
                     let name = operation.operands[0].as_name().unwrap();
-                    let font = self.font_table.entry(name.to_owned()).or_insert_with(|| make_font(doc, get::<&Dictionary>(doc, fonts, name))).clone();
+                    // Resource names are local to a Form/page, not document-wide.
+                    let dictionary = get::<&Dictionary>(doc, fonts, name);
+                    let key = dictionary as *const Dictionary as usize;
+                    let font = self.font_table.entry(key).or_insert_with(|| make_font(doc, dictionary)).clone();
                     {
                         /*let file = font.get_descriptor().and_then(|desc| desc.get_file());
                     if let Some(file) = file {
@@ -1869,7 +1915,13 @@ impl<'a> Processor<'a> {
                     }
                     let resources = maybe_get_obj(&doc, &xf.dict, b"Resources").and_then(|n| n.as_dict().ok()).unwrap_or(resources);
                     let contents = get_contents(xf);
-                    self.process_stream(&doc, contents, resources, &media_box, output, page_num)?;
+                    let mut form_state = gs.clone();
+                    if let Some(matrix) = maybe_get_array(doc, &xf.dict, b"Matrix") {
+                        if matrix.len() != 6 { return Err(OutputError::FormatError(std::fmt::Error)); }
+                        let m = Transform2D::row_major(as_num(&matrix[0]), as_num(&matrix[1]), as_num(&matrix[2]), as_num(&matrix[3]), as_num(&matrix[4]), as_num(&matrix[5]));
+                        form_state.ctm = m.post_transform(&form_state.ctm);
+                    }
+                    self.process_stream(&doc, contents, resources, &media_box, output, page_num, depth + 1, Some(form_state))?;
                 }
                 _ => { dlog!("unknown operation {:?}", operation); }
 
@@ -2419,7 +2471,7 @@ fn output_doc_inner<'a>(page_num: u32, object_id: ObjectId, doc: &'a Document, p
     let art_box = get::<Option<Vec<f64>>>(&doc, page_dict, b"ArtBox")
         .map(|x| (x[0], x[1], x[2], x[3]));
     output.begin_page(page_num, &media_box, art_box)?;
-    p.process_stream(&doc, doc.get_page_content_with_limit(object_id, 64 * 1024 * 1024).map_err(OutputError::PdfError)?, resources, &media_box, output, page_num)?;
+    p.process_stream(&doc, doc.get_page_content_with_limit(object_id, 64 * 1024 * 1024).map_err(OutputError::PdfError)?, resources, &media_box, output, page_num, 0, None)?;
     output.end_page()?;
     Ok(())
 }

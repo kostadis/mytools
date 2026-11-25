@@ -1,0 +1,312 @@
+{
+  "private_corpus_worker": [
+    {
+      "label": "small-bookmarked-5e",
+      "size_mib": 3.1836376190185547,
+      "successes": 3,
+      "rss_median_kib": 10976,
+      "seconds_median": 0.0280262869928265,
+      "valid_outlines_exact": true,
+      "raw_outline_count": 15,
+      "reference_raw_outline_count": 15,
+      "page_count_matches": true,
+      "page_chars": [
+        [
+          1,
+          44
+        ],
+        [
+          2,
+          129
+        ],
+        [
+          3,
+          2473
+        ],
+        [
+          6,
+          4753
+        ],
+        [
+          12,
+          109
+        ]
+      ]
+    },
+    {
+      "label": "large-bookmarked-226",
+      "size_mib": 46.29074764251709,
+      "successes": 3,
+      "rss_median_kib": 103844,
+      "seconds_median": 0.16056374699110165,
+      "valid_outlines_exact": true,
+      "raw_outline_count": 416,
+      "reference_raw_outline_count": 416,
+      "page_count_matches": true,
+      "page_chars": [
+        [
+          1,
+          37
+        ],
+        [
+          2,
+          79
+        ],
+        [
+          3,
+          37
+        ],
+        [
+          113,
+          4467
+        ],
+        [
+          226,
+          37
+        ]
+      ]
+    },
+    {
+      "label": "nulb-bookmarked-339",
+      "size_mib": 36.33680820465088,
+      "successes": 3,
+      "rss_median_kib": 76416,
+      "seconds_median": 0.11887980600295123,
+      "valid_outlines_exact": true,
+      "raw_outline_count": 705,
+      "reference_raw_outline_count": 705,
+      "page_count_matches": true,
+      "page_chars": [
+        [
+          1,
+          120
+        ],
+        [
+          2,
+          979
+        ],
+        [
+          3,
+          156
+        ],
+        [
+          169,
+          303
+        ],
+        [
+          339,
+          1484
+        ]
+      ]
+    },
+    {
+      "label": "character-sheet",
+      "size_mib": 6.875579833984375,
+      "successes": 0,
+      "rss_median_kib": 53848,
+      "seconds_median": 0.09671353000157978,
+      "valid_outlines_exact": true,
+      "raw_outline_count": 0,
+      "reference_raw_outline_count": 0,
+      "page_count_matches": true,
+      "page_chars": [
+        [
+          1,
+          861
+        ],
+        [
+          6,
+          478
+        ]
+      ]
+    },
+    {
+      "label": "unbookmarked-40",
+      "size_mib": 2.5521860122680664,
+      "successes": 3,
+      "rss_median_kib": 9944,
+      "seconds_median": 0.06956901600642595,
+      "valid_outlines_exact": true,
+      "raw_outline_count": 0,
+      "reference_raw_outline_count": 0,
+      "page_count_matches": true,
+      "page_chars": [
+        [
+          1,
+          140
+        ],
+        [
+          2,
+          980
+        ],
+        [
+          3,
+          886
+        ],
+        [
+          20,
+          1819
+        ],
+        [
+          40,
+          760
+        ]
+      ]
+    },
+    {
+      "label": "image-heavy-106",
+      "size_mib": 221.5815191268921,
+      "successes": 3,
+      "rss_median_kib": 473352,
+      "seconds_median": 0.621277854006621,
+      "valid_outlines_exact": true,
+      "raw_outline_count": 0,
+      "reference_raw_outline_count": 0,
+      "page_count_matches": true,
+      "page_chars": [
+        [
+          1,
+          85
+        ],
+        [
+          2,
+          1082
+        ],
+        [
+          3,
+          147
+        ],
+        [
+          53,
+          631
+        ],
+        [
+          106,
+          981
+        ]
+      ]
+    },
+    {
+      "label": "image-only-map",
+      "size_mib": 1.7943620681762695,
+      "successes": 3,
+      "rss_median_kib": 7768,
+      "seconds_median": 0.005024847007007338,
+      "valid_outlines_exact": true,
+      "raw_outline_count": 0,
+      "reference_raw_outline_count": 0,
+      "page_count_matches": true,
+      "page_chars": [
+        [
+          1,
+          0
+        ]
+      ]
+    }
+  ],
+  "aggregate_measurements": [
+    {
+      "runs": 3,
+      "aggregate_sampling_interval_ms": 2,
+      "medians": {
+        "controller_before_mib": 28.328125,
+        "aggregate_sampled_peak_mib": 39.18359375,
+        "child_process_kernel_peak_mib": 28.5234375,
+        "seconds": 0.03371476399479434
+      },
+      "samples": [
+        {
+          "controller_before_mib": 28.328125,
+          "aggregate_sampled_peak_mib": 39.18359375,
+          "child_process_kernel_peak_mib": 28.5234375,
+          "seconds": 0.041471233998890966,
+          "error": null
+        },
+        {
+          "controller_before_mib": 28.26171875,
+          "aggregate_sampled_peak_mib": 39.0,
+          "child_process_kernel_peak_mib": 28.390625,
+          "seconds": 0.03371476399479434,
+          "error": null
+        },
+        {
+          "controller_before_mib": 28.44140625,
+          "aggregate_sampled_peak_mib": 39.30859375,
+          "child_process_kernel_peak_mib": 28.5703125,
+          "seconds": 0.03328839399910066,
+          "error": null
+        }
+      ],
+      "label": "small-bookmarked-5e"
+    },
+    {
+      "runs": 3,
+      "aggregate_sampling_interval_ms": 2,
+      "medians": {
+        "controller_before_mib": 28.3828125,
+        "aggregate_sampled_peak_mib": 101.33984375,
+        "child_process_kernel_peak_mib": 74.67578125,
+        "seconds": 0.2099672059994191
+      },
+      "samples": [
+        {
+          "controller_before_mib": 28.3828125,
+          "aggregate_sampled_peak_mib": 101.1875,
+          "child_process_kernel_peak_mib": 74.67578125,
+          "seconds": 0.20808381200185977,
+          "error": null
+        },
+        {
+          "controller_before_mib": 28.3828125,
+          "aggregate_sampled_peak_mib": 101.33984375,
+          "child_process_kernel_peak_mib": 74.6875,
+          "seconds": 0.22668317599163856,
+          "error": null
+        },
+        {
+          "controller_before_mib": 28.31640625,
+          "aggregate_sampled_peak_mib": 101.62109375,
+          "child_process_kernel_peak_mib": 74.62109375,
+          "seconds": 0.2099672059994191,
+          "error": null
+        }
+      ],
+      "label": "nulb-bookmarked-339"
+    },
+    {
+      "runs": 3,
+      "aggregate_sampling_interval_ms": 2,
+      "medians": {
+        "controller_before_mib": 28.3671875,
+        "aggregate_sampled_peak_mib": 487.109375,
+        "child_process_kernel_peak_mib": 462.29296875,
+        "seconds": 1.2177391019940842
+      },
+      "samples": [
+        {
+          "controller_before_mib": 28.38671875,
+          "aggregate_sampled_peak_mib": 487.90234375,
+          "child_process_kernel_peak_mib": 462.296875,
+          "seconds": 1.2533988509967458,
+          "error": null
+        },
+        {
+          "controller_before_mib": 28.3671875,
+          "aggregate_sampled_peak_mib": 486.78125,
+          "child_process_kernel_peak_mib": 462.26953125,
+          "seconds": 1.2177391019940842,
+          "error": null
+        },
+        {
+          "controller_before_mib": 28.32421875,
+          "aggregate_sampled_peak_mib": 487.109375,
+          "child_process_kernel_peak_mib": 462.29296875,
+          "seconds": 1.1991018770058872,
+          "error": null
+        }
+      ],
+      "label": "image-heavy-106"
+    }
+  ],
+  "limits": "Selected pages only; unknown font mapping is an explicit failure; aggregate RSS sampled at 2 ms."
+}

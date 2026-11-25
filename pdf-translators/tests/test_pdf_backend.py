@@ -181,3 +181,26 @@ assert meta['pdf_backend']['name']=='rust-pdf-reader/1'
 assert c.main([sys.argv[1],'--provider','claude-code','--dry-run'])==0
 '''
     subprocess.run([sys.executable,'-c',code,str(pdf)],env={**os.environ,'RPG_PDF_READER':binary,'PYTHONPATH':str(project)},check=True,capture_output=True)
+
+
+def test_timeout_kills_group_even_if_worker_leader_has_exited(tmp_path,monkeypatch):
+    pidfile=tmp_path/'descendant'
+    pdf=worker(tmp_path,monkeypatch,extra=f'''import os
+pid=os.fork()
+if pid==0:
+ open({str(pidfile)!r},'w').write(str(os.getpid()))
+ time.sleep(30)
+else:
+ sys.exit(0)
+''')
+    with pytest.raises(PdfBackendError,match='timed out'):RustDocument(pdf,timeout=0.3)
+    pid=int(pidfile.read_text())
+    try:
+        status=Path(f'/proc/{pid}/stat')
+        deadline=time.monotonic()+1
+        while status.exists() and status.read_text().split()[2]!='Z' and time.monotonic()<deadline:
+            time.sleep(0.01)
+        assert not status.exists() or status.read_text().split()[2]=='Z'
+    finally:
+        try:os.kill(pid,9)
+        except ProcessLookupError:pass

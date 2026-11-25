@@ -47,6 +47,7 @@ def _request(path, pages, timeout):
     stderr = bytearray()
     document = end = None
     staged = {}
+    completed = False
 
     def record(line):
         nonlocal document, end
@@ -58,7 +59,8 @@ def _request(path, pages, timeout):
             raise PdfBackendError('Unexpected PDF protocol record')
         kind = item.get('type')
         if kind == 'error':
-            raise PdfBackendError(f"Rust PDF reader {item.get('code', 'error')}: {item.get('message', '')}")
+            page = f" (page {item['page']})" if 'page' in item else ''
+            raise PdfBackendError(f"Rust PDF reader {item.get('code', 'error')}{page}: {item.get('message', '')}")
         if kind == 'document':
             if document is not None or item.get('protocol') != 1 or type(item.get('protocol')) is not int:
                 raise PdfBackendError('Unsupported or duplicate PDF protocol document')
@@ -126,10 +128,13 @@ def _request(path, pages, timeout):
         if buffer or document is None or end is None or code != 0:
             diagnostic = stderr.decode('utf-8', errors='replace')[-1000:]
             raise PdfBackendError(f'Rust PDF worker failed or returned a truncated stream: {diagnostic}')
+        completed = True
         return document, staged
     finally:
         selector.close()
-        if process.poll() is None:
+        # A wrapper can exit while a descendant still owns its pipes. On any
+        # failed request kill the group even if the original leader exited.
+        if not completed or process.poll() is None:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:

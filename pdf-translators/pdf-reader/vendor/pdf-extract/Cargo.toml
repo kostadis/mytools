@@ -52,6 +52,11 @@ version = "0.8.34"
 [dependencies.euclid]
 version = "0.20.5"
 
+[dependencies.ttf-parser]
+version = "=0.25.1"
+default-features = false
+features = ["std"]
+
 [dependencies.log]
 version = "0.4.22"
 

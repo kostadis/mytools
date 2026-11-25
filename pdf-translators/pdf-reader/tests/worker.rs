@@ -221,3 +221,212 @@ fn compressed_objects_and_unicode_outlines() {
     assert_eq!(records[0]["outline"][0]["title"], "Café 龍");
     assert!(records[1]["text"].as_str().unwrap().contains("Inside Form"));
 }
+
+#[test]
+fn overprinted_glyphs_are_searchable_without_collapsing_real_letters() {
+    let mut d = fixture(None, false);
+    let page_id = *d.get_pages().get(&1).unwrap();
+    let id = d
+        .get_dictionary(page_id)
+        .unwrap()
+        .get(b"Contents")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    let stream = d.get_object_mut(id).unwrap().as_stream_mut().unwrap();
+    stream.content.extend_from_slice(b" BT /F1 12 Tf 20 580 Td (Bookkeeper 100) Tj ET BT /F1 12 Tf 20 560 Td (Shadow) Tj ET BT /F1 12 Tf 20.05 560.05 Td (Shadow) Tj ET BT /F1 12 Tf 20.1 560.1 Td (Shadow) Tj ET");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("shadow.pdf");
+    d.save(&path).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_rpg-pdf-reader"))
+        .arg("extract")
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let records: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    let text = records[1]["text"].as_str().unwrap();
+    assert!(text.contains("Bookkeeper 100"));
+    assert_eq!(text.matches("Shadow").count(), 1, "{text}");
+}
+
+#[test]
+fn embedded_truetype_cmap_recovers_cid_digits_without_tounicode() {
+    // A minimal SFNT with a Unicode cmap: '0' -> glyph 2, '1' -> glyph 3.
+    // RawFace's table reader needs no copyrighted font outline data.
+    let mut cmap = vec![0, 0, 0, 1, 0, 3, 0, 1, 0, 0, 0, 12, 0, 0, 1, 6, 0, 0];
+    let mut glyphs = vec![0u8; 256];
+    glyphs[b'0' as usize] = 2;
+    glyphs[b'1' as usize] = 3;
+    cmap.extend(glyphs);
+    let mut ttf = vec![0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0];
+    ttf.extend(b"cmap");
+    ttf.extend([0, 0, 0, 0]);
+    ttf.extend(28u32.to_be_bytes());
+    ttf.extend((cmap.len() as u32).to_be_bytes());
+    ttf.extend(cmap);
+    let mut d = fixture(None, false);
+    let file = d.add_object(Stream::new(dictionary! {}, ttf));
+    let descriptor=d.add_object(dictionary!{"Type"=>"FontDescriptor","FontName"=>"TestFont","Flags"=>4,"FontBBox"=>vec![0.into(),0.into(),1000.into(),1000.into()],"Ascent"=>1000,"Descent"=>0,"CapHeight"=>1000,"StemV"=>80,"FontFile2"=>file});
+    let descendant=d.add_object(dictionary!{"Type"=>"Font","Subtype"=>"CIDFontType2","BaseFont"=>"TestFont","CIDSystemInfo"=>dictionary!{"Registry"=>Object::string_literal("Adobe"),"Ordering"=>Object::string_literal("Identity"),"Supplement"=>0},"FontDescriptor"=>descriptor,"DW"=>500,"CIDToGIDMap"=>"Identity"});
+    let font=d.add_object(dictionary!{"Type"=>"Font","Subtype"=>"Type0","BaseFont"=>"TestFont","Encoding"=>"Identity-H","DescendantFonts"=>vec![descendant.into()]});
+    let content = d.add_object(Stream::new(
+        dictionary! {},
+        b"BT /Fc 12 Tf 20 700 Td <0003000200020002> Tj ET".to_vec(),
+    ));
+    let page_id = *d.get_pages().get(&1).unwrap();
+    let page = d.get_object_mut(page_id).unwrap().as_dict_mut().unwrap();
+    page.set("Resources", dictionary! {"Font"=>dictionary!{"Fc"=>font}});
+    page.set("Contents", content);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cmap.pdf");
+    d.save(&path).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_rpg-pdf-reader"))
+        .arg("extract")
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let records: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    assert_eq!(records[1]["text"], "1000");
+}
+
+#[test]
+fn unmapped_cid_is_a_reviewable_error_not_missing_text() {
+    let mut d = fixture(None, false);
+    let descriptor=d.add_object(dictionary!{"Type"=>"FontDescriptor","FontName"=>"Unknown","Flags"=>4,"FontBBox"=>vec![0.into(),0.into(),1000.into(),1000.into()],"Ascent"=>1000,"Descent"=>0,"CapHeight"=>1000,"StemV"=>80});
+    let cid=d.add_object(dictionary!{"Type"=>"Font","Subtype"=>"CIDFontType2","BaseFont"=>"Unknown","CIDSystemInfo"=>dictionary!{"Registry"=>Object::string_literal("Adobe"),"Ordering"=>Object::string_literal("Identity"),"Supplement"=>0},"FontDescriptor"=>descriptor,"DW"=>500});
+    let font=d.add_object(dictionary!{"Type"=>"Font","Subtype"=>"Type0","BaseFont"=>"Unknown","Encoding"=>"Identity-H","DescendantFonts"=>vec![cid.into()]});
+    let content = d.add_object(Stream::new(
+        dictionary! {},
+        b"BT /Fc 12 Tf 20 700 Td <1234> Tj ET".to_vec(),
+    ));
+    let id = *d.get_pages().get(&1).unwrap();
+    let page = d.get_object_mut(id).unwrap().as_dict_mut().unwrap();
+    page.set("Resources", dictionary! {"Font"=>dictionary!{"Fc"=>font}});
+    page.set("Contents", content);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("unknown.pdf");
+    d.save(&path).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_rpg-pdf-reader"))
+        .arg("extract")
+        .arg(path)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+}
+
+#[test]
+fn same_form_at_distinct_positions_is_not_mistaken_for_overprint() {
+    let mut d = fixture(None, false);
+    let id = *d.get_pages().get(&1).unwrap();
+    let content = d
+        .get_dictionary(id)
+        .unwrap()
+        .get(b"Contents")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    d.get_object_mut(content)
+        .unwrap()
+        .as_stream_mut()
+        .unwrap()
+        .content
+        .extend_from_slice(b" q 1 0 0 1 0 -100 cm /Fm Do Q q 1 0 0 1 100 -100 cm /Fm Do Q");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("forms.pdf");
+    d.save(&path).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_rpg-pdf-reader"))
+        .arg("extract")
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let records: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    assert_eq!(
+        records[1]["text"]
+            .as_str()
+            .unwrap()
+            .matches("Inside Form 123")
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn forms_can_reuse_a_font_resource_name_with_different_encodings() {
+    let mut d = fixture(None, false);
+    let font=d.add_object(dictionary!{"Type"=>"Font","Subtype"=>"Type1","BaseFont"=>"Helvetica","Encoding"=>dictionary!{"BaseEncoding"=>"WinAnsiEncoding","Differences"=>vec![65.into(),"Z".into()]}});
+    let form=d.add_object(Stream::new(dictionary!{"Type"=>"XObject","Subtype"=>"Form","BBox"=>vec![0.into(),0.into(),612.into(),792.into()],"Resources"=>dictionary!{"Font"=>dictionary!{"F1"=>font}}},b"BT /F1 12 Tf 50 500 Td (A) Tj ET".to_vec()));
+    let id = *d.get_pages().get(&1).unwrap();
+    let page = d.get_object_mut(id).unwrap().as_dict_mut().unwrap();
+    let content = page.get(b"Contents").unwrap().as_reference().unwrap();
+    page.get_mut(b"Resources")
+        .unwrap()
+        .as_dict_mut()
+        .unwrap()
+        .get_mut(b"XObject")
+        .unwrap()
+        .as_dict_mut()
+        .unwrap()
+        .set("Other", form);
+    d.get_object_mut(content)
+        .unwrap()
+        .as_stream_mut()
+        .unwrap()
+        .content
+        .extend_from_slice(b" /Other Do");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fonts.pdf");
+    d.save(&path).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_rpg-pdf-reader"))
+        .arg("extract")
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let records: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    assert!(
+        records[1]["text"].as_str().unwrap().contains('Z'),
+        "{:?}",
+        records[1]
+    );
+}
+
+#[test]
+fn decompression_limits_have_resource_failure_code() {
+    let error = pdf_extract::OutputError::PdfError(lopdf::Error::Decompress(
+        lopdf::DecompressError::MemoryLimitExceeded { limit: 64 },
+    ));
+    assert_eq!(
+        rpg_pdf_reader::reader::content_error_code(&error),
+        "resource_failure"
+    );
+}
+
+#[test]
+fn unreadable_existing_input_is_not_misreported_as_malformed_pdf() {
+    let error = lopdf::Error::IO(std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        "permission denied",
+    ));
+    let (code, message) = rpg_pdf_reader::reader::load_error(&error);
+    assert_eq!(code, "unreadable_input");
+    assert!(message.contains("permission denied"));
+}

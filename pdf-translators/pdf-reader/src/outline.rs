@@ -21,7 +21,7 @@ fn named<'a>(d: &'a Document, o: &'a Object, name: &[u8], depth: usize) -> Optio
         .and_then(|o| resolve(d, o).map_err(|_| lopdf::Error::RecursionLimit))
         .and_then(Object::as_array)
     {
-        for pair in items.chunks_exact(2) {
+        for pair in items.as_chunks::<2>().0 {
             if pair[0].as_str().ok() == Some(name) {
                 return Some(&pair[1]);
             }
@@ -58,10 +58,9 @@ fn destination(
                 .get(b"Dests")
                 .and_then(|o| resolve(d, o).map_err(|_| lopdf::Error::RecursionLimit))
                 .and_then(Object::as_dict)
+                && let Ok(v) = dests.get(name)
             {
-                if let Ok(v) = dests.get(name) {
-                    return destination(d, v, pages, depth + 1);
-                }
+                return destination(d, v, pages, depth + 1);
             }
             let names = resolve(d, cat.get(b"Names").ok()?).ok()?.as_dict().ok()?;
             destination(
@@ -99,10 +98,10 @@ pub fn read(d: &Document) -> Result<Vec<Outline>, String> {
         }
         let mut current = Some(start);
         while let Some(o) = current {
-            if let Object::Reference(id) = o {
-                if !seen.insert(*id) {
-                    return Err("cyclic outline".into());
-                }
+            if let Object::Reference(id) = o
+                && !seen.insert(*id)
+            {
+                return Err("cyclic outline".into());
             }
             let dict = resolve(d, o)?.as_dict().map_err(|e| e.to_string())?;
             let title = lopdf::decode_text_string(resolve(

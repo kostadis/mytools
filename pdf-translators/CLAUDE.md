@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project does
 
-Converts tabletop RPG PDFs (primarily D&D/AD&D sourcebooks and modules) into [5etools](https://5e.tools) homebrew JSON format. A single unified converter (`converters/pdf_to_5etools_v2.py`) handles all PDF types — digital, scanned, OCR'd 1e/2e modules — by routing bookmarked digital PDFs to a fast PyMuPDF path and everything else to [Marker](https://github.com/VikParuchuri/marker) for ML-based layout and heading extraction. Wrapped by a Flask web UI.
+Converts tabletop RPG PDFs (primarily D&D/AD&D sourcebooks and modules) into [5etools](https://5e.tools) homebrew JSON format. A single unified converter (`converters/pdf_to_5etools_v2.py`) handles all PDF types — digital, scanned, OCR'd 1e/2e modules — by routing bookmarked digital PDFs to a fast standalone Rust reader path and everything else to [Marker](https://github.com/VikParuchuri/marker) for ML-based layout and heading extraction. Wrapped by a Flask web UI.
 
 Prior-generation v1 heuristic converters (six scripts) are documented in `README_v1.md` / `ARCHITECTURE_V1.md` — no `v1.0` git tag actually exists. See the "v1 / v2 history" section below.
 
@@ -39,6 +39,10 @@ project root (e.g. `from lib.pdf_utils import TocNode`). Pure library modules
 that are only ever imported (never run standalone) don't carry their own
 bootstrap — whatever imported them already added it.
 
+## Rust PDF reader
+
+Build `pdf-reader/` before v2 PDF conversion. The process adapter is `lib/pdf_backend.py`; `RPG_PDF_READER` overrides the checkout release binary. Markdown-only conversion never loads PyMuPDF or a worker. New Rust extracts/responses are versioned separately; see [reader documentation](pdf-reader/README.md) before changing cache behavior. The existing Rust bulk Markdown pipeline retains Poppler.
+
 ## Running tests
 
 ```bash
@@ -47,7 +51,7 @@ pytest tests/test_adventure_editor.py -v      # adventure editor tests
 pytest tests/test_validate_adventure.py -v    # JSON structure validator (includes all official adventures)
 ```
 
-Tests mock all external dependencies (PyMuPDF, Anthropic API) — no API key or system packages required.
+Offline tests mock provider calls and worker processes. Build the Rust reader to enable the additional real-worker acceptance test; no API key is used.
 
 To run a single test:
 ```bash
@@ -86,7 +90,7 @@ python3 converters/pdf_to_5etools_v2.py input.pdf --provider claude-code   # you
 - Each chunk spawns a CLI subprocess in a neutral temp cwd (so it doesn't load a project `CLAUDE.md`) and shares one subscription rate limit, so concurrency defaults to **1**. If you hit your usage cap mid-run the call errors out cleanly — resume later with `--reuse-responses` (the saved responses are reused regardless of provider).
 
 **Routing:** `profile_pdf()` inspects the PDF at startup:
-- Has bookmarks AND selectable text → **PyMuPDF fast path**. Chunks by bookmark tree. ~100× faster than Marker.
+- Has bookmarks AND selectable text → **Rust PDF reader fast path**. Chunks by bookmark tree. Native Rust extraction; no OCR inference.
 - Anything else (scans, un-bookmarked digital) → **Marker path**. Runs Marker to produce markdown with `#`/`##`/`###` headings; synthesises a `TocNode` tree from those headings (with the keyed-room heuristic flattening numbered rooms to a common level); chunks the same way as the fast path.
 - `--force-marker` bypasses the fast path and always uses Marker. Useful when the PDF has bookmarks but the text layer is unreliable (OCR'd-to-PDF scans, broken embedded fonts).
 
@@ -163,7 +167,7 @@ Each converter's `call_claude` is a thin wrapper that passes its own `SYSTEM_PRO
 
 ### PDF bookmark / TOC extraction — `lib/pdf_utils.py`
 
-`lib/pdf_utils.py` is a shared library (depends on PyMuPDF, kept separate from `lib/claude_api.py` which has no PDF dependency) that owns:
+`lib/pdf_utils.py` is a shared library (pure tree/text helpers plus lazy PyMuPDF compatibility for older entrypoints) that owns:
 - `extract_pdf_toc(pdf_path, max_level=3) -> str | None` — reads the PDF's built-in bookmark outline via `doc.get_toc()` and returns a formatted text block (or `None` if the PDF has no bookmarks). Prepended to every Claude chunk so Claude sees authoritative section names and page numbers. Disable with `--no-toc-hint`.
 - `_decode_pdf_string(text)` — fixes Windows-1252/Mac-Roman characters (smart quotes `\x90`→`'`, curly brackets `\x8d`/`\x8e`→`'`/`'`) that PyMuPDF passes through as raw bytes.
 - `TocNode` — dataclass representing a node in the PDF bookmark tree with computed page ranges. Fields: `level`, `title`, `start_page`, `end_page`, `children`. Properties: `page_count`. Methods: `walk()` (pre-order traversal of self + all descendants).
@@ -180,7 +184,7 @@ Single unified pipeline, shape below:
 
 1. **Profile** — `profile_pdf()` samples ~10 pages; decides `has_bookmarks + has_selectable_text` → fast path, else Marker.
 2. **Extract structure** (fast path): `get_toc_tree()` reads PDF bookmarks into a `TocNode` tree. (Marker path): `run_marker()` invokes `marker_single` as a subprocess, producing markdown; `parse_markdown_headings()` extracts `#`/`##`/`###` headings with line-number offsets; `normalise_numbered_rooms()` flattens keyed-room patterns (e.g. "101. ARMORY") to a common level; `build_synthetic_toc()` reuses `parse_toc_tree` with line numbers standing in for page numbers.
-3. **Chunk** — one chunk per top-level `TocNode`. Fast path extracts page text via PyMuPDF; Marker path takes the markdown slice between heading line numbers. **When two or more bookmarks start on the same page**, `split_shared_pages()` switches the fast path to `kind="lines"`: pages are flattened to lines (keeping `=== page N ===` markers) and each bookmark starts at the line on/after its page that begins with its title (unfound titles fall back to the page top and are warned). Page units would hand every such bookmark the whole page, and the LLM then duplicates that text across sections.
+3. **Chunk** — one chunk per top-level `TocNode`. Fast path extracts page text through the Rust worker; Marker path takes the markdown slice between heading line numbers. **When two or more bookmarks start on the same page**, `split_shared_pages()` switches the fast path to `kind="lines"`: pages are flattened to lines (keeping `=== page N ===` markers) and each bookmark starts at the line on/after its page that begins with its title (unfound titles fall back to the page top and are warned). Page units would hand every such bookmark the whole page, and the LLM then duplicates that text across sections.
 4. **Claude pass** — `build_prompt(node, body)` attaches sub-section hints from the TocNode children; `claude_api.call_claude` owns all retry/validation/recovery logic. Batch mode via `call_claude_batch`.
 5. **Assemble** — `assemble_adventure()` wraps each chunk's `entries[]` in a `SectionEntry` and calls `HomebrewAdventure.build()`, which auto-assigns IDs and builds the TOC from the section tree.
 6. **Write** — `.to_json()` on the built document.
