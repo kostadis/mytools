@@ -30,6 +30,20 @@ def executable():
     return path
 
 
+def check_worker():
+    """Validate setup once before a batch can classify any source as skipped."""
+    path = executable()
+    try:
+        result = subprocess.run([path, '--version'], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise PdfBackendError(f'Cannot start Rust PDF reader: {error}. Rebuild with cargo build '
+                              '--release --manifest-path pdf-translators/pdf-reader/Cargo.toml') from error
+    if result.returncode or not result.stdout.startswith('rpg-pdf-reader '):
+        raise PdfBackendError('Invalid Rust PDF reader build. Run cargo build --release '
+                              '--manifest-path pdf-translators/pdf-reader/Cargo.toml')
+    return path
+
+
 def _integer(value, minimum=0):
     return type(value) is int and value >= minimum
 

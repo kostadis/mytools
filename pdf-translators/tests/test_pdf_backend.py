@@ -204,3 +204,22 @@ else:
     finally:
         try:os.kill(pid,9)
         except ProcessLookupError:pass
+
+
+def test_missing_worker_stops_batch_scan_before_creating_skip_entries(tmp_path,monkeypatch):
+    from batch import batch_convert
+    (tmp_path/'book.pdf').write_bytes(b'fixture')
+    monkeypatch.setenv('RPG_PDF_READER',str(tmp_path/'missing'))
+    with pytest.raises(PdfBackendError,match='cargo build'):
+        batch_convert.build_manifest(tmp_path,{},1)
+
+
+def test_environment_scan_errors_are_retryable_after_install(tmp_path,monkeypatch):
+    from batch import batch_convert
+    pdf=tmp_path/'book.pdf';pdf.write_bytes(b'fixture')
+    stat=pdf.stat()
+    previous={'book.pdf':{'size':stat.st_size,'mtime':int(stat.st_mtime),'status':'skipped','reason':'scan_error: PdfBackendError','text_chars':0}}
+    # At least preflight must be attempted instead of blindly reusing skips.
+    monkeypatch.setenv('RPG_PDF_READER',str(tmp_path/'missing'))
+    with pytest.raises(PdfBackendError,match='cargo build'):
+        batch_convert.build_manifest(tmp_path,previous,1)

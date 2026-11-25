@@ -430,3 +430,106 @@ fn unreadable_existing_input_is_not_misreported_as_malformed_pdf() {
     assert_eq!(code, "unreadable_input");
     assert!(message.contains("permission denied"));
 }
+
+fn command_doc(mut doc: Document, command: &str) -> (Output, Vec<Value>) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("review.pdf");
+    doc.save(&path).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_rpg-pdf-reader"))
+        .arg(command)
+        .arg(path)
+        .output()
+        .unwrap();
+    let records = String::from_utf8(output.stdout.clone())
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    (output, records)
+}
+#[test]
+fn standard_quote_operators_do_not_omit_text() {
+    let mut doc = fixture(None, false);
+    let id = *doc.get_pages().get(&1).unwrap();
+    let c = doc
+        .get_dictionary(id)
+        .unwrap()
+        .get(b"Contents")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    doc.get_object_mut(c)
+        .unwrap()
+        .as_stream_mut()
+        .unwrap()
+        .content =
+        br#"BT /F1 12 Tf 14 TL 20 100 Td (First) Tj (Second) ' 2 1 (Third) " ET"#.to_vec();
+    let (o, r) = command_doc(doc, "extract");
+    assert!(o.status.success());
+    let text = r[1]["text"].as_str().unwrap();
+    for word in ["First", "Second", "Third"] {
+        assert!(text.contains(word), "{text}");
+    }
+}
+#[test]
+fn missing_declared_content_stream_is_incomplete() {
+    let mut doc = fixture(None, false);
+    let id = *doc.get_pages().get(&1).unwrap();
+    let c = doc
+        .get_dictionary(id)
+        .unwrap()
+        .get(b"Contents")
+        .unwrap()
+        .clone();
+    doc.get_object_mut(id)
+        .unwrap()
+        .as_dict_mut()
+        .unwrap()
+        .set("Contents", vec![c, Object::Reference((9999, 0))]);
+    let (o, r) = command_doc(doc, "extract");
+    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(r.last().unwrap()["complete"], false);
+}
+#[test]
+fn named_outline_destinations_allow_indirect_kids_arrays() {
+    let mut doc = fixture(None, false);
+    let page = *doc.get_pages().get(&1).unwrap();
+    let leaf=doc.add_object(dictionary!{"Names"=>vec![Object::string_literal("room-one"),Object::Array(vec![page.into(),"Fit".into()])]});
+    let kids = doc.add_object(vec![Object::Reference(leaf)]);
+    let dests = doc.add_object(dictionary! {"Kids"=>kids});
+    let cat = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+    let outlines = doc
+        .get_dictionary(cat)
+        .unwrap()
+        .get(b"Outlines")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    let group = doc
+        .get_dictionary(outlines)
+        .unwrap()
+        .get(b"First")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    let first = doc
+        .get_dictionary(group)
+        .unwrap()
+        .get(b"First")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    doc.get_object_mut(first)
+        .unwrap()
+        .as_dict_mut()
+        .unwrap()
+        .set("Dest", Object::Name(b"room-one".to_vec()));
+    doc.get_object_mut(cat)
+        .unwrap()
+        .as_dict_mut()
+        .unwrap()
+        .set("Names", dictionary! {"Dests"=>dests});
+    let (o, r) = command_doc(doc, "inspect");
+    assert!(o.status.success());
+    assert_eq!(r[0]["outline"][1]["page"], 1);
+}

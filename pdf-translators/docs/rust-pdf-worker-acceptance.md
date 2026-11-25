@@ -7,19 +7,21 @@ conversion artifacts were not changed by verification.
 
 ## Offline checks
 
-- Rust worker: 16 passing regressions covering structural/duplicate/Unicode
+- Rust worker: 19 passing regressions covering structural/duplicate/Unicode
   outlines, Forms/Images, Form graphics state and resource-local fonts,
   overprinted glyphs versus real repeated letters/numbers, embedded cmap
   recovery, explicit unmapped-glyph failure, encrypted references/image
-  filtering, compressed objects, selection, malformed content and resource codes.
-- Focused Python suite: 290 passed, 3 skipped; includes actual Rust+v2 dry-run
-  with PyMuPDF imports blocked, process failure/timeout/stderr/protocol checks,
-  prompt-bound cache/replay/batch resume and legacy artifact preservation.
-- Full Python suite: 455 passed, 25 skipped, 3 pre-existing failures in unchanged
-  claudelib API expectations (make_client/_norm_stop_reason unavailable in the
-  checkout's claudelib namespace). These failures were independently reproduced
-  before this migration. Skips include optional native-heading checks without
-  their test override and existing optional integrations.
+  filtering, compressed objects, selection, malformed content and resource codes. Final-review regressions
+  also cover quote text operators, missing declared content streams and indirect
+  named-destination child arrays.
+- Final Python suite: 469 passed, 25 skipped, run as `pytest -q tests` from
+  `pdf-translators/`. Includes actual Rust+v2 dry-run with PyMuPDF imports blocked,
+  process failure/timeout/stderr/protocol checks, prompt-bound cache/replay/batch
+  resume, partial-result recovery and legacy artifact preservation.
+- Earlier repository-root invocations encountered three pre-existing claudelib
+  namespace/import failures; the final component-directory invocation resolves
+  the installed package and passes those tests. No claudelib code changed.
+  Skips include optional native-heading checks and existing optional integrations.
 
 No inference provider, OCR model or library-wide reconversion ran. The actual
 end-to-end converter test uses a generated non-private two-page PDF. Private
@@ -34,13 +36,13 @@ PDF sizes and selected pages vary, so these are examples, not a throughput SLA.
 
 | Case | PDF MiB | Worker RSS MiB | Wall ms | Complete runs |
 |---|---:|---:|---:|---:|
-| small-bookmarked-5e | 3.2 | 10.7 | 28 | 3/3 |
-| large-bookmarked-226 | 46.3 | 101.4 | 161 | 3/3 |
-| nulb-bookmarked-339 | 36.3 | 74.6 | 119 | 3/3 |
-| character-sheet | 6.9 | 52.6 | 97 | 0/3 |
-| unbookmarked-40 | 2.6 | 9.7 | 70 | 3/3 |
-| image-heavy-106 | 221.6 | 462.3 | 621 | 3/3 |
-| image-only-map | 1.8 | 7.6 | 5 | 3/3 |
+| small-bookmarked-5e | 3.2 | 10.8 | 28 | 3/3 |
+| large-bookmarked-226 | 46.3 | 101.4 | 168 | 3/3 |
+| nulb-bookmarked-339 | 36.3 | 74.7 | 123 | 3/3 |
+| character-sheet | 6.9 | 52.6 | 100 | 0/3 |
+| unbookmarked-40 | 2.6 | 10.0 | 71 | 3/3 |
+| image-heavy-106 | 221.6 | 462.3 | 671 | 3/3 |
+| image-only-map | 1.8 | 7.7 | 5 | 3/3 |
 
 All page counts and all valid page-linked outlines match the earlier PyMuPDF
 baseline exactly. The worker also retains Nulb's 705 structural/linked entries;
@@ -72,9 +74,9 @@ and its sequential worker calls. Medians of three fresh controller processes:
 
 | Case | Controller before MiB | Sampled combined peak MiB |
 |---|---:|---:|
-| small-bookmarked-5e | 28.3 | 39.2 |
-| nulb-bookmarked-339 | 28.4 | 101.3 |
-| image-heavy-106 | 28.4 | 487.1 |
+| small-bookmarked-5e | 3.2 | 10.8 | 28 | 3/3 |
+| nulb-bookmarked-339 | 36.3 | 74.7 | 123 | 3/3 |
+| image-heavy-106 | 221.6 | 462.3 | 671 | 3/3 |
 
 These sampled aggregates can miss short peaks and double-count shared pages;
 they are not strict upper bounds. Child kernel high-water marks can inherit a
@@ -98,3 +100,26 @@ New Rust extracts have separate filenames; response namespaces bind the exact
 prompt set and settings. Existing extracts and legacy replay remain readable.
 No PDF hashes were added to per-page or per-chunk loops. No binaries were
 patched in place, globally installed, or committed.
+
+## Final review and limitations
+
+An independent whole-branch review found six important defects. Regression
+tests reproduced each before fixes: quote text operators and missing streams
+could silently omit text; indirect named-destination children were missed; a
+mutable batch-ID sidecar could race; failed batch items could appear successful;
+and missing-worker scan errors could become permanent skips. All six were fixed
+and the final suites above passed. Batch submissions now carry immutable
+request IDs, retain per-job bindings, separate raw output from successful cached
+entries, and preserve successful chunks when another fails. Batch setup checks
+the worker before scanning; previous scan errors are retryable.
+
+Review scope decisions: private fidelity/memory measurements were repeated by
+the implementer, not independently replicated by the reviewer; estimates may
+miss other workloads. Live inference, OCR and library rollout remain untested,
+so production/provider behavior is not claimed. Encryption coverage is limited
+to tested fixtures and sampled inputs; other variants may require explicit
+unsupported-input handling.
+
+Deferred minor: the Python protocol adapter's requested-page array comparison
+accepts numerically equal booleans/floats from a nonconforming worker. The built
+Rust worker emits integer page arrays.

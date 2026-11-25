@@ -27,7 +27,11 @@ fn named<'a>(d: &'a Document, o: &'a Object, name: &[u8], depth: usize) -> Optio
             }
         }
     }
-    if let Ok(kids) = dict.get(b"Kids").and_then(Object::as_array) {
+    if let Ok(kids) = dict
+        .get(b"Kids")
+        .and_then(|o| resolve(d, o).map_err(|_| lopdf::Error::RecursionLimit))
+        .and_then(Object::as_array)
+    {
         for kid in kids {
             if let Some(v) = named(d, kid, name, depth + 1) {
                 return Some(v);

@@ -91,7 +91,7 @@ def test_converter_rust_replay_rejects_legacy_names(tmp_path,monkeypatch):
 def test_rust_batch_results_can_be_resumed_without_new_submission(tmp_path,monkeypatch):
     import converters.pdf_to_5etools_v2 as v2
     calls=[]
-    def call(backend,prompts,model,system,verbose,debug_dir):
+    def call(backend,prompts,model,system,verbose,debug_dir,request_ids):
         calls.append(prompts);return [['converted']]
     monkeypatch.setattr(v2._api,'call_claude_batch',call)
     encode_fixture(tmp_path,monkeypatch,batch=True)
@@ -117,7 +117,8 @@ def test_rust_batch_resume_requires_matching_id_and_cids(tmp_path,monkeypatch):
     monkeypatch.setattr(v2,'call_claude_for_chunk',call)
     encode_fixture(tmp_path,monkeypatch)
     directory=next((tmp_path/'responses').glob('rust-pdf-v1/*'))
-    atomic_json(directory/'batch-id.json',{'id':'batch-right','cids':['001-room']})
+    atomic_json(directory/'batches/batch-right.json',{'id':'batch-right','cids':['001-room']})
+    atomic_json(directory/'batches/batch-wrong.json',{'id':'batch-right','cids':['001-room']})
     monkeypatch.setattr(v2._api,'fetch_claude_batch_results',lambda *a,**k:pytest.fail('wrong ID must not fetch'))
     with pytest.raises(RuntimeError,match='batch ID'):encode_fixture(tmp_path,monkeypatch,resume='batch-wrong')
     monkeypatch.setattr(v2._api,'fetch_claude_batch_results',lambda *a,**k:[['batch entry']])
@@ -145,9 +146,122 @@ def test_batch_submission_persists_id_with_exact_submitted_cids(tmp_path):
     client=S(messages=S(batches=S(
         create=lambda **kw:S(id='batch-fixture'),
         retrieve=lambda _:S(processing_status='ended',request_counts=S(processing=0,succeeded=1,errored=0)),
-        results=lambda _:iter([S(custom_id='chunk-0000',result=S(type='succeeded',message=S(stop_reason='end_turn',content=[S(type='text',text='["entry"]')])))]),
+        results=lambda _:iter([S(custom_id='001-room',result=S(type='succeeded',message=S(stop_reason='end_turn',content=[S(type='text',text='["entry"]')])))]),
     )))
     backend=S(kind='claude',anthropic_client=client)
     atomic_json(tmp_path/'batch-cids.json',['001-room'])
-    assert claude_api.call_claude_batch(backend,['prompt'],'model','system',False,debug_dir=tmp_path)==[['entry']]
-    assert json.loads((tmp_path/'batch-id.json').read_text())=={'id':'batch-fixture','cids':['001-room']}
+    assert claude_api.call_claude_batch(backend,['prompt'],'model','system',False,debug_dir=tmp_path,request_ids=['001-room'])==[['entry']]
+    assert json.loads((tmp_path/'batches/batch-fixture.json').read_text())=={'id':'batch-fixture','cids':['001-room']}
+
+
+def api_backend(results, on_create=None):
+    from types import SimpleNamespace as S
+    def create(**kwargs):
+        if on_create:on_create(kwargs)
+        return S(id='batch-isolated')
+    return S(kind='claude',anthropic_client=S(messages=S(batches=S(
+        create=create,
+        retrieve=lambda _:S(processing_status='ended',request_counts=S(processing=0,succeeded=1,errored=1)),
+        results=lambda _:iter(results),
+    ))))
+
+
+def remote_result(cid,*,failed=False,truncated=False,text='["entry"]'):
+    from types import SimpleNamespace as S
+    return S(custom_id=cid,result=S(type='errored' if failed else 'succeeded',
+        message=S(stop_reason='max_tokens' if truncated else 'end_turn',content=[S(type='text',text=text)])))
+
+
+def test_batch_association_uses_in_memory_ids_despite_sidecar_race(tmp_path):
+    from lib import claude_api
+    def race(kwargs):
+        atomic_json(tmp_path/'batch-cids.json',['002-other'])
+        assert kwargs['requests'][0]['custom_id']=='001-room'
+    backend=api_backend([remote_result('001-room')],race)
+    assert claude_api.call_claude_batch(backend,['prompt'],'model','system',False,
+        debug_dir=tmp_path,request_ids=['001-room'])==[['entry']]
+    assert json.loads((tmp_path/'batches/batch-isolated.json').read_text())=={'id':'batch-isolated','cids':['001-room']}
+
+
+@pytest.mark.parametrize('result',[None,remote_result('001-room',failed=True),
+                                  remote_result('001-room',truncated=True),
+                                  remote_result('001-room',text='["partial"')])
+def test_strict_batch_missing_failed_or_truncated_result_is_not_empty_success(tmp_path,result):
+    from lib import claude_api
+    backend=api_backend([] if result is None else [result])
+    assert claude_api.fetch_claude_batch_results(backend,'batch-isolated',1,
+        debug_dir=tmp_path,request_ids=['001-room'])==[None]
+    assert not (tmp_path/'001-room-response.txt').exists()
+
+
+def test_partial_rust_batch_never_publishes_or_caches_failure(tmp_path,monkeypatch):
+    import converters.pdf_to_5etools_v2 as v2
+    monkeypatch.setattr(v2._api,'call_claude_batch',lambda *a,**k:[None])
+    with pytest.raises(v2.PartialConversionError):encode_fixture(tmp_path,monkeypatch,batch=True)
+    assert not (tmp_path/'book.json').exists()
+    directory=next((tmp_path/'responses').glob('rust-pdf-v1/*'))
+    assert not (directory/'001-room-response.txt').exists()
+
+
+def test_partial_batch_preserves_successes_and_retries_only_failure(tmp_path, monkeypatch):
+    import converters.pdf_to_5etools_v2 as v2
+    from lib.pdf_utils import TocNode
+    from types import SimpleNamespace
+    nodes = [TocNode(1, title, i, i) for i, title in enumerate(['First', 'Second'], 1)]
+    chunks = [v2.ChunkSpec(n, n, False, n.title) for n in nodes]
+    meta = {'short_id': 'TEST', 'name': 'Fixture', 'output_type': 'adventure',
+            'source_kind': 'fast', 'pdf_backend': BACKEND}
+    submitted = []
+    def batch(*args, request_ids, **kwargs):
+        submitted.append(request_ids)
+        return [None, ['success']] if len(submitted) == 1 else [['retried']]
+    monkeypatch.setattr(v2._api, 'call_claude_batch', batch)
+    def encode():
+        return v2.encode_chunks(nodes, chunks, meta, pdf_path=tmp_path/'book.pdf',
+            backend=SimpleNamespace(kind='test'), model='model', author='test',
+            out_path=tmp_path/'book.json', output_dir=None, use_batch=True,
+            debug_dir=tmp_path/'responses', dry_run_only=False, verbose=False,
+            reuse_responses=True)
+    with pytest.raises(v2.PartialConversionError):
+        encode()
+    directory = next((tmp_path/'responses').glob('rust-pdf-v1/*'))
+    assert not (directory/'001-first-response.txt').exists()
+    assert json.loads((directory/'002-second-response.txt').read_text()) == ['success']
+    assert not (tmp_path/'book.json').exists()
+    encode()
+    assert submitted == [['001-first', '002-second'], ['001-first']]
+    assert (tmp_path/'book.json').exists()
+
+
+def test_failed_batch_resume_does_not_publish_or_cache(tmp_path, monkeypatch):
+    import converters.pdf_to_5etools_v2 as v2
+    monkeypatch.setattr(v2._api, 'call_claude_batch', lambda *a, **k: [None])
+    with pytest.raises(v2.PartialConversionError):
+        encode_fixture(tmp_path, monkeypatch, batch=True)
+    directory = next((tmp_path/'responses').glob('rust-pdf-v1/*'))
+    atomic_json(directory/'batches/batch-failed.json', {'id': 'batch-failed', 'cids': ['001-room']})
+    def fetch(*args, request_ids, **kwargs):
+        assert request_ids == ['001-room']
+        return [None]
+    monkeypatch.setattr(v2._api, 'fetch_claude_batch_results', fetch)
+    with pytest.raises(v2.PartialConversionError):
+        encode_fixture(tmp_path, monkeypatch, resume='batch-failed')
+    assert not (tmp_path/'book.json').exists()
+    assert not (directory/'001-room-response.txt').exists()
+
+
+def test_failed_stream_raw_response_is_not_reused(tmp_path, monkeypatch):
+    import converters.pdf_to_5etools_v2 as v2
+    calls = []
+    def call(backend, prompt, model, verbose, debug_dir, cid):
+        calls.append(cid)
+        (debug_dir/f'{cid}-response.txt').write_text('["partial"]')
+        return None
+    monkeypatch.setattr(v2, 'call_claude_for_chunk', call)
+    for _ in range(2):
+        with pytest.raises(v2.PartialConversionError):
+            encode_fixture(tmp_path, monkeypatch)
+    assert calls == ['001-room', '001-room']
+    directory = next((tmp_path/'responses').glob('rust-pdf-v1/*'))
+    assert not (directory/'001-room-response.txt').exists()
+    assert (directory/'stream-raw/001-room/001-room-response.txt').exists()

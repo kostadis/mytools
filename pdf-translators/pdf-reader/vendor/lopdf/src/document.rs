@@ -656,6 +656,23 @@ impl Document {
     /// *other* than the size limit falls back to its raw bytes, but that fallback
     /// is also kept within the remaining budget.
     pub fn get_page_content_with_limit(&self, page_id: ObjectId, max_decompressed_size: usize) -> Result<Vec<u8>> {
+        // The bounded extraction API must not turn missing/mistyped declared
+        // streams into a partial success. Keep the old unlimited API lenient.
+        let page = self.get_dictionary(page_id)?;
+        if let Ok(declared) = page.get(b"Contents") {
+            let (_, content) = self.dereference(declared)?;
+            match content {
+                Object::Null => return Ok(Vec::new()),
+                Object::Stream(_) => { declared.as_reference()?; }
+                Object::Array(items) => {
+                    for item in items {
+                        item.as_reference()?;
+                        self.dereference(item)?.1.as_stream()?;
+                    }
+                }
+                _ => { content.as_stream()?; }
+            }
+        }
         self.page_content(page_id, Some(max_decompressed_size))
     }
 

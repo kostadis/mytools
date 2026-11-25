@@ -56,3 +56,20 @@ def response_directory(base, requests, *, system, model, backend, create, settin
     else:
         raise RuntimeError('No matching bound response set; legacy responses require their original extraction')
     return directory
+
+
+def batch_record_path(directory, batch_id):
+    import re
+    if not isinstance(batch_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,256}', batch_id):
+        raise RuntimeError('Invalid batch identifier')
+    return Path(directory) / 'batches' / f'{batch_id}.json'
+
+
+def save_batch_record(directory, batch_id, cids):
+    path = batch_record_path(directory, batch_id)
+    value = {'id': batch_id, 'cids': list(cids)}
+    if path.exists():
+        if json.loads(path.read_text()) != value:
+            raise RuntimeError('Conflicting immutable batch request binding')
+        return
+    atomic_json(path, value)

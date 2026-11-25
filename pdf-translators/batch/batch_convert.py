@@ -363,7 +363,7 @@ def build_manifest(root: Path, prior: dict, workers: int) -> dict:
             continue
         ent = prior.get(rel)
         if ent and ent.get("size") == st.st_size and ent.get("mtime") == int(st.st_mtime) \
-           and "text_chars" in ent:
+           and "text_chars" in ent and not ent.get("reason", "").startswith("scan_error"):
             # Reuse classification; status is recomputed at dispatch (json on disk).
             docs[rel] = ent
             reused += 1
@@ -372,6 +372,8 @@ def build_manifest(root: Path, prior: dict, workers: int) -> dict:
 
     print(f"[scan] reusing {reused} cached entries, scanning {len(to_scan)} ...")
     if to_scan:
+        from lib.pdf_backend import check_worker
+        check_worker()
         done = 0
         with ProcessPoolExecutor(max_workers=workers) as ex:
             futs = {ex.submit(classify_pdf, p, str(root)): p for p in to_scan}

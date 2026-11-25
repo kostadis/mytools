@@ -52,7 +52,7 @@ import lib.claude_api as _api
 import converters.extract_monsters as _mon
 import lib.llm_backend as _lb
 from lib.native_heading_parser import load_parser as _load_native_heading_parser
-from lib.response_binding import response_directory, atomic_json
+from lib.response_binding import response_directory, atomic_json, batch_record_path
 from lib.adventure_model import (
     BuildContext, SectionEntry, EntriesEntry, parse_entry,
     HomebrewAdventure,
@@ -1482,7 +1482,7 @@ def encode_chunks(
         print(f"[resume] skipping Claude submission — fetching batch "
               f"{resume_batch}")
         if rust_bound:
-            association = debug_dir / "batch-id.json"
+            association = batch_record_path(debug_dir, resume_batch)
             try:
                 association = json.loads(association.read_text())
             except (OSError, ValueError) as error:
@@ -1494,15 +1494,14 @@ def encode_chunks(
                     or len(set(submitted)) != len(submitted) or not set(submitted) <= set(cids)):
                 raise RuntimeError("Rust batch ID does not match the bound requests")
             batch = _api.fetch_claude_batch_results(
-                backend, resume_batch, len(submitted), verbose=verbose, debug_dir=debug_dir)
+                backend, resume_batch, len(submitted), verbose=verbose, debug_dir=debug_dir, request_ids=submitted)
             if len(batch) != len(submitted):
                 raise RuntimeError("Incomplete Rust batch result count")
             fetched = dict(zip(submitted, batch))
             for cid, spec in zip(cids, chunks):
                 entries = fetched.get(cid) if cid in fetched else _load_cached_response(cid, debug_dir, verbose)
-                if entries is None:
-                    raise RuntimeError(f"Missing bound response for {cid}")
-                atomic_json(debug_dir / f"{cid}-response.txt", entries)
+                if entries is not None:
+                    atomic_json(debug_dir / f"{cid}-response.txt", entries)
                 chunk_results.append((spec, entries))
         else:
             batch = _api.fetch_claude_batch_results(
@@ -1530,15 +1529,16 @@ def encode_chunks(
         batched: list = []
         if todo:
             prompts = [build_prompt(c.target_node, c.body) for _, c in todo]
-            if rust_bound:
-                atomic_json(debug_dir / "batch-cids.json", [_chunk_cid(i, c) for i, c in todo])
+            binding = {"request_ids": [_chunk_cid(i, c) for i, c in todo]} if rust_bound else {}
             batched = _api.call_claude_batch(
-                backend, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir,
+                backend, prompts, model, SYSTEM_PROMPT, verbose, debug_dir=debug_dir, **binding,
             )
+            if rust_bound and len(batched) != len(todo):
+                raise RuntimeError("Incomplete Rust batch result count")
         batch_iter = iter(batched)
         for i, spec in enumerate(chunks):
             entries = cached[i] if i in cached else next(batch_iter)
-            if rust_bound:
+            if rust_bound and entries is not None:
                 atomic_json(debug_dir / f"{_chunk_cid(i, spec)}-response.txt", entries)
             chunk_results.append((spec, entries))
     else:
@@ -1574,7 +1574,14 @@ def encode_chunks(
             if verbose:
                 print(f"[chunk {cid}] calling {backend.kind} ({len(spec.body)} chars)")
             try:
-                return call_claude_for_chunk(backend, prompt, model, verbose, debug_dir, cid)
+                raw_dir = debug_dir
+                if rust_bound:
+                    raw_dir = debug_dir / "stream-raw" / cid
+                    raw_dir.mkdir(parents=True, exist_ok=True)
+                entries = call_claude_for_chunk(backend, prompt, model, verbose, raw_dir, cid)
+                if rust_bound and entries is not None:
+                    atomic_json(debug_dir / f"{cid}-response.txt", entries)
+                return entries
             except Exception as e:
                 # Fail-and-continue: a chunk that errors out (e.g. a DGX read
                 # timeout — generation exceeded the budget) is reported and
@@ -1607,6 +1614,11 @@ def encode_chunks(
                 f"--reuse-responses to finish this doc.")
         for spec, entries in zip(chunks, results):
             chunk_results.append((spec, entries))
+
+    if rust_bound and any(entries is None for _, entries in chunk_results):
+        raise PartialConversionError(
+            "Incomplete Rust-bound responses; successful chunks are cached. "
+            "Re-run with --reuse-responses to retry failed chunks.")
 
     # ---- 5. Assemble ----
     doc = assemble_adventure(

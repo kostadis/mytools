@@ -104,15 +104,22 @@ with historical extracts; unbound files cannot be adopted by Rust replay.
 For `--replay-responses`, supply the original response parent or its matching
 bound directory with the same extraction/model settings. Rust replay requires
 per-chunk IDs, not positional guesses. Batch IDs are saved with the actual
-submitted chunk IDs; Rust `--resume-batch` validates this association before
+submitted chunk IDs in immutable `batches/<batch-id>.json` records; actual
+remote request IDs match those chunk IDs. Rust `--resume-batch` validates this association before
 fetching or merging results. A batch ID from unrelated/unbound requests is
-rejected before provider access.
+rejected before provider access. Raw batch/stream output lives in separate
+subdirectories; only successful results become reusable per-chunk responses.
+Missing, failed or truncated batch items leave the document incomplete while
+preserving successful chunks for `--reuse-responses`.
+
+A batch scan checks the worker setup before scheduling files. Build/setup
+failures stop the scan, and old `scan_error` classifications are retried.
 
 ## Tests and measurements
 
 ```sh
 cargo test --locked --manifest-path pdf-translators/pdf-reader/Cargo.toml
-python3 -m pytest pdf-translators/tests/test_pdf_backend.py pdf-translators/tests/test_response_binding.py pdf-translators/tests/test_pdf_to_5etools_v2.py -q
+(cd pdf-translators && python3 -m pytest tests -q)
 python3 pdf-translators/benchmarks/pdf_reader_memory.py --pdf '/path/book.pdf' --pages 1,2,3 --runs 3
 ```
 

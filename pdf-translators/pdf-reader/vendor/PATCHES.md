@@ -13,10 +13,15 @@ Changes from the published source:
 - pdf-extract/src/lib.rs: skip Image XObjects while traversing Forms; use
   Content::decode_strict and propagate decoding errors; use the fallible
   get_page_content_with_limit API (64 MiB) for lopdf 0.47 compatibility.
+  Handle standard single/double quote text operators including line movement
+  and word/character spacing; these previously omitted their text.
   Form traversal inherits graphics state/CTM, applies Form matrices and caps
   recursion; font cache keys use dictionary identity rather than local resource
   names. Missing CID mappings can use unambiguous embedded TrueType cmaps
   (ttf-parser 0.25.1); unmapped glyphs are marked for explicit application error.
+- lopdf/src/document.rs: the bounded content API validates every declared
+  content-stream reference before extraction, rejecting missing/mistyped
+  streams instead of accepting a partial page.
 - lopdf/src/reader.rs, load_encrypted_document: consume raw_objects with
   pop_first as they are parsed/decrypted, and apply the provided filter to
   decrypted objects. This reduces overlapping raw/decrypted allocations and

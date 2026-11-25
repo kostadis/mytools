@@ -1729,9 +1729,21 @@ impl<'a> Processor<'a> {
                         _ => {}
                     }
                 }
-                "Tj" => {
-                    match operation.operands[0] {
-                        Object::String(ref s, _) => {
+                "Tj" | "'" | "\"" => {
+                    let quoted = operation.operator != "Tj";
+                    let index = if operation.operator == "\"" {
+                        if operation.operands.len() != 3 { return Err(OutputError::FormatError(std::fmt::Error)); }
+                        gs.ts.word_spacing = as_num(&operation.operands[0]);
+                        gs.ts.character_spacing = as_num(&operation.operands[1]);
+                        2
+                    } else { 0 };
+                    if quoted {
+                        tlm = tlm.pre_transform(&Transform2D::create_translation(0., -gs.ts.leading));
+                        gs.ts.tm = tlm;
+                        output.end_line()?;
+                    }
+                    match operation.operands.get(index) {
+                        Some(Object::String(ref s, _)) => {
                             show_text(&mut gs, s, &tlm, &flip_ctm, output)?;
                         }
                         _ => { panic!("unexpected Tj operand {:?}", operation) }

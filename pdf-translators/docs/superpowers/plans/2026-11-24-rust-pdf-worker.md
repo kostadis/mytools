@@ -67,5 +67,5 @@
 
 - [x] Repeat bounded seven-document pilot with release worker; compare valid destinations, known searchable words and table labels/numbers; investigate failures with rendered source when necessary.
 - [x] Measure standalone RSS/timing and aggregate adapter+worker memory separately in fresh processes. Confirm Markdown-only import reduction and no worker invocation.
-- [ ] Complete the fresh whole-branch reviewer gate; Rust/Python suites and diff inspection are complete, with three independently reproduced existing claudelib failures recorded.
-- [ ] Apply any blocking review fixes with RED→GREEN regressions; build/run/limitations are documented. Commit final review evidence. No rollout, push or merge is implied.
+- [x] Complete the fresh whole-branch reviewer gate; final Rust/Python suites pass (19 Rust; 469 Python passed, 25 skipped) from the component directory. Earlier root-invocation claudelib import failures are recorded in acceptance.
+- [x] Apply any blocking review fixes with RED→GREEN regressions; build/run/limitations are documented. Commit final review evidence. No rollout, push or merge is implied.
