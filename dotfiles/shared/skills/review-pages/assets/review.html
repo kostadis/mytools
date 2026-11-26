@@ -10,7 +10,7 @@ button.small,.session,.badge,summary,pre,.notice,.eyebrow{font-size:15px} .card 
  <h1>__TITLE__</h1>
  <p class="lede">__LEDE__</p>
  <p class="notice" id="decision-notice">Approve uses the displayed proposal. Reject keeps the displayed baseline. Each named choice shows its exact text. Scores predict reviewer approval, not correctness. Save before leaving a page; only validated saved decisions authorize changes.</p>
- <details class="notice"><summary>Checked findings and retained uncertainty</summary><pre style="white-space:pre-wrap;font:inherit">__FOOTER__</pre></details><div class="bar"><span id="progress" aria-live="polite"></span><button id="save" disabled>Save to VM</button></div>
+ <details class="notice"><summary>Checked findings and retained uncertainty</summary><pre style="white-space:pre-wrap;font:inherit">__FOOTER__</pre></details><div class="bar"><span id="progress" aria-live="polite"></span><button id="only-undecided" type="button" title="Shows the cards undecided right now. Cards you mark afterwards stay visible until you press this again.">Show only undecided</button><button id="show-all" type="button" hidden>Show all</button><span id="filter-status" class="muted"></span><button id="save" disabled>Save to VM</button></div>
  <nav id="group-summary" aria-label="Review groups"></nav>
  <section class="section" id="high-section" aria-labelledby="high-title"><div class="section-top"><h2 id="high-title">Over 90%</h2><button class="primary" id="bulk-high" data-bulk="high"></button></div>
  <p class="muted" id="high-description"></p><div id="high" class="list"></div></section>
@@ -24,6 +24,8 @@ button.small,.session,.badge,summary,pre,.notice,.eyebrow{font-size:15px} .card 
 'use strict';
 const spec=JSON.parse(document.getElementById('data').textContent);
 const items=spec.items, decisions={}, notes={}, picks={}, exceptions=new Set();
+let shownOnly=null; // snapshot of ids taken when "Show only undecided" is pressed; marking a card never re-filters
+const isShown=it=>!shownOnly||shownOnly.has(it.id);
 const $=id=>document.getElementById(id);
 function esc(text){return String(text??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function probabilityLabel(it){return typeof it.p_yes==='number'?`${(it.p_yes*100).toFixed(2)}%`:'Not scored';}
@@ -77,14 +79,18 @@ function render(){
  for(const tier of ['high','middle']){
   const rows=groups[tier];
   $(`${tier}-description`).textContent=groupKind(rows)==='interpretation'?`${rows.length} interpretation cards. This button confirms every numbered reading on the undecided cards in this group. It inserts no text into the draft. Use Discuss if any reading needs clarification.`:groupKind(rows)==='decision'?`${rows.length} review decisions. This button records the displayed approval outcome on undecided cards in this group.`:`${rows.length} proposed corrections. This button approves the exact displayed proposals for undecided items in this group. Change exceptions using the inline decision buttons.`;
-  $(tier).innerHTML=rows.length?rows.map(it=>`<div class="row ${['approve','pick'].includes(decisions[it.id])?'approved':''}" data-row="${it.id}"><div><div class="pair">${pair(it)}</div><p><strong>Recommended decision: ${esc(recommendation(it))}</strong></p><div class="session">${esc(it.session)} · predicted approval ${(it.p_yes*100).toFixed(1)}%${it.updated_score?' · updated from corrected input':''}</div>${passage(it)}${evidence(it)}</div><div class="row-actions"><span class="badge">${decisions[it.id]==='pick'?esc(picks[it.id]):decisions[it.id]==='approve'?'Approved':''}</span><div class="actions">${['approve','reject','discuss'].map(d=>`<button data-choice="${d}" data-id="${it.id}" aria-pressed="${decisions[it.id]===d}" class="${decisions[it.id]===d?'selected':''}">${esc(decisionLabel(it,d))}</button>`).join('')}</div><div class="actions">${pickButtons(it)}</div><label>Note<textarea data-note="${it.id}">${esc(notes[it.id]||'')}</textarea></label></div></div>`).join(''):'<div class="empty">No items in this group.</div>';
+  $(tier).innerHTML=rows.length?rows.filter(isShown).map(it=>`<div class="row ${['approve','pick'].includes(decisions[it.id])?'approved':''}" data-row="${it.id}"><div><div class="pair">${pair(it)}</div><p><strong>Recommended decision: ${esc(recommendation(it))}</strong></p><div class="session">${esc(it.session)} · predicted approval ${(it.p_yes*100).toFixed(1)}%${it.updated_score?' · updated from corrected input':''}</div>${passage(it)}${evidence(it)}</div><div class="row-actions"><span class="badge">${decisions[it.id]==='pick'?esc(picks[it.id]):decisions[it.id]==='approve'?'Approved':''}</span><div class="actions">${['approve','reject','discuss'].map(d=>`<button data-choice="${d}" data-id="${it.id}" aria-pressed="${decisions[it.id]===d}" class="${decisions[it.id]===d?'selected':''}">${esc(decisionLabel(it,d))}</button>`).join('')}</div><div class="actions">${pickButtons(it)}</div><label>Note<textarea data-note="${it.id}">${esc(notes[it.id]||'')}</textarea></label></div></div>`).join(''):'<div class="empty">No items in this group.</div>';
  }
- const cards=groups.cards;
- $('cards-title').textContent=`Regular cards · ${cards.length}`;
+ const cards=groups.cards.filter(isShown);
+ $('cards-title').textContent=shownOnly?`Regular cards · showing ${cards.length} of ${groups.cards.length}`:`Regular cards · ${cards.length}`;
+ $('show-all').hidden=!shownOnly; $('only-undecided').textContent=shownOnly?'Refresh undecided filter':'Show only undecided';
+ $('filter-status').textContent=shownOnly?`Filtered to the ${shownOnly.size} undecided when you pressed the button; marked cards stay until you refresh.`:'';
  $('cards').innerHTML=cards.map(it=>`<article class="card" data-card="${it.id}"><div class="session">${esc(it.session)} · ${probabilityLabel(it)}</div><h3>${pair(it)}</h3><p>${esc(it.proposed_text)}</p>${passage(it)}${evidence(it)}<div class="actions">${(it.choiceOnly?['discuss']:(it.guess==='reject'?['reject','approve','discuss']:['approve','reject','discuss'])).map(d=>`<button data-choice="${d}" data-id="${it.id}" aria-pressed="${decisions[it.id]===d}" class="${decisions[it.id]===d?'selected':''}" aria-pressed="${decisions[it.id]===d}">${esc(decisionLabel(it,d))}</button>`).join('')}</div><div class="actions">${pickButtons(it)}</div><label class="muted" for="note-${it.id}">Optional note</label><textarea id="note-${it.id}" data-note="${it.id}">${esc(notes[it.id]||'')}</textarea></article>`).join('');
  progress();
 }
 document.addEventListener('click',event=>{
+ if(event.target.closest('#only-undecided')){shownOnly=new Set(items.filter(it=>!decisions[it.id]).map(it=>it.id));render();window.scrollTo({top:0});return;}
+ if(event.target.closest('#show-all')){shownOnly=null;render();return;}
  const bulk=event.target.closest('[data-bulk]');
  if(bulk){const tier=bulk.dataset.bulk;items.filter(it=>tierOf(it)===tier&&!it.choiceOnly&&!(it.requires||[]).length&&!Object.keys(it.requiresNamed||{}).length&&!decisions[it.id]&&!String(notes[it.id]||'').trim()).forEach(it=>{if(it.choiceOnly){if(!it.picks.includes(it.guessPick))throw new Error('Named choices require an individual selection');decisions[it.id]='pick';picks[it.id]=it.guessPick;}else{decisions[it.id]='approve';delete picks[it.id];}});render();return;}
  const exception=event.target.closest('[data-except]');
