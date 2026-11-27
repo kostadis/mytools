@@ -19,6 +19,25 @@ On a VMware virtual GPU, hardware OpenGL draws a blank window, so the app sets `
 
 The first build downloads Rust crates from crates.io. Use `cargo test` to run the document tests.
 
+## Install
+
+To install the editor as a `markdown-editor` command, so you don't need `cargo run` each time:
+
+```bash
+cargo install --path . --locked
+```
+
+This puts the binary in `~/.cargo/bin`, which rustup normally adds to your PATH. `--locked` builds with the exact crate versions in `Cargo.lock`, and the fix to the bundled `egui_commonmark` crate in `vendor/` still applies.
+
+The editor is a Rust program, not a Python package, so `pip install` doesn't work. To put it in a Python virtualenv anyway, so it is on your PATH only while the venv is active, activate the venv and set the install root:
+
+```bash
+source /path/to/venv/bin/activate
+cargo install --path . --locked --root "$VIRTUAL_ENV"
+```
+
+The binary lands at `$VIRTUAL_ENV/bin/markdown-editor`. To remove it, run `cargo uninstall markdown-editor`, adding `--root "$VIRTUAL_ENV"` if you installed it into a venv.
+
 ## macOS
 
 Install Rust with rustup and Xcode Command Line Tools (`xcode-select --install`), then run `cargo run --release` in this directory. The app uses the same Rust source on both platforms.
