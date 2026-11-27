@@ -1699,4 +1699,61 @@ mod ui_tests {
         open_file(&mut app, &dir.join("notes.md"), "notes\n");
         assert!(app.chooser.is_none());
     }
+
+    /// Where each piece of text the preview draws for `source` lands, as
+    /// `(left edge, top edge, text)`.
+    fn drawn_text(source: &str) -> Vec<(f32, f32, String)> {
+        fn walk(shape: &egui::Shape, out: &mut Vec<(f32, f32, String)>) {
+            match shape {
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+                egui::Shape::Text(text) => {
+                    let rect = text.visual_bounding_rect();
+                    out.push((rect.min.x, rect.min.y, text.galley.text().to_owned()));
+                }
+                _ => {}
+            }
+        }
+        let ctx = egui::Context::default();
+        let mut cache = CommonMarkCache::default();
+        let chunk = preview_blocks::PreviewChunk::Prose(0..source.len());
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(700.0, 4000.0),
+            )),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| preview_chunk(ui, &mut cache, &chunk, source));
+        output.textures_delta.clear();
+        let mut out = Vec::new();
+        for clipped in &output.shapes {
+            walk(&clipped.shape, &mut out);
+        }
+        out
+    }
+
+    /// A block quote inside a list item used to be laid out after the item's
+    /// text, so a second quote in the item got a few pixels of width, wrapped
+    /// a letter per line and pushed the rest of the preview out of sight.
+    #[test]
+    fn quotes_in_a_list_item_start_on_their_own_line_at_full_width() {
+        let quote = "Catching a breather just past the fighting, you see a massive field of fungi ahead.";
+        let source = format!(
+            "- **Read aloud:** [§171.30] [§171.31]\n  > {quote}\n\n  > {quote}\n- **Do:** the farms.\n"
+        );
+        let text = drawn_text(&source);
+        let label = text.iter().find(|t| t.2 == "Read aloud:").expect("label drawn");
+        let quotes: Vec<_> = text.iter().filter(|t| t.2.starts_with("Catching")).collect();
+        assert_eq!(quotes.len(), 2, "{text:?}");
+        for quote in &quotes {
+            assert!(quote.0 < 40.0, "quote starts beside the item text: {quote:?}");
+            assert!(quote.1 > label.1, "quote shares the item's line: {quote:?}");
+        }
+        let after = text.iter().find(|t| t.2 == "Do:").expect("next item drawn");
+        assert!(
+            after.1 - label.1 < 300.0,
+            "next item pushed {}px down: {text:?}",
+            after.1 - label.1
+        );
+    }
 }

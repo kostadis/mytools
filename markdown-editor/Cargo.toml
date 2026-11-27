@@ -13,3 +13,10 @@ rfd = "0.17.2"
 egui-file-dialog = { version = "0.15.0", default-features = false, features = ["default_fonts"] }
 log = "0.4"
 pollster = "0.4"
+
+# egui_commonmark 0.25.0 with one fix: a block quote nested in a list item is
+# drawn after the item's text, in the width left on that line, so a second
+# quote in the same item becomes a column a few characters wide and pushes
+# everything after it far down the preview. See vendor/egui_commonmark/PATCHED.md.
+[patch.crates-io]
+egui_commonmark = { path = "vendor/egui_commonmark" }
