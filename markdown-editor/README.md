@@ -8,7 +8,7 @@ Install Rust with [rustup](https://rustup.rs/) and the Ubuntu libraries needed b
 
 ```bash
 sudo apt update
-sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev xdg-desktop-portal-gtk zenity
+sudo apt install build-essential pkg-config libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev xdg-desktop-portal-gtk zenity
 cd markdown-editor
 cargo run --release
 ```
